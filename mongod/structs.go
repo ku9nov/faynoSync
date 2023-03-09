@@ -3,6 +3,7 @@ package mongod
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -19,7 +20,7 @@ import (
 type AppRepository interface {
 	Get(ctx context.Context) ([]*model.App, error)
 	GetAppByName(email string, ctx context.Context) ([]*model.App, error)
-	Delete(id primitive.ObjectID, ctx context.Context) (int64, error)
+	Delete(id primitive.ObjectID, ctx context.Context) (string, int64, error)
 	Upload(appName, version, appLink string, ctx context.Context) (interface{}, error)
 }
 
@@ -101,20 +102,30 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	return apps, nil
 }
 
-func (c *appRepository) Delete(id primitive.ObjectID, ctx context.Context) (int64, error) {
+func (c *appRepository) Delete(id primitive.ObjectID, ctx context.Context) (string, int64, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
 	filter := bson.D{primitive.E{Key: "_id", Value: id}}
 
+	// Retrieve the document before deletion
+	var app *model.App
+	err := collection.FindOne(ctx, filter).Decode(&app)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", 0, fmt.Errorf("no app found with ID %s", id)
+		}
+		return "", 0, fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
+	}
+
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
 		log.Fatal(err)
 
-		return 0, err
+		return "", 0, err
 	}
 
-	return deleteResult.DeletedCount, nil
+	return app.Link, deleteResult.DeletedCount, nil
 }
 
 func (c *appRepository) Upload(appName, version, appLink string, ctx context.Context) (interface{}, error) {

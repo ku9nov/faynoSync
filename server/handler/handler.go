@@ -10,11 +10,8 @@ import (
 
 	db "SAU/mongod"
 	"SAU/server/model"
+	"SAU/server/utils"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -89,11 +86,20 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 	}
 
 	//request on repository
-	result, err := ch.repository.Delete(objID, ctx)
+	link, result, err := ch.repository.Delete(objID, ctx)
 	if err != nil {
 		logrus.Error(err)
 	}
 
+	index := strings.Index(link, "amazonaws.com/") + len("amazonaws.com/")
+	if index > len(link) {
+		// The link doesn't contain "amazonaws.com/"
+		fmt.Println("Invalid link")
+		return
+	}
+	subLink := link[index:]
+
+	utils.DeleteFromS3(subLink, c, viper.GetViper())
 	c.JSON(http.StatusOK, gin.H{"deleteResult.DeletedCount": result})
 }
 
@@ -115,7 +121,6 @@ func (ch *appHandler) GetAllApps(c *gin.Context) {
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
-	env := viper.GetViper()
 	// Get file from form data
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -124,53 +129,12 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 		})
 		return
 	}
-	// Manually set the AWS credentials and region
-	creds := credentials.NewStaticCredentialsProvider(env.GetString("S3_ACCESS_KEY"), env.GetString("S3_SECRET_KEY"), "")
-
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(creds), config.WithRegion(env.GetString("S3_REGION")))
-	if err != nil {
-		log.Printf("error: %v", err)
-		return
-	}
-
-	// Create an S3 client using the AWS config
-	s3Client := s3.NewFromConfig(cfg)
 
 	// Extract app name and version from query params
 	appName := c.Query("app_name")
 	version := c.Query("version")
 
-	var extension string
-	// Extract base filename and extension
-	baseFileName := file.Filename
-	dotIndex := strings.Index(baseFileName, ".")
-	if dotIndex > -1 {
-		extension = baseFileName[dotIndex:]
-	}
-	// Generate new file name
-	newFileName := fmt.Sprintf("%s-%s%s", appName, version, extension)
-
-	link := fmt.Sprintf("%s/%s/%s", env.GetString("S3_ENDPOINT"), appName, newFileName)
-	// Open the file for reading
-	fileReader, err := file.Open()
-	if err != nil {
-		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open file for reading"})
-		return
-	}
-	s3Key := appName + "/" + newFileName
-
-	// Upload file to S3
-	_, err = s3Client.PutObject(c.Request.Context(), &s3.PutObjectInput{
-		Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
-		Key:    aws.String(s3Key),
-		Body:   fileReader,
-	})
-	if err != nil {
-		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})
-		return
-	}
+	link := utils.UploadToS3(appName, version, file, c, viper.GetViper())
 
 	// Upload app data to MongoDB
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
