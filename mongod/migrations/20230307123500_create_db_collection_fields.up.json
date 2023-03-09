@@ -1,0 +1,30 @@
+
+
+[{
+    "createIndexes": "apps",
+    "indexes": [
+      {
+        "key": {
+          "app_name": 1,
+          "created": -1
+        },
+        "name": "username_sort_by_asc_created",
+        "background": true
+      },
+      {
+        "key": {
+          "version": 1
+        },
+        "name": "version_of_app",
+        "background": true
+      },
+      {
+        "key": {
+          "link": 1
+        },
+        "name": "unique_link_to_app_with_specific_version",
+        "unique": true,
+        "background": true
+      }
+    ]
+  }]
