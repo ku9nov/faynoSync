@@ -25,6 +25,7 @@ type AppHandler interface {
 	DeleteApp(*gin.Context)
 	UploadApp(*gin.Context)
 	HealthCheck(*gin.Context)
+	DownloadLatestVersion(*gin.Context)
 }
 
 type appHandler struct {
@@ -72,6 +73,26 @@ func (ch *appHandler) GetAppByName(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"apps": appList})
+}
+
+func (ch *appHandler) DownloadLatestVersion(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	// Convert string to ObjectID
+	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//request on repository
+	link, err := ch.repository.DownloadLatestVersion(objID, ctx)
+	if err != nil {
+		logrus.Error(err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"linkResult.LinkForDownloadApp": link})
 }
 
 func (ch *appHandler) DeleteApp(c *gin.Context) {

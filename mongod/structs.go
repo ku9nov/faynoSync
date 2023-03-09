@@ -22,6 +22,7 @@ type AppRepository interface {
 	GetAppByName(email string, ctx context.Context) ([]*model.App, error)
 	Delete(id primitive.ObjectID, ctx context.Context) (string, int64, error)
 	Upload(appName, version, appLink string, ctx context.Context) (interface{}, error)
+	DownloadLatestVersion(id primitive.ObjectID, ctx context.Context) (string, error)
 }
 
 type appRepository struct {
@@ -100,6 +101,25 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	cur.Close(ctx)
 
 	return apps, nil
+}
+
+func (c *appRepository) DownloadLatestVersion(id primitive.ObjectID, ctx context.Context) (string, error) {
+
+	collection := c.client.Database(c.config.Database).Collection("apps")
+
+	filter := bson.D{primitive.E{Key: "_id", Value: id}}
+
+	// Retrieve the document before deletion
+	var app *model.App
+	err := collection.FindOne(ctx, filter).Decode(&app)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", fmt.Errorf("no app found with ID %s", id)
+		}
+		return "", fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
+	}
+
+	return app.Link, nil
 }
 
 func (c *appRepository) Delete(id primitive.ObjectID, ctx context.Context) (string, int64, error) {
