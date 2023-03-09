@@ -6,6 +6,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -29,6 +30,17 @@ type DatabaseSetting struct {
 
 type ServerSettings struct {
 	Port string
+}
+
+func IsValidInputAppName(input string) bool {
+	// Only allow letters and numbers, no spaces or special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+	return validName.MatchString(input)
+}
+func IsValidInputVersion(input string) bool {
+	// Only allow letters and numbers, no spaces or special characters
+	validVersion := regexp.MustCompile(`^[0-9.-]+$`)
+	return validVersion.MatchString(input)
 }
 
 func createS3Client() *s3.Client {

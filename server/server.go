@@ -30,7 +30,7 @@ func StartServer(config *viper.Viper, migration, rollback bool) {
 	router.POST("/upload", handler.UploadApp)
 	router.GET("/search", handler.GetAppByName)
 	router.DELETE("/delete", handler.DeleteApp)
-	router.GET("/download", handler.DownloadLatestVersion)
+	router.POST("/checkVersion", handler.FindLatestVersion)
 
 	// get the port from the configuration file
 	port := config.GetString("PORT")

@@ -25,7 +25,7 @@ type AppHandler interface {
 	DeleteApp(*gin.Context)
 	UploadApp(*gin.Context)
 	HealthCheck(*gin.Context)
-	DownloadLatestVersion(*gin.Context)
+	FindLatestVersion(*gin.Context)
 }
 
 type appHandler struct {
@@ -75,26 +75,6 @@ func (ch *appHandler) GetAppByName(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"apps": appList})
 }
 
-func (ch *appHandler) DownloadLatestVersion(c *gin.Context) {
-
-	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
-	defer ctxErr()
-
-	// Convert string to ObjectID
-	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	//request on repository
-	link, err := ch.repository.DownloadLatestVersion(objID, ctx)
-	if err != nil {
-		logrus.Error(err)
-	}
-
-	c.JSON(http.StatusOK, gin.H{"linkResult.LinkForDownloadApp": link})
-}
-
 func (ch *appHandler) DeleteApp(c *gin.Context) {
 
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
@@ -142,6 +122,14 @@ func (ch *appHandler) GetAllApps(c *gin.Context) {
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
+	if !utils.IsValidInputAppName(c.Query("app_name")) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid app_name parameter"})
+		return
+	}
+	if !utils.IsValidInputVersion(c.Query("version")) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version parameter"})
+		return
+	}
 	// Get file from form data
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -151,16 +139,12 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 		return
 	}
 
-	// Extract app name and version from query params
-	appName := c.Query("app_name")
-	version := c.Query("version")
-
-	link := utils.UploadToS3(appName, version, file, c, viper.GetViper())
+	link := utils.UploadToS3(c.Query("app_name"), c.Query("version"), file, c, viper.GetViper())
 
 	// Upload app data to MongoDB
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-	result, err := ch.repository.Upload(appName, version, link, ctx)
+	result, err := ch.repository.Upload(c.Query("app_name"), c.Query("version"), link, ctx)
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload app data"})
@@ -168,4 +152,16 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": result})
+}
+
+func (ch *appHandler) FindLatestVersion(c *gin.Context) {
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	//request on repository
+	latestVersion, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), ctx)
+	if err != nil {
+		logrus.Error(err)
+	}
+	c.JSON(http.StatusOK, gin.H{"versionResult.LatestVersionApp": latestVersion, "linkResult.LinkToLatestApp": linkToLatest})
 }
