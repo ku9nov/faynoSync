@@ -22,7 +22,7 @@ type AppRepository interface {
 	GetAppByName(email string, ctx context.Context) ([]*model.App, error)
 	Delete(id primitive.ObjectID, ctx context.Context) (string, int64, error)
 	Upload(appName, version, appLink string, ctx context.Context) (interface{}, error)
-	CheckLatestVersion(appName, version string, ctx context.Context) (string, string, error)
+	CheckLatestVersion(appName, version string, ctx context.Context) (bool, string, error)
 }
 
 type appRepository struct {
@@ -153,7 +153,7 @@ func (c *appRepository) Upload(appName, version, appLink string, ctx context.Con
 	return uploadResult.InsertedID, nil
 }
 
-func (c *appRepository) CheckLatestVersion(appName, version string, ctx context.Context) (string, string, error) {
+func (c *appRepository) CheckLatestVersion(appName, version string, ctx context.Context) (bool, string, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
@@ -188,8 +188,12 @@ func (c *appRepository) CheckLatestVersion(appName, version string, ctx context.
 		if err != nil {
 			panic(err)
 		}
-		return latestApp.Version, latestApp.Link, nil
+		if latestVersion == version {
+			return false, latestApp.Link, nil
+		} else {
+			return true, latestApp.Link, nil
+		}
 	} else {
-		return "Not found", "Not found", fmt.Errorf("no matching documents found for app_name: %s", appName)
+		return false, "Not found", fmt.Errorf("no matching documents found for app_name: %s", appName)
 	}
 }

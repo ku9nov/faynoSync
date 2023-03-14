@@ -159,9 +159,9 @@ func (ch *appHandler) FindLatestVersion(c *gin.Context) {
 	defer ctxErr()
 
 	//request on repository
-	latestVersion, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), ctx)
+	updateAvailable, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), ctx)
 	if err != nil {
 		logrus.Error(err)
 	}
-	c.JSON(http.StatusOK, gin.H{"versionResult.LatestVersionApp": latestVersion, "linkResult.LinkToLatestApp": linkToLatest})
+	c.JSON(http.StatusOK, gin.H{"update_available": updateAvailable, "update_url": linkToLatest})
 }
