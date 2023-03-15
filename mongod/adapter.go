@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
-func ConnectToDatabase(mongoUrl string, runMigrate, rollback bool) (*mongo.Client, connstring.ConnString) {
+func ConnectToDatabase(mongoUrl string, flags map[string]interface{}) (*mongo.Client, connstring.ConnString) {
 	uriOptions, err := connstring.Parse(mongoUrl)
 	if err != nil {
 		panic(err)
@@ -31,8 +32,17 @@ func ConnectToDatabase(mongoUrl string, runMigrate, rollback bool) (*mongo.Clien
 	}
 
 	fmt.Println("Connected to MongoDB!")
-	if runMigrate {
-		RunMigrations(client, uriOptions.Database, rollback)
+	if flags["migration"].(bool) {
+		RunMigrations(client, uriOptions.Database, flags)
+	}
+	if flags["user_name"].(string) != "" && flags["user_password"].(string) != "" {
+		err = CreateUser(client, uriOptions.Database, flags)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			log.Println("Successfully created admin user with name: ", flags["user_name"].(string))
+			os.Exit(0)
+		}
 	}
 	return client, uriOptions
 }

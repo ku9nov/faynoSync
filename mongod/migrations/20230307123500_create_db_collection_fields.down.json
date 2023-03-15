@@ -1,7 +1,7 @@
 [
     {
       "dropIndexes": "apps",
-      "index": "username_sort_by_asc_created"
+      "index": "app_name_sort_by_asc_created"
     },
     {
       "dropIndexes": "apps",

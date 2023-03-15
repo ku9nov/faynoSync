@@ -9,7 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func RunMigrations(client *mongo.Client, dbName string, rollback bool) {
+func RunMigrations(client *mongo.Client, dbName string, flags map[string]interface{}) {
 	// Create a new MongoDB migration instance
 	sourceDriver, err := (&file.File{}).Open("mongod/migrations/")
 	if err != nil {
@@ -25,16 +25,24 @@ func RunMigrations(client *mongo.Client, dbName string, rollback bool) {
 	if err != nil {
 		panic(err)
 	}
-
-	if rollback {
-		if err := m.Up(); err != nil {
-			panic(err)
+	applied := false
+	if err := m.Up(); err != nil {
+		version, _, _ := m.Version()
+		if version > 0 {
+			applied = true
 		}
-		log.Println("Migrations completed")
-	} else {
+	}
+
+	if flags["rollback"].(bool) {
 		if err := m.Down(); err != nil {
 			panic(err)
 		}
 		log.Println("Migrations rollback completed")
+		return
+	}
+	if !applied {
+		log.Println("Migrations completed")
+	} else {
+		log.Println("Migrations not applied")
 	}
 }

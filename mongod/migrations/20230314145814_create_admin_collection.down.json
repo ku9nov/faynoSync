@@ -1,0 +1,10 @@
+[
+    {
+      "dropIndexes": "admins",
+      "index": "username_sort_by_asc_created"
+    },
+    {
+      "dropIndexes": "admins",
+      "index": "password_of_admin_user"
+    }
+]

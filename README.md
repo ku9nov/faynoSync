@@ -40,10 +40,14 @@ Note: To rollback your migrations run:
 ```
 ./sau --migration --rollback
 ```
+3. Create Administration user:
+```
+./sau --username=admin --password=password
+```
 
-3. Upload your application to S3 and set the version number in Admin Api.
+4. Upload your application to S3 and set the version number in Admin Api.
 
-4. In your client application, make a POST request to the auto updater service API, passing the current version number as a query parameter:
+5. In your client application, make a POST request to the auto updater service API, passing the current version number as a query parameter:
 ```
 http://localhost:8080/checkVersion?app_name=myapp&version=4.1.5
 ```
@@ -59,7 +63,7 @@ The auto updater service will return a JSON response with the following structur
 
 If an update is available, the update_available field will be true, and the update_url field will contain a link to the updated application.
 
-5. In your client application, show an alert to the user indicating that an update is available and provide a link to download the updated application.
+6. In your client application, show an alert to the user indicating that an update is available and provide a link to download the updated application.
 
 ## License
 This application is licensed under the Apache license. See the LICENSE file for more details

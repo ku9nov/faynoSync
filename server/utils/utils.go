@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"mime/multipart"
@@ -16,6 +17,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Configuration struct {
@@ -111,4 +115,48 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 	}
 
 	fmt.Printf("Object '%s' deleted from bucket '%s'\n", objectKey, env.GetString("S3_BUCKET_NAME"))
+}
+
+func AuthMiddleware(db *mongo.Database) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
+			return
+		}
+
+		// extract the username and password from the authorization header
+		credentials, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHeader, "Basic "))
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header"})
+			return
+		}
+		pair := strings.SplitN(string(credentials), ":", 2)
+		if len(pair) != 2 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header"})
+			return
+		}
+		username := pair[0]
+		password := pair[1]
+
+		// check the user credentials against the admins collection in MongoDB
+		admins := db.Collection("admins")
+		var result bson.M
+		err = admins.FindOne(c.Request.Context(), bson.M{"username": username}).Decode(&result)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+			return
+		}
+
+		// compare the hashed passwords
+		hashedPassword := result["password"].(string)
+		if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+			return
+		}
+
+		// set the authenticated user in the request context for later use
+		c.Set("username", username)
+		c.Next()
+	}
 }

@@ -9,6 +9,8 @@ import (
 
 var migration bool
 var rollback bool
+var userName string
+var userPassword string
 
 func main() {
 	// set the file name of the configuration file
@@ -20,12 +22,20 @@ func main() {
 	if err := viper.ReadInConfig(); err != nil {
 		panic(err)
 	}
-	// mongoUrl := viper.GetString("MONGODB_URL")
 	flag.BoolVar(&migration, "migration", false, "Set true to run migrations.")
 	flag.BoolVar(&rollback, "rollback", false, "Set true to rollback migrations.")
+	flag.StringVar(&userName, "username", "", "Set admin username.")
+	flag.StringVar(&userPassword, "password", "", "Set admin password.")
 	flag.Parse()
 
+	flagMap := map[string]interface{}{
+		"migration":     migration,
+		"rollback":      rollback,
+		"user_name":     userName,
+		"user_password": userPassword,
+	}
+
 	// Pass the config to another function
-	server.StartServer(viper.GetViper(), migration, rollback)
+	server.StartServer(viper.GetViper(), flagMap)
 
 }
