@@ -17,11 +17,12 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	client, configDB := db.ConnectToDatabase(mongoUrl, flags)
 
 	db := db.NewAppRepository(&configDB, client)
-	handler := handler.NewAppHandler(client, db)
 
-	// Add authentication middleware to required paths
 	mongoDatabase := client.Database(configDB.Database)
 
+	handler := handler.NewAppHandler(client, db, mongoDatabase)
+
+	// Add authentication middleware to required paths
 	authMiddleware := utils.AuthMiddleware(mongoDatabase)
 
 	router.GET("/health", handler.HealthCheck)

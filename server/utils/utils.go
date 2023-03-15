@@ -2,7 +2,11 @@ package utils
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"mime/multipart"
@@ -124,16 +128,17 @@ func AuthMiddleware(db *mongo.Database) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
 			return
 		}
-
-		// extract the username and password from the authorization header
-		credentials, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHeader, "Basic "))
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		bytes, err := DecryptUserCredentials(token)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
-		pair := strings.SplitN(string(credentials), ":", 2)
+
+		// extract the username and password from the decrypted bytes
+		pair := strings.SplitN(string(bytes), ":", 2)
 		if len(pair) != 2 {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
 		username := pair[0]
@@ -159,4 +164,42 @@ func AuthMiddleware(db *mongo.Database) gin.HandlerFunc {
 		c.Set("username", username)
 		c.Next()
 	}
+}
+
+func EncryptUserCredentials(data []byte) (string, error) {
+	block, err := aes.NewCipher([]byte(viper.GetViper().GetString("SYSTEM_KEY")))
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, data, nil)
+	return base64.URLEncoding.EncodeToString(ciphertext), nil
+}
+
+func DecryptUserCredentials(token string) ([]byte, error) {
+	ciphertext, err := base64.URLEncoding.DecodeString(token)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher([]byte(viper.GetViper().GetString("SYSTEM_KEY")))
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	if len(ciphertext) < gcm.NonceSize() {
+		return nil, errors.New("invalid ciphertext")
+	}
+	nonce := ciphertext[:gcm.NonceSize()]
+	ciphertext = ciphertext[gcm.NonceSize():]
+	return gcm.Open(nil, nonce, ciphertext, nil)
 }

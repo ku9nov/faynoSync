@@ -26,7 +26,7 @@ curl -X POST -H "Content-Type: application/json" -d '{"username": "admin", "pass
 Responce:
 
 ```
-{"token":"YWRtaW46cGFzc3dvcmQ="}
+{"token":"Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"}
 ```
 
 ### Get All Apps
@@ -36,11 +36,11 @@ Retrieve a list of all apps.
 `GET /`
 
 ###### Headers
-**Authorization**: Basic authorization header with encoded username and password.
+**Authorization**: Authorization header with encoded username and password.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/ -H "Authorization: Basic YWRtaW46cGFzc3dvcmQ="
+curl -X GET http://localhost:9000/ -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 ```
 
 ###### Responce:
@@ -91,7 +91,7 @@ Upload a new version of an app.
 `POST /upload?app_name=<app_name>&version=<version>`
 
 ###### Headers
-**Authorization**: Basic authorization header with encoded username and password.
+**Authorization**: Authorization header with encoded username and password.
 
 ###### Query Parameters
 **app_name**: Name of the app.
@@ -104,7 +104,7 @@ Upload a new version of an app.
 
 ###### Request:
 ```
-curl -X POST -F "file=@/path_to_fileU/myapp.tar.gz" http://localhost:9000/upload\?\app_name=\myapp\&version\=4.2.3 -H "Authorization: Basic YWRtaW46cGFzc3dvcmQ="
+curl -X POST -F "file=@/path_to_file/myapp.tar.gz" http://localhost:9000/upload\?\app_name=\myapp\&version\=4.2.3 -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 ```
 
 ###### Responce:
@@ -145,14 +145,14 @@ Search for all versions of an app by name.
 `GET /search?app_name=<app_name>`
 
 ###### Headers
-**Authorization**: Basic authorization header with encoded username and password.
+**Authorization**: Authorization header with encoded username and password.
 
 ###### Query Parameters
 **app_name**: Name of the app.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Basic YWRtaW46cGFzc3dvcmQ="
+curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 
 ```
 
@@ -183,14 +183,14 @@ This endpoint allows you to delete a specific version of an app.
 `DELETE /delete?id=<id>`
 
 ###### Headers
-**Authorization**: Basic authorization header with encoded username and password.
+**Authorization**: Authorization header with encoded username and password.
 
 ###### Query Parameters
 **id**: The unique identifier of the app version.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/delete\?\id\=\640a0edae692cadeb0e5bc47 -H "Authorization: Basic YWRtaW46cGFzc3dvcmQ="
+curl -X DELETE http://localhost:9000/delete\?\id\=\640a0edae692cadeb0e5bc47 -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 
 ```
 
@@ -207,14 +207,14 @@ curl -X DELETE http://localhost:9000/delete\?\id\=\640a0edae692cadeb0e5bc47 -H "
 `GET /search?app_name=<app_name>`
 
 ###### Headers
-**Authorization**: Basic authorization header with encoded username and password.
+**Authorization**: Authorization header with encoded username and password.
 
 ###### Query Parameters
 **app_name**: Name of the app.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Basic YWRtaW46cGFzc3dvcmQ="
+curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 
 ```
 
