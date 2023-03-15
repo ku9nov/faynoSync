@@ -26,6 +26,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	router.GET("/health", handler.HealthCheck)
 	router.POST("/checkVersion", handler.FindLatestVersion)
+	router.POST("/login", handler.Login)
 
 	router.Use(authMiddleware)
 

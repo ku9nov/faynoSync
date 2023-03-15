@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,8 +16,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type AppHandler interface {
@@ -26,6 +29,7 @@ type AppHandler interface {
 	UploadApp(*gin.Context)
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
+	Login(*gin.Context)
 }
 
 type appHandler struct {
@@ -164,4 +168,39 @@ func (ch *appHandler) FindLatestVersion(c *gin.Context) {
 		logrus.Error(err)
 	}
 	c.JSON(http.StatusOK, gin.H{"update_available": updateAvailable, "update_url": linkToLatest})
+}
+
+func (ch *appHandler) Login(c *gin.Context) {
+	var credentials struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	if err := c.BindJSON(&credentials); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	// check the user credentials against the admins collection in MongoDB
+	admins := ch.client.Database("cb_sau_db").Collection("admins")
+	var result bson.M
+	err := admins.FindOne(ctx, bson.M{"username": credentials.Username}).Decode(&result)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+		return
+	}
+
+	// compare the hashed passwords
+	hashedPassword := result["password"].(string)
+	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(credentials.Password)); err != nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+		return
+	}
+
+	// create and return the encoded string
+	encoded := base64.StdEncoding.EncodeToString([]byte(credentials.Username + ":" + credentials.Password))
+	c.JSON(http.StatusOK, gin.H{"token": encoded})
 }
