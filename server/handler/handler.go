@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -35,10 +34,11 @@ type AppHandler interface {
 type appHandler struct {
 	client     *mongo.Client
 	repository db.AppRepository
+	database   *mongo.Database
 }
 
-func NewAppHandler(client *mongo.Client, repo db.AppRepository) AppHandler {
-	return &appHandler{client: client, repository: repo}
+func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Database) AppHandler {
+	return &appHandler{client: client, repository: repo, database: db}
 }
 
 func (ch *appHandler) HealthCheck(c *gin.Context) {
@@ -185,7 +185,7 @@ func (ch *appHandler) Login(c *gin.Context) {
 	defer ctxErr()
 
 	// check the user credentials against the admins collection in MongoDB
-	admins := ch.client.Database("cb_sau_db").Collection("admins")
+	admins := ch.database.Collection("admins")
 	var result bson.M
 	err := admins.FindOne(ctx, bson.M{"username": credentials.Username}).Decode(&result)
 	if err != nil {
@@ -199,8 +199,12 @@ func (ch *appHandler) Login(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
+	tokenBytes, err := utils.EncryptUserCredentials([]byte(credentials.Username + ":" + credentials.Password))
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to create token"})
+		return
+	}
+	token := string(tokenBytes)
 
-	// create and return the encoded string
-	encoded := base64.StdEncoding.EncodeToString([]byte(credentials.Username + ":" + credentials.Password))
-	c.JSON(http.StatusOK, gin.H{"token": encoded})
+	c.JSON(http.StatusOK, gin.H{"token": token})
 }
