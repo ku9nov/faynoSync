@@ -128,8 +128,7 @@ func AuthMiddleware(db *mongo.Database) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
 			return
 		}
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		bytes, err := DecryptUserCredentials(token)
+		bytes, err := DecryptUserCredentials(authHeader)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
