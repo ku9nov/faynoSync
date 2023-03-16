@@ -1,0 +1,14 @@
+[
+    {
+      "dropIndexes": "apps",
+      "index": "app_name_sort_by_asc_created"
+    },
+    {
+      "dropIndexes": "apps",
+      "index": "version_of_app"
+    },
+    {
+      "dropIndexes": "apps",
+      "index": "unique_link_to_app_with_specific_version"
+    }
+]
