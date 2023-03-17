@@ -21,7 +21,7 @@ type AppRepository interface {
 	Get(ctx context.Context) ([]*model.App, error)
 	GetAppByName(email string, ctx context.Context) ([]*model.App, error)
 	Delete(id primitive.ObjectID, ctx context.Context) (string, int64, error)
-	Upload(appName, version, appLink string, ctx context.Context) (interface{}, error)
+	Upload(ctxQuery map[string]interface{}, appLink string, ctx context.Context) (interface{}, error)
 	CheckLatestVersion(appName, version string, ctx context.Context) (bool, string, error)
 	CreateChannel(channelName string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context) ([]*model.Channel, error)
@@ -165,14 +165,15 @@ func (c *appRepository) Delete(id primitive.ObjectID, ctx context.Context) (stri
 	return app.Link, deleteResult.DeletedCount, nil
 }
 
-func (c *appRepository) Upload(appName, version, appLink string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink string, ctx context.Context) (interface{}, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
 	filter := bson.D{
-		{Key: "app_name", Value: appName},
-		{Key: "version", Value: version},
+		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
+		{Key: "version", Value: ctxQuery["version"].(string)},
 		{Key: "link", Value: appLink},
+		{Key: "channel", Value: ctxQuery["channel_name"].(string)},
 		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
 	}
 

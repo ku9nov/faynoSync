@@ -160,12 +160,28 @@ func (ch *appHandler) CreateChannel(c *gin.Context) {
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
-	if !utils.IsValidInputAppName(c.Query("app_name")) {
+	ctxQueryMap := map[string]interface{}{
+		"app_name":     c.Query("app_name"),
+		"version":      c.Query("version"),
+		"channel_name": c.Query("channel_name"),
+	}
+	if !utils.IsValidAppName(ctxQueryMap["app_name"].(string)) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid app_name parameter"})
 		return
 	}
-	if !utils.IsValidInputVersion(c.Query("version")) {
+	if !utils.IsValidVersion(ctxQueryMap["version"].(string)) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version parameter"})
+		return
+	}
+	if !utils.IsValidChannelName(ctxQueryMap["channel_name"].(string)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid channel_name parameter"})
+		return
+	}
+	err := utils.CheckChannels(ctxQueryMap["channel_name"].(string), ch.database, c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
 	// Get file from form data
@@ -177,12 +193,12 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 		return
 	}
 
-	link := utils.UploadToS3(c.Query("app_name"), c.Query("version"), file, c, viper.GetViper())
+	link := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper())
 
 	// Upload app data to MongoDB
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-	result, err := ch.repository.Upload(c.Query("app_name"), c.Query("version"), link, ctx)
+	result, err := ch.repository.Upload(ctxQueryMap, link, ctx)
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload app data"})
