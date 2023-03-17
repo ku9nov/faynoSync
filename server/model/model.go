@@ -9,3 +9,9 @@ type App struct {
 	Link       string             `bson:"link"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
+
+type Channel struct {
+	ID          primitive.ObjectID `bson:"_id"`
+	ChannelName string             `bson:"channel_name"`
+	Updated_at  primitive.DateTime `bson:"updated_at"`
+}

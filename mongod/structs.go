@@ -23,6 +23,8 @@ type AppRepository interface {
 	Delete(id primitive.ObjectID, ctx context.Context) (string, int64, error)
 	Upload(appName, version, appLink string, ctx context.Context) (interface{}, error)
 	CheckLatestVersion(appName, version string, ctx context.Context) (bool, string, error)
+	CreateChannel(channelName string, ctx context.Context) (interface{}, error)
+	ListChannels(ctx context.Context) ([]*model.Channel, error)
 }
 
 type appRepository struct {
@@ -66,6 +68,40 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 	cur.Close(ctx)
 
 	return apps, nil
+}
+
+func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, error) {
+
+	findOptions := options.Find()
+	findOptions.SetLimit(100)
+
+	var channels []*model.Channel
+
+	collection := c.client.Database(c.config.Database).Collection("channels")
+
+	// Passing bson.D{{}} as the filter matches all documents in the collection
+	cur, err := collection.Find(ctx, bson.D{{}}, findOptions)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	// Finding multiple documents returns a cursor
+	// Iterating through the cursor allows us to decode documents one at a time
+	for cur.Next(context.TODO()) {
+		// create a value into which the single document can be decoded
+		var elem model.Channel
+		if err := cur.Decode(&elem); err != nil {
+			log.Fatal(err)
+			return nil, err
+		}
+
+		channels = append(channels, &elem)
+	}
+
+	cur.Close(ctx)
+
+	return channels, nil
 }
 
 func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.App, error) {
@@ -146,6 +182,28 @@ func (c *appRepository) Upload(appName, version, appLink string, ctx context.Con
 		for _, writeErr := range mongoErr.WriteErrors {
 			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "unique_link_to_app_with_specific_version") {
 				return "app with this link already exists", errors.New("app with this link already exists")
+			}
+		}
+	}
+
+	return uploadResult.InsertedID, nil
+}
+
+func (c *appRepository) CreateChannel(channelName string, ctx context.Context) (interface{}, error) {
+
+	collection := c.client.Database(c.config.Database).Collection("channels")
+
+	filter := bson.D{
+		{Key: "channel_name", Value: channelName},
+		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
+	}
+
+	uploadResult, err := collection.InsertOne(ctx, filter)
+	mongoErr, ok := err.(mongo.WriteException)
+	if ok {
+		for _, writeErr := range mongoErr.WriteErrors {
+			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "channel_name_sort_by_asc_created") {
+				return "channel with this name already exists", errors.New("channel with this name already exists")
 			}
 		}
 	}

@@ -29,6 +29,8 @@ type AppHandler interface {
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
 	Login(*gin.Context)
+	CreateChannel(*gin.Context)
+	ListChannels(*gin.Context)
 }
 
 type appHandler struct {
@@ -123,6 +125,38 @@ func (ch *appHandler) GetAllApps(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"apps": &appList})
+}
+
+func (ch *appHandler) ListChannels(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	var channelsList []*model.Channel
+
+	//request on repository
+	if result, err := ch.repository.ListChannels(ctx); err != nil {
+		logrus.Error(err)
+	} else {
+		channelsList = result
+	}
+
+	c.JSON(http.StatusOK, gin.H{"channels": &channelsList})
+}
+
+func (ch *appHandler) CreateChannel(c *gin.Context) {
+
+	// Upload app data to MongoDB
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+	result, err := ch.repository.CreateChannel(c.Query("channel_name"), ctx)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload channel data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"createChannelResult.Created": result})
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
