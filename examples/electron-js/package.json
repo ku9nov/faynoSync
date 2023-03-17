@@ -1,0 +1,23 @@
+{
+  "name": "myapp",
+  "version": "1.0.0",
+  "description": "Hello world app for testing SAU",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "Serhii Kuyanov",
+  "license": "ISC",
+  "dependencies": {
+    "node-fetch": "2.6.9"
+  },
+  "devDependencies": {
+    "electron": "^23.1.4"
+  },
+  "engines": {
+    "npm": ">=8.19.3",
+    "node": ">=18.13.0"
+  }
+
+}
