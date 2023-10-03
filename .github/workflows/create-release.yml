@@ -1,0 +1,44 @@
+name: Create Release on PR
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  create-release:
+    if: |
+      contains(github.event.pull_request.title, 'release') == true &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        
+      - name: Extract Version
+        id: extract-version
+        run: |
+          # Use grep to find the first occurrence of the version number matching "## v" pattern
+          version=$(grep -m 1 -oP '## v\d+\.\d+\.\d+' CHANGELOG.md | cut -d ' ' -f 2)
+          echo "version=$version" >> $GITHUB_ENV
+
+      - name: Extract Changelog
+        id: extract-changelog
+        run: |
+          # Extract the content between the last two version headers
+          changelog=$(awk '/^## v[0-9]+\.[0-9]+\.[0-9]+/{if (!version) {version=$0; next}} /^## v[0-9]+\.[0-9]+\.[0-9]+/{exit} {if (version) description = description ORS $0} END {if (version) print description}' CHANGELOG.md | sed -e '/^## v[0-9]+\.[0-9]+\.[0-9]+/d; s/^# //' > changelog.txt)
+          echo "changelog_file=changelog.txt" >> $GITHUB_ENV
+          
+      - name: Create Release
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.version }}
+          release_name: ${{ env.version }}
+          body_path: ${{ env.changelog_file }}
+          draft: false
+          prerelease: false
