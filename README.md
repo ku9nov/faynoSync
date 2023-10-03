@@ -1,5 +1,8 @@
 # SAU
 
+![2023-03-17_12-36](https://user-images.githubusercontent.com/69673517/225881501-b8aab72a-31e7-45ec-9340-4cca2a7893e9.png)
+
+
 This application is a simple auto updater service written in Golang. It allows you to upload your application to S3 and set the version number. The client application can then check the version number against the auto updater service API. If the auto updater service has a newer version, it will return a link to the updated service, and the client application will show an alert.
 
 ## Installation
