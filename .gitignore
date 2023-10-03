@@ -17,3 +17,6 @@
 
 *.pyc
 */*/node_modules
+
+backend.tf
+.terraform*
