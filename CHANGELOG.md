@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0
+## v1.0.0
 
 ### Important Notes
 
@@ -32,7 +32,7 @@
 
 - Added `docker-compose` file.
 
-## 0.0.1 (Example)
+## v0.0.1 (Example)
 
 ### Important Notes
 
