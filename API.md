@@ -1,4 +1,7 @@
 # API Reference
+
+You can find `Postman` collection [here](examples/SAU.postman_collection.json).
+
 ### Check Health Status
 Check the health status of the application.
 
@@ -40,7 +43,7 @@ Retrieve a list of all apps.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/ -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET http://localhost:9000/ -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 ```
 
 ###### Responce:
@@ -104,7 +107,7 @@ Upload a new version of an app.
 
 ###### Request:
 ```
-curl -X POST -F "file=@/path_to_file/myapp.tar.gz" http://localhost:9000/upload\?\app_name=\myapp\&version\=4.2.3 -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X POST -F "file=@/path_to_file/myapp.tar.gz" http://localhost:9000/upload\?\app_name=\myapp\&version\=4.2.3 -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 ```
 
 ###### Responce:
@@ -152,7 +155,7 @@ Search for all versions of an app by name.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 
 ```
 
@@ -190,7 +193,7 @@ This endpoint allows you to delete a specific version of an app.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/delete\?\id\=\640a0edae692cadeb0e5bc47 -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X DELETE http://localhost:9000/delete\?\id\=\640a0edae692cadeb0e5bc47 -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 
 ```
 
@@ -214,7 +217,7 @@ curl -X DELETE http://localhost:9000/delete\?\id\=\640a0edae692cadeb0e5bc47 -H "
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 
 ```
 
