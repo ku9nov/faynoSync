@@ -1,7 +1,7 @@
 const { app, BrowserWindow, dialog } = require('electron');
 const fetch = require('node-fetch');
 const os = require('os');
-const { version, app_name } = require('./config.js');
+const { version, app_name, channel } = require('./config.js');
 const fs = require('fs');
 
 function getLinuxDistributionFamily() {
@@ -24,10 +24,17 @@ function getLinuxDistributionFamily() {
 }
 
 function checkUpdates() {
-  const url = `http://localhost:9000/checkVersion?app_name=${app_name}&version=${version}`;
+  let url = `http://localhost:9000/checkVersion?app_name=${app_name}&version=${version}`;
+
+  // Check if the 'channel' variable is set
+  if (channel !== undefined) {
+      url += `&channel_name=${channel}`;
+  }
+  console.log(url)
   fetch(url, { method: 'POST' })
     .then(res => res.json())
     .then(data => {
+      console.log(data);
       if (data.update_available) {
         const message = `You have an older version. Would you like to update your app?`;
         dialog.showMessageBox({

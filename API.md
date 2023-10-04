@@ -34,6 +34,8 @@ Responce:
 
 ### Create channel (Optional)
 
+:warning: After first creating, field `channel_name` is required.
+
 Create deployment channel.
 
 `POST /createChannel\?channel_name\=<channel_name>`

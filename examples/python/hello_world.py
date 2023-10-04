@@ -4,19 +4,26 @@ import config
 import requests
 
 class HelloWorldApp:
-    def __init__(self, master, app_name, version, os_name):
+    def __init__(self, master, app_name, version, channel, os_name):
         self.master = master
         self.app_name = app_name
         self.version = version
+        self.channel = channel
         self.os_name = os_name
         master.title(f"{self.app_name} - v{self.version} ({self.os_name})")
 
         self.label = tk.Label(master, text="Hello, world!")
         self.label.pack()
 
+        # Check if the 'channel' variable is set
+        if hasattr(self, 'channel'):
+            url = f"http://localhost:9000/checkVersion?app_name={self.app_name}&version={self.version}&channel_name={self.channel}"
+        else:
+            url = f"http://localhost:9000/checkVersion?app_name={self.app_name}&version={self.version}"
+
         # Make POST request to check for updates
-        url = f"http://localhost:9000/checkVersion?app_name={self.app_name}&version={self.version}"
         response = requests.post(url)
+        print(response.json())
 
         # Parse response and show update message if needed
         try:
@@ -32,5 +39,5 @@ class HelloWorldApp:
 if __name__ == "__main__":
     root = tk.Tk()
     os_name = config.get_os()
-    app = HelloWorldApp(root, app_name=config.app_name, version=config.version, os_name=os_name)
+    app = HelloWorldApp(root, app_name=config.app_name, version=config.version, channel=config.channel, os_name=os_name)
     root.mainloop()

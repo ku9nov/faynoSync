@@ -133,7 +133,7 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}",
+					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}&channel_name",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -150,6 +150,10 @@
 						{
 							"key": "version",
 							"value": "{{version}}"
+						},
+						{
+							"key": "channel_name",
+							"value": null
 						}
 					]
 				}
@@ -162,7 +166,7 @@
 				"method": "POST",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}",
+					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel_name",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -179,6 +183,10 @@
 						{
 							"key": "version",
 							"value": "{{version}}"
+						},
+						{
+							"key": "channel_name",
+							"value": null
 						}
 					]
 				}

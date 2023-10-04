@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -42,6 +43,31 @@ type appHandler struct {
 
 func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Database) AppHandler {
 	return &appHandler{client: client, repository: repo, database: db}
+}
+
+func (ch *appHandler) validateParams(c *gin.Context) (map[string]interface{}, error) {
+	ctxQueryMap := map[string]interface{}{
+		"app_name":     c.Query("app_name"),
+		"version":      c.Query("version"),
+		"channel_name": c.Query("channel_name"),
+	}
+
+	if !utils.IsValidAppName(ctxQueryMap["app_name"].(string)) {
+		return nil, errors.New("Invalid app_name parameter")
+	}
+	if !utils.IsValidVersion(ctxQueryMap["version"].(string)) {
+		return nil, errors.New("Invalid version parameter")
+	}
+	if !utils.IsValidChannelName(ctxQueryMap["channel_name"].(string)) {
+		return nil, errors.New("Invalid channel_name parameter")
+	}
+
+	err := utils.CheckChannels(ctxQueryMap["channel_name"].(string), ch.database, c)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctxQueryMap, nil
 }
 
 func (ch *appHandler) HealthCheck(c *gin.Context) {
@@ -180,30 +206,12 @@ func (ch *appHandler) CreateChannel(c *gin.Context) {
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
-	ctxQueryMap := map[string]interface{}{
-		"app_name":     c.Query("app_name"),
-		"version":      c.Query("version"),
-		"channel_name": c.Query("channel_name"),
-	}
-	if !utils.IsValidAppName(ctxQueryMap["app_name"].(string)) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid app_name parameter"})
-		return
-	}
-	if !utils.IsValidVersion(ctxQueryMap["version"].(string)) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version parameter"})
-		return
-	}
-	if !utils.IsValidChannelName(ctxQueryMap["channel_name"].(string)) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid channel_name parameter"})
-		return
-	}
-	err := utils.CheckChannels(ctxQueryMap["channel_name"].(string), ch.database, c)
+	ctxQueryMap, err := ch.validateParams(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
 	// Get file from form data
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -221,7 +229,7 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 	result, err := ch.repository.Upload(ctxQueryMap, link, ctx)
 	if err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload app data"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result})
 		return
 	}
 
@@ -229,11 +237,17 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 }
 
 func (ch *appHandler) FindLatestVersion(c *gin.Context) {
+	_, err := ch.validateParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
 	//request on repository
-	updateAvailable, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), ctx)
+	updateAvailable, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), c.Query("channel_name"), ctx)
 	if err != nil {
 		logrus.Error(err)
 	}

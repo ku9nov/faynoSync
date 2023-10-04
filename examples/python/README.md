@@ -11,8 +11,13 @@ For example, if you're using Ubuntu or Debian Linux, you can use the following c
 ```
 sudo apt-get install python3-tk
 ```
+**MacOS**
+```
+brew install python-tk
+pip3 install requests distro
+```
 
-If you're using Windows or macOS, tkinter should be included with your Python installation.
+If you're using Windows, tkinter should be included with your Python installation.
 
 ### Running the Application
 To run the "Hello, world!" application, follow these steps:
@@ -21,12 +26,12 @@ Download or clone the repository to your computer.
 
 Open a terminal or command prompt and navigate to the directory where the application is located.
 
-Change your `App name` and `version` in `config.py` to real values excisting in `SAU`.
+Change your `App name`, `channel` if channels exist, and `version` in `config.py` to real values existing in SAU.
 
 Type the following command to run the application:
 
 ```
-python hello_world.py
+python3 hello_world.py
 ```
 
 The application window should appear with the message "Hello, world!" displayed in it and updating window if your version isn't latest.

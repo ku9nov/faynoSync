@@ -23,7 +23,7 @@ type AppRepository interface {
 	DeleteApp(id primitive.ObjectID, ctx context.Context) (string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink string, ctx context.Context) (interface{}, error)
-	CheckLatestVersion(appName, version string, ctx context.Context) (bool, string, error)
+	CheckLatestVersion(appName, version, channel string, ctx context.Context) (bool, string, error)
 	CreateChannel(channelName string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context) ([]*model.Channel, error)
 }
@@ -195,7 +195,13 @@ func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink string, ctx context.Context) (interface{}, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
+	// Check if a document with the same "app_name" and "version" already exists
+	existingDoc := collection.FindOne(ctx, bson.D{{Key: "app_name", Value: ctxQuery["app_name"].(string)}, {Key: "version", Value: ctxQuery["version"].(string)}})
 
+	if existingDoc.Err() == nil {
+		// A document with the same "app_name" and "version" combination already exists.
+		return "app with this name and version already exists", errors.New("app with this name and version already exists")
+	}
 	filter := bson.D{
 		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
 		{Key: "version", Value: ctxQuery["version"].(string)},
@@ -239,43 +245,49 @@ func (c *appRepository) CreateChannel(channelName string, ctx context.Context) (
 	return uploadResult.InsertedID, nil
 }
 
-func (c *appRepository) CheckLatestVersion(appName, version string, ctx context.Context) (bool, string, error) {
-
+func (c *appRepository) CheckLatestVersion(appName, version, channel string, ctx context.Context) (bool, string, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
-	// Find the latest version of the given app_name
+	// Define the filter based on appName and optional channel
 	filter := bson.M{"app_name": appName}
-	cursor, err := collection.Find(ctx, filter, options.Find().SetSort(bson.M{"version": -1}))
+	if channel != "" {
+		filter["channel"] = channel
+	}
+
+	// Create an aggregation pipeline to sort by version and updated_at
+	pipeline := []bson.M{
+		{"$match": filter},
+		{"$sort": bson.M{"version": -1}},
+		{"$limit": 1},
+	}
+
+	// Execute the aggregation pipeline
+	cursor, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		panic(err)
+		return false, "", err
 	}
 	defer cursor.Close(ctx)
 
-	var latestVersion string
-	for cursor.Next(ctx) {
-		var app *model.App
-		err := cursor.Decode(&app)
-		if err != nil {
-			panic(err)
-		}
-		if latestVersion == "" {
-			// First version found, so set it as the latest version
-			latestVersion = app.Version
-		}
+	// Reset the cursor to its original position
+	cursor.Close(ctx)
+	cursor, err = collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return false, "", err
 	}
+	defer cursor.Close(ctx)
 
-	// No exact match found, so return the latest version of the app
-	if latestVersion != "" {
-		// Retrieve the latest document for the given app_name and latest version
-		filter = bson.M{"app_name": appName, "version": latestVersion}
-		options := options.FindOne().SetSort(bson.M{"updated_at": -1})
-		var latestApp *model.App
-		err := collection.FindOne(ctx, filter, options).Decode(&latestApp)
+	// Decode the result
+	var latestApp *model.App
+	if cursor.Next(ctx) {
+		err := cursor.Decode(&latestApp)
 		if err != nil {
-			panic(err)
+			return false, "", err
 		}
-		if latestVersion == version {
+
+		if latestApp.Version == version {
 			return false, latestApp.Link, nil
+		} else if latestApp.Version < version {
+			return false, "Not found", fmt.Errorf("requested version %s is newest than the latest version available", version)
 		} else {
 			return true, latestApp.Link, nil
 		}
