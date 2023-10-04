@@ -1,0 +1,14 @@
+[{
+    "createIndexes": "channels",
+    "indexes": [
+      {
+        "key": {
+          "channel_name": 1,
+          "created": -1
+        },
+        "name": "channel_name_sort_by_asc_created",
+        "unique": true,
+        "background": true
+      }
+    ]
+}]

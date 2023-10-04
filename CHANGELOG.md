@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.0.1
+
+### Important Notes
+
+- **Important**: After first creating channel, field `channel_name` is required.
+
+### Features
+
+- :tada: Implemented a new feature
+    - Creating channels
+    - Removing channels
+    - List channels
+
 ## v1.0.0
 
 ### Important Notes

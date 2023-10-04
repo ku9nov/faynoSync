@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -25,10 +26,13 @@ type AppHandler interface {
 	GetAllApps(*gin.Context)
 	GetAppByName(*gin.Context)
 	DeleteApp(*gin.Context)
+	DeleteChannel(*gin.Context)
 	UploadApp(*gin.Context)
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
 	Login(*gin.Context)
+	CreateChannel(*gin.Context)
+	ListChannels(*gin.Context)
 }
 
 type appHandler struct {
@@ -39,6 +43,31 @@ type appHandler struct {
 
 func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Database) AppHandler {
 	return &appHandler{client: client, repository: repo, database: db}
+}
+
+func (ch *appHandler) validateParams(c *gin.Context) (map[string]interface{}, error) {
+	ctxQueryMap := map[string]interface{}{
+		"app_name":     c.Query("app_name"),
+		"version":      c.Query("version"),
+		"channel_name": c.Query("channel_name"),
+	}
+
+	if !utils.IsValidAppName(ctxQueryMap["app_name"].(string)) {
+		return nil, errors.New("Invalid app_name parameter")
+	}
+	if !utils.IsValidVersion(ctxQueryMap["version"].(string)) {
+		return nil, errors.New("Invalid version parameter")
+	}
+	if !utils.IsValidChannelName(ctxQueryMap["channel_name"].(string)) {
+		return nil, errors.New("Invalid channel_name parameter")
+	}
+
+	err := utils.CheckChannels(ctxQueryMap["channel_name"].(string), ch.database, c)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctxQueryMap, nil
 }
 
 func (ch *appHandler) HealthCheck(c *gin.Context) {
@@ -91,7 +120,7 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 	}
 
 	//request on repository
-	link, result, err := ch.repository.Delete(objID, ctx)
+	link, result, err := ch.repository.DeleteApp(objID, ctx)
 	if err != nil {
 		logrus.Error(err)
 	}
@@ -105,7 +134,26 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 	subLink := link[index:]
 
 	utils.DeleteFromS3(subLink, c, viper.GetViper())
-	c.JSON(http.StatusOK, gin.H{"deleteResult.DeletedCount": result})
+	c.JSON(http.StatusOK, gin.H{"deleteAppResult.DeletedCount": result})
+}
+
+func (ch *appHandler) DeleteChannel(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	// Convert string to ObjectID
+	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//request on repository
+	result, err := ch.repository.DeleteChannel(objID, ctx)
+	if err != nil {
+		logrus.Error(err)
+	}
+	c.JSON(http.StatusOK, gin.H{"deleteChannelResult.DeletedCount": result})
 }
 
 func (ch *appHandler) GetAllApps(c *gin.Context) {
@@ -125,15 +173,45 @@ func (ch *appHandler) GetAllApps(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"apps": &appList})
 }
 
+func (ch *appHandler) ListChannels(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	var channelsList []*model.Channel
+
+	//request on repository
+	if result, err := ch.repository.ListChannels(ctx); err != nil {
+		logrus.Error(err)
+	} else {
+		channelsList = result
+	}
+
+	c.JSON(http.StatusOK, gin.H{"channels": &channelsList})
+}
+
+func (ch *appHandler) CreateChannel(c *gin.Context) {
+
+	// Upload app data to MongoDB
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+	result, err := ch.repository.CreateChannel(c.Query("channel_name"), ctx)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload channel data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"createChannelResult.Created": result})
+}
+
 func (ch *appHandler) UploadApp(c *gin.Context) {
-	if !utils.IsValidInputAppName(c.Query("app_name")) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid app_name parameter"})
+	ctxQueryMap, err := ch.validateParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if !utils.IsValidInputVersion(c.Query("version")) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version parameter"})
-		return
-	}
+
 	// Get file from form data
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -143,15 +221,15 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 		return
 	}
 
-	link := utils.UploadToS3(c.Query("app_name"), c.Query("version"), file, c, viper.GetViper())
+	link := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper())
 
 	// Upload app data to MongoDB
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-	result, err := ch.repository.Upload(c.Query("app_name"), c.Query("version"), link, ctx)
+	result, err := ch.repository.Upload(ctxQueryMap, link, ctx)
 	if err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload app data"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result})
 		return
 	}
 
@@ -159,11 +237,17 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 }
 
 func (ch *appHandler) FindLatestVersion(c *gin.Context) {
+	_, err := ch.validateParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
 	//request on repository
-	updateAvailable, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), ctx)
+	updateAvailable, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), c.Query("channel_name"), ctx)
 	if err != nil {
 		logrus.Error(err)
 	}

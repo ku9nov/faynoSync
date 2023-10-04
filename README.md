@@ -70,5 +70,12 @@ If an update is available, the update_available field will be true, and the upda
 
 6. In your client application, show an alert to the user indicating that an update is available and provide a link to download the updated application.
 
+## Create new migrations
+Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).
+```
+cd mongod/migrations
+migrate create -ext json name_of_migration
+```
+Then run the migrations again.
 ## License
 This application is licensed under the Apache license. See the LICENSE file for more details

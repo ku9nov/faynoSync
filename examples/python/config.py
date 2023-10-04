@@ -14,4 +14,5 @@ def get_os():
     else:
         return system
 app_name = "myapp"
-version = "1.0.0"
+version = "0.0.1"
+channel = ""
