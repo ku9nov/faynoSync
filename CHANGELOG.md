@@ -1,10 +1,13 @@
 # Changelog
 
-## v1.0.1
+## v1.1.0
 
 ### Important Notes
 
 - **Important**: After first creating channel, field `channel_name` is required.
+
+Added a set of functionalities for the operation and support of deployment channels.
+Many checks have been added for a more accurate and expected behavior of the application.
 
 ### Features
 
