@@ -26,6 +26,69 @@
 			"response": []
 		},
 		{
+			"name": "Search app by name",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/search?app_name={{app_name}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"search"
+					],
+					"query": [
+						{
+							"key": "app_name",
+							"value": "{{app_name}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get all apps",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "List Channels",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/listChannels",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"listChannels"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Login",
 			"request": {
 				"method": "POST",
@@ -55,25 +118,6 @@
 			"response": []
 		},
 		{
-			"name": "Get all apps",
-			"request": {
-				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "http://localhost:{{PORT}}/",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "{{PORT}}",
-					"path": [
-						""
-					]
-				}
-			},
-			"response": []
-		},
-		{
 			"name": "Upload",
 			"request": {
 				"method": "POST",
@@ -89,7 +133,7 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}",
+					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}&channel_name",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -106,6 +150,10 @@
 						{
 							"key": "version",
 							"value": "{{version}}"
+						},
+						{
+							"key": "channel_name",
+							"value": null
 						}
 					]
 				}
@@ -118,7 +166,7 @@
 				"method": "POST",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}",
+					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel_name",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -135,6 +183,10 @@
 						{
 							"key": "version",
 							"value": "{{version}}"
+						},
+						{
+							"key": "channel_name",
+							"value": null
 						}
 					]
 				}
@@ -142,24 +194,24 @@
 			"response": []
 		},
 		{
-			"name": "Search app by name",
+			"name": "Create Channel",
 			"request": {
-				"method": "GET",
+				"method": "POST",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/search?app_name={{app_name}}",
+					"raw": "http://localhost:{{PORT}}/createChannel?channel_name={{channel_name}}",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"search"
+						"createChannel"
 					],
 					"query": [
 						{
-							"key": "app_name",
-							"value": "{{app_name}}"
+							"key": "channel_name",
+							"value": "{{channel_name}}"
 						}
 					]
 				}
@@ -172,14 +224,39 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/delete?id",
+					"raw": "http://localhost:{{PORT}}/deleteApp?id",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"delete"
+						"deleteApp"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": null
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete channel",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/deleteChannel?id",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"deleteChannel"
 					],
 					"query": [
 						{
@@ -246,6 +323,11 @@
 		{
 			"key": "PORT",
 			"value": "9000",
+			"type": "string"
+		},
+		{
+			"key": "channel_name",
+			"value": "nightly",
 			"type": "string"
 		}
 	]

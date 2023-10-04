@@ -40,15 +40,49 @@ type ServerSettings struct {
 	Port string
 }
 
-func IsValidInputAppName(input string) bool {
+func IsValidAppName(input string) bool {
 	// Only allow letters and numbers, no spaces or special characters
 	validName := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
 	return validName.MatchString(input)
 }
-func IsValidInputVersion(input string) bool {
-	// Only allow letters and numbers, no spaces or special characters
+func IsValidVersion(input string) bool {
+	// Only allow numbers and dots, no spaces or special characters
 	validVersion := regexp.MustCompile(`^[0-9.-]+$`)
 	return validVersion.MatchString(input)
+}
+
+func IsValidChannelName(input string) bool {
+	// Allow empty input or only letters and numbers, no spaces or special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9]*$`)
+	return validName.MatchString(input)
+}
+
+func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
+	if input == "" {
+		// Check if there are any existing channels
+		count, err := db.Collection("channels").CountDocuments(ctx, bson.M{})
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("you have a created channels, setting channel_name is required")
+		}
+		return nil
+	}
+	// Check if the channel exists in the database
+	cursor, err := db.Collection("channels").Find(ctx, bson.M{"channel_name": input})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	// Check if any documents were returned
+	if !cursor.Next(ctx) {
+		return errors.New("wrong name of channel. Channel does not exist")
+	}
+
+	// If a document was returned, the channel exists
+	return nil
 }
 
 func createS3Client() *s3.Client {
@@ -66,7 +100,7 @@ func createS3Client() *s3.Client {
 	return s3.NewFromConfig(cfg)
 }
 
-func UploadToS3(appName, version string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) string {
+func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) string {
 	// // Create an S3 client using another func
 	s3Client := createS3Client()
 
@@ -78,9 +112,17 @@ func UploadToS3(appName, version string, file *multipart.FileHeader, c *gin.Cont
 		extension = baseFileName[dotIndex:]
 	}
 	// Generate new file name
-	newFileName := fmt.Sprintf("%s-%s%s", appName, version, extension)
+	newFileName := fmt.Sprintf("%s-%s%s", ctxQuery["app_name"].(string), ctxQuery["version"].(string), extension)
 
-	link := fmt.Sprintf("%s/%s/%s", env.GetString("S3_ENDPOINT"), appName, newFileName)
+	var link string
+	var s3Key string
+	if ctxQuery["channel_name"].(string) == "" {
+		link = fmt.Sprintf("%s/%s/%s", env.GetString("S3_ENDPOINT"), ctxQuery["app_name"].(string), newFileName)
+		s3Key = ctxQuery["app_name"].(string) + "/" + newFileName
+	} else {
+		link = fmt.Sprintf("%s/%s/%s/%s", env.GetString("S3_ENDPOINT"), ctxQuery["app_name"].(string), ctxQuery["channel_name"].(string), newFileName)
+		s3Key = ctxQuery["app_name"].(string) + "/" + ctxQuery["channel_name"].(string) + "/" + newFileName
+	}
 
 	// Open the file for reading
 	fileReader, err := file.Open()
@@ -88,7 +130,6 @@ func UploadToS3(appName, version string, file *multipart.FileHeader, c *gin.Cont
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open file for reading"})
 	}
-	s3Key := appName + "/" + newFileName
 
 	// Upload file to S3
 	_, err = s3Client.PutObject(c.Request.Context(), &s3.PutObjectInput{
