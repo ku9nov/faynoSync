@@ -239,10 +239,35 @@ curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: B
    ]
 }
 ```
+### Delete specific channel
+This endpoint allows you to delete a specific channel.
+
+`DELETE /deleteChannel?id=<id>`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Query Parameters
+**id**: The unique identifier of the channel.
+
+###### Request:
+```
+curl -X DELETE http://localhost:9000/deleteChannel\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+
+```
+
+###### Responce:
+
+```
+{
+   "deleteChannelResult.DeletedCount":1
+}
+```
+
 ### Delete specific version of app
 This endpoint allows you to delete a specific version of an app.
 
-`DELETE /delete?id=<id>`
+`DELETE /deleteApp?id=<id>`
 
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
@@ -252,7 +277,7 @@ This endpoint allows you to delete a specific version of an app.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/delete\?\id\=\640a0edae692cadeb0e5bc47 -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X DELETE http://localhost:9000/deleteApp\?\id\=\640a0edae692cadeb0e5bc47 -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 
 ```
 
@@ -260,7 +285,7 @@ curl -X DELETE http://localhost:9000/delete\?\id\=\640a0edae692cadeb0e5bc47 -H "
 
 ```
 {
-   "deleteResult.DeletedCount":1
+   "deleteAppResult.DeletedCount":1
 }
 ```
 

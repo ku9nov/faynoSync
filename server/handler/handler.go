@@ -25,6 +25,7 @@ type AppHandler interface {
 	GetAllApps(*gin.Context)
 	GetAppByName(*gin.Context)
 	DeleteApp(*gin.Context)
+	DeleteChannel(*gin.Context)
 	UploadApp(*gin.Context)
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
@@ -93,7 +94,7 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 	}
 
 	//request on repository
-	link, result, err := ch.repository.Delete(objID, ctx)
+	link, result, err := ch.repository.DeleteApp(objID, ctx)
 	if err != nil {
 		logrus.Error(err)
 	}
@@ -107,7 +108,26 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 	subLink := link[index:]
 
 	utils.DeleteFromS3(subLink, c, viper.GetViper())
-	c.JSON(http.StatusOK, gin.H{"deleteResult.DeletedCount": result})
+	c.JSON(http.StatusOK, gin.H{"deleteAppResult.DeletedCount": result})
+}
+
+func (ch *appHandler) DeleteChannel(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	// Convert string to ObjectID
+	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//request on repository
+	result, err := ch.repository.DeleteChannel(objID, ctx)
+	if err != nil {
+		logrus.Error(err)
+	}
+	c.JSON(http.StatusOK, gin.H{"deleteChannelResult.DeletedCount": result})
 }
 
 func (ch *appHandler) GetAllApps(c *gin.Context) {
