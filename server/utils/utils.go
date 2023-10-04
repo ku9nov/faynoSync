@@ -165,11 +165,16 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 func AuthMiddleware(db *mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
+		tokenParts := strings.Fields(authHeader)
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
 			return
+		} else if len(tokenParts) != 2 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
 		}
-		bytes, err := DecryptUserCredentials(authHeader)
+
+		bytes, err := DecryptUserCredentials(tokenParts[1])
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return

@@ -1,0 +1,252 @@
+{
+	"info": {
+		"_postman_id": "7d8e8a70-405f-40f6-a7d7-3203f3104137",
+		"name": "SAU",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "30225535"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/health",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"health"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Login",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"username\": \"admin\", \"password\": \"password\"}"
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/login",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get all apps",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Upload",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/Users/ku9n/Downloads/test.zip"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"upload"
+					],
+					"query": [
+						{
+							"key": "app_name",
+							"value": "{{app_name}}"
+						},
+						{
+							"key": "version",
+							"value": "{{version}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Check latest version",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"checkVersion"
+					],
+					"query": [
+						{
+							"key": "app_name",
+							"value": "{{app_name}}"
+						},
+						{
+							"key": "version",
+							"value": "{{version}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Search app by name",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/search?app_name={{app_name}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"search"
+					],
+					"query": [
+						{
+							"key": "app_name",
+							"value": "{{app_name}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete app by id",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/delete?id",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"delete"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": null
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "username",
+			"value": "admin",
+			"type": "string"
+		},
+		{
+			"key": "password",
+			"value": "password",
+			"type": "string"
+		},
+		{
+			"key": "app_name",
+			"value": "myapp",
+			"type": "string"
+		},
+		{
+			"key": "version",
+			"value": "0.0.1",
+			"type": "string"
+		},
+		{
+			"key": "PORT",
+			"value": "9000",
+			"type": "string"
+		}
+	]
+}
