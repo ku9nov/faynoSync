@@ -37,22 +37,18 @@ To use the auto updater service, follow these steps:
 go build -o sau sau.go
 ```
 
-2. Start the auto updater service with migrations:
+2. Start the auto updater service with migrations and create Administration user:
 ```
-./sau --migration
+./sau --migration --username=admin --password=password
 ```
 Note: To rollback your migrations run:
 ```
 ./sau --migration --rollback
 ```
-3. Create Administration user:
-```
-./sau --username=admin --password=password
-```
 
-4. Upload your application to S3 and set the version number in Admin Api.
+3. Upload your application to S3 and set the version number in Admin Api.
 
-5. In your client application, make a POST request to the auto updater service API, passing the current version number as a query parameter:
+4. In your client application, make a POST request to the auto updater service API, passing the current version number as a query parameter:
 ```
 http://localhost:9000/checkVersion?app_name=myapp&version=4.1.5
 ```
@@ -68,7 +64,36 @@ The auto updater service will return a JSON response with the following structur
 
 If an update is available, the update_available field will be true, and the update_url field will contain a link to the updated application.
 
-6. In your client application, show an alert to the user indicating that an update is available and provide a link to download the updated application.
+5. In your client application, show an alert to the user indicating that an update is available and provide a link to download the updated application.
+
+## Testing
+Run e2e tests:
+```
+go test
+```
+
+**Test Descriptions**
+
+To successfully run the tests and have them pass, you need to populate the .env file.
+
+The tests verify the implemented API using a test database and an existing S3 bucket.
+
+**List of Tests**
+
+    - TestHealthCheck
+    - TestLogin
+    - TestUploadApp
+    - TestUploadDuplicateApp (expected result from API "failed")
+    - TestDeleteApp
+    - TestChannelCreateNightly
+    - TestChannelCreateStable
+    - TestUploadAppWithoutChannel (expected result from API "failed")
+    - TestMultipleUploadWithChannels
+    - TestSearchApp
+    - TestCheckVersionLatestVersion
+    - TestMultipleDelete
+    - TestDeleteNightlyChannel
+    - TestDeleteStableChannel
 
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

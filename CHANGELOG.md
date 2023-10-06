@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.2.0
+
+### Important Notes
+
+- **Important**: Changed the method of creating an admin user. Now, after creation, the web server starts and operates in normal mode, so it is recommended to use creation in complex with migration.
+
+### Maintenance
+
+- Added `MONGODB_URL_TESTS` to `.env.example`
+
+### Docker
+- Added `mongoDB` for testing to `docker compose` configuration.
+
+### Features
+
+- :tada: Implemented e2e tests
+    - TestHealthCheck
+    - TestLogin
+    - TestUploadApp
+    - TestUploadDuplicateApp (expected result from api "failed")
+    - TestDeleteApp
+    - TestChannelCreateNightly
+    - TestChannelCreateStable
+    - TestUploadAppWithoutChannel (expected result from api "failed")
+    - TestMultipleUploadWithChannels
+    - TestSearchApp
+    - TestCheckVersionLatestVersion
+    - TestMultipleDelete
+    - TestDeleteNightlyChannel
+    - TestDeleteStableChannel
+
 ## v1.1.0
 
 ### Important Notes
