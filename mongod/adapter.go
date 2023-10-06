@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -41,7 +40,6 @@ func ConnectToDatabase(mongoUrl string, flags map[string]interface{}) (*mongo.Cl
 			log.Fatal(err)
 		} else {
 			log.Println("Successfully created admin user with name: ", flags["user_name"].(string))
-			os.Exit(0)
 		}
 	}
 	return client, uriOptions

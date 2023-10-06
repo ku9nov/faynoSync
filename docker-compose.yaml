@@ -13,5 +13,19 @@ services:
     ports:
       - "27017:27017"
 
+  mongo_tests:
+    image: mongo:4.4
+    container_name: server_mongo_database_tests
+    restart: always
+    volumes:
+      - data-tests:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=cb_sau_db
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
+    ports:
+      - "27018:27017"
+
 volumes:
   data:
+  data-tests:
