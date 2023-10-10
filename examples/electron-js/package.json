@@ -13,7 +13,7 @@
     "node-fetch": "2.6.9"
   },
   "devDependencies": {
-    "electron": "^23.1.4"
+    "electron": ">=23.3.13"
   },
   "engines": {
     "npm": ">=8.19.3",
