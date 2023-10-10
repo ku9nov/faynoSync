@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.15
+	github.com/hashicorp/go-version v1.6.0
 	github.com/spf13/viper v1.14.0
 )
 

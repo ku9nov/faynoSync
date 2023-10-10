@@ -133,7 +133,7 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}&channel_name",
+					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}&channel_name=&publish=",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -153,7 +153,11 @@
 						},
 						{
 							"key": "channel_name",
-							"value": null
+							"value": ""
+						},
+						{
+							"key": "publish",
+							"value": ""
 						}
 					]
 				}
@@ -163,10 +167,13 @@
 		{
 			"name": "Check latest version",
 			"request": {
+				"auth": {
+					"type": "noauth"
+				},
 				"method": "POST",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel_name",
+					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel_name=",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -186,7 +193,7 @@
 						},
 						{
 							"key": "channel_name",
-							"value": null
+							"value": ""
 						}
 					]
 				}

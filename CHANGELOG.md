@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.1
+
+### Features
+
+- :tada: Implemented the published feature. Now the API returns only published versions.
+
+### Bug Fixes
+
+- Fixed a critical issue where returned versions were incorrectly compared when the version numbers were greater than 9 (e.g., 0.0.14).
+
 ## v1.2.0
 
 ### Important Notes

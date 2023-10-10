@@ -8,6 +8,7 @@ type App struct {
 	Version    string             `bson:"version"`
 	Link       string             `bson:"link"`
 	Channel    string             `bson:"channel"`
+	Published  bool               `bson:"published"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
 

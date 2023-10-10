@@ -154,6 +154,10 @@ Upload a new version of an app.
 
 `POST /upload?app_name=<app_name>&version=<version>`
 
+Optional with `channel_name` and `publish`:
+
+`POST /upload?app_name=<app_name>&version=<version>&channel_name=<channel>&publish=<true or false>`
+
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
 
@@ -230,12 +234,16 @@ curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: B
          "AppName":"myapp",
          "Version":"4.1.5",
          "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.1.5.tar.gz",
+         "Channel": "",
+         "Published": false,
          "Updated_at":"2023-03-09T18:52:42.573+02:00"
       }{
          "ID":"6411c7c0ec4ff9a9a9bc18fa",
          "AppName":"myapp",
          "Version":"4.2.3",
          "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.2.3.tar.gz",
+         "Channel": "",
+         "Published": false,
          "Updated_at":"2023-03-15T15:27:28.807+02:00"
       }
    ]
@@ -316,6 +324,8 @@ curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: B
          "AppName":"myapp",
          "Version":"4.2.3",
          "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.2.3.tar.gz",
+         "Channel": "",
+         "Published": false,
          "Updated_at":"2023-03-15T15:27:28.807+02:00"
       }
    ]

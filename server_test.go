@@ -444,12 +444,13 @@ func TestMultipleUpload(t *testing.T) {
 	combinations := []struct {
 		AppVersion  string
 		ChannelName string
+		Published   bool
 	}{
-		{"0.0.1", "nightly"},
-		{"0.0.2", "nightly"},
-		{"0.0.3", "nightly"},
-		{"0.0.4", "stable"},
-		{"0.0.5", "stable"},
+		{"0.0.1", "nightly", true},
+		{"0.0.2", "nightly", true},
+		{"0.0.3", "nightly", false},
+		{"0.0.4", "stable", true},
+		{"0.0.5", "stable", false},
 	}
 
 	// Iterate through the combinations and upload the file for each combination.
@@ -468,7 +469,7 @@ func TestMultipleUpload(t *testing.T) {
 		}
 		writer.Close()
 		// Create a POST request for the upload endpoint with the current combination.
-		req, err := http.NewRequest("POST", fmt.Sprintf("/upload?app_name=testapp&version=%s&channel_name=%s", combo.AppVersion, combo.ChannelName), body)
+		req, err := http.NewRequest("POST", fmt.Sprintf("/upload?app_name=testapp&version=%s&channel_name=%s&publish=%v", combo.AppVersion, combo.ChannelName, combo.Published), body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -527,6 +528,7 @@ func TestSearch(t *testing.T) {
 		Version    string `json:"Version"`
 		Link       string `json:"Link"`
 		Channel    string `json:"Channel"`
+		Published  bool   `json:"Published"`
 		Updated_at string `json:"Updated_at"`
 	}
 	type AppResponse struct {
@@ -535,29 +537,34 @@ func TestSearch(t *testing.T) {
 
 	expected := []AppInfo{
 		{
-			AppName: "testapp",
-			Version: "0.0.1",
-			Channel: "nightly",
+			AppName:   "testapp",
+			Version:   "0.0.1",
+			Channel:   "nightly",
+			Published: true,
 		},
 		{
-			AppName: "testapp",
-			Version: "0.0.2",
-			Channel: "nightly",
+			AppName:   "testapp",
+			Version:   "0.0.2",
+			Channel:   "nightly",
+			Published: true,
 		},
 		{
-			AppName: "testapp",
-			Version: "0.0.3",
-			Channel: "nightly",
+			AppName:   "testapp",
+			Version:   "0.0.3",
+			Channel:   "nightly",
+			Published: false,
 		},
 		{
-			AppName: "testapp",
-			Version: "0.0.4",
-			Channel: "stable",
+			AppName:   "testapp",
+			Version:   "0.0.4",
+			Channel:   "stable",
+			Published: true,
 		},
 		{
-			AppName: "testapp",
-			Version: "0.0.5",
-			Channel: "stable",
+			AppName:   "testapp",
+			Version:   "0.0.5",
+			Channel:   "stable",
+			Published: false,
 		},
 	}
 
@@ -572,6 +579,7 @@ func TestSearch(t *testing.T) {
 		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
 		assert.Equal(t, expectedApp.Version, actual.Apps[i].Version)
 		assert.Equal(t, expectedApp.Channel, actual.Apps[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Apps[i].Published)
 	}
 }
 
@@ -596,7 +604,7 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
-				"update_url":       fmt.Sprintf("%s/testapp/nightly/testapp-0.0.3", s3Endpoint),
+				"update_url":       fmt.Sprintf("%s/testapp/nightly/testapp-0.0.2", s3Endpoint),
 			},
 			ExpectedCode: http.StatusOK,
 			TestName:     "NightlyUpdateAvailable",
@@ -606,8 +614,8 @@ func TestCheckVersion(t *testing.T) {
 			Version:     "0.0.2",
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
-				"update_available": true,
-				"update_url":       fmt.Sprintf("%s/testapp/nightly/testapp-0.0.3", s3Endpoint),
+				"update_available": false,
+				"update_url":       fmt.Sprintf("%s/testapp/nightly/testapp-0.0.2", s3Endpoint),
 			},
 			ExpectedCode: http.StatusOK,
 			TestName:     "NightlyUpdateAvailable",
@@ -618,7 +626,7 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url":       fmt.Sprintf("%s/testapp/nightly/testapp-0.0.3", s3Endpoint),
+				"update_url":       "Not found",
 			},
 			ExpectedCode: http.StatusOK,
 			TestName:     "NightlyUpdateAvailable",
@@ -628,8 +636,8 @@ func TestCheckVersion(t *testing.T) {
 			Version:     "0.0.4",
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
-				"update_available": true,
-				"update_url":       fmt.Sprintf("%s/testapp/stable/testapp-0.0.5", s3Endpoint),
+				"update_available": false,
+				"update_url":       fmt.Sprintf("%s/testapp/stable/testapp-0.0.4", s3Endpoint),
 			},
 			ExpectedCode: http.StatusOK,
 			TestName:     "StableUpdateAvailable",
@@ -640,7 +648,7 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url":       fmt.Sprintf("%s/testapp/stable/testapp-0.0.5", s3Endpoint),
+				"update_url":       "Not found",
 			},
 			ExpectedCode: http.StatusOK,
 			TestName:     "StableUpdateAvailable",

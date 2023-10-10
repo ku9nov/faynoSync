@@ -50,6 +50,7 @@ func (ch *appHandler) validateParams(c *gin.Context) (map[string]interface{}, er
 		"app_name":     c.Query("app_name"),
 		"version":      c.Query("version"),
 		"channel_name": c.Query("channel_name"),
+		"publish":      c.Query("publish"),
 	}
 
 	if !utils.IsValidAppName(ctxQueryMap["app_name"].(string)) {
@@ -229,7 +230,7 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 	result, err := ch.repository.Upload(ctxQueryMap, link, ctx)
 	if err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

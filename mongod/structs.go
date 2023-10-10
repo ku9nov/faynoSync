@@ -10,6 +10,7 @@ import (
 
 	"SAU/server/model"
 
+	"github.com/hashicorp/go-version"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -202,11 +203,21 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink string, 
 		// A document with the same "app_name" and "version" combination already exists.
 		return "app with this name and version already exists", errors.New("app with this name and version already exists")
 	}
+	publishParam, publishExists := ctxQuery["publish"]
+	var publish bool
+
+	if publishExists {
+		publishVal := publishParam.(string)
+		publish = publishVal == "true"
+	} else {
+		publish = false
+	}
 	filter := bson.D{
 		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
 		{Key: "version", Value: ctxQuery["version"].(string)},
 		{Key: "link", Value: appLink},
 		{Key: "channel", Value: ctxQuery["channel_name"].(string)},
+		{Key: "published", Value: publish},
 		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
 	}
 
@@ -245,20 +256,50 @@ func (c *appRepository) CreateChannel(channelName string, ctx context.Context) (
 	return uploadResult.InsertedID, nil
 }
 
-func (c *appRepository) CheckLatestVersion(appName, version, channel string, ctx context.Context) (bool, string, error) {
+func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel string, ctx context.Context) (bool, string, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
 	// Define the filter based on appName and optional channel
-	filter := bson.M{"app_name": appName}
+	filter := bson.D{
+		{Key: "app_name", Value: appName},
+		{Key: "published", Value: true},
+	}
 	if channel != "" {
-		filter["channel"] = channel
+		filter = append(filter, bson.E{Key: "channel", Value: channel})
 	}
 
 	// Create an aggregation pipeline to sort by version and updated_at
-	pipeline := []bson.M{
-		{"$match": filter},
-		{"$sort": bson.M{"version": -1}},
-		{"$limit": 1},
+	// Use only bson.D for correct results
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: filter}},
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "versions_arr", Value: bson.D{
+				{Key: "$split", Value: bson.A{"$version", "."}},
+			}},
+		}}},
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "major_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 0}},
+				}},
+			}},
+			{Key: "minor_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 1}},
+				}},
+			}},
+			{Key: "patch_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 2}},
+				}},
+			}},
+		}}},
+		{{Key: "$sort", Value: bson.D{
+			{Key: "major_v", Value: -1},
+			{Key: "minor_v", Value: -1},
+			{Key: "patch_v", Value: -1},
+		}}},
+		{{Key: "$limit", Value: 1}},
 	}
 
 	// Execute the aggregation pipeline
@@ -283,15 +324,26 @@ func (c *appRepository) CheckLatestVersion(appName, version, channel string, ctx
 		if err != nil {
 			return false, "", err
 		}
+		latestAppVersion, err := version.NewVersion(latestApp.Version)
+		if err != nil {
+			return false, "", err
+		}
 
-		if latestApp.Version == version {
+		requestedVersion, err := version.NewVersion(currentVersion)
+		if err != nil {
+			return false, "", err
+		}
+
+		if requestedVersion.Equal(latestAppVersion) {
 			return false, latestApp.Link, nil
-		} else if latestApp.Version < version {
-			return false, "Not found", fmt.Errorf("requested version %s is newest than the latest version available", version)
+		} else if requestedVersion.GreaterThan(latestAppVersion) {
+			return false, "Not found", fmt.Errorf("requested version %s is newest than the latest version available", requestedVersion)
 		} else {
 			return true, latestApp.Link, nil
 		}
+
 	} else {
 		return false, "Not found", fmt.Errorf("no matching documents found for app_name: %s", appName)
 	}
+
 }
