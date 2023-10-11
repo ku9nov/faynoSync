@@ -24,9 +24,15 @@ type AppRepository interface {
 	DeleteApp(id primitive.ObjectID, ctx context.Context) (string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink string, ctx context.Context) (interface{}, error)
-	CheckLatestVersion(appName, version, channel string, ctx context.Context) (bool, string, error)
+	CheckLatestVersion(appName, version, channel, platform, arch string, ctx context.Context) (bool, string, error)
 	CreateChannel(channelName string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context) ([]*model.Channel, error)
+	CreatePlatform(platformName string, ctx context.Context) (interface{}, error)
+	ListPlatforms(ctx context.Context) ([]*model.Platform, error)
+	DeletePlatform(id primitive.ObjectID, ctx context.Context) (int64, error)
+	CreateArch(archName string, ctx context.Context) (interface{}, error)
+	ListArchs(ctx context.Context) ([]*model.Arch, error)
+	DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error)
 }
 
 type appRepository struct {
@@ -104,6 +110,74 @@ func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, err
 	cur.Close(ctx)
 
 	return channels, nil
+}
+
+func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, error) {
+
+	findOptions := options.Find()
+	findOptions.SetLimit(100)
+
+	var platforms []*model.Platform
+
+	collection := c.client.Database(c.config.Database).Collection("platforms")
+
+	// Passing bson.D{{}} as the filter matches all documents in the collection
+	cur, err := collection.Find(ctx, bson.D{{}}, findOptions)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	// Finding multiple documents returns a cursor
+	// Iterating through the cursor allows us to decode documents one at a time
+	for cur.Next(context.TODO()) {
+		// create a value into which the single document can be decoded
+		var elem model.Platform
+		if err := cur.Decode(&elem); err != nil {
+			log.Fatal(err)
+			return nil, err
+		}
+
+		platforms = append(platforms, &elem)
+	}
+
+	cur.Close(ctx)
+
+	return platforms, nil
+}
+
+func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
+
+	findOptions := options.Find()
+	findOptions.SetLimit(100)
+
+	var archs []*model.Arch
+
+	collection := c.client.Database(c.config.Database).Collection("archs")
+
+	// Passing bson.D{{}} as the filter matches all documents in the collection
+	cur, err := collection.Find(ctx, bson.D{{}}, findOptions)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	// Finding multiple documents returns a cursor
+	// Iterating through the cursor allows us to decode documents one at a time
+	for cur.Next(context.TODO()) {
+		// create a value into which the single document can be decoded
+		var elem model.Arch
+		if err := cur.Decode(&elem); err != nil {
+			log.Fatal(err)
+			return nil, err
+		}
+
+		archs = append(archs, &elem)
+	}
+
+	cur.Close(ctx)
+
+	return archs, nil
 }
 
 func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.App, error) {
@@ -193,6 +267,58 @@ func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context
 	return deleteResult.DeletedCount, nil
 }
 
+func (c *appRepository) DeletePlatform(id primitive.ObjectID, ctx context.Context) (int64, error) {
+
+	collection := c.client.Database(c.config.Database).Collection("platforms")
+
+	filter := bson.D{primitive.E{Key: "_id", Value: id}}
+
+	// Retrieve the document before deletion
+	var app *model.App
+	err := collection.FindOne(ctx, filter).Decode(&app)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return 0, fmt.Errorf("no platform found with ID %s", id)
+		}
+		return 0, fmt.Errorf("error retrieving platform with ID %s: %s", id, err.Error())
+	}
+
+	deleteResult, err := collection.DeleteOne(ctx, filter)
+	if err != nil {
+		log.Fatal(err)
+
+		return 0, err
+	}
+
+	return deleteResult.DeletedCount, nil
+}
+
+func (c *appRepository) DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error) {
+
+	collection := c.client.Database(c.config.Database).Collection("archs")
+
+	filter := bson.D{primitive.E{Key: "_id", Value: id}}
+
+	// Retrieve the document before deletion
+	var app *model.App
+	err := collection.FindOne(ctx, filter).Decode(&app)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return 0, fmt.Errorf("no arch found with ID %s", id)
+		}
+		return 0, fmt.Errorf("error retrieving arch with ID %s: %s", id, err.Error())
+	}
+
+	deleteResult, err := collection.DeleteOne(ctx, filter)
+	if err != nil {
+		log.Fatal(err)
+
+		return 0, err
+	}
+
+	return deleteResult.DeletedCount, nil
+}
+
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink string, ctx context.Context) (interface{}, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
@@ -216,7 +342,9 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink string, 
 		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
 		{Key: "version", Value: ctxQuery["version"].(string)},
 		{Key: "link", Value: appLink},
-		{Key: "channel", Value: ctxQuery["channel_name"].(string)},
+		{Key: "channel", Value: ctxQuery["channel"].(string)},
+		{Key: "platform", Value: ctxQuery["platform"].(string)},
+		{Key: "arch", Value: ctxQuery["arch"].(string)},
 		{Key: "published", Value: publish},
 		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
 	}
@@ -256,7 +384,51 @@ func (c *appRepository) CreateChannel(channelName string, ctx context.Context) (
 	return uploadResult.InsertedID, nil
 }
 
-func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel string, ctx context.Context) (bool, string, error) {
+func (c *appRepository) CreatePlatform(platformName string, ctx context.Context) (interface{}, error) {
+
+	collection := c.client.Database(c.config.Database).Collection("platforms")
+
+	filter := bson.D{
+		{Key: "platform_name", Value: platformName},
+		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
+	}
+
+	uploadResult, err := collection.InsertOne(ctx, filter)
+	mongoErr, ok := err.(mongo.WriteException)
+	if ok {
+		for _, writeErr := range mongoErr.WriteErrors {
+			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "platform_name_sort_by_asc_created") {
+				return "platform with this name already exists", errors.New("platform with this name already exists")
+			}
+		}
+	}
+
+	return uploadResult.InsertedID, nil
+}
+
+func (c *appRepository) CreateArch(archID string, ctx context.Context) (interface{}, error) {
+
+	collection := c.client.Database(c.config.Database).Collection("archs")
+
+	filter := bson.D{
+		{Key: "arch_id", Value: archID},
+		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
+	}
+
+	uploadResult, err := collection.InsertOne(ctx, filter)
+	mongoErr, ok := err.(mongo.WriteException)
+	if ok {
+		for _, writeErr := range mongoErr.WriteErrors {
+			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "arch_id_sort_by_asc_created") {
+				return "arch with this name already exists", errors.New("arch with this name already exists")
+			}
+		}
+	}
+
+	return uploadResult.InsertedID, nil
+}
+
+func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, platform, arch string, ctx context.Context) (bool, string, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
 	// Define the filter based on appName and optional channel
@@ -264,8 +436,17 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel stri
 		{Key: "app_name", Value: appName},
 		{Key: "published", Value: true},
 	}
+
 	if channel != "" {
 		filter = append(filter, bson.E{Key: "channel", Value: channel})
+	}
+
+	if platform != "" {
+		filter = append(filter, bson.E{Key: "platform", Value: platform})
+	}
+
+	if arch != "" {
+		filter = append(filter, bson.E{Key: "arch", Value: arch})
 	}
 
 	// Create an aggregation pipeline to sort by version and updated_at

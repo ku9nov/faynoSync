@@ -57,6 +57,18 @@ func IsValidChannelName(input string) bool {
 	return validName.MatchString(input)
 }
 
+func IsValidPlatformName(input string) bool {
+	// Allow empty input or only letters and numbers, no spaces or special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9]*$`)
+	return validName.MatchString(input)
+}
+
+func IsValidArchName(input string) bool {
+	// Allow empty input or only letters and numbers, no spaces or special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9]*$`)
+	return validName.MatchString(input)
+}
+
 func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
 		// Check if there are any existing channels
@@ -65,7 +77,7 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 			return err
 		}
 		if count > 0 {
-			return errors.New("you have a created channels, setting channel_name is required")
+			return errors.New("you have a created channels, setting channel is required")
 		}
 		return nil
 	}
@@ -79,6 +91,62 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 	// Check if any documents were returned
 	if !cursor.Next(ctx) {
 		return errors.New("wrong name of channel. Channel does not exist")
+	}
+
+	// If a document was returned, the channel exists
+	return nil
+}
+
+func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
+	if input == "" {
+		// Check if there are any existing platforms
+		count, err := db.Collection("platforms").CountDocuments(ctx, bson.M{})
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("you have a created platforms, setting platform is required")
+		}
+		return nil
+	}
+	// Check if the platform exists in the database
+	cursor, err := db.Collection("platforms").Find(ctx, bson.M{"platform_name": input})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	// Check if any documents were returned
+	if !cursor.Next(ctx) {
+		return errors.New("wrong name of platform. Platform does not exist")
+	}
+
+	// If a document was returned, the channel exists
+	return nil
+}
+
+func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
+	if input == "" {
+		// Check if there are any existing archs
+		count, err := db.Collection("archs").CountDocuments(ctx, bson.M{})
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("you have a created archs, setting arch is required")
+		}
+		return nil
+	}
+	// Check if the channel exists in the database
+	cursor, err := db.Collection("archs").Find(ctx, bson.M{"arch_id": input})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	// Check if any documents were returned
+	if !cursor.Next(ctx) {
+		return errors.New("wrong name of arch. Arch does not exist")
 	}
 
 	// If a document was returned, the channel exists
@@ -116,12 +184,28 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 
 	var link string
 	var s3Key string
-	if ctxQuery["channel_name"].(string) == "" {
+	if ctxQuery["channel"].(string) == "" && ctxQuery["platform"].(string) == "" && ctxQuery["arch"].(string) == "" {
 		link = fmt.Sprintf("%s/%s/%s", env.GetString("S3_ENDPOINT"), ctxQuery["app_name"].(string), newFileName)
 		s3Key = ctxQuery["app_name"].(string) + "/" + newFileName
 	} else {
-		link = fmt.Sprintf("%s/%s/%s/%s", env.GetString("S3_ENDPOINT"), ctxQuery["app_name"].(string), ctxQuery["channel_name"].(string), newFileName)
-		s3Key = ctxQuery["app_name"].(string) + "/" + ctxQuery["channel_name"].(string) + "/" + newFileName
+		s3PathSegments := []string{ctxQuery["app_name"].(string)}
+
+		if ctxQuery["channel"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["channel"].(string))
+		}
+
+		if ctxQuery["platform"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["platform"].(string))
+		}
+
+		if ctxQuery["arch"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["arch"].(string))
+		}
+
+		s3PathSegments = append(s3PathSegments, newFileName)
+
+		link = fmt.Sprintf("%s/%s", env.GetString("S3_ENDPOINT"), strings.Join(s3PathSegments, "/"))
+		s3Key = strings.Join(s3PathSegments, "/")
 	}
 
 	// Open the file for reading

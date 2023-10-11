@@ -27,12 +27,18 @@ type AppHandler interface {
 	GetAppByName(*gin.Context)
 	DeleteApp(*gin.Context)
 	DeleteChannel(*gin.Context)
+	DeletePlatform(*gin.Context)
+	DeleteArch(*gin.Context)
 	UploadApp(*gin.Context)
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
 	Login(*gin.Context)
 	CreateChannel(*gin.Context)
 	ListChannels(*gin.Context)
+	CreatePlatform(*gin.Context)
+	ListPlatforms(*gin.Context)
+	CreateArch(*gin.Context)
+	ListArchs(*gin.Context)
 }
 
 type appHandler struct {
@@ -47,10 +53,12 @@ func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Databa
 
 func (ch *appHandler) validateParams(c *gin.Context) (map[string]interface{}, error) {
 	ctxQueryMap := map[string]interface{}{
-		"app_name":     c.Query("app_name"),
-		"version":      c.Query("version"),
-		"channel_name": c.Query("channel_name"),
-		"publish":      c.Query("publish"),
+		"app_name": c.Query("app_name"),
+		"version":  c.Query("version"),
+		"channel":  c.Query("channel"),
+		"publish":  c.Query("publish"),
+		"platform": c.Query("platform"),
+		"arch":     c.Query("arch"),
 	}
 
 	if !utils.IsValidAppName(ctxQueryMap["app_name"].(string)) {
@@ -59,13 +67,31 @@ func (ch *appHandler) validateParams(c *gin.Context) (map[string]interface{}, er
 	if !utils.IsValidVersion(ctxQueryMap["version"].(string)) {
 		return nil, errors.New("Invalid version parameter")
 	}
-	if !utils.IsValidChannelName(ctxQueryMap["channel_name"].(string)) {
-		return nil, errors.New("Invalid channel_name parameter")
+	if !utils.IsValidChannelName(ctxQueryMap["channel"].(string)) {
+		return nil, errors.New("Invalid channel parameter")
 	}
 
-	err := utils.CheckChannels(ctxQueryMap["channel_name"].(string), ch.database, c)
-	if err != nil {
-		return nil, err
+	if !utils.IsValidPlatformName(ctxQueryMap["platform"].(string)) {
+		return nil, errors.New("Invalid platform parameter")
+	}
+
+	if !utils.IsValidArchName(ctxQueryMap["arch"].(string)) {
+		return nil, errors.New("Invalid platform parameter")
+	}
+
+	errChannels := utils.CheckChannels(ctxQueryMap["channel"].(string), ch.database, c)
+	if errChannels != nil {
+		return nil, errChannels
+	}
+
+	errPlatforms := utils.CheckPlatforms(ctxQueryMap["platform"].(string), ch.database, c)
+	if errPlatforms != nil {
+		return nil, errPlatforms
+	}
+
+	errArchs := utils.CheckArchs(ctxQueryMap["arch"].(string), ch.database, c)
+	if errArchs != nil {
+		return nil, errArchs
 	}
 
 	return ctxQueryMap, nil
@@ -157,6 +183,44 @@ func (ch *appHandler) DeleteChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleteChannelResult.DeletedCount": result})
 }
 
+func (ch *appHandler) DeletePlatform(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	// Convert string to ObjectID
+	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//request on repository
+	result, err := ch.repository.DeletePlatform(objID, ctx)
+	if err != nil {
+		logrus.Error(err)
+	}
+	c.JSON(http.StatusOK, gin.H{"deletePlatformResult.DeletedCount": result})
+}
+
+func (ch *appHandler) DeleteArch(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	// Convert string to ObjectID
+	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//request on repository
+	result, err := ch.repository.DeleteArch(objID, ctx)
+	if err != nil {
+		logrus.Error(err)
+	}
+	c.JSON(http.StatusOK, gin.H{"deleteArchResult.DeletedCount": result})
+}
+
 func (ch *appHandler) GetAllApps(c *gin.Context) {
 
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
@@ -191,12 +255,46 @@ func (ch *appHandler) ListChannels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"channels": &channelsList})
 }
 
+func (ch *appHandler) ListPlatforms(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	var platformsList []*model.Platform
+
+	//request on repository
+	if result, err := ch.repository.ListPlatforms(ctx); err != nil {
+		logrus.Error(err)
+	} else {
+		platformsList = result
+	}
+
+	c.JSON(http.StatusOK, gin.H{"platforms": &platformsList})
+}
+
+func (ch *appHandler) ListArchs(c *gin.Context) {
+
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	var archsList []*model.Arch
+
+	//request on repository
+	if result, err := ch.repository.ListArchs(ctx); err != nil {
+		logrus.Error(err)
+	} else {
+		archsList = result
+	}
+
+	c.JSON(http.StatusOK, gin.H{"archs": &archsList})
+}
+
 func (ch *appHandler) CreateChannel(c *gin.Context) {
 
 	// Upload app data to MongoDB
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-	result, err := ch.repository.CreateChannel(c.Query("channel_name"), ctx)
+	result, err := ch.repository.CreateChannel(c.Query("channel"), ctx)
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload channel data"})
@@ -204,6 +302,35 @@ func (ch *appHandler) CreateChannel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"createChannelResult.Created": result})
+}
+
+func (ch *appHandler) CreatePlatform(c *gin.Context) {
+
+	// Upload app data to MongoDB
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+	result, err := ch.repository.CreatePlatform(c.Query("platform"), ctx)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload platform data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"createPlatformResult.Created": result})
+}
+func (ch *appHandler) CreateArch(c *gin.Context) {
+
+	// Upload app data to MongoDB
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+	result, err := ch.repository.CreateArch(c.Query("arch"), ctx)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload arch data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"createArchResult.Created": result})
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
@@ -248,7 +375,7 @@ func (ch *appHandler) FindLatestVersion(c *gin.Context) {
 	defer ctxErr()
 
 	//request on repository
-	updateAvailable, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), c.Query("channel_name"), ctx)
+	updateAvailable, linkToLatest, err := ch.repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), c.Query("channel"), c.Query("platform"), c.Query("arch"), ctx)
 	if err != nil {
 		logrus.Error(err)
 	}

@@ -2,9 +2,25 @@
 
 ## v1.2.1
 
+### Important Notes
+
+- **Important**: `channel_name` parameter renamed to `channel`
+
+### Maintenance
+
+- Added new `mongodb` migrations.
+
 ### Features
 
 - :tada: Implemented the published feature. Now the API returns only published versions.
+
+- Implemented a new APIs
+    - Creating platforms
+    - Removing platforms
+    - List platforms
+    - Creating architectures
+    - Removing architectures
+    - List architectures
 
 ### Bug Fixes
 

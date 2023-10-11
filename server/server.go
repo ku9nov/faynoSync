@@ -38,6 +38,12 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.POST("/createChannel", handler.CreateChannel)
 	router.GET("/listChannels", handler.ListChannels)
 	router.DELETE("/deleteChannel", handler.DeleteChannel)
+	router.POST("/createPlatform", handler.CreatePlatform)
+	router.GET("/listPlatforms", handler.ListPlatforms)
+	router.DELETE("/deletePlatform", handler.DeletePlatform)
+	router.POST("/createArch", handler.CreateArch)
+	router.GET("/listArchs", handler.ListArchs)
+	router.DELETE("/deleteArch", handler.DeleteArch)
 	// get the port from the configuration file
 	port := config.GetString("PORT")
 	if port == "" {

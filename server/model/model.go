@@ -9,6 +9,8 @@ type App struct {
 	Link       string             `bson:"link"`
 	Channel    string             `bson:"channel"`
 	Published  bool               `bson:"published"`
+	Platform   string             `bson:"platform"`
+	Arch       string             `bson:"arch"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
 
@@ -16,4 +18,16 @@ type Channel struct {
 	ID          primitive.ObjectID `bson:"_id"`
 	ChannelName string             `bson:"channel_name"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`
+}
+
+type Platform struct {
+	ID           primitive.ObjectID `bson:"_id"`
+	PlatformName string             `bson:"platform_name"`
+	Updated_at   primitive.DateTime `bson:"updated_at"`
+}
+
+type Arch struct {
+	ID         primitive.ObjectID `bson:"_id"`
+	ArchID     string             `bson:"arch_id"`
+	Updated_at primitive.DateTime `bson:"updated_at"`
 }

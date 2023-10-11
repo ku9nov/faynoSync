@@ -311,7 +311,7 @@ func TestChannelCreateNightly(t *testing.T) {
 		handler.CreateChannel(c)
 	})
 
-	req, err := http.NewRequest("POST", "/createChannel?channel_name=nightly", nil)
+	req, err := http.NewRequest("POST", "/createChannel?channel=nightly", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestChannelCreateStable(t *testing.T) {
 		handler.CreateChannel(c)
 	})
 
-	req, err := http.NewRequest("POST", "/createChannel?channel_name=stable", nil)
+	req, err := http.NewRequest("POST", "/createChannel?channel=stable", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +417,7 @@ func TestUploadAppWithoutChannel(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	// Check the response body for the desired error message.
-	expectedErrorMessage := `{"error":"you have a created channels, setting channel_name is required"}`
+	expectedErrorMessage := `{"error":"you have a created channels, setting channel is required"}`
 	assert.Equal(t, expectedErrorMessage, w.Body.String())
 }
 
@@ -469,7 +469,7 @@ func TestMultipleUpload(t *testing.T) {
 		}
 		writer.Close()
 		// Create a POST request for the upload endpoint with the current combination.
-		req, err := http.NewRequest("POST", fmt.Sprintf("/upload?app_name=testapp&version=%s&channel_name=%s&publish=%v", combo.AppVersion, combo.ChannelName, combo.Published), body)
+		req, err := http.NewRequest("POST", fmt.Sprintf("/upload?app_name=testapp&version=%s&channel=%s&publish=%v", combo.AppVersion, combo.ChannelName, combo.Published), body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -660,7 +660,7 @@ func TestCheckVersion(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			// Create a GET request for checking the version.
-			req, err := http.NewRequest("POST", fmt.Sprintf("/checkVersion?app_name=%s&version=%s&channel_name=%s", scenario.AppName, scenario.Version, scenario.ChannelName), nil)
+			req, err := http.NewRequest("POST", fmt.Sprintf("/checkVersion?app_name=%s&version=%s&channel=%s", scenario.AppName, scenario.Version, scenario.ChannelName), nil)
 			if err != nil {
 				t.Fatal(err)
 			}

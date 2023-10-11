@@ -34,21 +34,21 @@ Responce:
 
 ### Create channel (Optional)
 
-:warning: After first creating, field `channel_name` is required.
+:warning: After first creating, field `channel` is required.
 
 Create deployment channel.
 
-`POST /createChannel\?channel_name\=<channel_name>`
+`POST /createChannel\?channel\=<channel_name>`
 
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
 
 ###### Query Parameters
-**channel_name**: Name of the channel.
+**channel**: Name of the channel.
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/createChannel\?channel_name\=dev -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X POST http://localhost:9000/createChannel\?channel\=dev -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
 
 ```
 
@@ -57,6 +57,62 @@ curl -X POST http://localhost:9000/createChannel\?channel_name\=dev -H "Authoriz
 ```
 {
    "createChannelResult.Created":"641459ffb8360d74164e7e3c"
+}
+```
+
+### Create platform (Optional)
+
+:warning: After first creating, field `platform` is required.
+
+Create deployment platform.
+
+`POST /createPlatform\?platform\=<platform_name>`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Query Parameters
+**platform**: Name of the platform.
+
+###### Request:
+```
+curl -X POST http://localhost:9000/createPlatform\?platform\=universal -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+
+```
+
+###### Responce:
+
+```
+{
+   "createPlatformResult.Created":"641459ffb8360d74164e7e3c"
+}
+```
+
+### Create arch (Optional)
+
+:warning: After first creating, field `arch` is required.
+
+Create deployment architecture.
+
+`POST /createArch\?arch\=<arch_id>`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Query Parameters
+**arch**: Arch of the app.
+
+###### Request:
+```
+curl -X POST http://localhost:9000/createArch\?arch\=universal -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+
+```
+
+###### Responce:
+
+```
+{
+   "createArchResult.Created":"641459ffb8360d74164e7e3c"
 }
 ```
 
@@ -93,6 +149,63 @@ curl -X GET http://localhost:9000/listChannels -H "Authorization: Ut5b4fQs05UbTt
 }
 ```
 
+### Get All Platforms
+
+Retrieve a list of all platforms.
+
+`GET /listPlatforms`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Request:
+```
+curl -X GET http://localhost:9000/listPlatforms -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+```
+
+###### Responce:
+
+```
+{
+    "platforms": [
+        {
+            "ID": "6526ad5915f01fa908676536",
+            "PlatformName": "universal",
+            "Updated_at": "2023-10-11T17:12:41.763+03:00"
+        }
+    ]
+}
+```
+
+### Get All Architectures
+
+Retrieve a list of all architectures.
+
+`GET /listArchs`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Request:
+```
+curl -X GET http://localhost:9000/listArchs -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+```
+
+###### Responce:
+
+```
+{
+    "archs": [
+        {
+            "ID": "6526adf44402fcb364f70b73",
+            "ArchID": "universal",
+            "Updated_at": "2023-10-11T17:15:16.056+03:00"
+        }
+    ]
+}
+```
+
+
 ### Get All Apps
 
 Retrieve a list of all apps.
@@ -117,6 +230,10 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer Ut5b4fQs05UbTteme2j
          "AppName":"myapp",
          "Version":"4.1.5",
          "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.1.5",
+         "Channel": "",
+         "Published": false,
+         "Platform": "universal",
+         "Arch": "universal",
          "Updated_at":"2023-03-09T13:57:55.546+02:00"
       }
    ]
@@ -154,9 +271,9 @@ Upload a new version of an app.
 
 `POST /upload?app_name=<app_name>&version=<version>`
 
-Optional with `channel_name` and `publish`:
+Optional with `channel`, `publish`, `platform` and `arch`:
 
-`POST /upload?app_name=<app_name>&version=<version>&channel_name=<channel>&publish=<true or false>`
+`POST /upload?app_name=<app_name>&version=<version>&channel=<channel_name>&publish=<true or false>&platform=<platform_name>&arch=<arch_id>`
 
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
@@ -165,6 +282,14 @@ Optional with `channel_name` and `publish`:
 **app_name**: Name of the app.
 
 **version**: Current version of the app.
+
+**channel**: Current channel of the app.
+
+**publish**: Set `true` for availabilitty this version for clients.
+
+**platform**: Current platform of the app.
+
+**arch**: Current arch of the app.
 
 ###### Body
 **file**: file of the app.
@@ -236,6 +361,8 @@ curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: B
          "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.1.5.tar.gz",
          "Channel": "",
          "Published": false,
+         "Platform": "universal",
+         "Arch": "universal",
          "Updated_at":"2023-03-09T18:52:42.573+02:00"
       }{
          "ID":"6411c7c0ec4ff9a9a9bc18fa",
@@ -244,6 +371,8 @@ curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: B
          "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.2.3.tar.gz",
          "Channel": "",
          "Published": false,
+         "Platform": "universal",
+         "Arch": "universal",
          "Updated_at":"2023-03-15T15:27:28.807+02:00"
       }
    ]
@@ -271,6 +400,56 @@ curl -X DELETE http://localhost:9000/deleteChannel\?\id\=\64145ebaedd163d59d52e1
 ```
 {
    "deleteChannelResult.DeletedCount":1
+}
+```
+
+### Delete specific platform
+This endpoint allows you to delete a specific platform.
+
+`DELETE /deletePlatform?id=<id>`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Query Parameters
+**id**: The unique identifier of the platform.
+
+###### Request:
+```
+curl -X DELETE http://localhost:9000/deletePlatform\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+
+```
+
+###### Responce:
+
+```
+{
+   "deletePlatformResult.DeletedCount":1
+}
+```
+
+### Delete specific arch
+This endpoint allows you to delete a specific arch.
+
+`DELETE /deleteArch?id=<id>`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Query Parameters
+**id**: The unique identifier of the arch.
+
+###### Request:
+```
+curl -X DELETE http://localhost:9000/deleteArch\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+
+```
+
+###### Responce:
+
+```
+{
+   "deleteArchResult.DeletedCount":1
 }
 ```
 
