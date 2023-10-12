@@ -5,6 +5,7 @@
 ### Important Notes
 
 - **Important**: `channel_name` parameter renamed to `channel`
+- **Important**: Updated `Postman` template.
 
 ### Maintenance
 
@@ -21,6 +22,16 @@
     - Creating architectures
     - Removing architectures
     - List architectures
+
+- Implemented new e2e tests
+    - TestPlatformCreate
+    - TestUploadAppWithoutPlatform
+    - TestArchCreate
+    - TestUploadAppWithoutArch
+    - TestDeletePlatform
+    - TestDeleteArch
+
+    Other tests is adapted.
 
 ### Bug Fixes
 

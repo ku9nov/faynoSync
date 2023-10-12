@@ -89,6 +89,44 @@
 			"response": []
 		},
 		{
+			"name": "List Platforms",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/listPlatforms",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"listPlatforms"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "List Archs",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/listArchs",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"listArchs"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Login",
 			"request": {
 				"method": "POST",
@@ -133,7 +171,7 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}&channel_name=&publish=",
+					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}&channel=&publish=&platform&arch",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -152,12 +190,20 @@
 							"value": "{{version}}"
 						},
 						{
-							"key": "channel_name",
+							"key": "channel",
 							"value": ""
 						},
 						{
 							"key": "publish",
 							"value": ""
+						},
+						{
+							"key": "platform",
+							"value": null
+						},
+						{
+							"key": "arch",
+							"value": null
 						}
 					]
 				}
@@ -173,7 +219,7 @@
 				"method": "POST",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel_name=",
+					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel=&platform&arch",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -192,8 +238,16 @@
 							"value": "{{version}}"
 						},
 						{
-							"key": "channel_name",
+							"key": "channel",
 							"value": ""
+						},
+						{
+							"key": "platform",
+							"value": null
+						},
+						{
+							"key": "arch",
+							"value": null
 						}
 					]
 				}
@@ -206,7 +260,7 @@
 				"method": "POST",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/createChannel?channel_name={{channel_name}}",
+					"raw": "http://localhost:{{PORT}}/createChannel?channel={{channel}}",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -217,8 +271,58 @@
 					],
 					"query": [
 						{
-							"key": "channel_name",
-							"value": "{{channel_name}}"
+							"key": "channel",
+							"value": "{{channel}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create Platform",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/createPlatform?platform={{platform}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"createPlatform"
+					],
+					"query": [
+						{
+							"key": "platform",
+							"value": "{{platform}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create Arch",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/createArch?arch={{arch}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"createArch"
+					],
+					"query": [
+						{
+							"key": "arch",
+							"value": "{{arch}}"
 						}
 					]
 				}
@@ -251,7 +355,32 @@
 			"response": []
 		},
 		{
-			"name": "Delete channel",
+			"name": "Delete platform by id",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/deletePlatform?id",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"deletePlatform"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": null
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete channel by id",
 			"request": {
 				"method": "DELETE",
 				"header": [],
@@ -264,6 +393,31 @@
 					"port": "{{PORT}}",
 					"path": [
 						"deleteChannel"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": null
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete arch by id",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/deleteArch?id",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"deleteArch"
 					],
 					"query": [
 						{
@@ -333,8 +487,18 @@
 			"type": "string"
 		},
 		{
-			"key": "channel_name",
+			"key": "channel",
 			"value": "nightly",
+			"type": "string"
+		},
+		{
+			"key": "platform",
+			"value": "universal",
+			"type": "string"
+		},
+		{
+			"key": "arch",
+			"value": "universal",
 			"type": "string"
 		}
 	]

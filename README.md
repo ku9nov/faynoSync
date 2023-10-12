@@ -94,7 +94,13 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestMultipleDelete
     - TestDeleteNightlyChannel
     - TestDeleteStableChannel
-
+    - TestPlatformCreate
+    - TestUploadAppWithoutPlatform
+    - TestArchCreate
+    - TestUploadAppWithoutArch
+    - TestDeletePlatform
+    - TestDeleteArch
+    
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).
 ```
