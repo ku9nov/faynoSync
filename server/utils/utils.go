@@ -40,6 +40,52 @@ type ServerSettings struct {
 	Port string
 }
 
+func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interface{}, error) {
+	ctxQueryMap := map[string]interface{}{
+		"app_name": c.Query("app_name"),
+		"version":  c.Query("version"),
+		"channel":  c.Query("channel"),
+		"publish":  c.Query("publish"),
+		"platform": c.Query("platform"),
+		"arch":     c.Query("arch"),
+	}
+
+	if !IsValidAppName(ctxQueryMap["app_name"].(string)) {
+		return nil, errors.New("Invalid app_name parameter")
+	}
+	if !IsValidVersion(ctxQueryMap["version"].(string)) {
+		return nil, errors.New("Invalid version parameter")
+	}
+	if !IsValidChannelName(ctxQueryMap["channel"].(string)) {
+		return nil, errors.New("Invalid channel parameter")
+	}
+
+	if !IsValidPlatformName(ctxQueryMap["platform"].(string)) {
+		return nil, errors.New("Invalid platform parameter")
+	}
+
+	if !IsValidArchName(ctxQueryMap["arch"].(string)) {
+		return nil, errors.New("Invalid platform parameter")
+	}
+
+	errChannels := CheckChannels(ctxQueryMap["channel"].(string), database, c)
+	if errChannels != nil {
+		return nil, errChannels
+	}
+
+	errPlatforms := CheckPlatforms(ctxQueryMap["platform"].(string), database, c)
+	if errPlatforms != nil {
+		return nil, errPlatforms
+	}
+
+	errArchs := CheckArchs(ctxQueryMap["arch"].(string), database, c)
+	if errArchs != nil {
+		return nil, errArchs
+	}
+
+	return ctxQueryMap, nil
+}
+
 func IsValidAppName(input string) bool {
 	// Only allow letters and numbers, no spaces or special characters
 	validName := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
