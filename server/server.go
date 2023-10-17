@@ -27,6 +27,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	router.GET("/health", handler.HealthCheck)
 	router.POST("/checkVersion", handler.FindLatestVersion)
+	router.Use(corsMiddleware(config.GetString("DASHBOARD_URL")))
 	router.POST("/login", handler.Login)
 
 	router.Use(authMiddleware)
@@ -50,4 +51,20 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 		port = "9000"
 	}
 	router.Run(":" + port)
+}
+
+func corsMiddleware(allowOrigin string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
 }
