@@ -23,7 +23,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	defer ctxErr()
 
 	// Request on repository
-	updateAvailable, linkToLatest, err := repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), c.Query("channel"), c.Query("platform"), c.Query("arch"), ctx)
+	updateAvailable, linkToLatest, err := repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), c.Query("channel"), c.Query("platform"), c.Query("arch"), c.Query("package"), ctx)
 	if err != nil {
 		logrus.Error(err)
 	}

@@ -97,3 +97,21 @@ func DeletePlatform(c *gin.Context, repository db.AppRepository) {
 	}
 	c.JSON(http.StatusOK, gin.H{"deletePlatformResult.DeletedCount": result})
 }
+
+func DeletePackage(c *gin.Context, repository db.AppRepository) {
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	// Convert string to ObjectID
+	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Request on the repository
+	result, err := repository.DeletePackage(objID, ctx)
+	if err != nil {
+		logrus.Error(err)
+	}
+	c.JSON(http.StatusOK, gin.H{"deletePackageResult.DeletedCount": result})
+}

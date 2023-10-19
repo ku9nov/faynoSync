@@ -1,5 +1,5 @@
 [{
-    "createIndexes": "archs",
+    "createIndexes": "apps",
     "indexes": [
       {
         "key": {
@@ -8,7 +8,10 @@
         },
         "name": "arch_id_sort_by_asc_created",
         "unique": true,
-        "background": true
+        "background": true,
+        "partialFilterExpression": {
+          "arch_id": { "$exists": true }
+        }
       }
     ]
 }]

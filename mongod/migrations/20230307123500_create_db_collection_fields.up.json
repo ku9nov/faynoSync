@@ -24,7 +24,10 @@
         },
         "name": "unique_link_to_app_with_specific_version",
         "unique": true,
-        "background": true
+        "background": true,
+        "partialFilterExpression": {
+          "link": { "$exists": true }
+        }
       }
     ]
   }]

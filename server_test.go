@@ -298,6 +298,35 @@ func TestDeleteApp(t *testing.T) {
 	assert.Equal(t, expected, w.Body.String())
 }
 
+func TestListChannels(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.GET("/listChannels", func(c *gin.Context) {
+		handler.ListChannels(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("GET", "/listChannels", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"channels":null}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
 var idNightlyChannel string
 var idStableChannel string
 
@@ -421,6 +450,35 @@ func TestUploadAppWithoutChannel(t *testing.T) {
 	assert.Equal(t, expectedErrorMessage, w.Body.String())
 }
 
+func TestListPlatforms(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.GET("/listPlatforms", func(c *gin.Context) {
+		handler.ListPlatforms(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("GET", "/listPlatforms", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"platforms":null}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
 var platformId string
 
 func TestPlatformCreate(t *testing.T) {
@@ -508,6 +566,35 @@ func TestUploadAppWithoutPlatform(t *testing.T) {
 	// Check the response body for the desired error message.
 	expectedErrorMessage := `{"error":"you have a created platforms, setting platform is required"}`
 	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
+
+func TestListArchs(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.GET("/listArchs", func(c *gin.Context) {
+		handler.ListArchs(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("GET", "/listArchs", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"archs":null}`
+	assert.Equal(t, expected, w.Body.String())
 }
 
 var archId string
@@ -780,7 +867,7 @@ func TestSearch(t *testing.T) {
 func TestCheckVersion(t *testing.T) {
 	router := gin.Default()
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
-	router.POST("/checkVersion", func(c *gin.Context) {
+	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
 	// Define test scenarios.
@@ -872,7 +959,7 @@ func TestCheckVersion(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			// Create a GET request for checking the version.
-			req, err := http.NewRequest("POST", fmt.Sprintf("/checkVersion?app_name=%s&version=%s&channel=%s&publish=%v&platform=%s&arch=%s", scenario.AppName, scenario.Version, scenario.ChannelName, scenario.Published, scenario.Platform, scenario.Arch), nil)
+			req, err := http.NewRequest("GET", fmt.Sprintf("/checkVersion?app_name=%s&version=%s&channel=%s&publish=%v&platform=%s&arch=%s", scenario.AppName, scenario.Version, scenario.ChannelName, scenario.Published, scenario.Platform, scenario.Arch), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -926,6 +1013,59 @@ func TestMultipleDelete(t *testing.T) {
 
 		expected := `{"deleteAppResult.DeletedCount":1}`
 		assert.Equal(t, expected, w.Body.String())
+	}
+}
+
+func TestListChannelsWhenExist(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.GET("/listChannels", func(c *gin.Context) {
+		handler.ListChannels(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("GET", "/listChannels", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ChannelInfo struct {
+		ID          string `json:"ID"`
+		ChannelName string `json:"ChannelName"`
+		Updated_at  string `json:"Updated_at"`
+	}
+	type ChannelResponse struct {
+		Channels []ChannelInfo `json:"channels"`
+	}
+
+	expected := []ChannelInfo{
+		{
+			ChannelName: "nightly",
+		},
+		{
+			ChannelName: "stable",
+		},
+	}
+	var actual ChannelResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (ChannelName) for each item in the response.
+	for i, expectedChannel := range expected {
+		assert.Equal(t, expectedChannel.ChannelName, actual.Channels[i].ChannelName)
 	}
 }
 
@@ -987,6 +1127,56 @@ func TestDeleteStableChannel(t *testing.T) {
 	assert.Equal(t, expected, w.Body.String())
 }
 
+func TestListPlatformsWhenExist(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.GET("/listPlatforms", func(c *gin.Context) {
+		handler.ListPlatforms(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("GET", "/listPlatforms", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	type PlatformInfo struct {
+		ID           string `json:"ID"`
+		PlatformName string `json:"PlatformName"`
+		Updated_at   string `json:"Updated_at"`
+	}
+	type PlatformResponse struct {
+		Platforms []PlatformInfo `json:"platforms"`
+	}
+
+	expected := []PlatformInfo{
+		{
+			PlatformName: "universalPlatform",
+		},
+	}
+	var actual PlatformResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (PlatformName) for each item in the response.
+	for i, expectedPlatform := range expected {
+		assert.Equal(t, expectedPlatform.PlatformName, actual.Platforms[i].PlatformName)
+	}
+}
+
 func TestDeletePlatform(t *testing.T) {
 
 	router := gin.Default()
@@ -1014,6 +1204,56 @@ func TestDeletePlatform(t *testing.T) {
 
 	expected := `{"deletePlatformResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestListArchsWhenExist(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.GET("/listArchs", func(c *gin.Context) {
+		handler.ListArchs(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("GET", "/listArchs", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ArchInfo struct {
+		ID         string `json:"ID"`
+		ArchID     string `json:"ArchID"`
+		Updated_at string `json:"Updated_at"`
+	}
+	type PlatformResponse struct {
+		Archs []ArchInfo `json:"archs"`
+	}
+
+	expected := []ArchInfo{
+		{
+			ArchID: "universalArch",
+		},
+	}
+	var actual PlatformResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (ArchID) for each item in the response.
+	for i, expectedArch := range expected {
+		assert.Equal(t, expectedArch.ArchID, actual.Archs[i].ArchID)
+	}
 }
 
 func TestDeleteArch(t *testing.T) {

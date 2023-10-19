@@ -1,11 +1,13 @@
 # Changelog
 
-## v1.2.1
+## v1.3.1
 
 ### Important Notes
 
 - **Important**: `channel_name` parameter renamed to `channel`
 - **Important**: Updated `Postman` template.
+- **Important**: `checkVersion` changed from `POST` to `GET`
+- **Important**: MongoDB architecture is changed to all in one collection.
 
 ### Maintenance
 
@@ -22,6 +24,9 @@
     - Creating architectures
     - Removing architectures
     - List architectures
+    - Creating package types
+    - Removing package types
+    - List package types
 
 - Implemented new e2e tests
     - TestPlatformCreate
@@ -30,7 +35,12 @@
     - TestUploadAppWithoutArch
     - TestDeletePlatform
     - TestDeleteArch
-
+    - TestListArchs
+    - TestListPlatforms
+    - TestListChannels
+    - TestListArchsWhenExist
+    - TestListPlatformsWhenExist
+    - TestListChannelsWhenExist
     Other tests is adapted.
 
 ### Bug Fixes

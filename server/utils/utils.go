@@ -117,18 +117,20 @@ func IsValidArchName(input string) bool {
 
 func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
-		// Check if there are any existing channels
-		count, err := db.Collection("channels").CountDocuments(ctx, bson.M{})
+		filter := bson.M{"channel_name": bson.M{"$exists": true}}
+		count, err := db.Collection("apps").CountDocuments(ctx, filter)
 		if err != nil {
 			return err
 		}
+
 		if count > 0 {
 			return errors.New("you have a created channels, setting channel is required")
 		}
+
 		return nil
 	}
 	// Check if the channel exists in the database
-	cursor, err := db.Collection("channels").Find(ctx, bson.M{"channel_name": input})
+	cursor, err := db.Collection("apps").Find(ctx, bson.M{"channel_name": input})
 	if err != nil {
 		return err
 	}
@@ -145,18 +147,20 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 
 func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
-		// Check if there are any existing platforms
-		count, err := db.Collection("platforms").CountDocuments(ctx, bson.M{})
+		filter := bson.M{"platform_name": bson.M{"$exists": true}}
+		count, err := db.Collection("apps").CountDocuments(ctx, filter)
 		if err != nil {
 			return err
 		}
+
 		if count > 0 {
 			return errors.New("you have a created platforms, setting platform is required")
 		}
+
 		return nil
 	}
 	// Check if the platform exists in the database
-	cursor, err := db.Collection("platforms").Find(ctx, bson.M{"platform_name": input})
+	cursor, err := db.Collection("apps").Find(ctx, bson.M{"platform_name": input})
 	if err != nil {
 		return err
 	}
@@ -173,18 +177,20 @@ func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
 
 func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
-		// Check if there are any existing archs
-		count, err := db.Collection("archs").CountDocuments(ctx, bson.M{})
+		filter := bson.M{"arch_id": bson.M{"$exists": true}}
+		count, err := db.Collection("apps").CountDocuments(ctx, filter)
 		if err != nil {
 			return err
 		}
+
 		if count > 0 {
 			return errors.New("you have a created archs, setting arch is required")
 		}
+
 		return nil
 	}
 	// Check if the channel exists in the database
-	cursor, err := db.Collection("archs").Find(ctx, bson.M{"arch_id": input})
+	cursor, err := db.Collection("apps").Find(ctx, bson.M{"arch_id": input})
 	if err != nil {
 		return err
 	}

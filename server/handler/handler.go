@@ -19,6 +19,7 @@ type AppHandler interface {
 	DeleteChannel(*gin.Context)
 	DeletePlatform(*gin.Context)
 	DeleteArch(*gin.Context)
+	DeletePackage(*gin.Context)
 	UploadApp(*gin.Context)
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
@@ -29,6 +30,8 @@ type AppHandler interface {
 	ListPlatforms(*gin.Context)
 	CreateArch(*gin.Context)
 	ListArchs(*gin.Context)
+	CreatePackage(*gin.Context)
+	ListPackages(*gin.Context)
 }
 
 type appHandler struct {
@@ -76,6 +79,11 @@ func (ch *appHandler) ListArchs(c *gin.Context) {
 	catalog.ListArchs(c, ch.repository)
 }
 
+func (ch *appHandler) ListPackages(c *gin.Context) {
+	// Call the ListPackages function from the catalog package
+	catalog.ListPackages(c, ch.repository)
+}
+
 func (ch *appHandler) CreateChannel(c *gin.Context) {
 	// Call the CreateChannel function from the create package
 	create.CreateChannel(c, ch.repository)
@@ -88,6 +96,11 @@ func (ch *appHandler) CreatePlatform(c *gin.Context) {
 func (ch *appHandler) CreateArch(c *gin.Context) {
 	// Call the CreateArch function from the create package
 	create.CreateArch(c, ch.repository)
+}
+
+func (ch *appHandler) CreatePackage(c *gin.Context) {
+	// Call the CreatePackage function from the create package
+	create.CreatePackage(c, ch.repository)
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
@@ -118,4 +131,9 @@ func (ch *appHandler) DeletePlatform(c *gin.Context) {
 func (ch *appHandler) DeleteArch(c *gin.Context) {
 	// Call the DeleteArch function from the delete package
 	delete.DeleteArch(c, ch.repository)
+}
+
+func (ch *appHandler) DeletePackage(c *gin.Context) {
+	// Call the DeletePackage function from the delete package
+	delete.DeletePackage(c, ch.repository)
 }

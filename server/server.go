@@ -26,7 +26,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	authMiddleware := utils.AuthMiddleware(mongoDatabase)
 
 	router.GET("/health", handler.HealthCheck)
-	router.POST("/checkVersion", handler.FindLatestVersion)
+	router.GET("/checkVersion", handler.FindLatestVersion)
 	router.Use(corsMiddleware(config.GetString("DASHBOARD_URL")))
 	router.POST("/login", handler.Login)
 
@@ -45,6 +45,9 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.POST("/createArch", handler.CreateArch)
 	router.GET("/listArchs", handler.ListArchs)
 	router.DELETE("/deleteArch", handler.DeleteArch)
+	router.POST("/createPackage", handler.CreatePackage)
+	router.GET("/listPackage", handler.ListPackages)
+	router.DELETE("/deletePackage", handler.DeletePackage)
 	// get the port from the configuration file
 	port := config.GetString("PORT")
 	if port == "" {

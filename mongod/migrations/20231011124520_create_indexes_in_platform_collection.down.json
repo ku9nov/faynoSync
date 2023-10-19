@@ -1,6 +1,6 @@
 [
     {
-      "dropIndexes": "platforms",
+      "dropIndexes": "apps",
       "index": "platform_name_sort_by_asc_created"
     }
 ]

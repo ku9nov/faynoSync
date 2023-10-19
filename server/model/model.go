@@ -31,3 +31,9 @@ type Arch struct {
 	ArchID     string             `bson:"arch_id"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
+
+type Package struct {
+	ID          primitive.ObjectID `bson:"_id"`
+	PackageType string             `bson:"package_type"`
+	Updated_at  primitive.DateTime `bson:"updated_at"`
+}
