@@ -4,6 +4,7 @@ import (
 	db "SAU/mongod"
 	"SAU/server/utils"
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -34,11 +35,15 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		if len(checkResult.Artifacts) == 0 {
 			c.JSON(http.StatusOK, gin.H{"update_available": false, "error": "Not found"})
 		} else {
-			errorMsg := "Not found"
-			if err != nil {
-				errorMsg = err.Error()
+			fmt.Println(checkResult)
+			response := gin.H{"update_available": false}
+			for _, artifact := range checkResult.Artifacts {
+				if artifact.Package != "" && artifact.Link != "" {
+					key := "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+					response[key] = artifact.Link
+				}
 			}
-			c.JSON(http.StatusOK, gin.H{"update_available": false, "error": errorMsg})
+			c.JSON(http.StatusOK, response)
 		}
 		return
 	}

@@ -7,7 +7,7 @@
 - **Important**: `channel_name` parameter renamed to `channel`
 - **Important**: Updated `Postman` template.
 - **Important**: `checkVersion` changed from `POST` to `GET`
-- **Important**: MongoDB architecture is changed to all in one collection.
+- **Important**: MongoDB architecture is changed to all in one collection. Changed mongoDB objects structure.
 
 ### Maintenance
 
@@ -24,9 +24,6 @@
     - Creating architectures
     - Removing architectures
     - List architectures
-    - Creating package types
-    - Removing package types
-    - List package types
 
 - Implemented new e2e tests
     - TestPlatformCreate
