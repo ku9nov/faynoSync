@@ -40,6 +40,15 @@ type ServerSettings struct {
 	Port string
 }
 
+func GetStringValue(m map[string]interface{}, key string) string {
+	if val, ok := m[key]; ok {
+		if strVal, ok := val.(string); ok {
+			return strVal
+		}
+	}
+	return ""
+}
+
 func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interface{}, error) {
 	ctxQueryMap := map[string]interface{}{
 		"app_name": c.Query("app_name"),
@@ -220,7 +229,7 @@ func createS3Client() *s3.Client {
 	return s3.NewFromConfig(cfg)
 }
 
-func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) string {
+func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, string, error) {
 	// // Create an S3 client using another func
 	s3Client := createS3Client()
 
@@ -278,7 +287,7 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})
 
 	}
-	return link
+	return link, extension, err
 }
 
 func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {

@@ -51,17 +51,3 @@ func CreateArch(c *gin.Context, repository db.AppRepository) {
 
 	c.JSON(http.StatusOK, gin.H{"createArchResult.Created": result})
 }
-
-func CreatePackage(c *gin.Context, repository db.AppRepository) {
-
-	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
-	defer ctxErr()
-	result, err := repository.CreatePackage(c.Query("package"), ctx)
-	if err != nil {
-		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload package data"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"createPackageResult.Created": result})
-}

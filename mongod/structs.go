@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"SAU/server/model"
+	"SAU/server/utils"
 
 	"github.com/hashicorp/go-version"
 	"github.com/sirupsen/logrus"
@@ -24,8 +25,8 @@ type AppRepository interface {
 	GetAppByName(email string, ctx context.Context) ([]*model.App, error)
 	DeleteApp(id primitive.ObjectID, ctx context.Context) (string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
-	Upload(ctxQuery map[string]interface{}, appLink string, ctx context.Context) (interface{}, error)
-	CheckLatestVersion(appName, version, channel, platform, arch, packageType string, ctx context.Context) (bool, string, error)
+	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
+	CheckLatestVersion(appName, version, channel, platform, arch string, ctx context.Context) (CheckResult, error)
 	CreateChannel(channelName string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context) ([]*model.Channel, error)
 	CreatePlatform(platformName string, ctx context.Context) (interface{}, error)
@@ -34,9 +35,6 @@ type AppRepository interface {
 	CreateArch(archName string, ctx context.Context) (interface{}, error)
 	ListArchs(ctx context.Context) ([]*model.Arch, error)
 	DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error)
-	CreatePackage(packageType string, ctx context.Context) (interface{}, error)
-	ListPackages(ctx context.Context) ([]*model.Package, error)
-	DeletePackage(id primitive.ObjectID, ctx context.Context) (int64, error)
 }
 
 type appRepository struct {
@@ -187,41 +185,6 @@ func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
 	return archs, nil
 }
 
-func (c *appRepository) ListPackages(ctx context.Context) ([]*model.Package, error) {
-
-	findOptions := options.Find()
-	findOptions.SetLimit(100)
-
-	var packageTypes []*model.Package
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-	// Define a filter to fetch documents with the "package_type" field
-	filter := bson.M{"package_type": bson.M{"$exists": true}}
-
-	cur, err := collection.Find(ctx, filter, findOptions)
-	if err != nil {
-		log.Fatal(err)
-		return nil, err
-	}
-
-	// Finding multiple documents returns a cursor
-	// Iterating through the cursor allows us to decode documents one at a time
-	for cur.Next(context.TODO()) {
-		// create a value into which the single document can be decoded
-		var elem model.Package
-		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
-			return nil, err
-		}
-
-		packageTypes = append(packageTypes, &elem)
-	}
-
-	cur.Close(ctx)
-
-	return packageTypes, nil
-}
-
 func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.App, error) {
 
 	findOptions := options.Find()
@@ -280,7 +243,7 @@ func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) (s
 		return "", 0, err
 	}
 
-	return app.Link, deleteResult.DeletedCount, nil
+	return app.Artifacts[0].Link, deleteResult.DeletedCount, nil
 }
 
 func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error) {
@@ -361,73 +324,109 @@ func (c *appRepository) DeleteArch(id primitive.ObjectID, ctx context.Context) (
 	return deleteResult.DeletedCount, nil
 }
 
-func (c *appRepository) DeletePackage(id primitive.ObjectID, ctx context.Context) (int64, error) {
-
+func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{primitive.E{Key: "_id", Value: id}}
-
-	// Retrieve the document before deletion
-	var packageTypes *model.Package
-	err := collection.FindOne(ctx, filter).Decode(&packageTypes)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return 0, fmt.Errorf("no package found with type %s", id)
-		}
-		return 0, fmt.Errorf("error retrieving package with type %s: %s", id, err.Error())
-	}
-
-	deleteResult, err := collection.DeleteOne(ctx, filter)
-	if err != nil {
-		log.Fatal(err)
-
-		return 0, err
-	}
-
-	return deleteResult.DeletedCount, nil
-}
-
-func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink string, ctx context.Context) (interface{}, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
+	var uploadResult interface{}
+	var err error
 	// Check if a document with the same "app_name" and "version" already exists
-	existingDoc := collection.FindOne(ctx, bson.D{{Key: "app_name", Value: ctxQuery["app_name"].(string)}, {Key: "version", Value: ctxQuery["version"].(string)}})
-
-	if existingDoc.Err() == nil {
-		// A document with the same "app_name" and "version" combination already exists.
-		return "app with this name and version already exists", errors.New("app with this name and version already exists")
-	}
-	publishParam, publishExists := ctxQuery["publish"]
-	var publish bool
-
-	if publishExists {
-		publishVal := publishParam.(string)
-		publish = publishVal == "true"
-	} else {
-		publish = false
-	}
-	filter := bson.D{
+	existingDoc := collection.FindOne(ctx, bson.D{
 		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
 		{Key: "version", Value: ctxQuery["version"].(string)},
-		{Key: "link", Value: appLink},
-		{Key: "channel", Value: ctxQuery["channel"].(string)},
-		{Key: "platform", Value: ctxQuery["platform"].(string)},
-		{Key: "arch", Value: ctxQuery["arch"].(string)},
-		{Key: "published", Value: publish},
-		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
-	}
+	})
+	platform := utils.GetStringValue(ctxQuery, "platform")
+	arch := utils.GetStringValue(ctxQuery, "arch")
+	if existingDoc.Err() == nil {
+		var appData model.App
+		if err := existingDoc.Decode(&appData); err != nil {
+			return nil, err
+		}
 
-	uploadResult, err := collection.InsertOne(ctx, filter)
-	mongoErr, ok := err.(mongo.WriteException)
-	if ok {
-		for _, writeErr := range mongoErr.WriteErrors {
-			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "unique_link_to_app_with_specific_version") {
-				return "app with this link already exists", errors.New("app with this link already exists")
+		for _, artifact := range appData.Artifacts {
+			if artifact.Package == extension {
+				msg := "app with this name, version, and extension already exists"
+				return msg, errors.New(msg)
+			}
+		}
+
+		appData.Artifacts = append(appData.Artifacts, model.Artifact{
+			Link:     appLink,
+			Platform: platform,
+			Arch:     arch,
+			Package:  extension,
+		})
+		_, err = collection.UpdateOne(
+			ctx,
+			bson.D{{Key: "app_name", Value: ctxQuery["app_name"].(string)}, {Key: "version", Value: ctxQuery["version"].(string)}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "artifacts", Value: appData.Artifacts}, {Key: "updated_at", Value: time.Now()}}}},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		uploadResult = appData.ID
+	} else {
+		// Handle the case when no document exists
+		publishParam, publishExists := ctxQuery["publish"]
+		var publish bool
+
+		if publishExists {
+			publishVal := publishParam.(string)
+			publish = publishVal == "true"
+		} else {
+			publish = false
+		}
+
+		artifact := model.Artifact{
+			Link:     appLink,
+			Platform: platform,
+			Arch:     arch,
+			Package:  extension,
+		}
+
+		filter := bson.D{
+			{Key: "app_name", Value: ctxQuery["app_name"].(string)},
+			{Key: "version", Value: ctxQuery["version"].(string)},
+			{Key: "channel", Value: ctxQuery["channel"].(string)},
+			{Key: "published", Value: publish},
+			{Key: "artifacts", Value: []model.Artifact{artifact}},
+			{Key: "updated_at", Value: time.Now()},
+		}
+
+		uploadResult, err = collection.InsertOne(ctx, filter)
+		if err != nil {
+			logrus.Errorf("Error inserting document: %v", err)
+			return nil, err
+		}
+
+		mongoErr, ok := err.(mongo.WriteException)
+		if ok {
+			for _, writeErr := range mongoErr.WriteErrors {
+				if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "unique_link_to_app_with_specific_version") {
+					return "app with this link already exists", errors.New("app with this link already exists")
+				}
 			}
 		}
 	}
-
-	return uploadResult.InsertedID, nil
+	switch uploadResult.(type) {
+	case *mongo.InsertOneResult:
+		result, ok := uploadResult.(*mongo.InsertOneResult)
+		if !ok {
+			return nil, errors.New("error casting to InsertOneResult")
+		}
+		insertedID, ok := result.InsertedID.(primitive.ObjectID)
+		if !ok {
+			return nil, errors.New("error extracting ID from InsertOneResult")
+		}
+		return insertedID.Hex(), nil
+	case primitive.ObjectID:
+		id, ok := uploadResult.(primitive.ObjectID)
+		if !ok {
+			return nil, errors.New("error casting to ObjectID")
+		}
+		return id.Hex(), nil
+	default:
+		return nil, errors.New("unexpected return type")
+	}
 }
 
 func (c *appRepository) CreateChannel(channelName string, ctx context.Context) (interface{}, error) {
@@ -505,55 +504,35 @@ func (c *appRepository) CreateArch(archID string, ctx context.Context) (interfac
 	return uploadResult.InsertedID, nil
 }
 
-func (c *appRepository) CreatePackage(packageType string, ctx context.Context) (interface{}, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{
-		{Key: "package_type", Value: packageType},
-		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
-	}
-
-	uploadResult, err := collection.InsertOne(ctx, filter)
-	if err != nil {
-		logrus.Errorf("Error inserting document: %v", err)
-		return nil, err
-	}
-	mongoErr, ok := err.(mongo.WriteException)
-	if ok {
-		for _, writeErr := range mongoErr.WriteErrors {
-			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "package_type_sort_by_asc_created") {
-				return "package with this type already exists", errors.New("package with this type already exists")
-			}
-		}
-	}
-
-	return uploadResult.InsertedID, nil
+type Artifact struct {
+	Link    string
+	Package string
 }
 
-func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, platform, arch, packageType string, ctx context.Context) (bool, string, error) {
+type CheckResult struct {
+	Found     bool
+	Artifacts []Artifact
+}
+
+func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, platform, arch string, ctx context.Context) (CheckResult, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
 	// Define the filter based on appName and optional channel
 	filter := bson.D{
 		{Key: "app_name", Value: appName},
 		{Key: "published", Value: true},
+		{
+			Key: "artifacts", Value: bson.D{
+				{Key: "$elemMatch", Value: bson.D{
+					{Key: "platform", Value: platform},
+					{Key: "arch", Value: arch},
+				}},
+			},
+		},
 	}
 
 	if channel != "" {
 		filter = append(filter, bson.E{Key: "channel", Value: channel})
-	}
-
-	if platform != "" {
-		filter = append(filter, bson.E{Key: "platform", Value: platform})
-	}
-
-	if arch != "" {
-		filter = append(filter, bson.E{Key: "arch", Value: arch})
-	}
-
-	if packageType != "" {
-		filter = append(filter, bson.E{Key: "package", Value: packageType})
 	}
 
 	// Create an aggregation pipeline to sort by version and updated_at
@@ -593,15 +572,14 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 	// Execute the aggregation pipeline
 	cursor, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		return false, "", err
+		return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 	}
 	defer cursor.Close(ctx)
-
 	// Reset the cursor to its original position
 	cursor.Close(ctx)
 	cursor, err = collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		return false, "", err
+		return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 	}
 	defer cursor.Close(ctx)
 
@@ -610,28 +588,35 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 	if cursor.Next(ctx) {
 		err := cursor.Decode(&latestApp)
 		if err != nil {
-			return false, "", err
+			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
 		latestAppVersion, err := version.NewVersion(latestApp.Version)
 		if err != nil {
-			return false, "", err
+			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
 
 		requestedVersion, err := version.NewVersion(currentVersion)
 		if err != nil {
-			return false, "", err
+			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
-
+		var artifacts []Artifact
+		// Iterate through all elements in latestApp.Artifacts and append both link and package type
+		for _, artifact := range latestApp.Artifacts {
+			artifacts = append(artifacts, Artifact{
+				Link:    artifact.Link,
+				Package: artifact.Package,
+			})
+		}
 		if requestedVersion.Equal(latestAppVersion) {
-			return false, latestApp.Link, nil
+			return CheckResult{Found: false, Artifacts: artifacts}, nil
 		} else if requestedVersion.GreaterThan(latestAppVersion) {
-			return false, "Not found", fmt.Errorf("requested version %s is newest than the latest version available", requestedVersion)
+			return CheckResult{Found: false, Artifacts: []Artifact{}}, fmt.Errorf("requested version %s is newer than the latest version available", requestedVersion)
 		} else {
-			return true, latestApp.Link, nil
+			return CheckResult{Found: true, Artifacts: artifacts}, nil
 		}
 
 	} else {
-		return false, "Not found", fmt.Errorf("no matching documents found for app_name: %s", appName)
+		return CheckResult{Found: false, Artifacts: []Artifact{}}, fmt.Errorf("no matching documents found for app_name: %s", appName)
 	}
 
 }

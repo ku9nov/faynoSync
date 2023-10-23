@@ -3,9 +3,7 @@ package create
 import (
 	db "SAU/mongod"
 	"SAU/server/utils"
-	"context"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -20,26 +18,39 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) 
 		return
 	}
 
-	// Get file from form data
-	file, err := c.FormFile("file")
+	form, err := c.MultipartForm()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "file is required",
+			"error": "multipart form data is required",
 		})
 		return
 	}
 
-	link := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper())
+	files := form.File["file"] // Assuming the field name is "file" not "files"
 
-	// Upload app data to MongoDB
-	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
-	defer ctxErr()
-	result, err := repository.Upload(ctxQueryMap, link, ctx)
-	if err != nil {
-		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	var links []string
+	var extensions []string
+	for _, file := range files {
+		link, ext, err := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper())
+		if err != nil {
+			logrus.Error(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})
+			return
+		}
+		links = append(links, link)
+		extensions = append(extensions, ext)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": result})
+	var results []interface{}
+	for i, link := range links {
+		result, err := repository.Upload(ctxQueryMap, link, extensions[i], c.Request.Context())
+		if err != nil {
+			logrus.Error(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		results = append(results, result)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": results[0]})
 }
