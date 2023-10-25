@@ -1,9 +1,9 @@
 package info
 
 import (
-	db "SAU/mongod"
-	"SAU/server/utils"
 	"context"
+	db "faynoSync/mongod"
+	"faynoSync/server/utils"
 	"fmt"
 	"net/http"
 	"strings"

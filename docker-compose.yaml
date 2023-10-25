@@ -1,26 +1,28 @@
 version: "3.8"
 services:
   mongo:
+    platform: linux/x86_64
     image: mongo:4.4
     container_name: server_mongo_database
     restart: always
     volumes:
       - data:/data/db
     environment:
-      - MONGO_INITDB_DATABASE=cb_sau_db
+      - MONGO_INITDB_DATABASE=cb_faynosync_db
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
     ports:
       - "27017:27017"
 
   mongo_tests:
+    platform: linux/x86_64
     image: mongo:4.4
     container_name: server_mongo_database_tests
     restart: always
     volumes:
       - data-tests:/data/db
     environment:
-      - MONGO_INITDB_DATABASE=cb_sau_db
+      - MONGO_INITDB_DATABASE=cb_faynosync_db
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
     ports:

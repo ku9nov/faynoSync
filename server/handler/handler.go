@@ -1,12 +1,12 @@
 package handler
 
 import (
-	db "SAU/mongod"
-	"SAU/server/handler/catalog"
-	"SAU/server/handler/create"
-	"SAU/server/handler/delete"
-	"SAU/server/handler/info"
-	"SAU/server/handler/sign"
+	db "faynoSync/mongod"
+	"faynoSync/server/handler/catalog"
+	"faynoSync/server/handler/create"
+	"faynoSync/server/handler/delete"
+	"faynoSync/server/handler/info"
+	"faynoSync/server/handler/sign"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"

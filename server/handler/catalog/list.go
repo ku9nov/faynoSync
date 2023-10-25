@@ -1,9 +1,9 @@
 package catalog
 
 import (
-	db "SAU/mongod"
-	"SAU/server/model"
 	"context"
+	db "faynoSync/mongod"
+	"faynoSync/server/model"
 	"net/http"
 	"time"
 

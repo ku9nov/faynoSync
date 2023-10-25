@@ -1,6 +1,6 @@
 # API Reference
 
-You can find `Postman` collection [here](examples/SAU.postman_collection.json).
+You can find `Postman` collection [here](examples/faynoSync.postman_collection.json).
 
 ### Check Health Status
 Check the health status of the application.

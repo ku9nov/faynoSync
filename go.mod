@@ -1,4 +1,4 @@
-module SAU
+module faynoSync
 
 go 1.18
 

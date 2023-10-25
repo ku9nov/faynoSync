@@ -1,8 +1,8 @@
 package create
 
 import (
-	db "SAU/mongod"
-	"SAU/server/utils"
+	db "faynoSync/mongod"
+	"faynoSync/server/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"

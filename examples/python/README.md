@@ -1,4 +1,4 @@
-# Configuring and Using the python "Hello, world!" desktop application with SAU
+# Configuring and Using the python "Hello, world!" desktop application with faynoSync
 ### Requirements
 To use this application, you'll need to have Python 3 and the tkinter library installed on your computer. 
 
@@ -26,7 +26,7 @@ Download or clone the repository to your computer.
 
 Open a terminal or command prompt and navigate to the directory where the application is located.
 
-Change your `App name`, `channel` if channels exist, and `version` in `config.py` to real values existing in SAU.
+Change your `App name`, `channel` if channels exist, and `version` in `config.py` to real values existing in faynoSync.
 
 Type the following command to run the application:
 

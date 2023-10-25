@@ -1,8 +1,8 @@
 package create
 
 import (
-	db "SAU/mongod"
 	"context"
+	db "faynoSync/mongod"
 	"net/http"
 	"time"
 

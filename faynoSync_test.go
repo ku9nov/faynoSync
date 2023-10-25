@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	"SAU/mongod"
-	db "SAU/mongod"
-	"SAU/server/handler"
-	"SAU/server/model"
+	"faynoSync/mongod"
+	db "faynoSync/mongod"
+	"faynoSync/server/handler"
+	"faynoSync/server/model"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"

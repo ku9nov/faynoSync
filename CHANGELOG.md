@@ -4,6 +4,8 @@
 
 ### Important Notes
 
+App is renamed to `faynoSync`.
+
 - **Important**: `channel_name` parameter renamed to `channel`
 - **Important**: Updated `Postman` template.
 - **Important**: `checkVersion` changed from `POST` to `GET`

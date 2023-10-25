@@ -1,9 +1,9 @@
 package server
 
 import (
-	db "SAU/mongod"
-	"SAU/server/handler"
-	"SAU/server/utils"
+	db "faynoSync/mongod"
+	"faynoSync/server/handler"
+	"faynoSync/server/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"

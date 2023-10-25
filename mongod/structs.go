@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"SAU/server/model"
-	"SAU/server/utils"
+	"faynoSync/server/model"
+	"faynoSync/server/utils"
 
 	"github.com/hashicorp/go-version"
 	"github.com/sirupsen/logrus"
