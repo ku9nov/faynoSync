@@ -55,8 +55,9 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
+	filter := bson.M{"app_name": bson.M{"$exists": true}}
 	// Passing bson.D{{}} as the filter matches all documents in the collection
-	cur, err := collection.Find(ctx, bson.D{{}}, findOptions)
+	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
