@@ -2,7 +2,7 @@
 
 # FaynoSync
 
-![2023-03-17_12-36](https://user-images.githubusercontent.com/69673517/225881501-b8aab72a-31e7-45ec-9340-4cca2a7893e9.png)
+![225881501-b8aab72a-31e7-45ec-9340-4cca2a7893e9 (1)](https://github.com/ku9nov/SAU/assets/69673517/59ee4531-5d6c-4bc3-8aab-96854e2a4844)
 
 "FaynoSync" is derived from the Ukrainian word "файно" (fayno), which is transliterated as "fayno" in English. In the Ukrainian language, "файно" (fayno) is an informal term used to describe something as excellent, fine, or great, indicating a positive, satisfactory, or enjoyable state or experience.
 
