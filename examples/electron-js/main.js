@@ -28,7 +28,7 @@ function checkUpdates() {
 
   // Check if the 'channel' variable is set
   if (channel !== undefined) {
-      url += `&channel_name=${channel}`;
+      url += `&channel=${channel}`;
   }
   console.log(url)
   fetch(url, { method: 'POST' })

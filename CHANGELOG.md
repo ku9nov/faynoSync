@@ -1,10 +1,47 @@
 # Changelog
 
-## v1.2.1
+## v1.3.1
+
+### Important Notes
+
+App is renamed to `faynoSync`.
+
+- **Important**: `channel_name` parameter renamed to `channel`
+- **Important**: Updated `Postman` template.
+- **Important**: `checkVersion` changed from `POST` to `GET`
+- **Important**: MongoDB architecture is changed to all in one collection. Changed mongoDB objects structure.
+
+### Maintenance
+
+- Added new `mongodb` migrations.
 
 ### Features
 
 - :tada: Implemented the published feature. Now the API returns only published versions.
+- Implement multiple files uploading.
+- Updated `Postman` collection.
+- Implemented a new APIs
+    - Creating platforms
+    - Removing platforms
+    - List platforms
+    - Creating architectures
+    - Removing architectures
+    - List architectures
+
+- Implemented new e2e tests
+    - TestPlatformCreate
+    - TestUploadAppWithoutPlatform
+    - TestArchCreate
+    - TestUploadAppWithoutArch
+    - TestDeletePlatform
+    - TestDeleteArch
+    - TestListArchs
+    - TestListPlatforms
+    - TestListChannels
+    - TestListArchsWhenExist
+    - TestListPlatformsWhenExist
+    - TestListChannelsWhenExist
+    Other tests is adapted.
 
 ### Bug Fixes
 

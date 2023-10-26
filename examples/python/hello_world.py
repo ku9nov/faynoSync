@@ -17,7 +17,7 @@ class HelloWorldApp:
 
         # Check if the 'channel' variable is set
         if hasattr(self, 'channel'):
-            url = f"http://localhost:9000/checkVersion?app_name={self.app_name}&version={self.version}&channel_name={self.channel}"
+            url = f"http://localhost:9000/checkVersion?app_name={self.app_name}&version={self.version}&channel={self.channel}"
         else:
             url = f"http://localhost:9000/checkVersion?app_name={self.app_name}&version={self.version}"
 

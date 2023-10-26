@@ -1,15 +1,15 @@
-resource "aws_s3_bucket" "s3_bucket_sau_apps" {
-  bucket = "sau-apps"
+resource "aws_s3_bucket" "s3_bucket_faynosync_apps" {
+  bucket = "faynosync-apps"
 } 
 
-resource "aws_s3_bucket_ownership_controls" "s3_bucket_sau_apps" {
-  bucket = aws_s3_bucket.s3_bucket_sau_apps.id
+resource "aws_s3_bucket_ownership_controls" "s3_bucket_faynosync_apps" {
+  bucket = aws_s3_bucket.s3_bucket_faynosync_apps.id
   rule {
     object_ownership = "BucketOwnerPreferred"
   }
 }
-resource "aws_s3_bucket_public_access_block" "s3_bucket_sau_apps" {
-  bucket = aws_s3_bucket.s3_bucket_sau_apps.id
+resource "aws_s3_bucket_public_access_block" "s3_bucket_faynosync_apps" {
+  bucket = aws_s3_bucket.s3_bucket_faynosync_apps.id
 
   block_public_acls       = false
   block_public_policy     = false
@@ -17,8 +17,8 @@ resource "aws_s3_bucket_public_access_block" "s3_bucket_sau_apps" {
   restrict_public_buckets = false
 }
 
-resource "aws_s3_bucket_policy" "s3_bucket_sau_apps" {
-  bucket = "${aws_s3_bucket.s3_bucket_sau_apps.id}"
+resource "aws_s3_bucket_policy" "s3_bucket_faynosync_apps" {
+  bucket = "${aws_s3_bucket.s3_bucket_faynosync_apps.id}"
 
   policy = <<POLICY
 {
@@ -33,17 +33,17 @@ resource "aws_s3_bucket_policy" "s3_bucket_sau_apps" {
                 "s3:GetObjectVersion"
             ],
             "Resource": [
-                "arn:aws:s3:::sau-apps",
-                "arn:aws:s3:::sau-apps/*"
+                "arn:aws:s3:::faynosync-apps",
+                "arn:aws:s3:::faynosync-apps/*"
             ]
         }
     ]
 }
 POLICY
-  depends_on = [aws_s3_bucket_public_access_block.s3_bucket_sau_apps]
+  depends_on = [aws_s3_bucket_public_access_block.s3_bucket_faynosync_apps]
 }
-resource "aws_s3_bucket_cors_configuration" "sau-app-bucket-apps" {
-  bucket = aws_s3_bucket.s3_bucket_sau_apps.id
+resource "aws_s3_bucket_cors_configuration" "faynosync-app-bucket-apps" {
+  bucket = aws_s3_bucket.s3_bucket_faynosync_apps.id
 
   cors_rule {
     allowed_headers = ["*"]
@@ -53,8 +53,8 @@ resource "aws_s3_bucket_cors_configuration" "sau-app-bucket-apps" {
     max_age_seconds = 3000
   }
 }
-resource "aws_s3_bucket_acl" "sau-app-bucket-apps" {
-  depends_on = [aws_s3_bucket_ownership_controls.s3_bucket_sau_apps, aws_s3_bucket_public_access_block.s3_bucket_sau_apps,]
-  bucket = aws_s3_bucket.s3_bucket_sau_apps.id
+resource "aws_s3_bucket_acl" "faynosync-app-bucket-apps" {
+  depends_on = [aws_s3_bucket_ownership_controls.s3_bucket_faynosync_apps, aws_s3_bucket_public_access_block.s3_bucket_faynosync_apps,]
+  bucket = aws_s3_bucket.s3_bucket_faynosync_apps.id
   acl    = "public-read"
 }

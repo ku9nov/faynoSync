@@ -61,7 +61,7 @@ terraform {
  backend "s3" {
    profile        = "example-account"
    bucket         = "example-terraform-state"
-   key            = "tf-SAU-state/terraform.tfstate"
+   key            = "tf-faynoSync-state/terraform.tfstate"
    region         = "us-east-1"
    encrypt        = true
    kms_key_id     = "alias/terraform-bucket-key"

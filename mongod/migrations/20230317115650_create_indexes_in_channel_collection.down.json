@@ -1,6 +1,6 @@
 [
     {
-      "dropIndexes": "channels",
+      "dropIndexes": "apps",
       "index": "channel_name_sort_by_asc_created"
     }
 ]

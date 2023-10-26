@@ -40,6 +40,61 @@ type ServerSettings struct {
 	Port string
 }
 
+func GetStringValue(m map[string]interface{}, key string) string {
+	if val, ok := m[key]; ok {
+		if strVal, ok := val.(string); ok {
+			return strVal
+		}
+	}
+	return ""
+}
+
+func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interface{}, error) {
+	ctxQueryMap := map[string]interface{}{
+		"app_name": c.Query("app_name"),
+		"version":  c.Query("version"),
+		"channel":  c.Query("channel"),
+		"publish":  c.Query("publish"),
+		"platform": c.Query("platform"),
+		"arch":     c.Query("arch"),
+	}
+
+	if !IsValidAppName(ctxQueryMap["app_name"].(string)) {
+		return nil, errors.New("Invalid app_name parameter")
+	}
+	if !IsValidVersion(ctxQueryMap["version"].(string)) {
+		return nil, errors.New("Invalid version parameter")
+	}
+	if !IsValidChannelName(ctxQueryMap["channel"].(string)) {
+		return nil, errors.New("Invalid channel parameter")
+	}
+
+	if !IsValidPlatformName(ctxQueryMap["platform"].(string)) {
+		return nil, errors.New("Invalid platform parameter")
+	}
+
+	if !IsValidArchName(ctxQueryMap["arch"].(string)) {
+		return nil, errors.New("Invalid platform parameter")
+	}
+
+	errChannels := CheckChannels(ctxQueryMap["channel"].(string), database, c)
+	if errChannels != nil {
+		return nil, errChannels
+	}
+
+	errPlatforms := CheckPlatforms(ctxQueryMap["platform"].(string), database, c)
+	if errPlatforms != nil {
+		return nil, errPlatforms
+	}
+
+	errArchs := CheckArchs(ctxQueryMap["arch"].(string), database, c)
+	if errArchs != nil {
+		return nil, errArchs
+	}
+
+	return ctxQueryMap, nil
+}
+
 func IsValidAppName(input string) bool {
 	// Only allow letters and numbers, no spaces or special characters
 	validName := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
@@ -57,20 +112,34 @@ func IsValidChannelName(input string) bool {
 	return validName.MatchString(input)
 }
 
+func IsValidPlatformName(input string) bool {
+	// Allow empty input or only letters and numbers, no spaces or special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9]*$`)
+	return validName.MatchString(input)
+}
+
+func IsValidArchName(input string) bool {
+	// Allow empty input or only letters and numbers, no spaces or special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9]*$`)
+	return validName.MatchString(input)
+}
+
 func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
-		// Check if there are any existing channels
-		count, err := db.Collection("channels").CountDocuments(ctx, bson.M{})
+		filter := bson.M{"channel_name": bson.M{"$exists": true}}
+		count, err := db.Collection("apps").CountDocuments(ctx, filter)
 		if err != nil {
 			return err
 		}
+
 		if count > 0 {
-			return errors.New("you have a created channels, setting channel_name is required")
+			return errors.New("you have a created channels, setting channel is required")
 		}
+
 		return nil
 	}
 	// Check if the channel exists in the database
-	cursor, err := db.Collection("channels").Find(ctx, bson.M{"channel_name": input})
+	cursor, err := db.Collection("apps").Find(ctx, bson.M{"channel_name": input})
 	if err != nil {
 		return err
 	}
@@ -79,6 +148,66 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 	// Check if any documents were returned
 	if !cursor.Next(ctx) {
 		return errors.New("wrong name of channel. Channel does not exist")
+	}
+
+	// If a document was returned, the channel exists
+	return nil
+}
+
+func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
+	if input == "" {
+		filter := bson.M{"platform_name": bson.M{"$exists": true}}
+		count, err := db.Collection("apps").CountDocuments(ctx, filter)
+		if err != nil {
+			return err
+		}
+
+		if count > 0 {
+			return errors.New("you have a created platforms, setting platform is required")
+		}
+
+		return nil
+	}
+	// Check if the platform exists in the database
+	cursor, err := db.Collection("apps").Find(ctx, bson.M{"platform_name": input})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	// Check if any documents were returned
+	if !cursor.Next(ctx) {
+		return errors.New("wrong name of platform. Platform does not exist")
+	}
+
+	// If a document was returned, the channel exists
+	return nil
+}
+
+func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
+	if input == "" {
+		filter := bson.M{"arch_id": bson.M{"$exists": true}}
+		count, err := db.Collection("apps").CountDocuments(ctx, filter)
+		if err != nil {
+			return err
+		}
+
+		if count > 0 {
+			return errors.New("you have a created archs, setting arch is required")
+		}
+
+		return nil
+	}
+	// Check if the channel exists in the database
+	cursor, err := db.Collection("apps").Find(ctx, bson.M{"arch_id": input})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	// Check if any documents were returned
+	if !cursor.Next(ctx) {
+		return errors.New("wrong name of arch. Arch does not exist")
 	}
 
 	// If a document was returned, the channel exists
@@ -100,7 +229,7 @@ func createS3Client() *s3.Client {
 	return s3.NewFromConfig(cfg)
 }
 
-func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) string {
+func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, string, error) {
 	// // Create an S3 client using another func
 	s3Client := createS3Client()
 
@@ -116,12 +245,28 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 
 	var link string
 	var s3Key string
-	if ctxQuery["channel_name"].(string) == "" {
+	if ctxQuery["channel"].(string) == "" && ctxQuery["platform"].(string) == "" && ctxQuery["arch"].(string) == "" {
 		link = fmt.Sprintf("%s/%s/%s", env.GetString("S3_ENDPOINT"), ctxQuery["app_name"].(string), newFileName)
 		s3Key = ctxQuery["app_name"].(string) + "/" + newFileName
 	} else {
-		link = fmt.Sprintf("%s/%s/%s/%s", env.GetString("S3_ENDPOINT"), ctxQuery["app_name"].(string), ctxQuery["channel_name"].(string), newFileName)
-		s3Key = ctxQuery["app_name"].(string) + "/" + ctxQuery["channel_name"].(string) + "/" + newFileName
+		s3PathSegments := []string{ctxQuery["app_name"].(string)}
+
+		if ctxQuery["channel"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["channel"].(string))
+		}
+
+		if ctxQuery["platform"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["platform"].(string))
+		}
+
+		if ctxQuery["arch"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["arch"].(string))
+		}
+
+		s3PathSegments = append(s3PathSegments, newFileName)
+
+		link = fmt.Sprintf("%s/%s", env.GetString("S3_ENDPOINT"), strings.Join(s3PathSegments, "/"))
+		s3Key = strings.Join(s3PathSegments, "/")
 	}
 
 	// Open the file for reading
@@ -142,7 +287,7 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})
 
 	}
-	return link
+	return link, extension, err
 }
 
 func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {

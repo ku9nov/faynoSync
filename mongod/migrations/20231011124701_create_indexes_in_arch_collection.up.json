@@ -3,14 +3,14 @@
     "indexes": [
       {
         "key": {
-          "channel_name": 1,
+          "arch_id": 1,
           "created": -1
         },
-        "name": "channel_name_sort_by_asc_created",
+        "name": "arch_id_sort_by_asc_created",
         "unique": true,
         "background": true,
         "partialFilterExpression": {
-          "channel_name": { "$exists": true }
+          "arch_id": { "$exists": true }
         }
       }
     ]
