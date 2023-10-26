@@ -13,7 +13,9 @@ curl -X GET http://localhost:9000/health
 Responce:
 
 ```
-{"status":"healthy"}
+{
+    "status": "healthy"
+}
 ```
 
 ### Login to App
@@ -29,7 +31,7 @@ curl -X POST -H "Content-Type: application/json" -d '{"username": "admin", "pass
 Responce:
 
 ```
-{"token":"Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"}
+{"token":"DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"}
 ```
 
 ### Create channel (Optional)
@@ -48,7 +50,7 @@ Create deployment channel.
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/createChannel\?channel\=dev -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X POST http://localhost:9000/createChannel\?channel\=nightly -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
@@ -76,7 +78,7 @@ Create deployment platform.
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/createPlatform\?platform\=universal -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X POST http://localhost:9000/createPlatform\?platform\=linux -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
@@ -104,7 +106,7 @@ Create deployment architecture.
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/createArch\?arch\=universal -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X POST http://localhost:9000/createArch\?arch\=amd64 -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
@@ -127,7 +129,7 @@ Retrieve a list of all channels.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/listChannels -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET http://localhost:9000/listChannels -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 ```
 
 ###### Responce:
@@ -137,12 +139,12 @@ curl -X GET http://localhost:9000/listChannels -H "Authorization: Ut5b4fQs05UbTt
    "channels":[
       {
          "ID":"641459ffb8360d74164e7e3c",
-         "ChannelName":"dev",
+         "ChannelName":"nightly",
          "Updated_at":"2023-03-17T14:15:59.818+02:00"
       },
       {
          "ID":"64145ebaedd163d59d52e1dc",
-         "ChannelName":"staging",
+         "ChannelName":"stable",
          "Updated_at":"2023-03-17T14:36:10.278+02:00"
       }
    ]
@@ -160,7 +162,7 @@ Retrieve a list of all platforms.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/listPlatforms -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET http://localhost:9000/listPlatforms -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 ```
 
 ###### Responce:
@@ -169,9 +171,14 @@ curl -X GET http://localhost:9000/listPlatforms -H "Authorization: Ut5b4fQs05UbT
 {
     "platforms": [
         {
-            "ID": "6526ad5915f01fa908676536",
-            "PlatformName": "universal",
-            "Updated_at": "2023-10-11T17:12:41.763+03:00"
+            "ID": "653a52481ff613bed613df58",
+            "PlatformName": "darwin",
+            "Updated_at": "2023-10-26T14:49:28.894+03:00"
+        },
+        {
+            "ID": "653a52401ff613bed613df57",
+            "PlatformName": "linux",
+            "Updated_at": "2023-10-26T14:49:20.976+03:00"
         }
     ]
 }
@@ -188,7 +195,7 @@ Retrieve a list of all architectures.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/listArchs -H "Authorization: Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET http://localhost:9000/listArchs -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 ```
 
 ###### Responce:
@@ -197,9 +204,14 @@ curl -X GET http://localhost:9000/listArchs -H "Authorization: Ut5b4fQs05UbTteme
 {
     "archs": [
         {
-            "ID": "6526adf44402fcb364f70b73",
-            "ArchID": "universal",
-            "Updated_at": "2023-10-11T17:15:16.056+03:00"
+            "ID": "653a52611ff613bed613df59",
+            "ArchID": "amd64",
+            "Updated_at": "2023-10-26T14:49:53.815+03:00"
+        },
+        {
+            "ID": "653a52691ff613bed613df5a",
+            "ArchID": "arm64",
+            "Updated_at": "2023-10-26T14:50:01.413+03:00"
         }
     ]
 }
@@ -217,26 +229,53 @@ Retrieve a list of all apps.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/ -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET http://localhost:9000/ -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 ```
 
 ###### Responce:
 
 ```
 {
-   "apps":[
-      {
-         "ID":"6409c9c3775729272353fe39",
-         "AppName":"myapp",
-         "Version":"4.1.5",
-         "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.1.5",
-         "Channel": "",
-         "Published": false,
-         "Platform": "universal",
-         "Arch": "universal",
-         "Updated_at":"2023-03-09T13:57:55.546+02:00"
-      }
-   ]
+    "apps": [
+        {
+            "ID": "653a544c1ff613bed613df5b",
+            "AppName": "firstapp",
+            "Version": "0.0.1",
+            "Channel": "nightly",
+            "Published": false,
+            "Artifacts": [
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/firstapp/nightly/linux/amd64/firstapp-0.0.1.deb",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".deb"
+                }
+            ],
+            "Updated_at": "2023-10-26T14:58:04.258+03:00"
+        },
+        {
+            "ID": "653a5e4f51ce5114611f5abb",
+            "AppName": "secondapp",
+            "Version": "0.0.1",
+            "Channel": "stable",
+            "Published": true,
+            "Artifacts": [
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".deb"
+                },
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".rpm"
+                }
+            ],
+            "Updated_at": "2023-10-26T15:40:47.226+03:00"
+        }
+    ]
 }
 ```
 
@@ -253,15 +292,16 @@ Check if there is a newer version of a specific app.
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/checkVersion\?\app_name=\myapp\&version\=4.1.5
+curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64'
 ```
 
 ###### Responce:
 
 ```
 {
-   "update_available":false,
-   "update_url":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.1.5.tar.gz"
+    "update_available": false,
+    "update_url_deb": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+    "update_url_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm"
 }
 ```
 
@@ -297,9 +337,17 @@ Optional with `channel`, `publish`, `platform` and `arch`:
 
 ###### Request:
 ```
-curl -X POST -F "file=@/path_to_file/myapp.tar.gz" http://localhost:9000/upload\?\app_name=\myapp\&version\=4.2.3 -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X POST --location 'http://localhost:9000/upload?app_name=secondapp&version=0.0.2&channel=stable&publish=true&platform=linux&arch=amd64' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'file=@"/path_to_file/secondapp.deb"'
 ```
-
+###### Request with multiple uploading:
+```
+curl -X POST --location 'http://localhost:9000/upload?app_name=secondapp&version=0.0.2&channel=stable&publish=true&platform=linux&arch=amd64' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'file=@"/path_to_file/secondapp.deb"' \
+--form 'file=@"/path_to_file/secondapp.rpm"'
+```
 ###### Responce:
 
 ```
@@ -320,15 +368,16 @@ Check if there is a newer version of a specific app after uploading a new versio
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/checkVersion\?\app_name\=\myapp\&version\=4.1.5
+curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64'
 ```
 
 ###### Responce:
 
 ```
 {
-   "update_available":true,
-   "update_url":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.2.3.tar.gz"
+    "update_available": true,
+    "update_url_deb": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+    "update_url_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
 }
 ```
 ### Search App by Name
@@ -345,7 +394,8 @@ Search for all versions of an app by name.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ'
 
 ```
 
@@ -353,29 +403,52 @@ curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: B
 
 ```
 {
-   "apps":[
-      {
-         "ID":"640a0edae692cadeb0e5bc47",
-         "AppName":"myapp",
-         "Version":"4.1.5",
-         "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.1.5.tar.gz",
-         "Channel": "",
-         "Published": false,
-         "Platform": "universal",
-         "Arch": "universal",
-         "Updated_at":"2023-03-09T18:52:42.573+02:00"
-      }{
-         "ID":"6411c7c0ec4ff9a9a9bc18fa",
-         "AppName":"myapp",
-         "Version":"4.2.3",
-         "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.2.3.tar.gz",
-         "Channel": "",
-         "Published": false,
-         "Platform": "universal",
-         "Arch": "universal",
-         "Updated_at":"2023-03-15T15:27:28.807+02:00"
-      }
-   ]
+    "apps": [
+        {
+            "ID": "653a5e4f51ce5114611f5abb",
+            "AppName": "secondapp",
+            "Version": "0.0.1",
+            "Channel": "stable",
+            "Published": true,
+            "Artifacts": [
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".deb"
+                },
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".rpm"
+                }
+            ],
+            "Updated_at": "2023-10-26T15:40:47.226+03:00"
+        },
+        {
+            "ID": "653a6268f51dee6a99a3d88c",
+            "AppName": "secondapp",
+            "Version": "0.0.3",
+            "Channel": "stable",
+            "Published": true,
+            "Artifacts": [
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".deb"
+                },
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".rpm"
+                }
+            ],
+            "Updated_at": "2023-10-26T15:58:16.999+03:00"
+        }
+    ]
 }
 ```
 ### Delete specific channel
@@ -391,7 +464,7 @@ This endpoint allows you to delete a specific channel.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deleteChannel\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X DELETE http://localhost:9000/deleteChannel\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
@@ -416,7 +489,7 @@ This endpoint allows you to delete a specific platform.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deletePlatform\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X DELETE http://localhost:9000/deletePlatform\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
@@ -441,7 +514,7 @@ This endpoint allows you to delete a specific arch.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deleteArch\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X DELETE http://localhost:9000/deleteArch\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
@@ -466,7 +539,7 @@ This endpoint allows you to delete a specific version of an app.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deleteApp\?\id\=\640a0edae692cadeb0e5bc47 -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X DELETE http://localhost:9000/deleteApp\?\id\=\653a5e4f51ce5114611f5abb -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
@@ -490,23 +563,36 @@ curl -X DELETE http://localhost:9000/deleteApp\?\id\=\640a0edae692cadeb0e5bc47 -
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/search\?\app_name\=\myapp -H "Authorization: Bearer Ut5b4fQs05UbTteme2jK4A6394_K2uxfbBTRueW-U1px4Jl9QbZ_Hd7o"
+curl -X GET http://localhost:9000/search\?\app_name\=\secondapp -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
 ###### Responce:
 ```
 {
-   "apps":[
-      {
-         "ID":"6411c7c0ec4ff9a9a9bc18fa",
-         "AppName":"myapp",
-         "Version":"4.2.3",
-         "Link":"https://<bucket_name>.s3.amazonaws.com/myapp/myapp-4.2.3.tar.gz",
-         "Channel": "",
-         "Published": false,
-         "Updated_at":"2023-03-15T15:27:28.807+02:00"
-      }
-   ]
+    "apps": [
+        {
+            "ID": "653a6268f51dee6a99a3d88c",
+            "AppName": "secondapp",
+            "Version": "0.0.3",
+            "Channel": "stable",
+            "Published": true,
+            "Artifacts": [
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".deb"
+                },
+                {
+                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
+                    "Platform": "linux",
+                    "Arch": "amd64",
+                    "Package": ".rpm"
+                }
+            ],
+            "Updated_at": "2023-10-26T15:58:16.999+03:00"
+        }
+    ]
 }
 ```

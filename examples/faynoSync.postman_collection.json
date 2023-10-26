@@ -127,6 +127,50 @@
 			"response": []
 		},
 		{
+			"name": "Check latest version",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel=&platform&arch",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"checkVersion"
+					],
+					"query": [
+						{
+							"key": "app_name",
+							"value": "{{app_name}}"
+						},
+						{
+							"key": "version",
+							"value": "{{version}}"
+						},
+						{
+							"key": "channel",
+							"value": ""
+						},
+						{
+							"key": "platform",
+							"value": null
+						},
+						{
+							"key": "arch",
+							"value": null
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Login",
 			"request": {
 				"method": "POST",
@@ -195,50 +239,6 @@
 						},
 						{
 							"key": "publish",
-							"value": ""
-						},
-						{
-							"key": "platform",
-							"value": null
-						},
-						{
-							"key": "arch",
-							"value": null
-						}
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Check latest version",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"url": {
-					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel=&platform&arch",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "{{PORT}}",
-					"path": [
-						"checkVersion"
-					],
-					"query": [
-						{
-							"key": "app_name",
-							"value": "{{app_name}}"
-						},
-						{
-							"key": "version",
-							"value": "{{version}}"
-						},
-						{
-							"key": "channel",
 							"value": ""
 						},
 						{

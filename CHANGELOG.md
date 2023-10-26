@@ -18,7 +18,8 @@ App is renamed to `faynoSync`.
 ### Features
 
 - :tada: Implemented the published feature. Now the API returns only published versions.
-
+- Implement multiple files uploading.
+- Updated `Postman` collection.
 - Implemented a new APIs
     - Creating platforms
     - Removing platforms
