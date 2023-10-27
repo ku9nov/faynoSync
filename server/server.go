@@ -4,6 +4,7 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/server/handler"
 	"faynoSync/server/utils"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -21,6 +22,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	mongoDatabase := client.Database(configDB.Database)
 
 	handler := handler.NewAppHandler(client, db, mongoDatabase)
+	os.Setenv("API_KEY", config.GetString("API_KEY"))
 
 	// Add authentication middleware to required paths
 	authMiddleware := utils.AuthMiddleware(mongoDatabase)
@@ -28,6 +30,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.GET("/health", handler.HealthCheck)
 	router.GET("/checkVersion", handler.FindLatestVersion)
 	router.Use(corsMiddleware(config.GetString("DASHBOARD_URL")))
+	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
 
 	router.Use(authMiddleware)

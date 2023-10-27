@@ -1,6 +1,6 @@
 # API Reference
 
-You can find `Postman` collection [here](examples/faynoSync.postman_collection.json).
+You can find `Postman` collection [here](examples/faynoSync.postman_collection.json). Cha
 
 ### Check Health Status
 Check the health status of the application.
@@ -15,6 +15,24 @@ Responce:
 ```
 {
     "status": "healthy"
+}
+```
+
+### SignUp
+Authenticate and receive a token for accessing the API.
+
+`POST /signup`
+
+Request:
+```
+curl -X POST -H "Content-Type: application/json" -d '{"username": "ku9n", "password": "password", "api_key": "UHp3aKb40fwpoKZluZByWQ"}' http://localhost:9000/signup
+```
+
+Responce:
+
+```
+{
+    "result": "Successfully created admin user."
 }
 ```
 

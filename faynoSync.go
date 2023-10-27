@@ -24,15 +24,15 @@ func main() {
 	}
 	flag.BoolVar(&migration, "migration", false, "Set true to run migrations.")
 	flag.BoolVar(&rollback, "rollback", false, "Set true to rollback migrations.")
-	flag.StringVar(&userName, "username", "", "Set admin username.")
-	flag.StringVar(&userPassword, "password", "", "Set admin password.")
+	// flag.StringVar(&userName, "username", "", "Set admin username.")
+	// flag.StringVar(&userPassword, "password", "", "Set admin password.")
 	flag.Parse()
 
 	flagMap := map[string]interface{}{
-		"migration":     migration,
-		"rollback":      rollback,
-		"user_name":     userName,
-		"user_password": userPassword,
+		"migration": migration,
+		"rollback":  rollback,
+		// "user_name":     userName,
+		// "user_password": userPassword,
 	}
 
 	// Pass the config to another function

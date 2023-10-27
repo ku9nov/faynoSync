@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.2
+
+### Features
+
+- Implemented a new API
+    - SignUp
+- Implemented new e2e test
+    - TestSignUp
+
 ## v1.3.1
 
 ### Important Notes

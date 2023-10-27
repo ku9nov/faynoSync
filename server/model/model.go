@@ -36,3 +36,9 @@ type Arch struct {
 	ArchID     string             `bson:"arch_id"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
+
+type Credentials struct {
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	SecretKey string `json:"api_key"`
+}
