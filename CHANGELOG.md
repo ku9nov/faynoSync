@@ -14,6 +14,7 @@ App is renamed to `faynoSync`.
 ### Maintenance
 
 - Added new `mongodb` migrations.
+- Added `flutter` example app.
 
 ### Features
 
