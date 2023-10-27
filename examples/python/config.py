@@ -2,7 +2,7 @@ import platform
 import distro
 
 def get_os():
-    system = platform.system()
+    system = platform.system().lower()
     if system == "Linux":
         info = distro.info()
         if info["like"] == "rhel":
@@ -13,6 +13,10 @@ def get_os():
             return "Linux"
     else:
         return system
+    
+def get_arch():
+    return  platform.machine() 
+
 app_name = "myapp"
 version = "0.0.1"
-channel = ""
+channel = "nightly"

@@ -1,0 +1,17 @@
+[{
+    "createIndexes": "apps",
+    "indexes": [
+      {
+        "key": {
+          "platform_name": 1,
+          "created": -1
+        },
+        "name": "platform_name_sort_by_asc_created",
+        "unique": true,
+        "background": true,
+        "partialFilterExpression": {
+          "platform_name": { "$exists": true }
+        }
+      }
+    ]
+}]

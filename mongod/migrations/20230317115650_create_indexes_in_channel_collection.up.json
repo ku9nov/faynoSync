@@ -1,5 +1,5 @@
 [{
-    "createIndexes": "channels",
+    "createIndexes": "apps",
     "indexes": [
       {
         "key": {
@@ -8,7 +8,10 @@
         },
         "name": "channel_name_sort_by_asc_created",
         "unique": true,
-        "background": true
+        "background": true,
+        "partialFilterExpression": {
+          "channel_name": { "$exists": true }
+        }
       }
     ]
 }]

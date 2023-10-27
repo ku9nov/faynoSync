@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, shell } = require('electron');
 const fetch = require('node-fetch');
 const os = require('os');
 const { version, app_name, channel } = require('./config.js');
@@ -23,17 +23,55 @@ function getLinuxDistributionFamily() {
   return distroFamily;
 }
 
+
+function createChoiceWindow(updateOptions) {
+  const win = new BrowserWindow({
+    width: 600,
+    height: 400,
+    webPreferences: {
+      nodeIntegration: true,
+    },
+  });
+
+  win.loadURL(`data:text/html,
+    <html>
+      <body>
+        <h2>Choose an update package:</h2>
+        <ul>
+          ${updateOptions
+            .map(
+              (option, index) =>
+                `<li><a id="option-${index}" href="${option.url}">${option.name}</a></li>`
+            )
+            .join('')}
+        </ul>
+        <script>
+          const { shell } = require('electron');
+          document.addEventListener('click', (event) => {
+            if (event.target.tagName === 'A') {
+              event.preventDefault();
+              shell.openExternal(event.target.href);
+            }
+          });
+        </script>
+      </body>
+    </html>`
+  );
+
+  return win;
+}
+
 function checkUpdates() {
-  let url = `http://localhost:9000/checkVersion?app_name=${app_name}&version=${version}`;
+  let url = `http://localhost:9000/checkVersion?app_name=${app_name}&version=${version}&platform=${os.platform()}&arch=${os.arch()}`;
 
   // Check if the 'channel' variable is set
   if (channel !== undefined) {
-      url += `&channel_name=${channel}`;
+    url += `&channel=${channel}`;
   }
-  console.log(url)
-  fetch(url, { method: 'POST' })
-    .then(res => res.json())
-    .then(data => {
+
+  fetch(url, { method: 'GET' })
+    .then((res) => res.json())
+    .then((data) => {
       console.log(data);
       if (data.update_available) {
         const message = `You have an older version. Would you like to update your app?`;
@@ -45,7 +83,14 @@ function checkUpdates() {
           defaultId: 0,
         }).then(({ response }) => {
           if (response === 0) {
-            require('electron').shell.openExternal(data.update_url);
+            const updateOptions = [];
+            // Assuming 'data' contains different update URLs
+            for (const key in data) {
+              if (key.startsWith('update_url_')) {
+                updateOptions.push({ name: key.substring(11).toUpperCase(), url: data[key] });
+              }
+            }
+            const choiceWindow = createChoiceWindow(updateOptions);
           }
         });
       }
@@ -55,10 +100,11 @@ function checkUpdates() {
 
 function createWindow() {
   let osName = os.platform();
+  let pcArch = os.arch();
   if (osName === 'linux') {
     osName = getLinuxDistributionFamily();
   }
-  const title = `${app_name} - v${version} (${osName})`;
+  const title = `${app_name} - v${version} (${osName}-${pcArch})`;
 
   let win = new BrowserWindow({
     width: 400,

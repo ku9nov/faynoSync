@@ -1,0 +1,17 @@
+[{
+    "createIndexes": "apps",
+    "indexes": [
+      {
+        "key": {
+          "package_type": 1,
+          "created": -1
+        },
+        "name": "package_type_sort_by_asc_created",
+        "unique": true,
+        "background": true,
+        "partialFilterExpression": {
+          "package_type": { "$exists": true }
+        }
+      }
+    ]
+}]

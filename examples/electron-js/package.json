@@ -1,7 +1,7 @@
 {
   "name": "myapp",
   "version": "0.0.1",
-  "description": "Hello world app for testing SAU",
+  "description": "Hello world app for testing faynoSync",
   "main": "main.js",
   "scripts": {
     "start": "electron ."

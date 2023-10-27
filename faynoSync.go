@@ -1,7 +1,7 @@
 package main
 
 import (
-	"SAU/server"
+	"faynoSync/server"
 	"flag"
 
 	"github.com/spf13/viper"

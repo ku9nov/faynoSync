@@ -1,0 +1,17 @@
+[{
+    "createIndexes": "apps",
+    "indexes": [
+      {
+        "key": {
+          "arch_id": 1,
+          "created": -1
+        },
+        "name": "arch_id_sort_by_asc_created",
+        "unique": true,
+        "background": true,
+        "partialFilterExpression": {
+          "arch_id": { "$exists": true }
+        }
+      }
+    ]
+}]
