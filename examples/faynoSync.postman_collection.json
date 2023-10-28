@@ -200,6 +200,38 @@
 			"response": []
 		},
 		{
+			"name": "SignUp",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"username\": \"admin\", \"password\": \"password\", \"api_key\": \"UHp3aKb40fwpoKZluZByWQ\"}"
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/signup",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"signup"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Upload",
 			"request": {
 				"method": "POST",
@@ -435,7 +467,7 @@
 		"bearer": [
 			{
 				"key": "token",
-				"value": "DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ",
+				"value": "lPkYvXilpWb-91q2AAkmh66NaueiNErINR-mAy6mKV8GAqFo1Pwp1aUB",
 				"type": "string"
 			}
 		]
