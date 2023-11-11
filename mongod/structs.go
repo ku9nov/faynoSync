@@ -26,6 +26,7 @@ type AppRepository interface {
 	DeleteApp(id primitive.ObjectID, ctx context.Context) (string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
+	Update(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error)
 	CheckLatestVersion(appName, version, channel, platform, arch string, ctx context.Context) (CheckResult, error)
 	CreateChannel(channelName string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context) ([]*model.Channel, error)
@@ -427,6 +428,84 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		return id.Hex(), nil
 	default:
 		return nil, errors.New("unexpected return type")
+	}
+}
+
+func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error) {
+	collection := c.client.Database(c.config.Database).Collection("apps")
+	var err error
+
+	// Check if a document with the same "app_name" and "version" already exists
+	existingDoc := collection.FindOne(ctx, bson.D{
+		{Key: "_id", Value: objID},
+		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
+		{Key: "version", Value: ctxQuery["version"].(string)},
+	})
+	platform := utils.GetStringValue(ctxQuery, "platform")
+	arch := utils.GetStringValue(ctxQuery, "arch")
+
+	if existingDoc.Err() == nil {
+		var appData model.App
+		if err := existingDoc.Decode(&appData); err != nil {
+			return false, err
+		}
+
+		publishParam, publishExists := ctxQuery["publish"]
+		var publish bool
+
+		if publishExists {
+			publishVal := publishParam.(string)
+			publish = publishVal == "true"
+		} else {
+			publish = false
+		}
+
+		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
+		if ctxQuery["app_name"].(string) != "" {
+			updateFields = append(updateFields, bson.E{Key: "app_name", Value: ctxQuery["app_name"].(string)})
+		}
+		if ctxQuery["version"].(string) != "" {
+			updateFields = append(updateFields, bson.E{Key: "version", Value: ctxQuery["version"].(string)})
+		}
+		if ctxQuery["channel"].(string) != "" {
+			updateFields = append(updateFields, bson.E{Key: "channel", Value: ctxQuery["channel"].(string)})
+		}
+		if publishExists {
+			updateFields = append(updateFields, bson.E{Key: "published", Value: publish})
+		}
+		duplicateFound := false
+		for _, artifact := range appData.Artifacts {
+			if artifact.Link == appLink && artifact.Platform == platform && artifact.Arch == arch && artifact.Package == extension {
+				duplicateFound = true
+				break
+			}
+		}
+
+		if !duplicateFound && appLink != "" && extension != "" {
+			newArtifact := model.Artifact{
+				Link:     appLink,
+				Platform: platform,
+				Arch:     arch,
+				Package:  extension,
+			}
+			appData.Artifacts = append(appData.Artifacts, newArtifact)
+		}
+		if len(appData.Artifacts) > 0 {
+			updateFields = append(updateFields, bson.E{Key: "artifacts", Value: appData.Artifacts})
+		}
+
+		_, err = collection.UpdateOne(
+			ctx,
+			bson.D{{Key: "_id", Value: objID}},
+			bson.D{{Key: "$set", Value: updateFields}},
+		)
+		if err != nil {
+			return false, err
+		}
+
+		return true, nil
+	} else {
+		return false, errors.New("app with this parameters doesn't exist")
 	}
 }
 

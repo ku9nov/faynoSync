@@ -10,8 +10,10 @@
     - If the client app sends either `platform` or `arch` parameters, and they exist in `faynoSync`, the system should return the closest matching version to the request. Any incorrect `platform` or `arch` names should result in appropriate error messages.
 - Implemented a new API
     - SignUp
+    - Update App
 - Implemented new e2e test
     - TestSignUp
+    - TestUpdate
 
 ## v1.3.1
 

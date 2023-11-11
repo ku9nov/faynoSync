@@ -5,7 +5,6 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -23,7 +22,8 @@ func DeleteApp(c *gin.Context, repository db.AppRepository) {
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
-		log.Fatal(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	//request on repository
@@ -51,7 +51,8 @@ func DeleteChannel(c *gin.Context, repository db.AppRepository) {
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
-		log.Fatal(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	//request on repository
@@ -69,7 +70,8 @@ func DeleteArch(c *gin.Context, repository db.AppRepository) {
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
-		log.Fatal(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Request on the repository
@@ -87,7 +89,8 @@ func DeletePlatform(c *gin.Context, repository db.AppRepository) {
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
-		log.Fatal(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	//request on repository

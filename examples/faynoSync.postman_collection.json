@@ -287,6 +287,55 @@
 			"response": []
 		},
 		{
+			"name": "Update",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/update?id=&app_name={{app_name}}&version={{version}}&channel=&publish=&platform=&arch=",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"update"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": ""
+						},
+						{
+							"key": "app_name",
+							"value": "{{app_name}}"
+						},
+						{
+							"key": "version",
+							"value": "{{version}}"
+						},
+						{
+							"key": "channel",
+							"value": ""
+						},
+						{
+							"key": "publish",
+							"value": ""
+						},
+						{
+							"key": "platform",
+							"value": ""
+						},
+						{
+							"key": "arch",
+							"value": ""
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Create Channel",
 			"request": {
 				"method": "POST",
