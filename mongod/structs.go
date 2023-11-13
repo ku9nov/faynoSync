@@ -23,7 +23,7 @@ import (
 type AppRepository interface {
 	Get(ctx context.Context) ([]*model.App, error)
 	GetAppByName(email string, ctx context.Context) ([]*model.App, error)
-	DeleteApp(id primitive.ObjectID, ctx context.Context) (string, int64, error)
+	DeleteApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
 	Update(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error)
@@ -222,7 +222,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	return apps, nil
 }
 
-func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) (string, int64, error) {
+func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
@@ -233,19 +233,25 @@ func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) (s
 	err := collection.FindOne(ctx, filter).Decode(&app)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return "", 0, fmt.Errorf("no app found with ID %s", id)
+			return nil, 0, fmt.Errorf("no app found with ID %s", id)
 		}
-		return "", 0, fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
+		return nil, 0, fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
 	}
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
 		log.Fatal(err)
 
-		return "", 0, err
+		return nil, 0, err
 	}
 
-	return app.Artifacts[0].Link, deleteResult.DeletedCount, nil
+	var links []string
+	for _, artifact := range app.Artifacts {
+		link := string(artifact.Link)
+		links = append(links, link)
+	}
+
+	return links, deleteResult.DeletedCount, nil
 }
 
 func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error) {

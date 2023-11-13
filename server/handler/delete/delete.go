@@ -4,7 +4,6 @@ import (
 	"context"
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 )
 
 func DeleteApp(c *gin.Context, repository db.AppRepository) {
+	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
@@ -27,20 +27,15 @@ func DeleteApp(c *gin.Context, repository db.AppRepository) {
 	}
 
 	//request on repository
-	link, result, err := repository.DeleteApp(objID, ctx)
+	links, result, err := repository.DeleteApp(objID, ctx)
 	if err != nil {
 		logrus.Error(err)
 	}
 
-	index := strings.Index(link, "amazonaws.com/") + len("amazonaws.com/")
-	if index > len(link) {
-		// The link doesn't contain "amazonaws.com/"
-		fmt.Println("Invalid link")
-		return
+	for _, link := range links {
+		subLink := strings.TrimPrefix(link, env.GetString("S3_ENDPOINT"))
+		utils.DeleteFromS3(subLink, c, viper.GetViper())
 	}
-	subLink := link[index:]
-
-	utils.DeleteFromS3(subLink, c, viper.GetViper())
 	c.JSON(http.StatusOK, gin.H{"deleteAppResult.DeletedCount": result})
 }
 
