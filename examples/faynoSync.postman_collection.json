@@ -200,6 +200,38 @@
 			"response": []
 		},
 		{
+			"name": "SignUp",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"username\": \"admin\", \"password\": \"password\", \"api_key\": \"UHp3aKb40fwpoKZluZByWQ\"}"
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/signup",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"signup"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Upload",
 			"request": {
 				"method": "POST",
@@ -248,6 +280,55 @@
 						{
 							"key": "arch",
 							"value": null
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/update?id=&app_name={{app_name}}&version={{version}}&channel=&publish=&platform=&arch=",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"update"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": ""
+						},
+						{
+							"key": "app_name",
+							"value": "{{app_name}}"
+						},
+						{
+							"key": "version",
+							"value": "{{version}}"
+						},
+						{
+							"key": "channel",
+							"value": ""
+						},
+						{
+							"key": "publish",
+							"value": ""
+						},
+						{
+							"key": "platform",
+							"value": ""
+						},
+						{
+							"key": "arch",
+							"value": ""
 						}
 					]
 				}
@@ -435,7 +516,7 @@
 		"bearer": [
 			{
 				"key": "token",
-				"value": "DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ",
+				"value": "lPkYvXilpWb-91q2AAkmh66NaueiNErINR-mAy6mKV8GAqFo1Pwp1aUB",
 				"type": "string"
 			}
 		]

@@ -1,5 +1,69 @@
 version: "3.8"
+
+networks:
+  faynosync_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.25.0.0/16"
+
 services:
+
+  faynosync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: >
+      sh -c "if [ \$RUN_FAYNOSYNC = 'true' ]; then
+               faynoSync --migration;
+             else
+               sleep infinity;
+             fi"
+    networks:
+      faynosync_network:
+        ipv4_address: 172.25.0.6
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./.env.local:/app/.env
+
+  s3:
+    image: minio/minio
+    networks:
+      faynosync_network:
+        ipv4_address: 172.25.0.2
+    ports:
+      - "9011:9001"
+      - "9010:9000"
+    volumes:
+      - data-s3:/data
+    environment:
+      MINIO_ROOT_USER: MdnaDEXKy9nOc4beIvNcgy
+      MINIO_ROOT_PASSWORD: BjjctVsoSg4FKkT81VKt18
+    command: server --address 0.0.0.0:9000 --console-address :9001 /data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  s3-service:
+    image: minio/mc
+    networks:
+      faynosync_network:
+        ipv4_address: 172.25.0.3
+    depends_on:
+      s3:
+        condition: service_healthy
+    restart: on-failure
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set faynoSync http://s3:9000 MdnaDEXKy9nOc4beIvNcgy BjjctVsoSg4FKkT81VKt18;
+      /usr/bin/mc mb faynoSync/cb-faynosync-s3;
+      /usr/bin/mc policy set public faynoSync/cb-faynosync-s3;
+      "
+
   mongo:
     platform: linux/x86_64
     image: mongo:4.4
@@ -13,6 +77,9 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
     ports:
       - "27017:27017"
+    networks:
+      faynosync_network:
+        ipv4_address: 172.25.0.4
 
   mongo_tests:
     platform: linux/x86_64
@@ -27,7 +94,13 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
     ports:
       - "27018:27017"
+    networks:
+      faynosync_network:
+        ipv4_address: 172.25.0.5
+
+
 
 volumes:
   data:
   data-tests:
+  data-s3:

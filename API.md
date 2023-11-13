@@ -18,6 +18,24 @@ Responce:
 }
 ```
 
+### SignUp
+Authenticate and receive a token for accessing the API.
+
+`POST /signup`
+
+Request:
+```
+curl -X POST -H "Content-Type: application/json" -d '{"username": "ku9n", "password": "password", "api_key": "UHp3aKb40fwpoKZluZByWQ"}' http://localhost:9000/signup
+```
+
+Responce:
+
+```
+{
+    "result": "Successfully created admin user."
+}
+```
+
 ### Login to App
 Authenticate and receive a token for accessing the API.
 
@@ -380,6 +398,60 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
     "update_url_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
 }
 ```
+
+### Update App
+
+Update existing app.
+
+:warning: You can't change `app_name` and `version`. They are used only for correct searching.
+
+`POST /update?id=<objectID>&app_name=<app_name>&version=<version>`
+
+Optional with `channel`, `publish`, `platform` and `arch`:
+
+`POST /update?id=<objectID>&app_name=<app_name>&version=<version>&channel=<channel_name>&publish=<true or false>&platform=<platform_name>&arch=<arch_id>`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Query Parameters
+**app_name**: Name of the app.
+
+**version**: Current version of the app.
+
+**channel**: Current channel of the app.
+
+**publish**: Set `true` for availabilitty this version for clients.
+
+**platform**: Current platform of the app.
+
+**arch**: Current arch of the app.
+
+###### Body
+**file**: file of the app.
+
+
+###### Request:
+```
+curl -X POST --location 'http://localhost:9000/upload?id=653a6268f51dee6a99a3d88c&app_name=secondapp&version=0.0.2&channel=stable&publish=true&platform=linux&arch=amd64' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'file=@"/path_to_file/secondapp.deb"'
+```
+###### Request with multiple uploading:
+```
+curl -X POST --location 'http://localhost:9000/upload?id=653a6268f51dee6a99a3d88c&app_name=secondapp&version=0.0.2&channel=stable&publish=true&platform=linux&arch=amd64' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'file=@"/path_to_file/secondapp.deb"' \
+--form 'file=@"/path_to_file/secondapp.rpm"'
+```
+###### Responce:
+
+```
+{
+    "updatedResult.Updated": true
+}
+```
+
 ### Search App by Name
 
 Search for all versions of an app by name.

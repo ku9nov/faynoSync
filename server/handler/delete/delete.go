@@ -4,8 +4,6 @@ import (
 	"context"
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
-	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -17,30 +15,27 @@ import (
 )
 
 func DeleteApp(c *gin.Context, repository db.AppRepository) {
+	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
-		log.Fatal(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	//request on repository
-	link, result, err := repository.DeleteApp(objID, ctx)
+	links, result, err := repository.DeleteApp(objID, ctx)
 	if err != nil {
 		logrus.Error(err)
 	}
 
-	index := strings.Index(link, "amazonaws.com/") + len("amazonaws.com/")
-	if index > len(link) {
-		// The link doesn't contain "amazonaws.com/"
-		fmt.Println("Invalid link")
-		return
+	for _, link := range links {
+		subLink := strings.TrimPrefix(link, env.GetString("S3_ENDPOINT"))
+		utils.DeleteFromS3(subLink, c, viper.GetViper())
 	}
-	subLink := link[index:]
-
-	utils.DeleteFromS3(subLink, c, viper.GetViper())
 	c.JSON(http.StatusOK, gin.H{"deleteAppResult.DeletedCount": result})
 }
 
@@ -51,7 +46,8 @@ func DeleteChannel(c *gin.Context, repository db.AppRepository) {
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
-		log.Fatal(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	//request on repository
@@ -69,7 +65,8 @@ func DeleteArch(c *gin.Context, repository db.AppRepository) {
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
-		log.Fatal(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Request on the repository
@@ -87,7 +84,8 @@ func DeletePlatform(c *gin.Context, repository db.AppRepository) {
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
-		log.Fatal(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	//request on repository

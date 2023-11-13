@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.3.2
+
+### Important Notes
+- **Important**: Updated `Postman` template.
+
+### Maintenance
+- Added configurations for `one command` local development.
+- Added `Dockerfile`
+- Added `Minio` deployment to `docker compose`
+
+### Features
+- Add functionality to handle cases where the client app sends `platform` and `arch` parameters that do not exist. In such cases, the system should ignore the parameters and return the appropriate version.
+    - If the client app sends either `platform` or `arch` parameters, and they exist in `faynoSync`, the system should return the closest matching version to the request. Any incorrect `platform` or `arch` names should result in appropriate error messages.
+- Implemented a new API
+    - SignUp
+    - Update (App)
+- Implemented new e2e test
+    - TestSignUp
+    - TestUpdate
+
 ## v1.3.1
 
 ### Important Notes

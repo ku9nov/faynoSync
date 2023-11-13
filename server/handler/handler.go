@@ -20,6 +20,7 @@ type AppHandler interface {
 	DeletePlatform(*gin.Context)
 	DeleteArch(*gin.Context)
 	UploadApp(*gin.Context)
+	UpdateApp(*gin.Context)
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
 	Login(*gin.Context)
@@ -29,6 +30,7 @@ type AppHandler interface {
 	ListPlatforms(*gin.Context)
 	CreateArch(*gin.Context)
 	ListArchs(*gin.Context)
+	SignUp(*gin.Context)
 }
 
 type appHandler struct {
@@ -95,9 +97,19 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 	create.UploadApp(c, ch.repository, ch.database)
 }
 
+func (ch *appHandler) UpdateApp(c *gin.Context) {
+	// Call the UploadApp function from the create package
+	create.UpdateApp(c, ch.repository, ch.database)
+}
+
 func (ch *appHandler) Login(c *gin.Context) {
 	// Call the Login function from the sign package
 	sign.Login(c, ch.database)
+}
+
+func (ch *appHandler) SignUp(c *gin.Context) {
+	// Call the Login function from the sign package
+	sign.SignUp(c, ch.database, ch.client)
 }
 
 func (ch *appHandler) DeleteApp(c *gin.Context) {

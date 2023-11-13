@@ -15,7 +15,7 @@ import (
 )
 
 func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
-	_, err := utils.ValidateParams(c, db)
+	validatedParams, err := utils.ValidateParamsLatest(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -23,9 +23,8 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-
 	// Request on repository
-	checkResult, err := repository.CheckLatestVersion(c.Query("app_name"), c.Query("version"), c.Query("channel"), c.Query("platform"), c.Query("arch"), ctx)
+	checkResult, err := repository.CheckLatestVersion(validatedParams["app_name"].(string), validatedParams["version"].(string), validatedParams["channel"].(string), validatedParams["platform"].(string), validatedParams["arch"].(string), ctx)
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

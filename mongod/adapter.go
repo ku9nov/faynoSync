@@ -34,13 +34,5 @@ func ConnectToDatabase(mongoUrl string, flags map[string]interface{}) (*mongo.Cl
 	if flags["migration"].(bool) {
 		RunMigrations(client, uriOptions.Database, flags)
 	}
-	if flags["user_name"].(string) != "" && flags["user_password"].(string) != "" {
-		err = CreateUser(client, uriOptions.Database, flags)
-		if err != nil {
-			log.Fatal(err)
-		} else {
-			log.Println("Successfully created admin user with name: ", flags["user_name"].(string))
-		}
-	}
 	return client, uriOptions
 }

@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"faynoSync/mongod"
@@ -35,6 +34,7 @@ var (
 	mongoDatabase *mongo.Database
 	configDB      connstring.ConnString
 	s3Endpoint    string
+	apiKey        string
 )
 
 func TestMain(m *testing.M) {
@@ -79,15 +79,15 @@ func setup() {
 	}
 	// Create a single database connection
 	flagMap := map[string]interface{}{
-		"migration":     true,
-		"rollback":      false,
-		"user_name":     "admin",
-		"user_password": "password",
+		"migration": true,
+		"rollback":  false,
 	}
 	s3Endpoint = viper.GetString("S3_ENDPOINT")
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
+	os.Setenv("API_KEY", viper.GetString("API_KEY"))
+	apiKey = viper.GetString("API_KEY")
 	copyFile("LICENSE", "testapp.dmg")
 	copyFile("LICENSE", "testapp.pkg")
 
@@ -132,6 +132,40 @@ func TestHealthCheck(t *testing.T) {
 	assert.Equal(t, expected, w.Body.String())
 }
 
+func TestSignUp(t *testing.T) {
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/signup", func(c *gin.Context) {
+		handler.SignUp(c)
+	})
+
+	payload := `{"username": "admin", "password": "password", "api_key": "UHp3aKb40fwpoKZluZByWQ"}`
+	req, err := http.NewRequest("POST", "/signup", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Parse the JSON response body to extract the token.
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := `{"result":"Successfully created admin user."}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
 var authToken string
 
 func TestLogin(t *testing.T) {
@@ -147,13 +181,12 @@ func TestLogin(t *testing.T) {
 	// Create a JSON payload for the request
 	payload := `{"username": "admin", "password": "password"}`
 
-	req, err := http.NewRequest("POST", "/login", strings.NewReader(payload))
+	req, err := http.NewRequest("POST", "/login", bytes.NewBufferString(payload))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-
 	// Serve the request using the Gin router.
 	router.ServeHTTP(w, req)
 
@@ -809,6 +842,76 @@ func TestMultipleUpload(t *testing.T) {
 	}
 }
 
+func TestUpdate(t *testing.T) {
+
+	router := gin.Default()
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/update", func(c *gin.Context) {
+		handler.UpdateApp(c)
+	})
+
+	// Create a file to upload (you can replace this with a test file path).
+	filePaths := []string{"go.mod", "go.sum"}
+	for _, filePath := range filePaths {
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+
+		combinations := []struct {
+			ID          string
+			AppVersion  string
+			ChannelName string
+			Published   bool
+			Platform    string
+			Arch        string
+		}{
+			{uploadedAppIDs[0], "0.0.1", "stable", false, "universalPlatform", "universalArch"},
+		}
+
+		// Iterate through the combinations and upload the file for each combination.
+		for _, combo := range combinations {
+			w := httptest.NewRecorder()
+			// Reset the request body for each iteration.
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = io.Copy(part, file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writer.Close()
+			// Create a POST request for the upload endpoint with the current combination.
+			req, err := http.NewRequest("POST", fmt.Sprintf("/update?id=%s&app_name=testapp&version=%s&channel=%s&publish=%v&platform=%s&arch=%s", combo.ID, combo.AppVersion, combo.ChannelName, combo.Published, combo.Platform, combo.Arch), body)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Set the Content-Type header for multipart/form-data.
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+
+			// Set the Authorization header.
+			req.Header.Set("Authorization", "Bearer "+authToken)
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+
+			// Check the response status code.
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			// Check the response status code.
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			expected := `{"updatedResult.Updated":true}`
+			assert.Equal(t, expected, w.Body.String())
+		}
+	}
+}
+
 func TestSearch(t *testing.T) {
 
 	router := gin.Default()
@@ -851,8 +954,8 @@ func TestSearch(t *testing.T) {
 		{
 			AppName:   "testapp",
 			Version:   "0.0.1",
-			Channel:   "nightly",
-			Published: true,
+			Channel:   "stable",
+			Published: false,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -863,6 +966,16 @@ func TestSearch(t *testing.T) {
 					Platform: "universalPlatform",
 					Arch:     "universalArch",
 					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".mod",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".sum",
 				},
 			},
 		},
