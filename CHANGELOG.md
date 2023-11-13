@@ -7,6 +7,8 @@
 
 ### Maintenance
 - Added configurations for `one command` local development.
+- Added `Dockerfile`
+- Added `Minio` deployment to `docker compose`
 
 ### Features
 - Add functionality to handle cases where the client app sends `platform` and `arch` parameters that do not exist. In such cases, the system should ignore the parameters and return the appropriate version.
