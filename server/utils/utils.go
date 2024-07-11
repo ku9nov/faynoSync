@@ -42,21 +42,21 @@ func ValidateParamsLatest(c *gin.Context, database *mongo.Database) (map[string]
 	}
 
 	if !IsValidAppName(ctxQueryMap["app_name"].(string)) {
-		return nil, errors.New("Invalid app_name parameter")
+		return nil, errors.New("invalid app_name parameter")
 	}
 	if !IsValidVersion(ctxQueryMap["version"].(string)) {
-		return nil, errors.New("Invalid version parameter")
+		return nil, errors.New("invalid version parameter")
 	}
 	if !IsValidChannelName(ctxQueryMap["channel"].(string)) {
-		return nil, errors.New("Invalid channel parameter")
+		return nil, errors.New("invalid channel parameter")
 	}
 
 	if !IsValidPlatformName(ctxQueryMap["platform"].(string)) {
-		return nil, errors.New("Invalid platform parameter")
+		return nil, errors.New("invalid platform parameter")
 	}
 
 	if !IsValidArchName(ctxQueryMap["arch"].(string)) {
-		return nil, errors.New("Invalid platform parameter")
+		return nil, errors.New("invalid platform parameter")
 	}
 
 	errChannels := CheckChannels(ctxQueryMap["channel"].(string), database, c)
@@ -88,21 +88,21 @@ func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interf
 	}
 
 	if !IsValidAppName(ctxQueryMap["app_name"].(string)) {
-		return nil, errors.New("Invalid app_name parameter")
+		return nil, errors.New("invalid app_name parameter")
 	}
 	if !IsValidVersion(ctxQueryMap["version"].(string)) {
-		return nil, errors.New("Invalid version parameter")
+		return nil, errors.New("invalid version parameter")
 	}
 	if !IsValidChannelName(ctxQueryMap["channel"].(string)) {
-		return nil, errors.New("Invalid channel parameter")
+		return nil, errors.New("invalid channel parameter")
 	}
 
 	if !IsValidPlatformName(ctxQueryMap["platform"].(string)) {
-		return nil, errors.New("Invalid platform parameter")
+		return nil, errors.New("invalid platform parameter")
 	}
 
 	if !IsValidArchName(ctxQueryMap["arch"].(string)) {
-		return nil, errors.New("Invalid platform parameter")
+		return nil, errors.New("invalid platform parameter")
 	}
 
 	errChannels := CheckChannels(ctxQueryMap["channel"].(string), database, c)

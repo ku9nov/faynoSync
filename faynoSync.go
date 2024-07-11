@@ -3,39 +3,55 @@ package main
 import (
 	"faynoSync/server"
 	"flag"
+	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
-var migration bool
-var rollback bool
-var userName string
-var userPassword string
+var (
+	migration bool
+	rollback  bool
+	logLevel  string
+)
+
+func init() {
+	flag.BoolVar(&migration, "migration", false, "Set true to run migrations.")
+	flag.BoolVar(&rollback, "rollback", false, "Set true to rollback migrations.")
+	flag.StringVar(&logLevel, "loglevel", "info", "log level (debug, info, warn, error, fatal, panic)")
+
+	logrus.New()
+}
 
 func main() {
-	// set the file name of the configuration file
+	flag.Parse()
+
+	// Initialize logging configuration
+	level, err := logrus.ParseLevel(logLevel)
+	if err != nil {
+		logrus.Errorln("Invalid log level specified:", err)
+		os.Exit(1)
+	}
+	logrus.SetLevel(level)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
+
+	// Set the file name of the configuration file
 	viper.SetConfigType("env")
 	viper.SetConfigName(".env")
-	// set the configuration file path
+	// Set the configuration file path
 	viper.AddConfigPath(".")
-	// read in the configuration file
+	// Read in the configuration file
 	if err := viper.ReadInConfig(); err != nil {
 		panic(err)
 	}
-	flag.BoolVar(&migration, "migration", false, "Set true to run migrations.")
-	flag.BoolVar(&rollback, "rollback", false, "Set true to rollback migrations.")
-	// flag.StringVar(&userName, "username", "", "Set admin username.")
-	// flag.StringVar(&userPassword, "password", "", "Set admin password.")
-	flag.Parse()
 
 	flagMap := map[string]interface{}{
 		"migration": migration,
 		"rollback":  rollback,
-		// "user_name":     userName,
-		// "user_password": userPassword,
 	}
 
 	// Pass the config to another function
 	server.StartServer(viper.GetViper(), flagMap)
-
 }

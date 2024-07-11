@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -60,7 +59,7 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 	// Passing bson.D{{}} as the filter matches all documents in the collection
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 
@@ -70,7 +69,7 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 		// create a value into which the single document can be decoded
 		var elem model.App
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -95,7 +94,7 @@ func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, err
 
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 
@@ -105,7 +104,7 @@ func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, err
 		// create a value into which the single document can be decoded
 		var elem model.Channel
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -130,7 +129,7 @@ func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, e
 
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 
@@ -140,7 +139,7 @@ func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, e
 		// create a value into which the single document can be decoded
 		var elem model.Platform
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -165,7 +164,7 @@ func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
 
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 
@@ -175,7 +174,7 @@ func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
 		// create a value into which the single document can be decoded
 		var elem model.Arch
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -201,7 +200,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	// Passing the filter matches all documents by app_name in the collection
 	cur, err := collection.Find(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 	// Finding multiple documents returns a cursor
@@ -210,7 +209,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 		// create a value into which the single document can be decoded
 		var elem model.App
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -240,7 +239,7 @@ func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) ([
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 
 		return nil, 0, err
 	}
@@ -272,7 +271,7 @@ func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 
 		return 0, err
 	}
@@ -298,7 +297,7 @@ func (c *appRepository) DeletePlatform(id primitive.ObjectID, ctx context.Contex
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 
 		return 0, err
 	}
@@ -324,7 +323,7 @@ func (c *appRepository) DeleteArch(id primitive.ObjectID, ctx context.Context) (
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 
 		return 0, err
 	}

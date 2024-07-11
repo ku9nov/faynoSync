@@ -1,11 +1,10 @@
 package mongod
 
 import (
-	"log"
-
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/mongodb"
 	"github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -37,12 +36,12 @@ func RunMigrations(client *mongo.Client, dbName string, flags map[string]interfa
 		if err := m.Down(); err != nil {
 			panic(err)
 		}
-		log.Println("Migrations rollback completed")
+		logrus.Infoln("Migrations rollback completed")
 		return
 	}
 	if !applied {
-		log.Println("Migrations completed")
+		logrus.Infoln("Migrations completed")
 	} else {
-		log.Println("Migrations not applied")
+		logrus.Infoln("Migrations not applied")
 	}
 }

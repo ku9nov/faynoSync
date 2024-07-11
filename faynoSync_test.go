@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +14,6 @@ import (
 	"testing"
 
 	"faynoSync/mongod"
-	db "faynoSync/mongod"
 	"faynoSync/server/handler"
 	"faynoSync/server/model"
 
@@ -30,7 +28,7 @@ import (
 
 var (
 	client        *mongo.Client
-	appDB         db.AppRepository
+	appDB         mongod.AppRepository
 	mongoDatabase *mongo.Database
 	configDB      connstring.ConnString
 	s3Endpoint    string
@@ -102,9 +100,9 @@ func teardown() {
 	if err != nil {
 		logrus.Errorf("Failed to remove admin user: %v", err)
 	}
-	log.Println("Successfully removed admin user.")
+	logrus.Infoln("Successfully removed admin user.")
 	client.Disconnect(context.Background())
-	log.Println("MongoDB is disconnected.")
+	logrus.Infoln("MongoDB is disconnected.")
 	removeFile("testapp.dmg")
 	removeFile("testapp.pkg")
 }
