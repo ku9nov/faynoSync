@@ -389,13 +389,18 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			Arch:     arch,
 			Package:  extension,
 		}
-
+		changelog := model.Changelog{
+			Version: ctxQuery["version"].(string),
+			Changes: ctxQuery["changelog"].(string),
+			Date:    time.Now().Format("2006-01-02"),
+		}
 		filter := bson.D{
 			{Key: "app_name", Value: ctxQuery["app_name"].(string)},
 			{Key: "version", Value: ctxQuery["version"].(string)},
 			{Key: "channel", Value: ctxQuery["channel"].(string)},
 			{Key: "published", Value: publish},
 			{Key: "artifacts", Value: []model.Artifact{artifact}},
+			{Key: "changelog", Value: []model.Changelog{changelog}},
 			{Key: "updated_at", Value: time.Now()},
 		}
 
@@ -478,6 +483,7 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 		if publishExists {
 			updateFields = append(updateFields, bson.E{Key: "published", Value: publish})
 		}
+
 		duplicateFound := false
 		for _, artifact := range appData.Artifacts {
 			if artifact.Link == appLink && artifact.Platform == platform && artifact.Arch == arch && artifact.Package == extension {
@@ -497,6 +503,28 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 		}
 		if len(appData.Artifacts) > 0 {
 			updateFields = append(updateFields, bson.E{Key: "artifacts", Value: appData.Artifacts})
+		}
+
+		// Add or update changelog
+		if changelog, exists := ctxQuery["changelog"].(string); exists && changelog != "" {
+			changelogUpdated := false
+			for i, log := range appData.Changelog {
+				if log.Version == ctxQuery["version"].(string) {
+					appData.Changelog[i].Changes = changelog
+					appData.Changelog[i].Date = time.Now().Format("2006-01-02")
+					changelogUpdated = true
+					break
+				}
+			}
+			if !changelogUpdated {
+				newChangelog := model.Changelog{
+					Version: ctxQuery["version"].(string),
+					Changes: changelog,
+					Date:    time.Now().Format("2006-01-02"),
+				}
+				appData.Changelog = append(appData.Changelog, newChangelog)
+			}
+			updateFields = append(updateFields, bson.E{Key: "changelog", Value: appData.Changelog})
 		}
 
 		_, err = collection.UpdateOne(

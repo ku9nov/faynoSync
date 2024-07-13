@@ -16,6 +16,7 @@ type App struct {
 	Channel    string             `bson:"channel"`
 	Published  bool               `bson:"published"`
 	Artifacts  []Artifact         `bson:"artifacts"`
+	Changelog  []Changelog        `bson:"changelog"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
 
@@ -37,8 +38,25 @@ type Arch struct {
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
 
+type Changelog struct {
+	Version string `bson:"version"`
+	Changes string `bson:"changes"`
+	Date    string `bson:"date"`
+}
+
 type Credentials struct {
 	Username  string `json:"username"`
 	Password  string `json:"password"`
 	SecretKey string `json:"api_key"`
+}
+
+type UpRequest struct {
+	Id        string `json:"id"`
+	AppName   string `json:"app_name"`
+	Version   string `json:"version"`
+	Channel   string `json:"channel"`
+	Publish   bool   `json:"publish"`
+	Platform  string `json:"platform"`
+	Arch      string `json:"arch"`
+	Changelog string `json:"changelog"`
 }

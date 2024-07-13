@@ -1,10 +1,15 @@
 package utils
 
 import (
+	"encoding/json"
 	"errors"
+	"faynoSync/server/model"
+	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -78,15 +83,62 @@ func ValidateParamsLatest(c *gin.Context, database *mongo.Database) (map[string]
 }
 
 func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interface{}, error) {
-	ctxQueryMap := map[string]interface{}{
+	var ctxQueryMap map[string]interface{}
+	var err error
+
+	if c.Request.Method == http.MethodPost {
+		ctxQueryMap, err = extractParamsFromPost(c)
+	} else if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
+		ctxQueryMap, err = extractParamsFromGetOrDelete(c)
+	} else {
+		return nil, errors.New("unsupported request method")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return validateCommonParams(ctxQueryMap, database, c)
+}
+
+func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
+	jsonData := c.PostForm("data")
+	if jsonData == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No JSON data provided"})
+		return nil, errors.New("no JSON data provided")
+	}
+	logrus.Debug("JSON data: ", jsonData)
+	var upReq model.UpRequest
+	if err := json.Unmarshal([]byte(jsonData), &upReq); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
+		return nil, errors.New("invalid JSON data")
+	}
+
+	publishStr := strconv.FormatBool(upReq.Publish)
+	return map[string]interface{}{
+		"id":        upReq.Id,
+		"app_name":  upReq.AppName,
+		"version":   upReq.Version,
+		"channel":   upReq.Channel,
+		"publish":   publishStr,
+		"platform":  upReq.Platform,
+		"arch":      upReq.Arch,
+		"changelog": upReq.Changelog,
+	}, nil
+}
+
+func extractParamsFromGetOrDelete(c *gin.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{
 		"app_name": c.Query("app_name"),
 		"version":  c.Query("version"),
 		"channel":  c.Query("channel"),
 		"publish":  c.Query("publish"),
 		"platform": c.Query("platform"),
 		"arch":     c.Query("arch"),
-	}
+	}, nil
+}
 
+func validateCommonParams(ctxQueryMap map[string]interface{}, database *mongo.Database, c *gin.Context) (map[string]interface{}, error) {
 	if !IsValidAppName(ctxQueryMap["app_name"].(string)) {
 		return nil, errors.New("invalid app_name parameter")
 	}
@@ -96,28 +148,21 @@ func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interf
 	if !IsValidChannelName(ctxQueryMap["channel"].(string)) {
 		return nil, errors.New("invalid channel parameter")
 	}
-
 	if !IsValidPlatformName(ctxQueryMap["platform"].(string)) {
 		return nil, errors.New("invalid platform parameter")
 	}
-
 	if !IsValidArchName(ctxQueryMap["arch"].(string)) {
-		return nil, errors.New("invalid platform parameter")
+		return nil, errors.New("invalid arch parameter")
 	}
 
-	errChannels := CheckChannels(ctxQueryMap["channel"].(string), database, c)
-	if errChannels != nil {
-		return nil, errChannels
+	if err := CheckChannels(ctxQueryMap["channel"].(string), database, c); err != nil {
+		return nil, err
 	}
-
-	errPlatforms := CheckPlatforms(ctxQueryMap["platform"].(string), database, c)
-	if errPlatforms != nil {
-		return nil, errPlatforms
+	if err := CheckPlatforms(ctxQueryMap["platform"].(string), database, c); err != nil {
+		return nil, err
 	}
-
-	errArchs := CheckArchs(ctxQueryMap["arch"].(string), database, c)
-	if errArchs != nil {
-		return nil, errArchs
+	if err := CheckArchs(ctxQueryMap["arch"].(string), database, c); err != nil {
+		return nil, err
 	}
 
 	return ctxQueryMap, nil

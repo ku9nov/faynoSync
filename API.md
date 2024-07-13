@@ -336,7 +336,9 @@ Optional with `channel`, `publish`, `platform` and `arch`:
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
 
-###### Query Parameters
+###### Body
+**file**: file of the app.
+
 **app_name**: Name of the app.
 
 **version**: Current version of the app.
@@ -349,22 +351,22 @@ Optional with `channel`, `publish`, `platform` and `arch`:
 
 **arch**: Current arch of the app.
 
-###### Body
-**file**: file of the app.
-
+**changelog**: Changelog is a log of changes on current version. 
 
 ###### Request:
 ```
-curl -X POST --location 'http://localhost:9000/upload?app_name=secondapp&version=0.0.2&channel=stable&publish=true&platform=linux&arch=amd64' \
+curl -X POST --location 'http://localhost:9000/upload' \
 --header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
---form 'file=@"/path_to_file/secondapp.deb"'
+--form 'file=@"/path_to_file/secondapp.deb"' \
+--form 'data="{\"app_name\":\"secondapp\",\"version\":\"0.0.2\",\"channel\":\"stable\",\"publish\":true,\"platform\":\"linux\",\"arch\":\"amd64\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}"'
 ```
 ###### Request with multiple uploading:
 ```
-curl -X POST --location 'http://localhost:9000/upload?app_name=secondapp&version=0.0.2&channel=stable&publish=true&platform=linux&arch=amd64' \
+curl --location 'http://localhost:9000/upload' \
 --header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
 --form 'file=@"/path_to_file/secondapp.deb"' \
---form 'file=@"/path_to_file/secondapp.rpm"'
+--form 'file=@"/path_to_file/secondapp.rpm"' \
+--form 'data="{\"app_name\":\"secondapp\",\"version\":\"0.0.2\",\"channel\":\"stable\",\"publish\":true,\"platform\":\"linux\",\"arch\":\"amd64\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}"'
 ```
 ###### Responce:
 
