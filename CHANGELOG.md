@@ -12,6 +12,7 @@ Example:
 ### Maintenance
 - Updated Go modules.
 - Refactored `createChannel`, `createPlatform`, and `createArch` functions.
+- Refactored `deleteChannel`, `deletePlatform`, and `deleteArch` functions.
 - All tests were updated for the new functionality.
 ### Features
 - Added `Changelog` functionality to handle `upload` and `update` requests.
