@@ -12,6 +12,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func DeleteApp(c *gin.Context, repository db.AppRepository) {
@@ -40,44 +42,18 @@ func DeleteApp(c *gin.Context, repository db.AppRepository) {
 }
 
 func DeleteChannel(c *gin.Context, repository db.AppRepository) {
-	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
-	defer ctxErr()
-
-	// Convert string to ObjectID
-	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	//request on repository
-	result, err := repository.DeleteChannel(objID, ctx)
-	if err != nil {
-		logrus.Error(err)
-	}
-	c.JSON(http.StatusOK, gin.H{"deleteChannelResult.DeletedCount": result})
+	deleteEntity(c, repository, "channel")
 }
 
 func DeleteArch(c *gin.Context, repository db.AppRepository) {
-	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
-	defer ctxErr()
-
-	// Convert string to ObjectID
-	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Request on the repository
-	result, err := repository.DeleteArch(objID, ctx)
-	if err != nil {
-		logrus.Error(err)
-	}
-	c.JSON(http.StatusOK, gin.H{"deleteArchResult.DeletedCount": result})
+	deleteEntity(c, repository, "arch")
 }
 
 func DeletePlatform(c *gin.Context, repository db.AppRepository) {
+	deleteEntity(c, repository, "platform")
+}
+
+func deleteEntity(c *gin.Context, repository db.AppRepository, itemType string) {
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
@@ -87,11 +63,27 @@ func DeletePlatform(c *gin.Context, repository db.AppRepository) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	//request on repository
-	result, err := repository.DeletePlatform(objID, ctx)
+	var result interface{}
+	// var err error
+	switch itemType {
+	case "channel":
+		result, err = repository.DeleteChannel(objID, ctx)
+	case "platform":
+		result, err = repository.DeletePlatform(objID, ctx)
+	case "arch":
+		result, err = repository.DeleteArch(objID, ctx)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
+		return
+	}
 	if err != nil {
 		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete " + itemType})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"deletePlatformResult.DeletedCount": result})
+	var tag language.Tag
+	titleCase := cases.Title(tag)
+
+	capitalizedItemType := titleCase.String(itemType)
+	c.JSON(http.StatusOK, gin.H{"delete" + capitalizedItemType + "Result.DeletedCount": result})
 }
