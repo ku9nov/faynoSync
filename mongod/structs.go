@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -60,7 +59,7 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 	// Passing bson.D{{}} as the filter matches all documents in the collection
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 
@@ -70,7 +69,7 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 		// create a value into which the single document can be decoded
 		var elem model.App
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -95,7 +94,7 @@ func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, err
 
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 
@@ -105,7 +104,7 @@ func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, err
 		// create a value into which the single document can be decoded
 		var elem model.Channel
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -130,7 +129,7 @@ func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, e
 
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 
@@ -140,7 +139,7 @@ func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, e
 		// create a value into which the single document can be decoded
 		var elem model.Platform
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -165,7 +164,7 @@ func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
 
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 
@@ -175,7 +174,7 @@ func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
 		// create a value into which the single document can be decoded
 		var elem model.Arch
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -201,7 +200,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	// Passing the filter matches all documents by app_name in the collection
 	cur, err := collection.Find(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 		return nil, err
 	}
 	// Finding multiple documents returns a cursor
@@ -210,7 +209,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 		// create a value into which the single document can be decoded
 		var elem model.App
 		if err := cur.Decode(&elem); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
 			return nil, err
 		}
 
@@ -240,7 +239,7 @@ func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) ([
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 
 		return nil, 0, err
 	}
@@ -272,7 +271,7 @@ func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 
 		return 0, err
 	}
@@ -298,7 +297,7 @@ func (c *appRepository) DeletePlatform(id primitive.ObjectID, ctx context.Contex
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 
 		return 0, err
 	}
@@ -324,7 +323,7 @@ func (c *appRepository) DeleteArch(id primitive.ObjectID, ctx context.Context) (
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 
 		return 0, err
 	}
@@ -390,13 +389,18 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			Arch:     arch,
 			Package:  extension,
 		}
-
+		changelog := model.Changelog{
+			Version: ctxQuery["version"].(string),
+			Changes: ctxQuery["changelog"].(string),
+			Date:    time.Now().Format("2006-01-02"),
+		}
 		filter := bson.D{
 			{Key: "app_name", Value: ctxQuery["app_name"].(string)},
 			{Key: "version", Value: ctxQuery["version"].(string)},
 			{Key: "channel", Value: ctxQuery["channel"].(string)},
 			{Key: "published", Value: publish},
 			{Key: "artifacts", Value: []model.Artifact{artifact}},
+			{Key: "changelog", Value: []model.Changelog{changelog}},
 			{Key: "updated_at", Value: time.Now()},
 		}
 
@@ -479,6 +483,7 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 		if publishExists {
 			updateFields = append(updateFields, bson.E{Key: "published", Value: publish})
 		}
+
 		duplicateFound := false
 		for _, artifact := range appData.Artifacts {
 			if artifact.Link == appLink && artifact.Platform == platform && artifact.Arch == arch && artifact.Package == extension {
@@ -498,6 +503,28 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 		}
 		if len(appData.Artifacts) > 0 {
 			updateFields = append(updateFields, bson.E{Key: "artifacts", Value: appData.Artifacts})
+		}
+
+		// Add or update changelog
+		if changelog, exists := ctxQuery["changelog"].(string); exists && changelog != "" {
+			changelogUpdated := false
+			for i, log := range appData.Changelog {
+				if log.Version == ctxQuery["version"].(string) {
+					appData.Changelog[i].Changes = changelog
+					appData.Changelog[i].Date = time.Now().Format("2006-01-02")
+					changelogUpdated = true
+					break
+				}
+			}
+			if !changelogUpdated {
+				newChangelog := model.Changelog{
+					Version: ctxQuery["version"].(string),
+					Changes: changelog,
+					Date:    time.Now().Format("2006-01-02"),
+				}
+				appData.Changelog = append(appData.Changelog, newChangelog)
+			}
+			updateFields = append(updateFields, bson.E{Key: "changelog", Value: appData.Changelog})
 		}
 
 		_, err = collection.UpdateOne(

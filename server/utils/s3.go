@@ -32,7 +32,7 @@ func createStorageClient() interface{} {
 			Secure: env.GetBool("MINIO_SECURE"),
 		})
 		if err != nil {
-			logrus.Printf("error setting up Minio client: %v", err)
+			logrus.Errorf("error setting up Minio client: %v", err)
 			return nil
 		}
 		return minioClient
@@ -42,13 +42,13 @@ func createStorageClient() interface{} {
 		creds := credentials.NewStaticCredentialsProvider(env.GetString("S3_ACCESS_KEY"), env.GetString("S3_SECRET_KEY"), "")
 		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(creds), config.WithRegion(env.GetString("S3_REGION")))
 		if err != nil {
-			logrus.Printf("error setting up AWS S3 client: %v", err)
+			logrus.Errorf("error setting up AWS S3 client: %v", err)
 			return nil
 		}
 		return s3.NewFromConfig(cfg)
 
 	default:
-		logrus.Printf("unknown storage driver: %s", storageDriver)
+		logrus.Errorf("unknown storage driver: %s", storageDriver)
 		return nil
 	}
 }
@@ -116,7 +116,7 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 			Body:   fileReader,
 		})
 	default:
-		logrus.Printf("unknown storage client type")
+		logrus.Errorf("unknown storage client type")
 		return "", "", errors.New("unknown storage client type")
 	}
 	if err != nil {
@@ -159,9 +159,9 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from S3"})
 		}
 	default:
-		logrus.Printf("unknown storage client type")
+		logrus.Errorf("unknown storage client type")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unknown storage client type"})
 	}
 
-	fmt.Printf("Object '%s' deleted from bucket '%s'\n", objectKey, env.GetString("S3_BUCKET_NAME"))
+	logrus.Infof("Object '%s' deleted from bucket '%s'\n", objectKey, env.GetString("S3_BUCKET_NAME"))
 }

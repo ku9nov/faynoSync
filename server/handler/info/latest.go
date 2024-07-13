@@ -4,7 +4,6 @@ import (
 	"context"
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -34,7 +33,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		if len(checkResult.Artifacts) == 0 {
 			c.JSON(http.StatusOK, gin.H{"update_available": false, "error": "Not found"})
 		} else {
-			fmt.Println(checkResult)
+			logrus.Infoln(checkResult)
 			response := gin.H{"update_available": false}
 			for _, artifact := range checkResult.Artifacts {
 				if artifact.Package != "" && artifact.Link != "" {

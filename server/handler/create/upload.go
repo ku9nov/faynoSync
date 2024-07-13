@@ -13,6 +13,8 @@ import (
 )
 
 func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
+	utils.DumpRequest(c)
+
 	ctxQueryMap, err := utils.ValidateParams(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -41,7 +43,6 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) 
 		links = append(links, link)
 		extensions = append(extensions, ext)
 	}
-
 	var results []interface{}
 	for i, link := range links {
 		result, err := repository.Upload(ctxQueryMap, link, extensions[i], c.Request.Context())
@@ -63,13 +64,12 @@ func UpdateApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) 
 		return
 	}
 	// Convert string to ObjectID
-	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
+	objID, err := primitive.ObjectIDFromHex(ctxQueryMap["id"].(string))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	form, _ := c.MultipartForm()
-
 	var links []string
 	var extensions []string
 	var result bool
@@ -92,7 +92,7 @@ func UpdateApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) 
 		for i, link := range links {
 			result, err = repository.Update(objID, ctxQueryMap, link, extensions[i], c.Request.Context())
 			if err != nil {
-				logrus.Error(err)
+				logrus.Errorf("Error updating link %d: %v", i, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}

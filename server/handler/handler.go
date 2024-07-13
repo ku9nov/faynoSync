@@ -98,7 +98,7 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 }
 
 func (ch *appHandler) UpdateApp(c *gin.Context) {
-	// Call the UploadApp function from the create package
+	// Call the UpdateApp function from the create package
 	create.UpdateApp(c, ch.repository, ch.database)
 }
 
@@ -108,7 +108,7 @@ func (ch *appHandler) Login(c *gin.Context) {
 }
 
 func (ch *appHandler) SignUp(c *gin.Context) {
-	// Call the Login function from the sign package
+	// Call the SignUp function from the sign package
 	sign.SignUp(c, ch.database, ch.client)
 }
 

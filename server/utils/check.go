@@ -2,11 +2,21 @@ package utils
 
 import (
 	"errors"
+	"net/http/httputil"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
+
+func DumpRequest(c *gin.Context) {
+	requestDump, err := httputil.DumpRequest(c.Request, true)
+	if err != nil {
+		logrus.Errorln("Error dumping request:", err)
+	}
+	logrus.Debugln("Request data:", string(requestDump))
+}
 
 func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {

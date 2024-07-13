@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.3.3
+
+### Important Notes
+- **Important**: The `POST` request uses body form-data instead of URL parameters.
+Example:
+```
+--form 'data="{\"app_name\":\"app\",\"version\":\"0.0.2\",\"channel\":\"\",\"publish\":true,\"platform\":\"\",\"arch\":\"\"}"'
+```
+
+### Maintenance
+- Updated Go modules.
+- Refactored `createChannel`, `createPlatform`, and `createArch` functions.
+- Refactored `deleteChannel`, `deletePlatform`, and `deleteArch` functions.
+- All tests were updated for the new functionality.
+### Features
+- Added `Changelog` functionality to handle `upload` and `update` requests.
+- Updated logging flow in the application.
+- Refactored `ValidateParams` function for parsing the request body.
+
 ## v1.3.2
 
 ### Important Notes
