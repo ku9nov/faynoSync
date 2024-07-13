@@ -233,6 +233,9 @@
 		},
 		{
 			"name": "Upload",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {}
+			},
 			"request": {
 				"method": "POST",
 				"header": [],
@@ -242,12 +245,22 @@
 						{
 							"key": "file",
 							"type": "file",
-							"src": "/Users/ku9n/Downloads/test.zip"
+							"src": "/Users/ku9n/Downloads/test.deb"
+						},
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/Users/ku9n/Downloads/test.rpm"
+						},
+						{
+							"key": "data",
+							"value": "{\"app_name\":\"{{app_name}}\",\"version\":\"{{version}}\",\"channel\":\"\",\"publish\":true,\"platform\":\"\",\"arch\":\"\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}",
+							"type": "text"
 						}
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/upload?app_name={{app_name}}&version={{version}}&channel=&publish=&platform&arch",
+					"raw": "http://localhost:{{PORT}}/upload",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -255,32 +268,6 @@
 					"port": "{{PORT}}",
 					"path": [
 						"upload"
-					],
-					"query": [
-						{
-							"key": "app_name",
-							"value": "{{app_name}}"
-						},
-						{
-							"key": "version",
-							"value": "{{version}}"
-						},
-						{
-							"key": "channel",
-							"value": ""
-						},
-						{
-							"key": "publish",
-							"value": ""
-						},
-						{
-							"key": "platform",
-							"value": null
-						},
-						{
-							"key": "arch",
-							"value": null
-						}
 					]
 				}
 			},
@@ -291,8 +278,28 @@
 			"request": {
 				"method": "POST",
 				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\": \"\", \"app_name\": \"{{app_name}}\", \"version\": \"{{ version }}\", \"channel\": \"\", \"publish\": false, \"platform\": \"\", \"arch\": \"\", \"changelog\": \"\"}",
+							"type": "text"
+						},
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/Users/ku9n/Downloads/test.rpm"
+						},
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/Users/ku9n/Downloads/test.deb"
+						}
+					]
+				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/update?id=&app_name={{app_name}}&version={{version}}&channel=&publish=&platform=&arch=",
+					"raw": "http://localhost:{{PORT}}/update",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -300,36 +307,6 @@
 					"port": "{{PORT}}",
 					"path": [
 						"update"
-					],
-					"query": [
-						{
-							"key": "id",
-							"value": ""
-						},
-						{
-							"key": "app_name",
-							"value": "{{app_name}}"
-						},
-						{
-							"key": "version",
-							"value": "{{version}}"
-						},
-						{
-							"key": "channel",
-							"value": ""
-						},
-						{
-							"key": "publish",
-							"value": ""
-						},
-						{
-							"key": "platform",
-							"value": ""
-						},
-						{
-							"key": "arch",
-							"value": ""
-						}
 					]
 				}
 			},
@@ -340,8 +317,18 @@
 			"request": {
 				"method": "POST",
 				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"channel\":\"{{ channel }}\"}",
+							"type": "text"
+						}
+					]
+				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/createChannel?channel={{channel}}",
+					"raw": "http://localhost:{{PORT}}/createChannel",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -349,12 +336,6 @@
 					"port": "{{PORT}}",
 					"path": [
 						"createChannel"
-					],
-					"query": [
-						{
-							"key": "channel",
-							"value": "{{channel}}"
-						}
 					]
 				}
 			},
@@ -365,8 +346,18 @@
 			"request": {
 				"method": "POST",
 				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"platform\":\"{{ platform }}\"}",
+							"type": "text"
+						}
+					]
+				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/createPlatform?platform={{platform}}",
+					"raw": "http://localhost:{{PORT}}/createPlatform",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -374,12 +365,6 @@
 					"port": "{{PORT}}",
 					"path": [
 						"createPlatform"
-					],
-					"query": [
-						{
-							"key": "platform",
-							"value": "{{platform}}"
-						}
 					]
 				}
 			},
@@ -390,8 +375,18 @@
 			"request": {
 				"method": "POST",
 				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"arch\":\"{{ arch }}\"}",
+							"type": "text"
+						}
+					]
+				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/createArch?arch={{arch}}",
+					"raw": "http://localhost:{{PORT}}/createArch",
 					"protocol": "http",
 					"host": [
 						"localhost"
@@ -399,12 +394,6 @@
 					"port": "{{PORT}}",
 					"path": [
 						"createArch"
-					],
-					"query": [
-						{
-							"key": "arch",
-							"value": "{{arch}}"
-						}
 					]
 				}
 			},
