@@ -58,18 +58,19 @@ Responce:
 
 Create deployment channel.
 
-`POST /createChannel\?channel\=<channel_name>`
+`POST /createChannel`
 
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
 
-###### Query Parameters
+###### Body form data
 **channel**: Name of the channel.
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/createChannel\?channel\=nightly -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
-
+curl --location 'http://localhost:9000/createChannel' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'data="{\"channel\":\"nightly\"}"'
 ```
 
 ###### Responce:
@@ -86,18 +87,19 @@ curl -X POST http://localhost:9000/createChannel\?channel\=nightly -H "Authoriza
 
 Create deployment platform.
 
-`POST /createPlatform\?platform\=<platform_name>`
+`POST /createPlatform`
 
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
 
-###### Query Parameters
+###### Body form data
 **platform**: Name of the platform.
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/createPlatform\?platform\=linux -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
-
+curl --location 'http://localhost:9000/createPlatform' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'data="{\"platform\":\"linux\"}"'
 ```
 
 ###### Responce:
@@ -114,18 +116,19 @@ curl -X POST http://localhost:9000/createPlatform\?platform\=linux -H "Authoriza
 
 Create deployment architecture.
 
-`POST /createArch\?arch\=<arch_id>`
+`POST /createArch`
 
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
 
-###### Query Parameters
+###### Body form data
 **arch**: Arch of the app.
 
 ###### Request:
 ```
-curl -X POST http://localhost:9000/createArch\?arch\=amd64 -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
-
+curl --location 'http://localhost:9000/createArch' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'data="{\"arch\":\"amd64\"}"'
 ```
 
 ###### Responce:
@@ -269,6 +272,13 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8
                     "Package": ".deb"
                 }
             ],
+            "Changelog": [
+                {
+                    "Version": "0.0.1",
+                    "Changes": "",
+                    "Date": "2023-10-26"
+                }
+            ],
             "Updated_at": "2023-10-26T14:58:04.258+03:00"
         },
         {
@@ -289,6 +299,13 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
+                }
+            ],
+            "Changelog": [
+                {
+                    "Version": "0.0.1",
+                    "Changes": "",
+                    "Date": "2023-10-26"
                 }
             ],
             "Updated_at": "2023-10-26T15:40:47.226+03:00"
@@ -327,17 +344,19 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
 
 Upload a new version of an app.
 
-`POST /upload?app_name=<app_name>&version=<version>`
+`POST /upload`
 
-Optional with `channel`, `publish`, `platform` and `arch`:
-
-`POST /upload?app_name=<app_name>&version=<version>&channel=<channel_name>&publish=<true or false>&platform=<platform_name>&arch=<arch_id>`
-
+Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
+```
+--form 'data="{\"app_name\":\"myapp\",\"version\":\"0.0.1\",\"channel\":\"\",\"publish\":true,\"platform\":\"\",\"arch\":\"\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}"'
+```
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
 
 ###### Body
 **file**: file of the app.
+
+###### Body form data
 
 **app_name**: Name of the app.
 
@@ -379,7 +398,7 @@ curl --location 'http://localhost:9000/upload' \
 
 Check if there is a newer version of a specific app after uploading a new version.
 
-`POST /checkVersion?app_name=<app_name>&version=<version>`
+`GET /checkVersion?app_name=<app_name>&version=<version>`
 
 ###### Query Parameters
 **app_name**: Name of the app.
@@ -407,16 +426,19 @@ Update existing app.
 
 :warning: You can't change `app_name` and `version`. They are used only for correct searching.
 
-`POST /update?id=<objectID>&app_name=<app_name>&version=<version>`
+`POST /update`
 
-Optional with `channel`, `publish`, `platform` and `arch`:
+Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
 
-`POST /update?id=<objectID>&app_name=<app_name>&version=<version>&channel=<channel_name>&publish=<true or false>&platform=<platform_name>&arch=<arch_id>`
+data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"
 
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
 
-###### Query Parameters
+###### Body
+**file**: file of the app.
+
+###### Body form-data
 **app_name**: Name of the app.
 
 **version**: Current version of the app.
@@ -429,20 +451,20 @@ Optional with `channel`, `publish`, `platform` and `arch`:
 
 **arch**: Current arch of the app.
 
-###### Body
-**file**: file of the app.
-
+**changelog**: Changelog is a log of changes on current version. 
 
 ###### Request:
 ```
-curl -X POST --location 'http://localhost:9000/upload?id=653a6268f51dee6a99a3d88c&app_name=secondapp&version=0.0.2&channel=stable&publish=true&platform=linux&arch=amd64' \
+curl --location 'http://localhost:9000/update' \
 --header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
---form 'file=@"/path_to_file/secondapp.deb"'
+--form 'data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"' \
+--form 'file=@"/path_to_file/secondapp.deb"' \
 ```
 ###### Request with multiple uploading:
 ```
-curl -X POST --location 'http://localhost:9000/upload?id=653a6268f51dee6a99a3d88c&app_name=secondapp&version=0.0.2&channel=stable&publish=true&platform=linux&arch=amd64' \
+curl --location 'http://localhost:9000/update' \
 --header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"' \
 --form 'file=@"/path_to_file/secondapp.deb"' \
 --form 'file=@"/path_to_file/secondapp.rpm"'
 ```
@@ -498,6 +520,13 @@ curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
                     "Package": ".rpm"
                 }
             ],
+            "Changelog": [
+                {
+                    "Version": "0.0.1",
+                    "Changes": "### Changelog\n\n- Added new feature X\n- Fixed bug Y",
+                    "Date": "2023-10-26"
+                }
+            ],
             "Updated_at": "2023-10-26T15:40:47.226+03:00"
         },
         {
@@ -518,6 +547,13 @@ curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
+                }
+            ],
+            "Changelog": [
+                {
+                    "Version": "0.0.3",
+                    "Changes": "### Changelog\n\n- Added new feature X\n- Fixed bug Y",
+                    "Date": "2023-10-26"
                 }
             ],
             "Updated_at": "2023-10-26T15:58:16.999+03:00"
@@ -663,6 +699,13 @@ curl -X GET http://localhost:9000/search\?\app_name\=\secondapp -H "Authorizatio
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
+                }
+            ],
+            "Changelog": [
+                {
+                    "Version": "0.0.3",
+                    "Changes": "### Changelog\n\n- Added new feature X\n- Fixed bug Y",
+                    "Date": "2023-10-26"
                 }
             ],
             "Updated_at": "2023-10-26T15:58:16.999+03:00"
