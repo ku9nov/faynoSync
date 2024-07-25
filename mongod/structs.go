@@ -621,10 +621,13 @@ type Artifact struct {
 	Link    string
 	Package string
 }
-
+type Changelog struct {
+	Changes string
+}
 type CheckResult struct {
 	Found     bool
 	Artifacts []Artifact
+	Changelog []Changelog
 }
 
 func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, platform, arch string, ctx context.Context) (CheckResult, error) {
@@ -688,13 +691,6 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 	}
 	defer cursor.Close(ctx)
-	// Reset the cursor to its original position
-	cursor.Close(ctx)
-	cursor, err = collection.Aggregate(ctx, pipeline)
-	if err != nil {
-		return CheckResult{Found: false, Artifacts: []Artifact{}}, err
-	}
-	defer cursor.Close(ctx)
 
 	// Decode the result
 	var latestApp *model.App
@@ -703,6 +699,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		if err != nil {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
+		logrus.Debug("Latest app: ", latestApp)
 		latestAppVersion, err := version.NewVersion(latestApp.Version)
 		if err != nil {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
@@ -713,6 +710,14 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
 		var artifacts []Artifact
+
+		// Convert latestApp.Changelog to []Changelog
+		changelog := make([]Changelog, len(latestApp.Changelog))
+		for i, entry := range latestApp.Changelog {
+			changelog[i] = Changelog{
+				Changes: entry.Changes,
+			}
+		}
 		// Iterate through all elements in latestApp.Artifacts and append both link and package type
 		for _, artifact := range latestApp.Artifacts {
 			artifacts = append(artifacts, Artifact{
@@ -725,7 +730,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		} else if requestedVersion.GreaterThan(latestAppVersion) {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, fmt.Errorf("requested version %s is newer than the latest version available", requestedVersion)
 		} else {
-			return CheckResult{Found: true, Artifacts: artifacts}, nil
+			return CheckResult{Found: true, Artifacts: artifacts, Changelog: changelog}, nil
 		}
 
 	} else {

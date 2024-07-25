@@ -1073,7 +1073,7 @@ func TestUpdate(t *testing.T) {
 			Arch        string
 			Changelog   string
 		}{
-			{uploadedAppIDs[0], "0.0.1", "stable", false, "universalPlatform", "universalArch", "### Changelog"},
+			{uploadedAppIDs[1], "0.0.2", "nightly", true, "universalPlatform", "universalArch", "### Changelog"},
 		}
 
 		// Iterate through the combinations and upload the file for each combination.
@@ -1174,8 +1174,8 @@ func TestSearch(t *testing.T) {
 		{
 			AppName:   "testapp",
 			Version:   "0.0.1",
-			Channel:   "stable",
-			Published: false,
+			Channel:   "nightly",
+			Published: true,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1191,7 +1191,7 @@ func TestSearch(t *testing.T) {
 			Changelog: []model.Changelog{
 				{
 					Version: "0.0.1",
-					Changes: "### Changelog",
+					Changes: "",
 					Date:    time.Now().Format("2006-01-02"),
 				},
 			},
@@ -1216,7 +1216,7 @@ func TestSearch(t *testing.T) {
 			Changelog: []model.Changelog{
 				{
 					Version: "0.0.2",
-					Changes: "",
+					Changes: "### Changelog",
 					Date:    time.Now().Format("2006-01-02"),
 				},
 			},
@@ -1360,6 +1360,7 @@ func TestCheckVersion(t *testing.T) {
 			Version:     "0.0.1",
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
+				"changelog":        "### Changelog\n",
 				"update_available": true,
 				"update_url_dmg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg", s3Endpoint),
 				"update_url_pkg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg", s3Endpoint),
