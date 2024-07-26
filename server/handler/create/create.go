@@ -11,7 +11,6 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 )
 
 func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
@@ -53,8 +52,7 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 	}
 
 	if err != nil {
-		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload " + itemType + " data"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	var tag language.Tag

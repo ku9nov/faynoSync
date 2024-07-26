@@ -419,23 +419,15 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			}
 		}
 	}
-	switch uploadResult.(type) {
+	switch v := uploadResult.(type) {
 	case *mongo.InsertOneResult:
-		result, ok := uploadResult.(*mongo.InsertOneResult)
-		if !ok {
-			return nil, errors.New("error casting to InsertOneResult")
-		}
-		insertedID, ok := result.InsertedID.(primitive.ObjectID)
+		insertedID, ok := v.InsertedID.(primitive.ObjectID)
 		if !ok {
 			return nil, errors.New("error extracting ID from InsertOneResult")
 		}
 		return insertedID.Hex(), nil
 	case primitive.ObjectID:
-		id, ok := uploadResult.(primitive.ObjectID)
-		if !ok {
-			return nil, errors.New("error casting to ObjectID")
-		}
-		return id.Hex(), nil
+		return v.Hex(), nil
 	default:
 		return nil, errors.New("unexpected return type")
 	}
@@ -540,81 +532,6 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 	} else {
 		return false, errors.New("app with this parameters doesn't exist")
 	}
-}
-
-func (c *appRepository) CreateChannel(channelName string, ctx context.Context) (interface{}, error) {
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{
-		{Key: "channel_name", Value: channelName},
-		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
-	}
-	uploadResult, err := collection.InsertOne(ctx, filter)
-	if err != nil {
-		logrus.Errorf("Error inserting document: %v", err)
-		return nil, err
-	}
-	mongoErr, ok := err.(mongo.WriteException)
-	if ok {
-		for _, writeErr := range mongoErr.WriteErrors {
-			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "channel_name_sort_by_asc_created") {
-				return "channel with this name already exists", errors.New("channel with this name already exists")
-			}
-		}
-	}
-	return uploadResult.InsertedID, nil
-}
-
-func (c *appRepository) CreatePlatform(platformName string, ctx context.Context) (interface{}, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{
-		{Key: "platform_name", Value: platformName},
-		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
-	}
-
-	uploadResult, err := collection.InsertOne(ctx, filter)
-	if err != nil {
-		logrus.Errorf("Error inserting document: %v", err)
-		return nil, err
-	}
-	mongoErr, ok := err.(mongo.WriteException)
-	if ok {
-		for _, writeErr := range mongoErr.WriteErrors {
-			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "platform_name_sort_by_asc_created") {
-				return "platform with this name already exists", errors.New("platform with this name already exists")
-			}
-		}
-	}
-
-	return uploadResult.InsertedID, nil
-}
-
-func (c *appRepository) CreateArch(archID string, ctx context.Context) (interface{}, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{
-		{Key: "arch_id", Value: archID},
-		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
-	}
-
-	uploadResult, err := collection.InsertOne(ctx, filter)
-	if err != nil {
-		logrus.Errorf("Error inserting document: %v", err)
-		return nil, err
-	}
-	mongoErr, ok := err.(mongo.WriteException)
-	if ok {
-		for _, writeErr := range mongoErr.WriteErrors {
-			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "arch_id_sort_by_asc_created") {
-				return "arch with this name already exists", errors.New("arch with this name already exists")
-			}
-		}
-	}
-
-	return uploadResult.InsertedID, nil
 }
 
 type Artifact struct {

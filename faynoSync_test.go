@@ -481,6 +481,58 @@ func TestChannelCreateNightly(t *testing.T) {
 	assert.NotEmpty(t, idNightlyChannel)
 }
 
+func TestSecondaryChannelCreateNightly(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /createChannel route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/createChannel", func(c *gin.Context) {
+		handler.CreateChannel(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"channel": "nightly"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /createChannel endpoint
+	req, err := http.NewRequest("POST", "/createChannel", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 500).
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"channel with this name already exists"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
+
 func TestChannelCreateStable(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -705,7 +757,55 @@ func TestPlatformCreate(t *testing.T) {
 	assert.True(t, idExists)
 	assert.NotEmpty(t, platformId)
 }
+func TestSecondaryPlatformCreate(t *testing.T) {
+	router := gin.Default()
+	w := httptest.NewRecorder()
 
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/createPlatform", func(c *gin.Context) {
+		handler.CreatePlatform(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"platform": "universalPlatform"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /createChannel endpoint
+	req, err := http.NewRequest("POST", "/createPlatform", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 500).
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"platform with this name already exists"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
 func TestUploadAppWithoutPlatform(t *testing.T) {
 
 	router := gin.Default()
@@ -867,7 +967,55 @@ func TestArchCreate(t *testing.T) {
 	assert.True(t, idExists)
 	assert.NotEmpty(t, archId)
 }
+func TestSecondaryArchCreate(t *testing.T) {
+	router := gin.Default()
+	w := httptest.NewRecorder()
 
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/createArch", func(c *gin.Context) {
+		handler.CreateArch(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"arch": "universalArch"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /createChannel endpoint
+	req, err := http.NewRequest("POST", "/createArch", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 500).
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"arch with this name already exists"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
 func TestUploadAppWithoutArch(t *testing.T) {
 
 	router := gin.Default()

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.4
+
+### Features
+- Added `Changelog` to check latest version response.
+- Refactored `List`, `Create`, `Delete` mongodb functions.
+
 ## v1.3.3
 
 ### Important Notes
