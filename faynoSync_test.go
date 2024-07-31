@@ -481,6 +481,58 @@ func TestChannelCreateNightly(t *testing.T) {
 	assert.NotEmpty(t, idNightlyChannel)
 }
 
+func TestSecondaryChannelCreateNightly(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /createChannel route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/createChannel", func(c *gin.Context) {
+		handler.CreateChannel(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"channel": "nightly"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /createChannel endpoint
+	req, err := http.NewRequest("POST", "/createChannel", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 500).
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"channel with this name already exists"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
+
 func TestChannelCreateStable(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -705,7 +757,55 @@ func TestPlatformCreate(t *testing.T) {
 	assert.True(t, idExists)
 	assert.NotEmpty(t, platformId)
 }
+func TestSecondaryPlatformCreate(t *testing.T) {
+	router := gin.Default()
+	w := httptest.NewRecorder()
 
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/createPlatform", func(c *gin.Context) {
+		handler.CreatePlatform(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"platform": "universalPlatform"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /createChannel endpoint
+	req, err := http.NewRequest("POST", "/createPlatform", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 500).
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"platform with this name already exists"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
 func TestUploadAppWithoutPlatform(t *testing.T) {
 
 	router := gin.Default()
@@ -867,7 +967,55 @@ func TestArchCreate(t *testing.T) {
 	assert.True(t, idExists)
 	assert.NotEmpty(t, archId)
 }
+func TestSecondaryArchCreate(t *testing.T) {
+	router := gin.Default()
+	w := httptest.NewRecorder()
 
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/createArch", func(c *gin.Context) {
+		handler.CreateArch(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"arch": "universalArch"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /createChannel endpoint
+	req, err := http.NewRequest("POST", "/createArch", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 500).
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"arch with this name already exists"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
 func TestUploadAppWithoutArch(t *testing.T) {
 
 	router := gin.Default()
@@ -961,14 +1109,15 @@ func TestMultipleUpload(t *testing.T) {
 			AppVersion  string
 			ChannelName string
 			Published   bool
+			Critical    bool
 			Platform    string
 			Arch        string
 		}{
-			{"0.0.1", "nightly", true, "universalPlatform", "universalArch"},
-			{"0.0.2", "nightly", true, "universalPlatform", "universalArch"},
-			{"0.0.3", "nightly", false, "universalPlatform", "universalArch"},
-			{"0.0.4", "stable", true, "universalPlatform", "universalArch"},
-			{"0.0.5", "stable", false, "universalPlatform", "universalArch"},
+			{"0.0.1", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"0.0.2", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"0.0.3", "nightly", false, false, "universalPlatform", "universalArch"},
+			{"0.0.4", "stable", true, true, "universalPlatform", "universalArch"},
+			{"0.0.5", "stable", false, false, "universalPlatform", "universalArch"},
 		}
 
 		// Iterate through the combinations and upload the file for each combination.
@@ -989,7 +1138,7 @@ func TestMultipleUpload(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			payload := fmt.Sprintf(`{"app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "platform": "%s", "arch": "%s"}`, combo.AppVersion, combo.ChannelName, combo.Published, combo.Platform, combo.Arch)
+			payload := fmt.Sprintf(`{"app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s"}`, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch)
 			_, err = dataPart.Write([]byte(payload))
 			if err != nil {
 				t.Fatal(err)
@@ -1069,11 +1218,12 @@ func TestUpdate(t *testing.T) {
 			AppVersion  string
 			ChannelName string
 			Published   bool
+			Critical    bool
 			Platform    string
 			Arch        string
 			Changelog   string
 		}{
-			{uploadedAppIDs[0], "0.0.1", "stable", false, "universalPlatform", "universalArch", "### Changelog"},
+			{uploadedAppIDs[1], "0.0.2", "nightly", true, true, "universalPlatform", "universalArch", "### Changelog"},
 		}
 
 		// Iterate through the combinations and upload the file for each combination.
@@ -1095,7 +1245,7 @@ func TestUpdate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			payload := fmt.Sprintf(`{"id": "%s", "app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "platform": "%s", "arch": "%s", "changelog": "%s"}`, combo.ID, combo.AppVersion, combo.ChannelName, combo.Published, combo.Platform, combo.Arch, combo.Changelog)
+			payload := fmt.Sprintf(`{"id": "%s", "app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s", "changelog": "%s"}`, combo.ID, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch, combo.Changelog)
 			_, err = dataPart.Write([]byte(payload))
 			if err != nil {
 				t.Fatal(err)
@@ -1162,6 +1312,7 @@ func TestSearch(t *testing.T) {
 		Version    string            `json:"Version"`
 		Channel    string            `json:"Channel"`
 		Published  bool              `json:"Published"`
+		Critical   bool              `json:"Critical"`
 		Artifacts  []model.Artifact  `json:"Artifacts" bson:"artifacts"`
 		Changelog  []model.Changelog `json:"Changelog" bson:"changelog"`
 		Updated_at string            `json:"Updated_at"`
@@ -1174,8 +1325,9 @@ func TestSearch(t *testing.T) {
 		{
 			AppName:   "testapp",
 			Version:   "0.0.1",
-			Channel:   "stable",
-			Published: false,
+			Channel:   "nightly",
+			Published: true,
+			Critical:  false,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1191,7 +1343,7 @@ func TestSearch(t *testing.T) {
 			Changelog: []model.Changelog{
 				{
 					Version: "0.0.1",
-					Changes: "### Changelog",
+					Changes: "",
 					Date:    time.Now().Format("2006-01-02"),
 				},
 			},
@@ -1201,6 +1353,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.2",
 			Channel:   "nightly",
 			Published: true,
+			Critical:  true,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1216,7 +1369,7 @@ func TestSearch(t *testing.T) {
 			Changelog: []model.Changelog{
 				{
 					Version: "0.0.2",
-					Changes: "",
+					Changes: "### Changelog",
 					Date:    time.Now().Format("2006-01-02"),
 				},
 			},
@@ -1226,6 +1379,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.3",
 			Channel:   "nightly",
 			Published: false,
+			Critical:  false,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1251,6 +1405,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.4",
 			Channel:   "stable",
 			Published: true,
+			Critical:  true,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1276,6 +1431,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.5",
 			Channel:   "stable",
 			Published: false,
+			Critical:  false,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1360,7 +1516,9 @@ func TestCheckVersion(t *testing.T) {
 			Version:     "0.0.1",
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
+				"changelog":        "### Changelog\n",
 				"update_available": true,
+				"critical":         true,
 				"update_url_dmg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg", s3Endpoint),
 				"update_url_pkg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg", s3Endpoint),
 			},

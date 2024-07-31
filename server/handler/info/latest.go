@@ -45,12 +45,28 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		}
 		return
 	}
+	logrus.Debug("Check latest version response: ", checkResult)
+	response := gin.H{"update_available": true, "critical": checkResult.Critical}
 
-	response := gin.H{"update_available": true}
+	// Add update URLs to the response
 	for _, artifact := range checkResult.Artifacts {
 		if artifact.Package != "" && artifact.Link != "" {
 			key := "update_url_" + strings.TrimPrefix(artifact.Package, ".")
 			response[key] = artifact.Link
+		}
+	}
+	// Add changelog to the response last
+	if len(checkResult.Changelog) > 0 {
+		var changelogBuilder strings.Builder
+		for _, changelog := range checkResult.Changelog {
+			if changelog.Changes != "" {
+				changelogBuilder.WriteString(changelog.Changes)
+				changelogBuilder.WriteString("\n")
+			}
+		}
+		// Only add to response if there was any changelog to include
+		if changelogBuilder.Len() > 0 {
+			response["changelog"] = changelogBuilder.String()
 		}
 	}
 

@@ -64,7 +64,6 @@ func deleteEntity(c *gin.Context, repository db.AppRepository, itemType string) 
 		return
 	}
 	var result interface{}
-	// var err error
 	switch itemType {
 	case "channel":
 		result, err = repository.DeleteChannel(objID, ctx)

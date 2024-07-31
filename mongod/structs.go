@@ -81,111 +81,6 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 	return apps, nil
 }
 
-func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, error) {
-
-	findOptions := options.Find()
-	findOptions.SetLimit(100)
-
-	var channels []*model.Channel
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-	// Define a filter to fetch documents with the "channel_name" field
-	filter := bson.M{"channel_name": bson.M{"$exists": true}}
-
-	cur, err := collection.Find(ctx, filter, findOptions)
-	if err != nil {
-		logrus.Fatal(err)
-		return nil, err
-	}
-
-	// Finding multiple documents returns a cursor
-	// Iterating through the cursor allows us to decode documents one at a time
-	for cur.Next(context.TODO()) {
-		// create a value into which the single document can be decoded
-		var elem model.Channel
-		if err := cur.Decode(&elem); err != nil {
-			logrus.Fatal(err)
-			return nil, err
-		}
-
-		channels = append(channels, &elem)
-	}
-
-	cur.Close(ctx)
-
-	return channels, nil
-}
-
-func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, error) {
-
-	findOptions := options.Find()
-	findOptions.SetLimit(100)
-
-	var platforms []*model.Platform
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-	// Define a filter to fetch documents with the "platform_name" field
-	filter := bson.M{"platform_name": bson.M{"$exists": true}}
-
-	cur, err := collection.Find(ctx, filter, findOptions)
-	if err != nil {
-		logrus.Fatal(err)
-		return nil, err
-	}
-
-	// Finding multiple documents returns a cursor
-	// Iterating through the cursor allows us to decode documents one at a time
-	for cur.Next(context.TODO()) {
-		// create a value into which the single document can be decoded
-		var elem model.Platform
-		if err := cur.Decode(&elem); err != nil {
-			logrus.Fatal(err)
-			return nil, err
-		}
-
-		platforms = append(platforms, &elem)
-	}
-
-	cur.Close(ctx)
-
-	return platforms, nil
-}
-
-func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
-
-	findOptions := options.Find()
-	findOptions.SetLimit(100)
-
-	var archs []*model.Arch
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-	// Define a filter to fetch documents with the "arch_id" field
-	filter := bson.M{"arch_id": bson.M{"$exists": true}}
-
-	cur, err := collection.Find(ctx, filter, findOptions)
-	if err != nil {
-		logrus.Fatal(err)
-		return nil, err
-	}
-
-	// Finding multiple documents returns a cursor
-	// Iterating through the cursor allows us to decode documents one at a time
-	for cur.Next(context.TODO()) {
-		// create a value into which the single document can be decoded
-		var elem model.Arch
-		if err := cur.Decode(&elem); err != nil {
-			logrus.Fatal(err)
-			return nil, err
-		}
-
-		archs = append(archs, &elem)
-	}
-
-	cur.Close(ctx)
-
-	return archs, nil
-}
-
 func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.App, error) {
 
 	findOptions := options.Find()
@@ -219,116 +114,6 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	cur.Close(ctx)
 
 	return apps, nil
-}
-
-func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{primitive.E{Key: "_id", Value: id}}
-
-	// Retrieve the document before deletion
-	var app *model.App
-	err := collection.FindOne(ctx, filter).Decode(&app)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return nil, 0, fmt.Errorf("no app found with ID %s", id)
-		}
-		return nil, 0, fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
-	}
-
-	deleteResult, err := collection.DeleteOne(ctx, filter)
-	if err != nil {
-		logrus.Fatal(err)
-
-		return nil, 0, err
-	}
-
-	var links []string
-	for _, artifact := range app.Artifacts {
-		link := string(artifact.Link)
-		links = append(links, link)
-	}
-
-	return links, deleteResult.DeletedCount, nil
-}
-
-func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{primitive.E{Key: "_id", Value: id}}
-
-	// Retrieve the document before deletion
-	var channel *model.Channel
-	err := collection.FindOne(ctx, filter).Decode(&channel)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return 0, fmt.Errorf("no channel found with ID %s", id)
-		}
-		return 0, fmt.Errorf("error retrieving channel with ID %s: %s", id, err.Error())
-	}
-
-	deleteResult, err := collection.DeleteOne(ctx, filter)
-	if err != nil {
-		logrus.Fatal(err)
-
-		return 0, err
-	}
-
-	return deleteResult.DeletedCount, nil
-}
-
-func (c *appRepository) DeletePlatform(id primitive.ObjectID, ctx context.Context) (int64, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{primitive.E{Key: "_id", Value: id}}
-
-	// Retrieve the document before deletion
-	var platform *model.Platform
-	err := collection.FindOne(ctx, filter).Decode(&platform)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return 0, fmt.Errorf("no platform found with ID %s", id)
-		}
-		return 0, fmt.Errorf("error retrieving platform with ID %s: %s", id, err.Error())
-	}
-
-	deleteResult, err := collection.DeleteOne(ctx, filter)
-	if err != nil {
-		logrus.Fatal(err)
-
-		return 0, err
-	}
-
-	return deleteResult.DeletedCount, nil
-}
-
-func (c *appRepository) DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{primitive.E{Key: "_id", Value: id}}
-
-	// Retrieve the document before deletion
-	var arch *model.Arch
-	err := collection.FindOne(ctx, filter).Decode(&arch)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return 0, fmt.Errorf("no arch found with ID %s", id)
-		}
-		return 0, fmt.Errorf("error retrieving arch with ID %s: %s", id, err.Error())
-	}
-
-	deleteResult, err := collection.DeleteOne(ctx, filter)
-	if err != nil {
-		logrus.Fatal(err)
-
-		return 0, err
-	}
-
-	return deleteResult.DeletedCount, nil
 }
 
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error) {
@@ -374,13 +159,16 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 	} else {
 		// Handle the case when no document exists
 		publishParam, publishExists := ctxQuery["publish"]
-		var publish bool
+		criticalParam, criticalExists := ctxQuery["critical"]
 
+		publish := false
 		if publishExists {
-			publishVal := publishParam.(string)
-			publish = publishVal == "true"
-		} else {
-			publish = false
+			publish = utils.GetBoolParam(publishParam)
+		}
+
+		critical := false
+		if criticalExists {
+			critical = utils.GetBoolParam(criticalParam)
 		}
 
 		artifact := model.Artifact{
@@ -399,6 +187,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			{Key: "version", Value: ctxQuery["version"].(string)},
 			{Key: "channel", Value: ctxQuery["channel"].(string)},
 			{Key: "published", Value: publish},
+			{Key: "critical", Value: critical},
 			{Key: "artifacts", Value: []model.Artifact{artifact}},
 			{Key: "changelog", Value: []model.Changelog{changelog}},
 			{Key: "updated_at", Value: time.Now()},
@@ -419,23 +208,15 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			}
 		}
 	}
-	switch uploadResult.(type) {
+	switch v := uploadResult.(type) {
 	case *mongo.InsertOneResult:
-		result, ok := uploadResult.(*mongo.InsertOneResult)
-		if !ok {
-			return nil, errors.New("error casting to InsertOneResult")
-		}
-		insertedID, ok := result.InsertedID.(primitive.ObjectID)
+		insertedID, ok := v.InsertedID.(primitive.ObjectID)
 		if !ok {
 			return nil, errors.New("error extracting ID from InsertOneResult")
 		}
 		return insertedID.Hex(), nil
 	case primitive.ObjectID:
-		id, ok := uploadResult.(primitive.ObjectID)
-		if !ok {
-			return nil, errors.New("error casting to ObjectID")
-		}
-		return id.Hex(), nil
+		return v.Hex(), nil
 	default:
 		return nil, errors.New("unexpected return type")
 	}
@@ -459,17 +240,6 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 		if err := existingDoc.Decode(&appData); err != nil {
 			return false, err
 		}
-
-		publishParam, publishExists := ctxQuery["publish"]
-		var publish bool
-
-		if publishExists {
-			publishVal := publishParam.(string)
-			publish = publishVal == "true"
-		} else {
-			publish = false
-		}
-
 		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
 		if ctxQuery["app_name"].(string) != "" {
 			updateFields = append(updateFields, bson.E{Key: "app_name", Value: ctxQuery["app_name"].(string)})
@@ -480,8 +250,19 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 		if ctxQuery["channel"].(string) != "" {
 			updateFields = append(updateFields, bson.E{Key: "channel", Value: ctxQuery["channel"].(string)})
 		}
+		publishParam, publishExists := ctxQuery["publish"]
+		criticalParam, criticalExists := ctxQuery["critical"]
+
+		publish := false
 		if publishExists {
+			publish = utils.GetBoolParam(publishParam)
 			updateFields = append(updateFields, bson.E{Key: "published", Value: publish})
+		}
+
+		critical := false
+		if criticalExists {
+			critical = utils.GetBoolParam(criticalParam)
+			updateFields = append(updateFields, bson.E{Key: "critical", Value: critical})
 		}
 
 		duplicateFound := false
@@ -542,89 +323,18 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 	}
 }
 
-func (c *appRepository) CreateChannel(channelName string, ctx context.Context) (interface{}, error) {
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{
-		{Key: "channel_name", Value: channelName},
-		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
-	}
-	uploadResult, err := collection.InsertOne(ctx, filter)
-	if err != nil {
-		logrus.Errorf("Error inserting document: %v", err)
-		return nil, err
-	}
-	mongoErr, ok := err.(mongo.WriteException)
-	if ok {
-		for _, writeErr := range mongoErr.WriteErrors {
-			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "channel_name_sort_by_asc_created") {
-				return "channel with this name already exists", errors.New("channel with this name already exists")
-			}
-		}
-	}
-	return uploadResult.InsertedID, nil
-}
-
-func (c *appRepository) CreatePlatform(platformName string, ctx context.Context) (interface{}, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{
-		{Key: "platform_name", Value: platformName},
-		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
-	}
-
-	uploadResult, err := collection.InsertOne(ctx, filter)
-	if err != nil {
-		logrus.Errorf("Error inserting document: %v", err)
-		return nil, err
-	}
-	mongoErr, ok := err.(mongo.WriteException)
-	if ok {
-		for _, writeErr := range mongoErr.WriteErrors {
-			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "platform_name_sort_by_asc_created") {
-				return "platform with this name already exists", errors.New("platform with this name already exists")
-			}
-		}
-	}
-
-	return uploadResult.InsertedID, nil
-}
-
-func (c *appRepository) CreateArch(archID string, ctx context.Context) (interface{}, error) {
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	filter := bson.D{
-		{Key: "arch_id", Value: archID},
-		{Key: "updated_at", Value: time.Now()}, // add updated_at with the current time
-	}
-
-	uploadResult, err := collection.InsertOne(ctx, filter)
-	if err != nil {
-		logrus.Errorf("Error inserting document: %v", err)
-		return nil, err
-	}
-	mongoErr, ok := err.(mongo.WriteException)
-	if ok {
-		for _, writeErr := range mongoErr.WriteErrors {
-			if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "arch_id_sort_by_asc_created") {
-				return "arch with this name already exists", errors.New("arch with this name already exists")
-			}
-		}
-	}
-
-	return uploadResult.InsertedID, nil
-}
-
 type Artifact struct {
 	Link    string
 	Package string
 }
-
+type Changelog struct {
+	Changes string
+}
 type CheckResult struct {
 	Found     bool
+	Critical  bool
 	Artifacts []Artifact
+	Changelog []Changelog
 }
 
 func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, platform, arch string, ctx context.Context) (CheckResult, error) {
@@ -681,16 +391,10 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		}}},
 		{{Key: "$limit", Value: 1}},
 	}
-
+	logrus.Debug("MongoDB Filter: ", filter)
+	logrus.Debug("MongoDB Pipeline: ", pipeline)
 	// Execute the aggregation pipeline
 	cursor, err := collection.Aggregate(ctx, pipeline)
-	if err != nil {
-		return CheckResult{Found: false, Artifacts: []Artifact{}}, err
-	}
-	defer cursor.Close(ctx)
-	// Reset the cursor to its original position
-	cursor.Close(ctx)
-	cursor, err = collection.Aggregate(ctx, pipeline)
 	if err != nil {
 		return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 	}
@@ -703,6 +407,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		if err != nil {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
+		logrus.Debug("Latest app: ", latestApp)
 		latestAppVersion, err := version.NewVersion(latestApp.Version)
 		if err != nil {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
@@ -713,6 +418,14 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
 		var artifacts []Artifact
+
+		// Convert latestApp.Changelog to []Changelog
+		changelog := make([]Changelog, len(latestApp.Changelog))
+		for i, entry := range latestApp.Changelog {
+			changelog[i] = Changelog{
+				Changes: entry.Changes,
+			}
+		}
 		// Iterate through all elements in latestApp.Artifacts and append both link and package type
 		for _, artifact := range latestApp.Artifacts {
 			artifacts = append(artifacts, Artifact{
@@ -725,7 +438,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		} else if requestedVersion.GreaterThan(latestAppVersion) {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, fmt.Errorf("requested version %s is newer than the latest version available", requestedVersion)
 		} else {
-			return CheckResult{Found: true, Artifacts: artifacts}, nil
+			return CheckResult{Found: true, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical}, nil
 		}
 
 	} else {
