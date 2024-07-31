@@ -15,6 +15,7 @@ type App struct {
 	Version    string             `bson:"version"`
 	Channel    string             `bson:"channel"`
 	Published  bool               `bson:"published"`
+	Critical   bool               `bson:"critical"`
 	Artifacts  []Artifact         `bson:"artifacts"`
 	Changelog  []Changelog        `bson:"changelog"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
@@ -56,6 +57,7 @@ type UpRequest struct {
 	Version   string `json:"version"`
 	Channel   string `json:"channel"`
 	Publish   bool   `json:"publish"`
+	Critical  bool   `json:"critical"`
 	Platform  string `json:"platform"`
 	Arch      string `json:"arch"`
 	Changelog string `json:"changelog"`

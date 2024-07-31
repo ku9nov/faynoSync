@@ -46,7 +46,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		return
 	}
 	logrus.Debug("Check latest version response: ", checkResult)
-	response := gin.H{"update_available": true}
+	response := gin.H{"update_available": true, "critical": checkResult.Critical}
 
 	// Add update URLs to the response
 	for _, artifact := range checkResult.Artifacts {

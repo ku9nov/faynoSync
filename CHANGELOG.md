@@ -4,6 +4,10 @@
 
 ### Features
 - Added `Changelog` to check latest version response.
+- Added `Critical` parameter.
+
+### Maintenance
+
 - Refactored `List`, `Create`, `Delete` mongodb functions.
 
 ## v1.3.3

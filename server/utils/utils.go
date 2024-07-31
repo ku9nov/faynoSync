@@ -100,7 +100,12 @@ func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interf
 
 	return validateCommonParams(ctxQueryMap, database, c)
 }
-
+func GetBoolParam(param interface{}) bool {
+	if str, ok := param.(string); ok {
+		return str == "true"
+	}
+	return false
+}
 func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 	jsonData := c.PostForm("data")
 	if jsonData == "" {
@@ -115,12 +120,14 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 	}
 
 	publishStr := strconv.FormatBool(upReq.Publish)
+	criticalStr := strconv.FormatBool(upReq.Critical)
 	return map[string]interface{}{
 		"id":        upReq.Id,
 		"app_name":  upReq.AppName,
 		"version":   upReq.Version,
 		"channel":   upReq.Channel,
 		"publish":   publishStr,
+		"critical":  criticalStr,
 		"platform":  upReq.Platform,
 		"arch":      upReq.Arch,
 		"changelog": upReq.Changelog,

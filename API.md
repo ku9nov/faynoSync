@@ -366,6 +366,8 @@ Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
 
 **publish**: Set `true` for availabilitty this version for clients.
 
+**critical**: Set `true` to mark this version as critical.
+
 **platform**: Current platform of the app.
 
 **arch**: Current arch of the app.
@@ -446,6 +448,8 @@ data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"vers
 **channel**: Current channel of the app.
 
 **publish**: Set `true` for availabilitty this version for clients.
+
+**critical**: Set `true` to mark this version as critical.
 
 **platform**: Current platform of the app.
 

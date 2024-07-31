@@ -159,13 +159,16 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 	} else {
 		// Handle the case when no document exists
 		publishParam, publishExists := ctxQuery["publish"]
-		var publish bool
+		criticalParam, criticalExists := ctxQuery["critical"]
 
+		publish := false
 		if publishExists {
-			publishVal := publishParam.(string)
-			publish = publishVal == "true"
-		} else {
-			publish = false
+			publish = utils.GetBoolParam(publishParam)
+		}
+
+		critical := false
+		if criticalExists {
+			critical = utils.GetBoolParam(criticalParam)
 		}
 
 		artifact := model.Artifact{
@@ -184,6 +187,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			{Key: "version", Value: ctxQuery["version"].(string)},
 			{Key: "channel", Value: ctxQuery["channel"].(string)},
 			{Key: "published", Value: publish},
+			{Key: "critical", Value: critical},
 			{Key: "artifacts", Value: []model.Artifact{artifact}},
 			{Key: "changelog", Value: []model.Changelog{changelog}},
 			{Key: "updated_at", Value: time.Now()},
@@ -236,17 +240,6 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 		if err := existingDoc.Decode(&appData); err != nil {
 			return false, err
 		}
-
-		publishParam, publishExists := ctxQuery["publish"]
-		var publish bool
-
-		if publishExists {
-			publishVal := publishParam.(string)
-			publish = publishVal == "true"
-		} else {
-			publish = false
-		}
-
 		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
 		if ctxQuery["app_name"].(string) != "" {
 			updateFields = append(updateFields, bson.E{Key: "app_name", Value: ctxQuery["app_name"].(string)})
@@ -257,8 +250,19 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 		if ctxQuery["channel"].(string) != "" {
 			updateFields = append(updateFields, bson.E{Key: "channel", Value: ctxQuery["channel"].(string)})
 		}
+		publishParam, publishExists := ctxQuery["publish"]
+		criticalParam, criticalExists := ctxQuery["critical"]
+
+		publish := false
 		if publishExists {
+			publish = utils.GetBoolParam(publishParam)
 			updateFields = append(updateFields, bson.E{Key: "published", Value: publish})
+		}
+
+		critical := false
+		if criticalExists {
+			critical = utils.GetBoolParam(criticalParam)
+			updateFields = append(updateFields, bson.E{Key: "critical", Value: critical})
 		}
 
 		duplicateFound := false
@@ -328,6 +332,7 @@ type Changelog struct {
 }
 type CheckResult struct {
 	Found     bool
+	Critical  bool
 	Artifacts []Artifact
 	Changelog []Changelog
 }
@@ -386,7 +391,8 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		}}},
 		{{Key: "$limit", Value: 1}},
 	}
-
+	logrus.Debug("MongoDB Filter: ", filter)
+	logrus.Debug("MongoDB Pipeline: ", pipeline)
 	// Execute the aggregation pipeline
 	cursor, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
@@ -432,7 +438,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		} else if requestedVersion.GreaterThan(latestAppVersion) {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, fmt.Errorf("requested version %s is newer than the latest version available", requestedVersion)
 		} else {
-			return CheckResult{Found: true, Artifacts: artifacts, Changelog: changelog}, nil
+			return CheckResult{Found: true, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical}, nil
 		}
 
 	} else {

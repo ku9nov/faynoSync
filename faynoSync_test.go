@@ -1109,14 +1109,15 @@ func TestMultipleUpload(t *testing.T) {
 			AppVersion  string
 			ChannelName string
 			Published   bool
+			Critical    bool
 			Platform    string
 			Arch        string
 		}{
-			{"0.0.1", "nightly", true, "universalPlatform", "universalArch"},
-			{"0.0.2", "nightly", true, "universalPlatform", "universalArch"},
-			{"0.0.3", "nightly", false, "universalPlatform", "universalArch"},
-			{"0.0.4", "stable", true, "universalPlatform", "universalArch"},
-			{"0.0.5", "stable", false, "universalPlatform", "universalArch"},
+			{"0.0.1", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"0.0.2", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"0.0.3", "nightly", false, false, "universalPlatform", "universalArch"},
+			{"0.0.4", "stable", true, true, "universalPlatform", "universalArch"},
+			{"0.0.5", "stable", false, false, "universalPlatform", "universalArch"},
 		}
 
 		// Iterate through the combinations and upload the file for each combination.
@@ -1137,7 +1138,7 @@ func TestMultipleUpload(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			payload := fmt.Sprintf(`{"app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "platform": "%s", "arch": "%s"}`, combo.AppVersion, combo.ChannelName, combo.Published, combo.Platform, combo.Arch)
+			payload := fmt.Sprintf(`{"app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s"}`, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch)
 			_, err = dataPart.Write([]byte(payload))
 			if err != nil {
 				t.Fatal(err)
@@ -1217,11 +1218,12 @@ func TestUpdate(t *testing.T) {
 			AppVersion  string
 			ChannelName string
 			Published   bool
+			Critical    bool
 			Platform    string
 			Arch        string
 			Changelog   string
 		}{
-			{uploadedAppIDs[1], "0.0.2", "nightly", true, "universalPlatform", "universalArch", "### Changelog"},
+			{uploadedAppIDs[1], "0.0.2", "nightly", true, true, "universalPlatform", "universalArch", "### Changelog"},
 		}
 
 		// Iterate through the combinations and upload the file for each combination.
@@ -1243,7 +1245,7 @@ func TestUpdate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			payload := fmt.Sprintf(`{"id": "%s", "app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "platform": "%s", "arch": "%s", "changelog": "%s"}`, combo.ID, combo.AppVersion, combo.ChannelName, combo.Published, combo.Platform, combo.Arch, combo.Changelog)
+			payload := fmt.Sprintf(`{"id": "%s", "app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s", "changelog": "%s"}`, combo.ID, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch, combo.Changelog)
 			_, err = dataPart.Write([]byte(payload))
 			if err != nil {
 				t.Fatal(err)
@@ -1310,6 +1312,7 @@ func TestSearch(t *testing.T) {
 		Version    string            `json:"Version"`
 		Channel    string            `json:"Channel"`
 		Published  bool              `json:"Published"`
+		Critical   bool              `json:"Critical"`
 		Artifacts  []model.Artifact  `json:"Artifacts" bson:"artifacts"`
 		Changelog  []model.Changelog `json:"Changelog" bson:"changelog"`
 		Updated_at string            `json:"Updated_at"`
@@ -1324,6 +1327,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.1",
 			Channel:   "nightly",
 			Published: true,
+			Critical:  false,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1349,6 +1353,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.2",
 			Channel:   "nightly",
 			Published: true,
+			Critical:  true,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1374,6 +1379,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.3",
 			Channel:   "nightly",
 			Published: false,
+			Critical:  false,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1399,6 +1405,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.4",
 			Channel:   "stable",
 			Published: true,
+			Critical:  true,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1424,6 +1431,7 @@ func TestSearch(t *testing.T) {
 			Version:   "0.0.5",
 			Channel:   "stable",
 			Published: false,
+			Critical:  false,
 			Artifacts: []model.Artifact{
 				{
 					Platform: "universalPlatform",
@@ -1510,6 +1518,7 @@ func TestCheckVersion(t *testing.T) {
 			ExpectedJSON: map[string]interface{}{
 				"changelog":        "### Changelog\n",
 				"update_available": true,
+				"critical":         true,
 				"update_url_dmg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg", s3Endpoint),
 				"update_url_pkg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg", s3Endpoint),
 			},
