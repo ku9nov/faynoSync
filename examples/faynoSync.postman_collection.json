@@ -127,6 +127,25 @@
 			"response": []
 		},
 		{
+			"name": "List Apps",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/listApps",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"listApps"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Check latest version",
 			"request": {
 				"auth": {
@@ -245,16 +264,16 @@
 						{
 							"key": "file",
 							"type": "file",
-							"src": "/Users/ku9n/Downloads/test.deb"
+							"src": "/Users/ku9n/Downloads/test.rpm"
 						},
 						{
 							"key": "file",
 							"type": "file",
-							"src": "/Users/ku9n/Downloads/test.rpm"
+							"src": "/Users/ku9n/Downloads/test.deb"
 						},
 						{
 							"key": "data",
-							"value": "{\"app_name\":\"{{app_name}}\",\"version\":\"{{version}}\",\"channel\":\"\",\"publish\":true,\"platform\":\"\",\"arch\":\"\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}",
+							"value": "{\"app_name\":\"{{app_name}}\",\"version\":\"{{version}}\",\"channel\":\"\",\"publish\":true,\"critical\":false,\"platform\":\"\",\"arch\":\"\",\"changelog\":\"### Changelog - Added new feature X - Fixed bug Y\"}",
 							"type": "text"
 						}
 					]
@@ -274,7 +293,7 @@
 			"response": []
 		},
 		{
-			"name": "Update",
+			"name": "Update Specific App",
 			"request": {
 				"method": "POST",
 				"header": [],
@@ -283,7 +302,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"id\": \"\", \"app_name\": \"{{app_name}}\", \"version\": \"{{ version }}\", \"channel\": \"\", \"publish\": false, \"platform\": \"\", \"arch\": \"\", \"changelog\": \"\"}",
+							"value": "{\"id\": \"\", \"app_name\": \"{{app_name}}\", \"version\": \"{{version}}\", \"channel\": \"\", \"publish\": false, \"platform\": \"\", \"arch\": \"\", \"changelog\": \"\"}",
 							"type": "text"
 						},
 						{
@@ -299,14 +318,131 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/update",
+					"raw": "http://localhost:{{PORT}}/apps/update",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
+						"apps",
 						"update"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Channel",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\":\"\", \"channel\":\"new_name\"}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/updateChannel",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"updateChannel"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Arch",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\":\"\", \"arch\":\"new_name\"}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/updateArch",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"updateArch"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Platform",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\":\"\", \"platform\":\"new_name\"}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/updatePlatform",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"updatePlatform"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update App",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\":\"\", \"app\":\"new_name\"}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/updateApp",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"updateApp"
 					]
 				}
 			},
@@ -322,7 +458,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"channel\":\"{{ channel }}\"}",
+							"value": "{\"channel\":\"{{channel}}\"}",
 							"type": "text"
 						}
 					]
@@ -351,7 +487,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"platform\":\"{{ platform }}\"}",
+							"value": "{\"platform\":\"{{platform}}\"}",
 							"type": "text"
 						}
 					]
@@ -380,7 +516,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"arch\":\"{{ arch }}\"}",
+							"value": "{\"arch\":\"{{arch}}\"}",
 							"type": "text"
 						}
 					]
@@ -400,24 +536,54 @@
 			"response": []
 		},
 		{
-			"name": "Delete app by id",
+			"name": "Create App",
 			"request": {
-				"method": "DELETE",
+				"method": "POST",
 				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"app\":\"{{app_name}}\"}",
+							"type": "text"
+						}
+					]
+				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/deleteApp?id",
+					"raw": "http://localhost:{{PORT}}/createApp",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"deleteApp"
+						"createApp"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete specific app by id",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/apps/delete?id=",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"apps",
+						"delete"
 					],
 					"query": [
 						{
 							"key": "id",
-							"value": null
+							"value": ""
 						}
 					]
 				}
@@ -488,6 +654,31 @@
 					"port": "{{PORT}}",
 					"path": [
 						"deleteArch"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": null
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete app by id",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/deleteApp?id",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"deleteApp"
 					],
 					"query": [
 						{
