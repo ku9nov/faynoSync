@@ -92,7 +92,10 @@ Run e2e tests:
 ```
 go test
 ```
-
+Build test binary file:
+```
+go test -c -o faynoSync_tests
+```
 **Test Descriptions**
 
 To successfully run the tests and have them pass, you need to populate the .env file.
