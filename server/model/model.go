@@ -19,6 +19,7 @@ type App struct {
 type SpecificApp struct {
 	ID         primitive.ObjectID `bson:"_id"`
 	AppID      primitive.ObjectID `bson:"app_id"`
+	AppName    string             `bson:"app_name,omitempty" json:"AppName,omitempty"`
 	Version    string             `bson:"version"`
 	Channel    string             `bson:"channel"`
 	Published  bool               `bson:"published"`

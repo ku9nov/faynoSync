@@ -15,7 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
@@ -54,78 +53,78 @@ func NewAppRepository(config *connstring.ConnString, client *mongo.Client) AppRe
 }
 
 func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificApp, error) {
-
-	findOptions := options.Find()
-	findOptions.SetLimit(100)
-
-	var apps []*model.SpecificApp
-
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
-	filter := bson.M{"app_id": bson.M{"$exists": true}}
-	// Passing bson.D{{}} as the filter matches all documents in the collection
-	cur, err := collection.Find(ctx, filter, findOptions)
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"app_id": bson.M{"$exists": true}}}},
+		{{Key: "$lookup", Value: bson.M{
+			"from":         "apps_meta",
+			"localField":   "app_id",
+			"foreignField": "_id",
+			"as":           "app_meta",
+		}}},
+		{{Key: "$unwind", Value: "$app_meta"}},
+		{{Key: "$addFields", Value: bson.M{
+			"app_name": "$app_meta.app_name",
+		}}},
+		{{Key: "$limit", Value: 100}},
+	}
+
+	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
 		logrus.Fatal(err)
 		return nil, err
 	}
+	defer cur.Close(ctx)
 
-	// Finding multiple documents returns a cursor
-	// Iterating through the cursor allows us to decode documents one at a time
-	for cur.Next(context.TODO()) {
-		// create a value into which the single document can be decoded
+	var apps []*model.SpecificApp
+	for cur.Next(ctx) {
 		var elem model.SpecificApp
 		if err := cur.Decode(&elem); err != nil {
 			logrus.Fatal(err)
 			return nil, err
 		}
-
 		apps = append(apps, &elem)
 	}
-
-	cur.Close(ctx)
 
 	return apps, nil
 }
 
 func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.SpecificApp, error) {
-
-	findOptions := options.Find()
-	findOptions.SetLimit(100)
-
-	var apps []*model.SpecificApp
-
-	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
-
-	// Find app_id from apps_meta by app_name
+	var appMeta struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
 	metaFilter := bson.D{{Key: "app_name", Value: appName}}
 	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
 	if err != nil {
 		return nil, errors.New("app_name not found in apps_meta collection")
 	}
-	filter := bson.D{primitive.E{Key: "app_id", Value: appMeta.ID}}
 
-	// Passing the filter matches all documents by app_name in the collection
-	cur, err := collection.Find(ctx, filter)
+	collection := c.client.Database(c.config.Database).Collection("apps")
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{primitive.E{Key: "app_id", Value: appMeta.ID}}}},
+		{{Key: "$addFields", Value: bson.M{"app_name": appName}}},
+		{{Key: "$limit", Value: 100}},
+	}
+
+	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
 		logrus.Fatal(err)
 		return nil, err
 	}
-	// Finding multiple documents returns a cursor
-	// Iterating through the cursor allows us to decode documents one at a time
-	for cur.Next(context.TODO()) {
-		// create a value into which the single document can be decoded
+	defer cur.Close(ctx)
+
+	var apps []*model.SpecificApp
+	for cur.Next(ctx) {
 		var elem model.SpecificApp
 		if err := cur.Decode(&elem); err != nil {
 			logrus.Fatal(err)
 			return nil, err
 		}
-
 		apps = append(apps, &elem)
 	}
-
-	cur.Close(ctx)
 
 	return apps, nil
 }

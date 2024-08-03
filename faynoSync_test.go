@@ -1456,6 +1456,7 @@ func TestSearch(t *testing.T) {
 	type AppInfo struct {
 		ID         string            `json:"ID"`
 		AppID      string            `json:"AppID"`
+		AppName    string            `json:"AppName"`
 		Version    string            `json:"Version"`
 		Channel    string            `json:"Channel"`
 		Published  bool              `json:"Published"`
@@ -1467,9 +1468,11 @@ func TestSearch(t *testing.T) {
 	type AppResponse struct {
 		Apps []AppInfo `json:"apps"`
 	}
+
 	expected := []AppInfo{
 		{
 			AppID:     idTestappApp,
+			AppName:   "testapp",
 			Version:   "0.0.1",
 			Channel:   "nightly",
 			Published: true,
@@ -1496,6 +1499,7 @@ func TestSearch(t *testing.T) {
 		},
 		{
 			AppID:     idTestappApp,
+			AppName:   "testapp",
 			Version:   "0.0.2",
 			Channel:   "nightly",
 			Published: true,
@@ -1522,6 +1526,7 @@ func TestSearch(t *testing.T) {
 		},
 		{
 			AppID:     idTestappApp,
+			AppName:   "testapp",
 			Version:   "0.0.3",
 			Channel:   "nightly",
 			Published: false,
@@ -1548,6 +1553,7 @@ func TestSearch(t *testing.T) {
 		},
 		{
 			AppID:     idTestappApp,
+			AppName:   "testapp",
 			Version:   "0.0.4",
 			Channel:   "stable",
 			Published: true,
@@ -1574,6 +1580,7 @@ func TestSearch(t *testing.T) {
 		},
 		{
 			AppID:     idTestappApp,
+			AppName:   "testapp",
 			Version:   "0.0.5",
 			Channel:   "stable",
 			Published: false,
@@ -1614,6 +1621,7 @@ func TestSearch(t *testing.T) {
 
 	for i, expectedApp := range expected {
 		assert.Equal(t, expectedApp.AppID, actual.Apps[i].AppID)
+		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
 		assert.Equal(t, expectedApp.Version, actual.Apps[i].Version)
 		assert.Equal(t, expectedApp.Channel, actual.Apps[i].Channel)
 		assert.Equal(t, expectedApp.Published, actual.Apps[i].Published)
