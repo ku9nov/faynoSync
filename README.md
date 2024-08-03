@@ -134,9 +134,13 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestListPlatformsWhenExist
     - TestListChannelsWhenExist
     - TestSignUp
-    - TestUpdate
+    - TestUpdateSpecificApp
     - TestListAppsWhenExist
     - TestDeleteAppMeta
+    - TestUpdateChannel
+    - TestUpdateApp
+    - TestUpdatePlatform
+    - TestUpdateArch
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

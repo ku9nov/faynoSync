@@ -1342,7 +1342,7 @@ func TestMultipleUpload(t *testing.T) {
 	}
 }
 
-func TestUpdate(t *testing.T) {
+func TestUpdateSpecificApp(t *testing.T) {
 
 	router := gin.Default()
 	// Define the route for the upload endpoint.
@@ -1801,7 +1801,67 @@ func TestMultipleDelete(t *testing.T) {
 		assert.Equal(t, expected, w.Body.String())
 	}
 }
+func TestUpdateChannel(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	w := httptest.NewRecorder()
 
+	// Define the handler for the /updateChannel route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/updateChannel", func(c *gin.Context) {
+		handler.UpdateChannel(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"id": "%s", "channel":"unstable"}`, idStableChannel)
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /updateChannel endpoint
+	req, err := http.NewRequest("POST", "/updateChannel", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "updateChannelResult.Updated" key in the response
+	updated, exists := response["updateChannelResult.Updated"]
+	assert.True(t, exists)
+	assert.True(t, updated.(bool))
+}
 func TestListChannelsWhenExist(t *testing.T) {
 
 	router := gin.Default()
@@ -1840,7 +1900,7 @@ func TestListChannelsWhenExist(t *testing.T) {
 			ChannelName: "nightly",
 		},
 		{
-			ChannelName: "stable",
+			ChannelName: "unstable",
 		},
 	}
 	var actual ChannelResponse
@@ -1912,7 +1972,67 @@ func TestDeleteStableChannel(t *testing.T) {
 	expected := `{"deleteChannelResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
 }
+func TestUpdatePlatform(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	w := httptest.NewRecorder()
 
+	// Define the handler for the /UpdatePlatform route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/updatePlatform", func(c *gin.Context) {
+		handler.UpdatePlatform(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"id": "%s", "platform":"newPlatform"}`, platformId)
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /updatePlatform endpoint
+	req, err := http.NewRequest("POST", "/updatePlatform", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "updateChannelResult.Updated" key in the response
+	updated, exists := response["updatePlatformResult.Updated"]
+	assert.True(t, exists)
+	assert.True(t, updated.(bool))
+}
 func TestListPlatformsWhenExist(t *testing.T) {
 
 	router := gin.Default()
@@ -1948,7 +2068,7 @@ func TestListPlatformsWhenExist(t *testing.T) {
 
 	expected := []PlatformInfo{
 		{
-			PlatformName: "universalPlatform",
+			PlatformName: "newPlatform",
 		},
 	}
 	var actual PlatformResponse
@@ -1991,7 +2111,67 @@ func TestDeletePlatform(t *testing.T) {
 	expected := `{"deletePlatformResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
 }
+func TestUpdateArch(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	w := httptest.NewRecorder()
 
+	// Define the handler for the /updateArch route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/updateArch", func(c *gin.Context) {
+		handler.UpdateArch(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"id": "%s", "arch":"newArch"}`, archId)
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /updateArch endpoint
+	req, err := http.NewRequest("POST", "/updateArch", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "updateChannelResult.Updated" key in the response
+	updated, exists := response["updateArchResult.Updated"]
+	assert.True(t, exists)
+	assert.True(t, updated.(bool))
+}
 func TestListArchsWhenExist(t *testing.T) {
 
 	router := gin.Default()
@@ -2027,7 +2207,7 @@ func TestListArchsWhenExist(t *testing.T) {
 
 	expected := []ArchInfo{
 		{
-			ArchID: "universalArch",
+			ArchID: "newArch",
 		},
 	}
 	var actual PlatformResponse
@@ -2070,7 +2250,67 @@ func TestDeleteArch(t *testing.T) {
 	expected := `{"deleteArchResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
 }
+func TestUpdateApp(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	w := httptest.NewRecorder()
 
+	// Define the handler for the /updateApp route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/updateApp", func(c *gin.Context) {
+		handler.UpdateApp(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"id": "%s", "app":"newApp"}`, idTestappApp)
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /updateApp endpoint
+	req, err := http.NewRequest("POST", "/updateApp", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "updateChannelResult.Updated" key in the response
+	updated, exists := response["updateAppResult.Updated"]
+	assert.True(t, exists)
+	assert.True(t, updated.(bool))
+}
 func TestListAppsWhenExist(t *testing.T) {
 
 	router := gin.Default()
@@ -2106,7 +2346,7 @@ func TestListAppsWhenExist(t *testing.T) {
 
 	expected := []AppInfo{
 		{
-			AppName: "testapp",
+			AppName: "newApp",
 		},
 	}
 	var actual AppResponse

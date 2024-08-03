@@ -37,6 +37,10 @@ type AppRepository interface {
 	CreateApp(archName string, ctx context.Context) (interface{}, error)
 	ListApps(ctx context.Context) ([]*model.App, error)
 	DeleteApp(id primitive.ObjectID, ctx context.Context) (int64, error)
+	UpdateApp(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
+	UpdateChannel(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
+	UpdatePlatform(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
+	UpdateArch(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
 }
 
 type appRepository struct {

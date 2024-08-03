@@ -805,3 +805,128 @@ curl -X GET http://localhost:9000/search\?\app_name\=\secondapp -H "Authorizatio
     ]
 }
 ```
+
+### Update Channel
+
+Update existing channel.
+
+:warning: If you change this value, already existing client apps can't check for new versions' availability because the channel name has changed.
+
+`POST /updateChannel`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Body form-data
+
+**id**: ID of the channel which you want to change.
+
+**channel**: New channel name.
+
+###### Request:
+```
+curl --location 'http://localhost:9000/updateChannel' \
+-H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ" \
+--form 'data="{\"id\":\"66ae13fe4b663c058367f893\", \"channel\":\"new_name\"}"'
+```
+###### Responce:
+
+```
+{
+    "updateChannelResult.Updated": true
+}
+```
+
+
+### Update App
+
+Update existing app.
+
+:warning: If you change this value, already existing client apps can't check for new versions' availability because the app name has changed.
+
+`POST /updateApp`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Body form-data
+
+**id**: ID of the app which you want to change.
+
+**channel**: New app name.
+
+###### Request:
+```
+curl --location 'http://localhost:9000/updateApp' \
+-H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ" \
+--form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"app\":\"new_name\"}"'
+```
+###### Responce:
+
+```
+{
+    "updateAppResult.Updated": true
+}
+```
+
+### Update Platform
+
+Update existing platform.
+
+:warning: If you change this value, already existing client apps can't check for new versions' availability because the platform name has changed.
+
+`POST /updatePlatform`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Body form-data
+
+**id**: ID of the platform which you want to change.
+
+**channel**: New platform name.
+
+###### Request:
+```
+curl --location 'http://localhost:9000/updatePlatform' \
+-H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ" \
+--form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"platform\":\"new_name\"}"'
+```
+###### Responce:
+
+```
+{
+    "updatePlatformResult.Updated": true
+}
+```
+
+### Update Arch
+
+Update existing arch.
+
+:warning: If you change this value, already existing client apps can't check for new versions' availability because the arch name has changed.
+
+`POST /updateArch`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Body form-data
+
+**id**: ID of the arch which you want to change.
+
+**channel**: New arch name.
+
+###### Request:
+```
+curl --location 'http://localhost:9000/updateArch' \
+-H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ" \
+--form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"arch\":\"new_name\"}"'
+```
+###### Responce:
+
+```
+{
+    "updateArchResult.Updated": true
+}
+```

@@ -7,6 +7,7 @@ import (
 	"faynoSync/server/handler/delete"
 	"faynoSync/server/handler/info"
 	"faynoSync/server/handler/sign"
+	"faynoSync/server/handler/update"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -34,6 +35,10 @@ type AppHandler interface {
 	CreateApp(*gin.Context)
 	ListApps(*gin.Context)
 	SignUp(*gin.Context)
+	UpdateApp(*gin.Context)
+	UpdateChannel(*gin.Context)
+	UpdatePlatform(*gin.Context)
+	UpdateArch(*gin.Context)
 }
 
 type appHandler struct {
@@ -109,8 +114,8 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 }
 
 func (ch *appHandler) UpdateSpecificApp(c *gin.Context) {
-	// Call the UpdateApp function from the create package
-	create.UpdateSpecificApp(c, ch.repository, ch.database)
+	// Call the UpdateSpecificApp function from the create package
+	update.UpdateSpecificApp(c, ch.repository, ch.database)
 }
 
 func (ch *appHandler) Login(c *gin.Context) {
@@ -146,4 +151,24 @@ func (ch *appHandler) DeletePlatform(c *gin.Context) {
 func (ch *appHandler) DeleteArch(c *gin.Context) {
 	// Call the DeleteArch function from the delete package
 	delete.DeleteArch(c, ch.repository)
+}
+
+func (ch *appHandler) UpdateApp(c *gin.Context) {
+	// Call the UpdateApp function from the create package
+	update.UpdateApp(c, ch.repository)
+}
+
+func (ch *appHandler) UpdateChannel(c *gin.Context) {
+	// Call the UpdateChannel function from the create package
+	update.UpdateChannel(c, ch.repository)
+}
+
+func (ch *appHandler) UpdatePlatform(c *gin.Context) {
+	// Call the UpdatePlatform function from the create package
+	update.UpdatePlatform(c, ch.repository)
+}
+
+func (ch *appHandler) UpdateArch(c *gin.Context) {
+	// Call the UpdateArch function from the create package
+	update.UpdateArch(c, ch.repository)
 }

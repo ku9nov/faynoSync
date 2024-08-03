@@ -10,6 +10,7 @@
 ### Features
 - Added `Create, List, Delete` App functionality. It now works like `Platforms, Channels, Archs`.
 - Added new tests.
+- Added `UpdateApp, UpdateChannel, UpdatePlatform, UpdateArch` routes.
 
 ### Maintenance
 
