@@ -1347,8 +1347,8 @@ func TestUpdate(t *testing.T) {
 	router := gin.Default()
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
-	router.POST("/update", func(c *gin.Context) {
-		handler.UpdateApp(c)
+	router.POST("/apps/update", func(c *gin.Context) {
+		handler.UpdateSpecificApp(c)
 	})
 
 	// Create a file to upload (you can replace this with a test file path).
@@ -1404,7 +1404,7 @@ func TestUpdate(t *testing.T) {
 				t.Fatal(err)
 			}
 			// logrus.Infoln("Body: ", body)
-			req, err := http.NewRequest("POST", "/update", body)
+			req, err := http.NewRequest("POST", "/apps/update", body)
 			if err != nil {
 				t.Fatal(err)
 			}

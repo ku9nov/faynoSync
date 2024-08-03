@@ -486,11 +486,11 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
 
 ### Update App
 
-Update existing app.
+Update existing specific app.
 
 :warning: You can't change `app_name` and `version`. They are used only for correct searching.
 
-`POST /update`
+`POST /apps/update`
 
 Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
 
@@ -521,14 +521,14 @@ data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"vers
 
 ###### Request:
 ```
-curl --location 'http://localhost:9000/update' \
+curl --location 'http://localhost:9000/apps/update' \
 --header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
 --form 'data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"' \
 --form 'file=@"/path_to_file/secondapp.deb"' \
 ```
 ###### Request with multiple uploading:
 ```
-curl --location 'http://localhost:9000/update' \
+curl --location 'http://localhost:9000/apps/update' \
 --header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
 --form 'data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"' \
 --form 'file=@"/path_to_file/secondapp.deb"' \

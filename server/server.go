@@ -37,7 +37,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	router.GET("/", handler.GetAllApps)
 	router.POST("/upload", handler.UploadApp)
-	router.POST("/update", handler.UpdateApp)
+	router.POST("/apps/update", handler.UpdateSpecificApp)
 	router.GET("/search", handler.GetAppByName)
 	router.DELETE("/apps/delete", handler.DeleteSpecificVersionOfApp)
 	router.POST("/createChannel", handler.CreateChannel)

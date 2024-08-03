@@ -57,7 +57,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) 
 	c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": results[0]})
 }
 
-func UpdateApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
+func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
 	ctxQueryMap, err := utils.ValidateParams(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -90,7 +90,7 @@ func UpdateApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) 
 
 	if len(links) > 0 {
 		for i, link := range links {
-			result, err = repository.Update(objID, ctxQueryMap, link, extensions[i], c.Request.Context())
+			result, err = repository.UpdateSpecificApp(objID, ctxQueryMap, link, extensions[i], c.Request.Context())
 			if err != nil {
 				logrus.Errorf("Error updating link %d: %v", i, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -99,7 +99,7 @@ func UpdateApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) 
 		}
 	} else {
 		// Handle the case when there are no files to upload
-		result, err = repository.Update(objID, ctxQueryMap, "", "", c.Request.Context())
+		result, err = repository.UpdateSpecificApp(objID, ctxQueryMap, "", "", c.Request.Context())
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

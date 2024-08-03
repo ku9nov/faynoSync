@@ -5,6 +5,7 @@
 ### Important Notes
 - **Important**: The route for deleting a specific app by ID has been renamed to  `/apps/delete` from `/deleteApp`.
 - **Important**: `/deleteApp` is now a new function.
+- **Important**: The route for updating specific app by ID has been renamed to  `/apps/update` from `/update`.
 
 ### Features
 - Added `Create, List, Delete` App functionality. It now works like `Platforms, Channels, Archs`.
