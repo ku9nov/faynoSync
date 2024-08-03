@@ -16,7 +16,7 @@ func (c *appRepository) CreateDocument(collectionName string, document bson.D, u
 
 	// Set the updated_at field to the current time
 	document = append(document, bson.E{Key: "updated_at", Value: time.Now()})
-	logrus.Debugln("Document: ", document[1])
+	logrus.Debugln("Document: ", document)
 	uploadResult, err := collection.InsertOne(ctx, document)
 	if err != nil {
 		if mongoErr, ok := err.(mongo.WriteException); ok {
@@ -49,4 +49,10 @@ func (c *appRepository) CreatePlatform(platformName string, ctx context.Context)
 func (c *appRepository) CreateArch(archID string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "arch_id", Value: archID}}
 	return c.CreateDocument("apps_meta", document, "arch_id_sort_by_asc_created", "arch", ctx)
+}
+
+// CreateApp creates a new app_name document
+func (c *appRepository) CreateApp(appName string, ctx context.Context) (interface{}, error) {
+	document := bson.D{{Key: "app_name", Value: appName}}
+	return c.CreateDocument("apps_meta", document, "app_name_sort_by_asc_created", "app", ctx)
 }

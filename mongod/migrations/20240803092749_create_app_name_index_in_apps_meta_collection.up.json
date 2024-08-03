@@ -10,7 +10,7 @@
         "unique": true,
         "background": true,
         "partialFilterExpression": {
-          "arch_id": { "$exists": true }
+          "app_name": { "$exists": true }
         }
       }
     ]

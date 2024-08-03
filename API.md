@@ -25,7 +25,7 @@ Authenticate and receive a token for accessing the API.
 
 Request:
 ```
-curl -X POST -H "Content-Type: application/json" -d '{"username": "ku9n", "password": "password", "api_key": "UHp3aKb40fwpoKZluZByWQ"}' http://localhost:9000/signup
+curl -X POST -H "Content-Type: application/json" -d '{"username": "admin", "password": "password", "api_key": "UHp3aKb40fwpoKZluZByWQ"}' http://localhost:9000/signup
 ```
 
 Responce:
@@ -50,6 +50,33 @@ Responce:
 
 ```
 {"token":"DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"}
+```
+
+### Create app
+
+Create app.
+
+`POST /createApp`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Body form data
+**app**: Name of the app.
+
+###### Request:
+```
+curl --location 'http://localhost:9000/createApp' \
+--header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--form 'data="{\"app\":\"myapp\"}"'
+```
+
+###### Responce:
+
+```
+{
+   "createAppResult.Created":"641459ffb8760d74164e7e3c"
+}
 ```
 
 ### Create channel (Optional)
@@ -136,6 +163,41 @@ curl --location 'http://localhost:9000/createArch' \
 ```
 {
    "createArchResult.Created":"641459ffb8360d74164e7e3c"
+}
+```
+
+### List Apps
+
+Retrieve a list of all apps.
+
+`GET /listApps`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Request:
+```
+curl -X GET http://localhost:9000/listApps -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+```
+
+###### Responce:
+
+```
+{
+    "apps": [
+        {
+            "ID": "66ae18a29807f0696d967176",
+            "AppName": "first",
+            "Logo": "",
+            "Updated_at": "2024-08-03T14:46:42.361+03:00"
+        },
+        {
+            "ID": "66ae14024b663c058367f895",
+            "AppName": "myapp",
+            "Logo": "",
+            "Updated_at": "2024-08-03T14:26:58.701+03:00"
+        }
+    ]
 }
 ```
 
@@ -565,6 +627,32 @@ curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
     ]
 }
 ```
+
+### Delete app
+This endpoint allows you to delete a specific app.
+
+`DELETE /deleteApp?id=<id>`
+
+###### Headers
+**Authorization**: Authorization header with encoded username and password.
+
+###### Query Parameters
+**id**: The unique identifier of the app.
+
+###### Request:
+```
+curl -X DELETE http://localhost:9000/deleteApp\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+
+```
+
+###### Responce:
+
+```
+{
+   "deleteAppResult.DeletedCount":1
+}
+```
+
 ### Delete specific channel
 This endpoint allows you to delete a specific channel.
 
@@ -643,7 +731,7 @@ curl -X DELETE http://localhost:9000/deleteArch\?\id\=\64145ebaedd163d59d52e1dc 
 ### Delete specific version of app
 This endpoint allows you to delete a specific version of an app.
 
-`DELETE /deleteApp?id=<id>`
+`DELETE /apps/delete?id=<id>`
 
 ###### Headers
 **Authorization**: Authorization header with encoded username and password.
@@ -653,7 +741,7 @@ This endpoint allows you to delete a specific version of an app.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deleteApp\?\id\=\653a5e4f51ce5114611f5abb -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X DELETE http://localhost:9000/apps/delete\?\id\=\653a5e4f51ce5114611f5abb -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
 
 ```
 
@@ -661,7 +749,7 @@ curl -X DELETE http://localhost:9000/deleteApp\?\id\=\653a5e4f51ce5114611f5abb -
 
 ```
 {
-   "deleteAppResult.DeletedCount":1
+   "deleteSpecificAppResult.DeletedCount":1
 }
 ```
 

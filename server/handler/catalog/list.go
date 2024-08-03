@@ -58,3 +58,19 @@ func ListArchs(c *gin.Context, repository db.AppRepository) {
 
 	c.JSON(http.StatusOK, gin.H{"archs": &archsList})
 }
+
+func ListApps(c *gin.Context, repository db.AppRepository) {
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	var appsList []*model.App
+
+	//request on repository
+	if result, err := repository.ListApps(ctx); err != nil {
+		logrus.Error(err)
+	} else {
+		appsList = result
+	}
+
+	c.JSON(http.StatusOK, gin.H{"apps": &appsList})
+}

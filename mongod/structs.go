@@ -20,9 +20,9 @@ import (
 )
 
 type AppRepository interface {
-	Get(ctx context.Context) ([]*model.App, error)
-	GetAppByName(email string, ctx context.Context) ([]*model.App, error)
-	DeleteApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error)
+	Get(ctx context.Context) ([]*model.SpecificApp, error)
+	GetAppByName(email string, ctx context.Context) ([]*model.SpecificApp, error)
+	DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
 	Update(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error)
@@ -35,6 +35,9 @@ type AppRepository interface {
 	CreateArch(archName string, ctx context.Context) (interface{}, error)
 	ListArchs(ctx context.Context) ([]*model.Arch, error)
 	DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error)
+	CreateApp(archName string, ctx context.Context) (interface{}, error)
+	ListApps(ctx context.Context) ([]*model.App, error)
+	DeleteApp(id primitive.ObjectID, ctx context.Context) (int64, error)
 }
 
 type appRepository struct {
@@ -46,12 +49,12 @@ func NewAppRepository(config *connstring.ConnString, client *mongo.Client) AppRe
 	return &appRepository{config: config, client: client}
 }
 
-func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
+func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificApp, error) {
 
 	findOptions := options.Find()
 	findOptions.SetLimit(100)
 
-	var apps []*model.App
+	var apps []*model.SpecificApp
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
@@ -67,7 +70,7 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 	// Iterating through the cursor allows us to decode documents one at a time
 	for cur.Next(context.TODO()) {
 		// create a value into which the single document can be decoded
-		var elem model.App
+		var elem model.SpecificApp
 		if err := cur.Decode(&elem); err != nil {
 			logrus.Fatal(err)
 			return nil, err
@@ -81,12 +84,12 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.App, error) {
 	return apps, nil
 }
 
-func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.App, error) {
+func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.SpecificApp, error) {
 
 	findOptions := options.Find()
 	findOptions.SetLimit(100)
 
-	var apps []*model.App
+	var apps []*model.SpecificApp
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
@@ -102,7 +105,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	// Iterating through the cursor allows us to decode documents one at a time
 	for cur.Next(context.TODO()) {
 		// create a value into which the single document can be decoded
-		var elem model.App
+		var elem model.SpecificApp
 		if err := cur.Decode(&elem); err != nil {
 			logrus.Fatal(err)
 			return nil, err
@@ -128,7 +131,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 	platform := utils.GetStringValue(ctxQuery, "platform")
 	arch := utils.GetStringValue(ctxQuery, "arch")
 	if existingDoc.Err() == nil {
-		var appData model.App
+		var appData model.SpecificApp
 		if err := existingDoc.Decode(&appData); err != nil {
 			return nil, err
 		}
@@ -236,7 +239,7 @@ func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]int
 	arch := utils.GetStringValue(ctxQuery, "arch")
 
 	if existingDoc.Err() == nil {
-		var appData model.App
+		var appData model.SpecificApp
 		if err := existingDoc.Decode(&appData); err != nil {
 			return false, err
 		}
@@ -401,7 +404,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 	defer cursor.Close(ctx)
 
 	// Decode the result
-	var latestApp *model.App
+	var latestApp *model.SpecificApp
 	if cursor.Next(ctx) {
 		err := cursor.Decode(&latestApp)
 		if err != nil {

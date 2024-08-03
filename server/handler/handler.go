@@ -15,6 +15,7 @@ import (
 type AppHandler interface {
 	GetAllApps(*gin.Context)
 	GetAppByName(*gin.Context)
+	DeleteSpecificVersionOfApp(*gin.Context)
 	DeleteApp(*gin.Context)
 	DeleteChannel(*gin.Context)
 	DeletePlatform(*gin.Context)
@@ -30,6 +31,8 @@ type AppHandler interface {
 	ListPlatforms(*gin.Context)
 	CreateArch(*gin.Context)
 	ListArchs(*gin.Context)
+	CreateApp(*gin.Context)
+	ListApps(*gin.Context)
 	SignUp(*gin.Context)
 }
 
@@ -77,7 +80,10 @@ func (ch *appHandler) ListArchs(c *gin.Context) {
 	// Call the ListArchs function from the catalog package
 	catalog.ListArchs(c, ch.repository)
 }
-
+func (ch *appHandler) ListApps(c *gin.Context) {
+	// Call the ListApps function from the catalog package
+	catalog.ListApps(c, ch.repository)
+}
 func (ch *appHandler) CreateChannel(c *gin.Context) {
 	// Call the CreateChannel function from the create package
 	create.CreateChannel(c, ch.repository)
@@ -90,6 +96,11 @@ func (ch *appHandler) CreatePlatform(c *gin.Context) {
 func (ch *appHandler) CreateArch(c *gin.Context) {
 	// Call the CreateArch function from the create package
 	create.CreateArch(c, ch.repository)
+}
+
+func (ch *appHandler) CreateApp(c *gin.Context) {
+	// Call the CreateApp function from the create package
+	create.CreateApp(c, ch.repository)
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
@@ -115,6 +126,11 @@ func (ch *appHandler) SignUp(c *gin.Context) {
 func (ch *appHandler) DeleteApp(c *gin.Context) {
 	// Call the DeleteApp function from the delete package
 	delete.DeleteApp(c, ch.repository)
+}
+
+func (ch *appHandler) DeleteSpecificVersionOfApp(c *gin.Context) {
+	// Call the DeleteSpecificVersionOfApp function from the delete package
+	delete.DeleteSpecificVersionOfApp(c, ch.repository)
 }
 
 func (ch *appHandler) DeleteChannel(c *gin.Context) {

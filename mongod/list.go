@@ -71,3 +71,12 @@ func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
 	}
 	return archs, nil
 }
+
+func (c *appRepository) ListApps(ctx context.Context) ([]*model.App, error) {
+	var apps []*model.App
+	filter := bson.M{"app_name": bson.M{"$exists": true}}
+	if err := c.listItems(ctx, "apps_meta", filter, &apps); err != nil {
+		return nil, err
+	}
+	return apps, nil
+}

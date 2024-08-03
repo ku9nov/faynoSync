@@ -12,6 +12,13 @@ type Artifact struct {
 type App struct {
 	ID         primitive.ObjectID `bson:"_id"`
 	AppName    string             `bson:"app_name"`
+	Logo       string             `bson:"logo"`
+	Updated_at primitive.DateTime `bson:"updated_at"`
+}
+
+type SpecificApp struct {
+	ID         primitive.ObjectID `bson:"_id"`
+	AppName    string             `bson:"app_name"`
 	Version    string             `bson:"version"`
 	Channel    string             `bson:"channel"`
 	Published  bool               `bson:"published"`
