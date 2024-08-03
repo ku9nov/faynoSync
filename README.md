@@ -106,6 +106,9 @@ The tests verify the implemented API using a test database and an existing S3 bu
 
     - TestHealthCheck
     - TestLogin
+    - TestListApps
+    - TestAppCreate
+    - TestSecondaryAppCreate (expected result from API "failed")
     - TestUploadApp
     - TestUploadDuplicateApp (expected result from API "failed")
     - TestDeleteApp
@@ -132,6 +135,8 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestListChannelsWhenExist
     - TestSignUp
     - TestUpdate
+    - TestListAppsWhenExist
+    - TestDeleteAppMeta
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

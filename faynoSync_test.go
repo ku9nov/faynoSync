@@ -209,6 +209,153 @@ func TestLogin(t *testing.T) {
 	assert.NotEmpty(t, authToken)
 }
 
+func TestListApps(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.GET("/listApps", func(c *gin.Context) {
+		handler.ListApps(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("GET", "/listApps", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"apps":null}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+var idTestappApp string
+
+func TestAppCreate(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /createChannel route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/createApp", func(c *gin.Context) {
+		handler.CreateApp(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"app": "testapp"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /createChannel endpoint
+	req, err := http.NewRequest("POST", "/createApp", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "createChannelResult.Created" key in the response
+	id, idExists := response["createAppResult.Created"]
+	assert.True(t, idExists)
+	idTestappApp = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, idTestappApp)
+}
+
+func TestSecondaryAppCreate(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /createChannel route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.POST("/createApp", func(c *gin.Context) {
+		handler.CreateApp(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"app": "testapp"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /createChannel endpoint
+	req, err := http.NewRequest("POST", "/createApp", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 500).
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"app with this name already exists"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
+
 var uploadedFirstApp string
 
 func TestUpload(t *testing.T) {
@@ -363,12 +510,12 @@ func TestDeleteApp(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
-	router.DELETE("/deleteApp", func(c *gin.Context) {
-		handler.DeleteApp(c)
+	router.DELETE("/apps/delete", func(c *gin.Context) {
+		handler.DeleteSpecificVersionOfApp(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteApp?id="+uploadedFirstApp, nil)
+	req, err := http.NewRequest("DELETE", "/apps/delete?id="+uploadedFirstApp, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +528,7 @@ func TestDeleteApp(t *testing.T) {
 	// Check the response status code.
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	expected := `{"deleteAppResult.DeletedCount":1}`
+	expected := `{"deleteSpecificAppResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
 }
 
@@ -1308,7 +1455,7 @@ func TestSearch(t *testing.T) {
 	// Define the expected JSON response as a slice of AppInfo.
 	type AppInfo struct {
 		ID         string            `json:"ID"`
-		AppName    string            `json:"AppName"`
+		AppID      string            `json:"AppID"`
 		Version    string            `json:"Version"`
 		Channel    string            `json:"Channel"`
 		Published  bool              `json:"Published"`
@@ -1320,10 +1467,9 @@ func TestSearch(t *testing.T) {
 	type AppResponse struct {
 		Apps []AppInfo `json:"apps"`
 	}
-
 	expected := []AppInfo{
 		{
-			AppName:   "testapp",
+			AppID:     idTestappApp,
 			Version:   "0.0.1",
 			Channel:   "nightly",
 			Published: true,
@@ -1349,7 +1495,7 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			AppName:   "testapp",
+			AppID:     idTestappApp,
 			Version:   "0.0.2",
 			Channel:   "nightly",
 			Published: true,
@@ -1375,7 +1521,7 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			AppName:   "testapp",
+			AppID:     idTestappApp,
 			Version:   "0.0.3",
 			Channel:   "nightly",
 			Published: false,
@@ -1401,7 +1547,7 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			AppName:   "testapp",
+			AppID:     idTestappApp,
 			Version:   "0.0.4",
 			Channel:   "stable",
 			Published: true,
@@ -1427,7 +1573,7 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			AppName:   "testapp",
+			AppID:     idTestappApp,
 			Version:   "0.0.5",
 			Channel:   "stable",
 			Published: false,
@@ -1467,13 +1613,13 @@ func TestSearch(t *testing.T) {
 	}
 
 	for i, expectedApp := range expected {
-		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
+		assert.Equal(t, expectedApp.AppID, actual.Apps[i].AppID)
 		assert.Equal(t, expectedApp.Version, actual.Apps[i].Version)
 		assert.Equal(t, expectedApp.Channel, actual.Apps[i].Channel)
 		assert.Equal(t, expectedApp.Published, actual.Apps[i].Published)
 
 		if len(expectedApp.Artifacts) != len(actual.Apps[i].Artifacts) {
-			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.AppName, expectedApp.Version, len(actual.Apps[i].Artifacts))
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.AppID, expectedApp.Version, len(actual.Apps[i].Artifacts))
 		}
 		for j, expectedArtifact := range expectedApp.Artifacts {
 			assert.Equal(t, expectedArtifact.Platform, actual.Apps[i].Artifacts[j].Platform)
@@ -1482,7 +1628,7 @@ func TestSearch(t *testing.T) {
 		}
 
 		if len(expectedApp.Changelog) != len(actual.Apps[i].Changelog) {
-			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.AppName, len(actual.Apps[i].Changelog))
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.AppID, len(actual.Apps[i].Changelog))
 		}
 		for c, expectedChanges := range expectedApp.Changelog {
 			assert.Equal(t, expectedChanges.Version, actual.Apps[i].Changelog[c].Version)
@@ -1622,15 +1768,15 @@ func TestMultipleDelete(t *testing.T) {
 
 	// Define the route for the deleteApp endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
-	router.DELETE("/deleteApp", func(c *gin.Context) {
-		handler.DeleteApp(c)
+	router.DELETE("/apps/delete", func(c *gin.Context) {
+		handler.DeleteSpecificVersionOfApp(c)
 	})
 
 	// Iterate over the uploadedAppIDs and send a DELETE request for each ID.
 	for _, appID := range uploadedAppIDs {
 		w := httptest.NewRecorder()
 
-		req, err := http.NewRequest("DELETE", "/deleteApp?id="+appID, nil)
+		req, err := http.NewRequest("DELETE", "/apps/delete?id="+appID, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1643,7 +1789,7 @@ func TestMultipleDelete(t *testing.T) {
 		// Check the response status code for each request.
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		expected := `{"deleteAppResult.DeletedCount":1}`
+		expected := `{"deleteSpecificAppResult.DeletedCount":1}`
 		assert.Equal(t, expected, w.Body.String())
 	}
 }
@@ -1914,5 +2060,84 @@ func TestDeleteArch(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	expected := `{"deleteArchResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestListAppsWhenExist(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.GET("/listApps", func(c *gin.Context) {
+		handler.ListApps(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("GET", "/listApps", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	type AppInfo struct {
+		ID         string `json:"ID"`
+		AppName    string `json:"AppName"`
+		Updated_at string `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Apps []AppInfo `json:"apps"`
+	}
+
+	expected := []AppInfo{
+		{
+			AppName: "testapp",
+		},
+	}
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (ChannelName) for each item in the response.
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
+	}
+}
+
+func TestDeleteAppMeta(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	router.DELETE("/deleteApp", func(c *gin.Context) {
+		handler.DeleteApp(c)
+	})
+
+	// Create a POST request for the upload endpoint.
+	req, err := http.NewRequest("DELETE", "/deleteApp?id="+idTestappApp, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deleteAppResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
 }

@@ -45,6 +45,10 @@ type appRepository struct {
 	config *connstring.ConnString
 }
 
+var appMeta struct {
+	ID primitive.ObjectID `bson:"_id"`
+}
+
 func NewAppRepository(config *connstring.ConnString, client *mongo.Client) AppRepository {
 	return &appRepository{config: config, client: client}
 }
@@ -58,7 +62,7 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificApp, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
-	filter := bson.M{"app_name": bson.M{"$exists": true}}
+	filter := bson.M{"app_id": bson.M{"$exists": true}}
 	// Passing bson.D{{}} as the filter matches all documents in the collection
 	cur, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
@@ -92,8 +96,15 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	var apps []*model.SpecificApp
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
+	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 
-	filter := bson.D{primitive.E{Key: "app_name", Value: appName}}
+	// Find app_id from apps_meta by app_name
+	metaFilter := bson.D{{Key: "app_name", Value: appName}}
+	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
+	if err != nil {
+		return nil, errors.New("app_name not found in apps_meta collection")
+	}
+	filter := bson.D{primitive.E{Key: "app_id", Value: appMeta.ID}}
 
 	// Passing the filter matches all documents by app_name in the collection
 	cur, err := collection.Find(ctx, filter)
@@ -121,11 +132,20 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
+	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	var uploadResult interface{}
 	var err error
-	// Check if a document with the same "app_name" and "version" already exists
+
+	// Find app_id from apps_meta by app_name
+	metaFilter := bson.D{{Key: "app_name", Value: ctxQuery["app_name"].(string)}}
+	err = metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
+	if err != nil {
+		return nil, errors.New("app_name not found in apps_meta collection")
+	}
+
+	// Check if a document with the same "app_id" and "version" already exists
 	existingDoc := collection.FindOne(ctx, bson.D{
-		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
+		{Key: "app_id", Value: appMeta.ID},
 		{Key: "version", Value: ctxQuery["version"].(string)},
 	})
 	platform := utils.GetStringValue(ctxQuery, "platform")
@@ -151,7 +171,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		})
 		_, err = collection.UpdateOne(
 			ctx,
-			bson.D{{Key: "app_name", Value: ctxQuery["app_name"].(string)}, {Key: "version", Value: ctxQuery["version"].(string)}},
+			bson.D{{Key: "app_id", Value: appMeta.ID}, {Key: "version", Value: ctxQuery["version"].(string)}},
 			bson.D{{Key: "$set", Value: bson.D{{Key: "artifacts", Value: appData.Artifacts}, {Key: "updated_at", Value: time.Now()}}}},
 		)
 		if err != nil {
@@ -186,7 +206,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			Date:    time.Now().Format("2006-01-02"),
 		}
 		filter := bson.D{
-			{Key: "app_name", Value: ctxQuery["app_name"].(string)},
+			{Key: "app_id", Value: appMeta.ID},
 			{Key: "version", Value: ctxQuery["version"].(string)},
 			{Key: "channel", Value: ctxQuery["channel"].(string)},
 			{Key: "published", Value: publish},
@@ -227,12 +247,20 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 
 func (c *appRepository) Update(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
+	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	var err error
 
-	// Check if a document with the same "app_name" and "version" already exists
+	// Find app_id from apps_meta by app_name
+	metaFilter := bson.D{{Key: "app_name", Value: ctxQuery["app_name"].(string)}}
+	err = metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
+	if err != nil {
+		return false, errors.New("app_name not found in apps_meta collection")
+	}
+
+	// Check if a document with the same "app_id" and "version" already exists
 	existingDoc := collection.FindOne(ctx, bson.D{
 		{Key: "_id", Value: objID},
-		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
+		{Key: "app_id", Value: appMeta.ID},
 		{Key: "version", Value: ctxQuery["version"].(string)},
 	})
 	platform := utils.GetStringValue(ctxQuery, "platform")
@@ -342,10 +370,18 @@ type CheckResult struct {
 
 func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, platform, arch string, ctx context.Context) (CheckResult, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
+	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 
-	// Define the filter based on appName and optional channel
+	// Find app_id from apps_meta by app_name
+	metaFilter := bson.D{{Key: "app_name", Value: appName}}
+	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
+	if err != nil {
+		return CheckResult{Found: false, Artifacts: []Artifact{}}, errors.New("app_name not found in apps_meta collection")
+	}
+
+	// Define the filter based on app_id and optional channel
 	filter := bson.D{
-		{Key: "app_name", Value: appName},
+		{Key: "app_id", Value: appMeta.ID},
 		{Key: "published", Value: true},
 		{
 			Key: "artifacts", Value: bson.D{

@@ -8,6 +8,7 @@
 
 ### Features
 - Added `Create, List, Delete` App functionality. It now works like `Platforms, Channels, Archs`.
+- Added new tests.
 
 ### Maintenance
 
