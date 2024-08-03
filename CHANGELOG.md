@@ -1,20 +1,27 @@
 # Changelog
 
-## v1.3.4
+## v1.3.5
 
 ### Important Notes
 - **Important**: The route for deleting a specific app by ID has been renamed to  `/apps/delete` from `/deleteApp`.
 - **Important**: `/deleteApp` is now a new function.
 
 ### Features
-- Added `Changelog` to check latest version response.
-- Added `Critical` parameter.
 - Added `Create, List, Delete` App functionality. It now works like `Platforms, Channels, Archs`.
 
 ### Maintenance
 
-- Refactored `List`, `Create`, `Delete` mongodb functions.
 - `Platforms`, `Channels`, `Archs` have been moved to the `apps_meta` collection. 
+
+## v1.3.4
+
+### Features
+- Added `Changelog` to check latest version response.
+- Added `Critical` parameter.
+
+### Maintenance
+
+- Refactored `List`, `Create`, `Delete` mongodb functions.
 
 ## v1.3.3
 
