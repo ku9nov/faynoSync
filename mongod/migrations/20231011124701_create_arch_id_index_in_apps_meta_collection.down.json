@@ -1,6 +1,6 @@
 [
     {
-      "dropIndexes": "apps",
+      "dropIndexes": "apps_meta",
       "index": "arch_id_sort_by_asc_created"
     }
 ]

@@ -21,7 +21,7 @@ func DumpRequest(c *gin.Context) {
 func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
 		filter := bson.M{"platform_name": bson.M{"$exists": true}}
-		count, err := db.Collection("apps").CountDocuments(ctx, filter)
+		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
 		if err != nil {
 			return err
 		}
@@ -33,7 +33,7 @@ func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
 		return nil
 	}
 	// Check if the platform exists in the database
-	cursor, err := db.Collection("apps").Find(ctx, bson.M{"platform_name": input})
+	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input})
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
 func CheckArchsLatest(input string, db *mongo.Database, ctx *gin.Context) (string, error) {
 	if input == "" {
 		filter := bson.M{"arch_id": bson.M{"$exists": true}}
-		count, err := db.Collection("apps").CountDocuments(ctx, filter)
+		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
 		if err != nil {
 			return "", err
 		}
@@ -63,7 +63,7 @@ func CheckArchsLatest(input string, db *mongo.Database, ctx *gin.Context) (strin
 		return "", nil
 	} else {
 		// Check if the channel exists in the database
-		cursor, err := db.Collection("apps").Find(ctx, bson.M{"arch_id": input})
+		cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"arch_id": input})
 		if err != nil {
 			return "", err
 		}
@@ -80,7 +80,7 @@ func CheckArchsLatest(input string, db *mongo.Database, ctx *gin.Context) (strin
 func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
 		filter := bson.M{"arch_id": bson.M{"$exists": true}}
-		count, err := db.Collection("apps").CountDocuments(ctx, filter)
+		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
 		if err != nil {
 			return err
 		}
@@ -92,7 +92,7 @@ func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
 		return nil
 	}
 	// Check if the channel exists in the database
-	cursor, err := db.Collection("apps").Find(ctx, bson.M{"arch_id": input})
+	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"arch_id": input})
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
 func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
 		filter := bson.M{"channel_name": bson.M{"$exists": true}}
-		count, err := db.Collection("apps").CountDocuments(ctx, filter)
+		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
 		if err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 		return nil
 	}
 	// Check if the channel exists in the database
-	cursor, err := db.Collection("apps").Find(ctx, bson.M{"channel_name": input})
+	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"channel_name": input})
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 func CheckPlatformsLatest(input string, db *mongo.Database, ctx *gin.Context) (string, error) {
 	if input == "" {
 		filter := bson.M{"platform_name": bson.M{"$exists": true}}
-		count, err := db.Collection("apps").CountDocuments(ctx, filter)
+		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
 		if err != nil {
 			return "", err
 		}
@@ -152,7 +152,7 @@ func CheckPlatformsLatest(input string, db *mongo.Database, ctx *gin.Context) (s
 		return "", nil
 	} else {
 		// Check if the platform exists in the database
-		cursor, err := db.Collection("apps").Find(ctx, bson.M{"platform_name": input})
+		cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input})
 		if err != nil {
 			return "", err
 		}

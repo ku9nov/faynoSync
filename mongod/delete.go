@@ -71,15 +71,15 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 
 func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error) {
 	var channel model.Channel
-	return c.DeleteDocument("apps", id, &channel, ctx)
+	return c.DeleteDocument("apps_meta", id, &channel, ctx)
 }
 
 func (c *appRepository) DeletePlatform(id primitive.ObjectID, ctx context.Context) (int64, error) {
 	var platform model.Platform
-	return c.DeleteDocument("apps", id, &platform, ctx)
+	return c.DeleteDocument("apps_meta", id, &platform, ctx)
 }
 
 func (c *appRepository) DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error) {
 	var arch model.Arch
-	return c.DeleteDocument("apps", id, &arch, ctx)
+	return c.DeleteDocument("apps_meta", id, &arch, ctx)
 }

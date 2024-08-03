@@ -1,0 +1,6 @@
+[
+    {
+      "dropIndexes": "apps_meta",
+      "index": "app_name_sort_by_asc_created"
+    }
+]

@@ -9,6 +9,7 @@
 ### Maintenance
 
 - Refactored `List`, `Create`, `Delete` mongodb functions.
+- `Platforms`, `Channels`, `Archs` was moved to `apps_meta` collection. 
 
 ## v1.3.3
 
