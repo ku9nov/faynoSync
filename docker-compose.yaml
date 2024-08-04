@@ -10,97 +10,28 @@ networks:
 
 services:
 
-  faynosync:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    entrypoint: >
-      sh -c "if [ \$RUN_FAYNOSYNC = 'true' ]; then
-               faynoSync --migration;
-             else
-               sleep infinity;
-             fi"
-    networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.6
-    ports:
-      - "9000:9000"
-    volumes:
-      - ./.env.local:/app/.env
+  backend:
+    extends:
+      file: ./docker-compose/services/backend.yml
+      service: backend
 
   s3:
-    image: minio/minio
-    networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.2
-    ports:
-      - "9011:9001"
-      - "9010:9000"
-    volumes:
-      - data-s3:/data
-    environment:
-      MINIO_ROOT_USER: MdnaDEXKy9nOc4beIvNcgy
-      MINIO_ROOT_PASSWORD: BjjctVsoSg4FKkT81VKt18
-    command: server --address 0.0.0.0:9000 --console-address :9001 /data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+    extends:
+      file: ./docker-compose/services/s3.yml
+      service: s3
 
   s3-service:
-    image: minio/mc
-    networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.3
-    depends_on:
-      s3:
-        condition: service_healthy
-    restart: on-failure
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set faynoSync http://s3:9000 MdnaDEXKy9nOc4beIvNcgy BjjctVsoSg4FKkT81VKt18;
-      /usr/bin/mc mb faynoSync/cb-faynosync-s3;
-      /usr/bin/mc policy set public faynoSync/cb-faynosync-s3;
-      "
+    extends:
+      file: ./docker-compose/services/s3.yml
+      service: s3-service
 
-  mongo:
-    platform: linux/x86_64
-    image: mongo:4.4
-    container_name: server_mongo_database
-    restart: always
-    volumes:
-      - data:/data/db
-    environment:
-      - MONGO_INITDB_DATABASE=cb_faynosync_db
-      - MONGO_INITDB_ROOT_USERNAME=root
-      - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
-    ports:
-      - "27017:27017"
-    networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.4
-
-  mongo_tests:
-    platform: linux/x86_64
-    image: mongo:4.4
-    container_name: server_mongo_database_tests
-    restart: always
-    volumes:
-      - data-tests:/data/db
-    environment:
-      - MONGO_INITDB_DATABASE=cb_faynosync_db
-      - MONGO_INITDB_ROOT_USERNAME=root
-      - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
-    ports:
-      - "27018:27017"
-    networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.5
+  db:
+    extends:
+      file: ./docker-compose/services/db.yml
+      service: db
 
 
 
 volumes:
   data:
-  data-tests:
   data-s3:

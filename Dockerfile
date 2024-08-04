@@ -11,6 +11,7 @@ FROM golang:bullseye
 
 WORKDIR /app
 
+COPY --from=builder /go/src/app/LICENSE /app/LICENSE
 COPY --from=builder /go/src/app/mongod/migrations /app/mongod/migrations
 COPY --from=builder /go/src/app/faynoSync /usr/bin
 COPY --from=builder /go/src/app/faynoSync_tests /usr/bin

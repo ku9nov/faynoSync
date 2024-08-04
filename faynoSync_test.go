@@ -1352,7 +1352,7 @@ func TestUpdateSpecificApp(t *testing.T) {
 	})
 
 	// Create a file to upload (you can replace this with a test file path).
-	filePaths := []string{"Dockerfile", "LICENSE"}
+	filePaths := []string{"LICENSE", "LICENSE"}
 	for _, filePath := range filePaths {
 		file, err := os.Open(filePath)
 		if err != nil {

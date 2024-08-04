@@ -39,17 +39,16 @@ You can set these environment variables in a `.env` file in the root directory o
 ### Docker configuration
 To build and run the API with all dependencies, you can use the following command:
 ```
-RUN_FAYNOSYNC=true docker-compose up
+docker-compose up --build
+```
+You can now run tests using this command (please wait until the `s3-service` successfully creates the bucket):
+```
+docker exec -it faynoSync_backend "/usr/bin/faynoSync_tests"
 ```
 If you only want to run dependency services (for local development without Docker), use this command:
 ```
-docker-compose up
+docker-compose -f docker-compose.yaml -f docker-compose.development.yaml up
 ```
-
-Then, open `http://localhost:9011/access-keys`, create Access Keys, and set `S3_ACCESS_KEY` and `S3_SECRET_KEY` in either `.env` or `.env.local`. To access the Minio dashboard, use the `MINIO_ROOT_USER` from the `docker-compose.yaml` as the username and `MINIO_ROOT_PASSWORD` as the password.
-
-Finally run `docker compose restart`
-
 ## Usage
 To use the auto updater service, follow these steps:
 1. Build the application:
