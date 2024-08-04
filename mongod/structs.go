@@ -19,8 +19,8 @@ import (
 )
 
 type AppRepository interface {
-	Get(ctx context.Context) ([]*model.SpecificApp, error)
-	GetAppByName(email string, ctx context.Context) ([]*model.SpecificApp, error)
+	Get(ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
+	GetAppByName(email string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
 	DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
@@ -48,7 +48,7 @@ type appRepository struct {
 	config *connstring.ConnString
 }
 
-var appMeta struct {
+var appMeta, channelMeta, platformMeta, archMeta struct {
 	ID primitive.ObjectID `bson:"_id"`
 }
 
@@ -56,49 +56,106 @@ func NewAppRepository(config *connstring.ConnString, client *mongo.Client) AppRe
 	return &appRepository{config: config, client: client}
 }
 
-func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificApp, error) {
-	collection := c.client.Database(c.config.Database).Collection("apps")
-
-	pipeline := mongo.Pipeline{
-		{{Key: "$match", Value: bson.M{"app_id": bson.M{"$exists": true}}}},
-		{{Key: "$lookup", Value: bson.M{
+func (c *appRepository) getBasePipeline() mongo.Pipeline {
+	return mongo.Pipeline{
+		bson.D{{Key: "$lookup", Value: bson.M{
 			"from":         "apps_meta",
 			"localField":   "app_id",
 			"foreignField": "_id",
 			"as":           "app_meta",
 		}}},
-		{{Key: "$unwind", Value: "$app_meta"}},
-		{{Key: "$addFields", Value: bson.M{
-			"app_name": "$app_meta.app_name",
+		bson.D{{Key: "$unwind", Value: "$app_meta"}},
+		bson.D{{Key: "$lookup", Value: bson.M{
+			"from":         "apps_meta",
+			"localField":   "channel_id",
+			"foreignField": "_id",
+			"as":           "channel_meta",
 		}}},
-		{{Key: "$limit", Value: 100}},
+		bson.D{{Key: "$unwind", Value: bson.M{"path": "$channel_meta", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{Key: "$unwind", Value: "$artifacts"}},
+		bson.D{{Key: "$lookup", Value: bson.M{
+			"from":         "apps_meta",
+			"localField":   "artifacts.platform",
+			"foreignField": "_id",
+			"as":           "platform_meta",
+		}}},
+		bson.D{{Key: "$lookup", Value: bson.M{
+			"from":         "apps_meta",
+			"localField":   "artifacts.arch",
+			"foreignField": "_id",
+			"as":           "arch_meta",
+		}}},
+		bson.D{{Key: "$unwind", Value: bson.M{"path": "$platform_meta", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{Key: "$unwind", Value: bson.M{"path": "$arch_meta", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{Key: "$addFields", Value: bson.M{
+			"artifacts.platform": "$platform_meta.platform_name",
+			"artifacts.arch":     "$arch_meta.arch_id",
+		}}},
+		bson.D{{Key: "$addFields", Value: bson.D{
+			{Key: "versions_arr", Value: bson.D{
+				{Key: "$split", Value: bson.A{"$version", "."}},
+			}},
+		}}},
+		bson.D{{Key: "$addFields", Value: bson.D{
+			{Key: "major_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 0}},
+				}},
+			}},
+			{Key: "minor_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 1}},
+				}},
+			}},
+			{Key: "patch_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 2}},
+				}},
+			}},
+		}}},
+		bson.D{{Key: "$sort", Value: bson.D{
+			{Key: "major_v", Value: -1},
+			{Key: "minor_v", Value: -1},
+			{Key: "patch_v", Value: -1},
+		}}},
+		bson.D{{Key: "$group", Value: bson.M{
+			"_id":        "$_id",
+			"app_name":   bson.M{"$first": "$app_meta.app_name"},
+			"channel":    bson.M{"$first": "$channel_meta.channel_name"},
+			"version":    bson.M{"$first": "$version"},
+			"published":  bson.M{"$first": "$published"},
+			"critical":   bson.M{"$first": "$critical"},
+			"artifacts":  bson.M{"$push": "$artifacts"},
+			"changelog":  bson.M{"$first": "$changelog"},
+			"updated_at": bson.M{"$first": "$updated_at"},
+		}}},
+		bson.D{{Key: "$sort", Value: bson.D{
+			{Key: "app_name", Value: 1},
+			// {Key: "channel", Value: 1},
+			{Key: "version", Value: 1},
+		}}},
+		bson.D{{Key: "$limit", Value: 100}},
 	}
+}
+
+func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+	collection := c.client.Database(c.config.Database).Collection("apps")
+	basePipeline := c.getBasePipeline()
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.M{"app_id": bson.M{"$exists": true}}}},
+	}
+	pipeline = append(pipeline, basePipeline...)
 
 	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		logrus.Fatal(err)
+		logrus.Error("Aggregation failed: ", err)
 		return nil, err
 	}
 	defer cur.Close(ctx)
-
-	var apps []*model.SpecificApp
-	for cur.Next(ctx) {
-		var elem model.SpecificApp
-		if err := cur.Decode(&elem); err != nil {
-			logrus.Fatal(err)
-			return nil, err
-		}
-		apps = append(apps, &elem)
-	}
-
-	return apps, nil
+	return c.processApps(cur, ctx)
 }
-
-func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.SpecificApp, error) {
+func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
-	var appMeta struct {
-		ID primitive.ObjectID `bson:"_id"`
-	}
 	metaFilter := bson.D{{Key: "app_name", Value: appName}}
 	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
 	if err != nil {
@@ -107,11 +164,11 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
+	basePipeline := c.getBasePipeline()
 	pipeline := mongo.Pipeline{
-		{{Key: "$match", Value: bson.D{primitive.E{Key: "app_id", Value: appMeta.ID}}}},
-		{{Key: "$addFields", Value: bson.M{"app_name": appName}}},
-		{{Key: "$limit", Value: 100}},
+		bson.D{{Key: "$match", Value: bson.M{"app_id": appMeta.ID}}},
 	}
+	pipeline = append(pipeline, basePipeline...)
 
 	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
@@ -120,19 +177,32 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 	}
 	defer cur.Close(ctx)
 
-	var apps []*model.SpecificApp
+	return c.processApps(cur, ctx)
+}
+func (c *appRepository) processApps(cur *mongo.Cursor, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+	var apps []*model.SpecificAppWithoutIDs
 	for cur.Next(ctx) {
-		var elem model.SpecificApp
-		if err := cur.Decode(&elem); err != nil {
+		var tempApp model.SpecificAppWithoutIDs
+		if err := cur.Decode(&tempApp); err != nil {
 			logrus.Fatal(err)
 			return nil, err
 		}
-		apps = append(apps, &elem)
-	}
+		app := &model.SpecificAppWithoutIDs{
+			ID:        tempApp.ID,
+			AppName:   tempApp.AppName,
+			Version:   tempApp.Version,
+			Channel:   tempApp.Channel,
+			Published: tempApp.Published,
+			Critical:  tempApp.Critical,
+			Artifacts: tempApp.Artifacts,
+			Changelog: tempApp.Changelog,
+			UpdatedAt: tempApp.UpdatedAt,
+		}
 
+		apps = append(apps, app)
+	}
 	return apps, nil
 }
-
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
@@ -145,14 +215,42 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 	if err != nil {
 		return nil, errors.New("app_name not found in apps_meta collection")
 	}
+	// Fetch channel_id
+	if channelName, ok := ctxQuery["channel"].(string); ok && channelName != "" {
+		channelFilter := bson.D{{Key: "channel_name", Value: channelName}}
+		err = metaCollection.FindOne(ctx, channelFilter).Decode(&channelMeta)
+		if err != nil {
+			return nil, errors.New("channel_name not found in apps_meta collection")
+		}
+		logrus.Debugf("Found channelMeta: %v", channelMeta)
+	}
+
+	// Fetch platform_id
+	if platformName, ok := ctxQuery["platform"].(string); ok && platformName != "" {
+		platformFilter := bson.D{{Key: "platform_name", Value: platformName}}
+		err = metaCollection.FindOne(ctx, platformFilter).Decode(&platformMeta)
+		if err != nil {
+			return nil, errors.New("platform not found in apps_meta collection")
+		}
+		logrus.Debugf("Found platformMeta: %v", platformMeta)
+	}
+
+	// Fetch arch_id
+	if archName, ok := ctxQuery["arch"].(string); ok && archName != "" {
+		archFilter := bson.D{{Key: "arch_id", Value: archName}}
+		err = metaCollection.FindOne(ctx, archFilter).Decode(&archMeta)
+		if err != nil {
+			return nil, errors.New("arch not found in apps_meta collection")
+		}
+		logrus.Debugf("Found archMeta: %v", archMeta)
+	}
 
 	// Check if a document with the same "app_id" and "version" already exists
 	existingDoc := collection.FindOne(ctx, bson.D{
 		{Key: "app_id", Value: appMeta.ID},
 		{Key: "version", Value: ctxQuery["version"].(string)},
 	})
-	platform := utils.GetStringValue(ctxQuery, "platform")
-	arch := utils.GetStringValue(ctxQuery, "arch")
+
 	if existingDoc.Err() == nil {
 		var appData model.SpecificApp
 		if err := existingDoc.Decode(&appData); err != nil {
@@ -168,8 +266,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 
 		appData.Artifacts = append(appData.Artifacts, model.Artifact{
 			Link:     appLink,
-			Platform: platform,
-			Arch:     arch,
+			Platform: platformMeta.ID,
+			Arch:     archMeta.ID,
 			Package:  extension,
 		})
 		_, err = collection.UpdateOne(
@@ -199,8 +297,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 
 		artifact := model.Artifact{
 			Link:     appLink,
-			Platform: platform,
-			Arch:     arch,
+			Platform: platformMeta.ID,
+			Arch:     archMeta.ID,
 			Package:  extension,
 		}
 		changelog := model.Changelog{
@@ -211,14 +309,16 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		filter := bson.D{
 			{Key: "app_id", Value: appMeta.ID},
 			{Key: "version", Value: ctxQuery["version"].(string)},
-			{Key: "channel", Value: ctxQuery["channel"].(string)},
+			{Key: "channel_id", Value: channelMeta.ID},
 			{Key: "published", Value: publish},
 			{Key: "critical", Value: critical},
 			{Key: "artifacts", Value: []model.Artifact{artifact}},
 			{Key: "changelog", Value: []model.Changelog{changelog}},
 			{Key: "updated_at", Value: time.Now()},
 		}
-
+		logrus.Debugf("Channel Meta: %v", channelMeta)
+		logrus.Debugf("Platform Meta: %v", platformMeta)
+		logrus.Debugf("Arch Meta: %v", archMeta)
 		uploadResult, err = collection.InsertOne(ctx, filter)
 		if err != nil {
 			logrus.Errorf("Error inserting document: %v", err)
@@ -259,15 +359,41 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 	if err != nil {
 		return false, errors.New("app_name not found in apps_meta collection")
 	}
+	// Fetch channel_id
+	if channelName, ok := ctxQuery["channel"].(string); ok && channelName != "" {
+		channelFilter := bson.D{{Key: "channel_name", Value: channelName}}
+		err = metaCollection.FindOne(ctx, channelFilter).Decode(&channelMeta)
+		if err != nil {
+			return false, errors.New("channel_name not found in apps_meta collection")
+		}
+		logrus.Debugf("Found channelMeta: %v", channelMeta)
+	}
 
+	// Fetch platform_id
+	if platformName, ok := ctxQuery["platform"].(string); ok && platformName != "" {
+		platformFilter := bson.D{{Key: "platform_name", Value: platformName}}
+		err = metaCollection.FindOne(ctx, platformFilter).Decode(&platformMeta)
+		if err != nil {
+			return false, errors.New("platform not found in apps_meta collection")
+		}
+		logrus.Debugf("Found platformMeta: %v", platformMeta)
+	}
+
+	// Fetch arch_id
+	if archName, ok := ctxQuery["arch"].(string); ok && archName != "" {
+		archFilter := bson.D{{Key: "arch_id", Value: archName}}
+		err = metaCollection.FindOne(ctx, archFilter).Decode(&archMeta)
+		if err != nil {
+			return false, errors.New("arch not found in apps_meta collection")
+		}
+		logrus.Debugf("Found archMeta: %v", archMeta)
+	}
 	// Check if a document with the same "app_id" and "version" already exists
 	existingDoc := collection.FindOne(ctx, bson.D{
 		{Key: "_id", Value: objID},
 		{Key: "app_id", Value: appMeta.ID},
 		{Key: "version", Value: ctxQuery["version"].(string)},
 	})
-	platform := utils.GetStringValue(ctxQuery, "platform")
-	arch := utils.GetStringValue(ctxQuery, "arch")
 
 	if existingDoc.Err() == nil {
 		var appData model.SpecificApp
@@ -275,14 +401,8 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 			return false, err
 		}
 		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
-		if ctxQuery["app_name"].(string) != "" {
-			updateFields = append(updateFields, bson.E{Key: "app_name", Value: ctxQuery["app_name"].(string)})
-		}
 		if ctxQuery["version"].(string) != "" {
 			updateFields = append(updateFields, bson.E{Key: "version", Value: ctxQuery["version"].(string)})
-		}
-		if ctxQuery["channel"].(string) != "" {
-			updateFields = append(updateFields, bson.E{Key: "channel", Value: ctxQuery["channel"].(string)})
 		}
 		publishParam, publishExists := ctxQuery["publish"]
 		criticalParam, criticalExists := ctxQuery["critical"]
@@ -301,7 +421,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 
 		duplicateFound := false
 		for _, artifact := range appData.Artifacts {
-			if artifact.Link == appLink && artifact.Platform == platform && artifact.Arch == arch && artifact.Package == extension {
+			if artifact.Link == appLink && artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID && artifact.Package == extension {
 				duplicateFound = true
 				break
 			}
@@ -310,8 +430,8 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 		if !duplicateFound && appLink != "" && extension != "" {
 			newArtifact := model.Artifact{
 				Link:     appLink,
-				Platform: platform,
-				Arch:     arch,
+				Platform: platformMeta.ID,
+				Arch:     archMeta.ID,
 				Package:  extension,
 			}
 			appData.Artifacts = append(appData.Artifacts, newArtifact)
@@ -371,7 +491,7 @@ type CheckResult struct {
 	Changelog []Changelog
 }
 
-func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, platform, arch string, ctx context.Context) (CheckResult, error) {
+func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName, platformName, archName string, ctx context.Context) (CheckResult, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 
@@ -381,7 +501,34 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 	if err != nil {
 		return CheckResult{Found: false, Artifacts: []Artifact{}}, errors.New("app_name not found in apps_meta collection")
 	}
+	if channelName != "" {
+		channelFilter := bson.D{{Key: "channel_name", Value: channelName}}
+		err = metaCollection.FindOne(ctx, channelFilter).Decode(&channelMeta)
+		if err != nil {
+			return CheckResult{Found: false, Artifacts: []Artifact{}}, errors.New("channel_name not found in apps_meta collection")
+		}
+		logrus.Debugf("Found channelMeta: %v", channelMeta)
+	}
 
+	// Fetch platform_id
+	if platformName != "" {
+		platformFilter := bson.D{{Key: "platform_name", Value: platformName}}
+		err = metaCollection.FindOne(ctx, platformFilter).Decode(&platformMeta)
+		if err != nil {
+			return CheckResult{Found: false, Artifacts: []Artifact{}}, errors.New("platform not found in apps_meta collection")
+		}
+		logrus.Debugf("Found platformMeta: %v", platformMeta)
+	}
+
+	// Fetch arch_id
+	if archName != "" {
+		archFilter := bson.D{{Key: "arch_id", Value: archName}}
+		err = metaCollection.FindOne(ctx, archFilter).Decode(&archMeta)
+		if err != nil {
+			return CheckResult{Found: false, Artifacts: []Artifact{}}, errors.New("arch not found in apps_meta collection")
+		}
+		logrus.Debugf("Found archMeta: %v", archMeta)
+	}
 	// Define the filter based on app_id and optional channel
 	filter := bson.D{
 		{Key: "app_id", Value: appMeta.ID},
@@ -389,15 +536,15 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channel, pla
 		{
 			Key: "artifacts", Value: bson.D{
 				{Key: "$elemMatch", Value: bson.D{
-					{Key: "platform", Value: platform},
-					{Key: "arch", Value: arch},
+					{Key: "platform", Value: platformMeta.ID},
+					{Key: "arch", Value: archMeta.ID},
 				}},
 			},
 		},
 	}
 
-	if channel != "" {
-		filter = append(filter, bson.E{Key: "channel", Value: channel})
+	if channelName != "" {
+		filter = append(filter, bson.E{Key: "channel_id", Value: channelMeta.ID})
 	}
 
 	// Create an aggregation pipeline to sort by version and updated_at

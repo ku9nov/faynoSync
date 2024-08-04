@@ -15,7 +15,7 @@ func GetAppByName(c *gin.Context, repository db.AppRepository) {
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
-	var appList []*model.SpecificApp
+	var appList []*model.SpecificAppWithoutIDs
 
 	//get parameter
 	appName := c.Query("app_name")
@@ -34,7 +34,7 @@ func GetAllApps(c *gin.Context, repository db.AppRepository) {
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
-	var appList []*model.SpecificApp
+	var appList []*model.SpecificAppWithoutIDs
 
 	//request on repository
 	if result, err := repository.Get(ctx); err != nil {

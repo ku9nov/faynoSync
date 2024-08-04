@@ -1454,16 +1454,16 @@ func TestSearch(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	// Define the expected JSON response as a slice of AppInfo.
 	type AppInfo struct {
-		ID         string            `json:"ID"`
-		AppID      string            `json:"AppID"`
-		AppName    string            `json:"AppName"`
-		Version    string            `json:"Version"`
-		Channel    string            `json:"Channel"`
-		Published  bool              `json:"Published"`
-		Critical   bool              `json:"Critical"`
-		Artifacts  []model.Artifact  `json:"Artifacts" bson:"artifacts"`
-		Changelog  []model.Changelog `json:"Changelog" bson:"changelog"`
-		Updated_at string            `json:"Updated_at"`
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
 	}
 	type AppResponse struct {
 		Apps []AppInfo `json:"apps"`
@@ -1471,13 +1471,13 @@ func TestSearch(t *testing.T) {
 
 	expected := []AppInfo{
 		{
-			AppID:     idTestappApp,
+			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.1",
 			Channel:   "nightly",
 			Published: true,
 			Critical:  false,
-			Artifacts: []model.Artifact{
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
 				{
 					Platform: "universalPlatform",
 					Arch:     "universalArch",
@@ -1498,13 +1498,13 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			AppID:     idTestappApp,
+			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.2",
 			Channel:   "nightly",
 			Published: true,
 			Critical:  true,
-			Artifacts: []model.Artifact{
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
 				{
 					Platform: "universalPlatform",
 					Arch:     "universalArch",
@@ -1525,13 +1525,13 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			AppID:     idTestappApp,
+			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.3",
 			Channel:   "nightly",
 			Published: false,
 			Critical:  false,
-			Artifacts: []model.Artifact{
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
 				{
 					Platform: "universalPlatform",
 					Arch:     "universalArch",
@@ -1552,13 +1552,13 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			AppID:     idTestappApp,
+			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.4",
 			Channel:   "stable",
 			Published: true,
 			Critical:  true,
-			Artifacts: []model.Artifact{
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
 				{
 					Platform: "universalPlatform",
 					Arch:     "universalArch",
@@ -1579,13 +1579,13 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			AppID:     idTestappApp,
+			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.5",
 			Channel:   "stable",
 			Published: false,
 			Critical:  false,
-			Artifacts: []model.Artifact{
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
 				{
 					Platform: "universalPlatform",
 					Arch:     "universalArch",
@@ -1620,7 +1620,7 @@ func TestSearch(t *testing.T) {
 	}
 
 	for i, expectedApp := range expected {
-		assert.Equal(t, expectedApp.AppID, actual.Apps[i].AppID)
+		// assert.Equal(t, expectedApp.AppID, actual.Apps[i].AppID)
 		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
 		assert.Equal(t, expectedApp.Version, actual.Apps[i].Version)
 		assert.Equal(t, expectedApp.Channel, actual.Apps[i].Channel)
