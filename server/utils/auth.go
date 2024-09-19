@@ -9,57 +9,40 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"golang.org/x/crypto/bcrypt"
 )
 
-func AuthMiddleware(db *mongo.Database) gin.HandlerFunc {
+func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		tokenParts := strings.Fields(authHeader)
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
 			return
-		} else if len(tokenParts) != 2 {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		}
+
+		// Extract the token from the "Bearer" scheme
+		tokenParts := strings.Fields(authHeader)
+		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token format"})
 			return
 		}
 
-		bytes, err := DecryptUserCredentials(tokenParts[1])
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		tokenString := tokenParts[1]
+
+		// Validate the JWT token
+		token, err := ValidateJWT(tokenString)
+		if err != nil || !token.Valid {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
 
-		// extract the username and password from the decrypted bytes
-		pair := strings.SplitN(string(bytes), ":", 2)
-		if len(pair) != 2 {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-			return
-		}
-		username := pair[0]
-		password := pair[1]
+		// Extract claims and set the username in the context
+		claims := token.Claims.(jwt.MapClaims)
+		username := claims["username"].(string)
 
-		// check the user credentials against the admins collection in MongoDB
-		admins := db.Collection("admins")
-		var result bson.M
-		err = admins.FindOne(c.Request.Context(), bson.M{"username": username}).Decode(&result)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
-			return
-		}
-
-		// compare the hashed passwords
-		hashedPassword := result["password"].(string)
-		if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
-			return
-		}
-
-		// set the authenticated user in the request context for later use
+		// Set the username in the context for later use
 		c.Set("username", username)
 		c.Next()
 	}

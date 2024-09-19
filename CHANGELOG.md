@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.3.5
+
+### Important Notes
+- **Important**: The authentication flow has changed to JWT.
+- **Important**: The route for deleting a specific app by ID has been renamed to  `/apps/delete` from `/deleteApp`.
+- **Important**: `/deleteApp` is now a new function.
+- **Important**: The route for updating specific app by ID has been renamed to  `/apps/update` from `/update`.
+- **Important**: `Archs, App names, Platform, channels` can be changed now.
+
+### Features
+- Added `Create, List, Delete` App functionality. It now works like `Platforms, Channels, Archs`.
+- Added new tests.
+- Added `UpdateApp, UpdateChannel, UpdatePlatform, UpdateArch` routes.
+
+### Maintenance
+
+- `Platforms`, `Channels`, `Archs` have been moved to the `apps_meta` collection. 
+
 ## v1.3.4
 
 ### Features

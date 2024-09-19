@@ -12,14 +12,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error) {
+func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
 	filter := bson.D{primitive.E{Key: "_id", Value: id}}
 
 	// Retrieve the document before deletion
-	var app *model.App
+	var app *model.SpecificApp
 	err := collection.FindOne(ctx, filter).Decode(&app)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -71,15 +71,20 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 
 func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error) {
 	var channel model.Channel
-	return c.DeleteDocument("apps", id, &channel, ctx)
+	return c.DeleteDocument("apps_meta", id, &channel, ctx)
 }
 
 func (c *appRepository) DeletePlatform(id primitive.ObjectID, ctx context.Context) (int64, error) {
 	var platform model.Platform
-	return c.DeleteDocument("apps", id, &platform, ctx)
+	return c.DeleteDocument("apps_meta", id, &platform, ctx)
 }
 
 func (c *appRepository) DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error) {
 	var arch model.Arch
-	return c.DeleteDocument("apps", id, &arch, ctx)
+	return c.DeleteDocument("apps_meta", id, &arch, ctx)
+}
+
+func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) (int64, error) {
+	var app model.App
+	return c.DeleteDocument("apps_meta", id, &app, ctx)
 }

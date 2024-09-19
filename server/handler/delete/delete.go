@@ -16,7 +16,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-func DeleteApp(c *gin.Context, repository db.AppRepository) {
+func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository) {
 	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
@@ -29,7 +29,7 @@ func DeleteApp(c *gin.Context, repository db.AppRepository) {
 	}
 
 	//request on repository
-	links, result, err := repository.DeleteApp(objID, ctx)
+	links, result, err := repository.DeleteSpecificVersionOfApp(objID, ctx)
 	if err != nil {
 		logrus.Error(err)
 	}
@@ -38,7 +38,11 @@ func DeleteApp(c *gin.Context, repository db.AppRepository) {
 		subLink := strings.TrimPrefix(link, env.GetString("S3_ENDPOINT"))
 		utils.DeleteFromS3(subLink, c, viper.GetViper())
 	}
-	c.JSON(http.StatusOK, gin.H{"deleteAppResult.DeletedCount": result})
+	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
+}
+
+func DeleteApp(c *gin.Context, repository db.AppRepository) {
+	deleteEntity(c, repository, "app")
 }
 
 func DeleteChannel(c *gin.Context, repository db.AppRepository) {
@@ -71,6 +75,8 @@ func deleteEntity(c *gin.Context, repository db.AppRepository, itemType string) 
 		result, err = repository.DeletePlatform(objID, ctx)
 	case "arch":
 		result, err = repository.DeleteArch(objID, ctx)
+	case "app":
+		result, err = repository.DeleteApp(objID, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return

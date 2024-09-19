@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "7d8e8a70-405f-40f6-a7d7-3203f3104137",
+		"_postman_id": "a383eada-d15b-44ad-87b1-34da238d0645",
 		"name": "faynoSync",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "30225535"
@@ -28,6 +28,16 @@
 		{
 			"name": "Search app by name",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "GET",
 				"header": [],
 				"url": {
@@ -53,6 +63,16 @@
 		{
 			"name": "Get all apps",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "GET",
 				"header": [],
 				"url": {
@@ -72,6 +92,16 @@
 		{
 			"name": "List Channels",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "GET",
 				"header": [],
 				"url": {
@@ -91,6 +121,16 @@
 		{
 			"name": "List Platforms",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "GET",
 				"header": [],
 				"url": {
@@ -110,6 +150,16 @@
 		{
 			"name": "List Archs",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "GET",
 				"header": [],
 				"url": {
@@ -121,6 +171,35 @@
 					"port": "{{PORT}}",
 					"path": [
 						"listArchs"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "List Apps",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/listApps",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"listApps"
 					]
 				}
 			},
@@ -172,6 +251,25 @@
 		},
 		{
 			"name": "Login",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"let response = pm.response.json();",
+							"",
+							"let token = response.token;",
+							"",
+							"pm.globals.set(\"faynoSyncToken\", token);",
+							"",
+							"console.log(\"faynoSyncToken saved to globals:\", token);",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
 			"request": {
 				"method": "POST",
 				"header": [
@@ -237,6 +335,16 @@
 				"disabledSystemHeaders": {}
 			},
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "POST",
 				"header": [],
 				"body": {
@@ -245,16 +353,16 @@
 						{
 							"key": "file",
 							"type": "file",
-							"src": "/Users/ku9n/Downloads/test.deb"
+							"src": "/Users/ku9n/Downloads/test.rpm"
 						},
 						{
 							"key": "file",
 							"type": "file",
-							"src": "/Users/ku9n/Downloads/test.rpm"
+							"src": "/Users/ku9n/Downloads/test.deb"
 						},
 						{
 							"key": "data",
-							"value": "{\"app_name\":\"{{app_name}}\",\"version\":\"{{version}}\",\"channel\":\"\",\"publish\":true,\"platform\":\"\",\"arch\":\"\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}",
+							"value": "{\"app_name\":\"{{app_name}}\",\"version\":\"{{version}}\",\"channel\":\"\",\"publish\":true,\"critical\":false,\"platform\":\"\",\"arch\":\"\",\"changelog\":\"### Changelog - Added new feature X - Fixed bug Y\"}",
 							"type": "text"
 						}
 					]
@@ -274,8 +382,18 @@
 			"response": []
 		},
 		{
-			"name": "Update",
+			"name": "Update Specific App",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "POST",
 				"header": [],
 				"body": {
@@ -283,7 +401,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"id\": \"\", \"app_name\": \"{{app_name}}\", \"version\": \"{{ version }}\", \"channel\": \"\", \"publish\": false, \"platform\": \"\", \"arch\": \"\", \"changelog\": \"\"}",
+							"value": "{\"id\": \"\", \"app_name\": \"{{app_name}}\", \"version\": \"{{version}}\", \"channel\": \"\", \"publish\": false, \"platform\": \"\", \"arch\": \"\", \"changelog\": \"\"}",
 							"type": "text"
 						},
 						{
@@ -299,14 +417,171 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/update",
+					"raw": "http://localhost:{{PORT}}/apps/update",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
+						"apps",
 						"update"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Channel",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\":\"\", \"channel\":\"new_name\"}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/updateChannel",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"updateChannel"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Arch",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\":\"\", \"arch\":\"new_name\"}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/updateArch",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"updateArch"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Platform",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\":\"\", \"platform\":\"new_name\"}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/updatePlatform",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"updatePlatform"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update App",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\":\"\", \"app\":\"new_name\"}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:{{PORT}}/updateApp",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"updateApp"
 					]
 				}
 			},
@@ -315,6 +590,16 @@
 		{
 			"name": "Create Channel",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "POST",
 				"header": [],
 				"body": {
@@ -322,7 +607,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"channel\":\"{{ channel }}\"}",
+							"value": "{\"channel\":\"{{channel}}\"}",
 							"type": "text"
 						}
 					]
@@ -344,6 +629,16 @@
 		{
 			"name": "Create Platform",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "POST",
 				"header": [],
 				"body": {
@@ -351,7 +646,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"platform\":\"{{ platform }}\"}",
+							"value": "{\"platform\":\"{{platform}}\"}",
 							"type": "text"
 						}
 					]
@@ -373,6 +668,16 @@
 		{
 			"name": "Create Arch",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "POST",
 				"header": [],
 				"body": {
@@ -380,7 +685,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"arch\":\"{{ arch }}\"}",
+							"value": "{\"arch\":\"{{arch}}\"}",
 							"type": "text"
 						}
 					]
@@ -400,24 +705,74 @@
 			"response": []
 		},
 		{
-			"name": "Delete app by id",
+			"name": "Create App",
 			"request": {
-				"method": "DELETE",
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
 				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"app\":\"{{app_name}}\"}",
+							"type": "text"
+						}
+					]
+				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/deleteApp?id",
+					"raw": "http://localhost:{{PORT}}/createApp",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"deleteApp"
+						"createApp"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete specific app by id",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/apps/delete?id=",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"apps",
+						"delete"
 					],
 					"query": [
 						{
 							"key": "id",
-							"value": null
+							"value": ""
 						}
 					]
 				}
@@ -427,6 +782,16 @@
 		{
 			"name": "Delete platform by id",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "DELETE",
 				"header": [],
 				"url": {
@@ -452,6 +817,16 @@
 		{
 			"name": "Delete channel by id",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "DELETE",
 				"header": [],
 				"url": {
@@ -477,6 +852,16 @@
 		{
 			"name": "Delete arch by id",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "DELETE",
 				"header": [],
 				"url": {
@@ -488,6 +873,41 @@
 					"port": "{{PORT}}",
 					"path": [
 						"deleteArch"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": null
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete app by id",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/deleteApp?id",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"deleteApp"
 					],
 					"query": [
 						{

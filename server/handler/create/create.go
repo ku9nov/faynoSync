@@ -46,6 +46,8 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		result, err = repository.CreatePlatform(paramValue, ctx)
 	case "arch":
 		result, err = repository.CreateArch(paramValue, ctx)
+	case "app":
+		result, err = repository.CreateApp(paramValue, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
@@ -72,4 +74,8 @@ func CreatePlatform(c *gin.Context, repository db.AppRepository) {
 
 func CreateArch(c *gin.Context, repository db.AppRepository) {
 	CreateItem(c, repository, "arch")
+}
+
+func CreateApp(c *gin.Context, repository db.AppRepository) {
+	CreateItem(c, repository, "app")
 }

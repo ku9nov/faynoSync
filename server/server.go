@@ -25,7 +25,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
 
 	// Add authentication middleware to required paths
-	authMiddleware := utils.AuthMiddleware(mongoDatabase)
+	authMiddleware := utils.AuthMiddleware()
 
 	router.GET("/health", handler.HealthCheck)
 	router.GET("/checkVersion", handler.FindLatestVersion)
@@ -37,9 +37,13 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	router.GET("/", handler.GetAllApps)
 	router.POST("/upload", handler.UploadApp)
-	router.POST("/update", handler.UpdateApp)
+	router.POST("/apps/update", handler.UpdateSpecificApp)
+	router.POST("/updateApp", handler.UpdateApp)
+	router.POST("/updateChannel", handler.UpdateChannel)
+	router.POST("/updatePlatform", handler.UpdatePlatform)
+	router.POST("/updateArch", handler.UpdateArch)
 	router.GET("/search", handler.GetAppByName)
-	router.DELETE("/deleteApp", handler.DeleteApp)
+	router.DELETE("/apps/delete", handler.DeleteSpecificVersionOfApp)
 	router.POST("/createChannel", handler.CreateChannel)
 	router.GET("/listChannels", handler.ListChannels)
 	router.DELETE("/deleteChannel", handler.DeleteChannel)
@@ -49,6 +53,9 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.POST("/createArch", handler.CreateArch)
 	router.GET("/listArchs", handler.ListArchs)
 	router.DELETE("/deleteArch", handler.DeleteArch)
+	router.POST("/createApp", handler.CreateApp)
+	router.GET("/listApps", handler.ListApps)
+	router.DELETE("/deleteApp", handler.DeleteApp)
 
 	// get the port from the configuration file
 	port := config.GetString("PORT")

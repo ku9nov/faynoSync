@@ -48,7 +48,7 @@ func (c *appRepository) listItems(ctx context.Context, collectionName string, fi
 func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, error) {
 	var channels []*model.Channel
 	filter := bson.M{"channel_name": bson.M{"$exists": true}}
-	if err := c.listItems(ctx, "apps", filter, &channels); err != nil {
+	if err := c.listItems(ctx, "apps_meta", filter, &channels); err != nil {
 		return nil, err
 	}
 	return channels, nil
@@ -57,7 +57,7 @@ func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, err
 func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, error) {
 	var platforms []*model.Platform
 	filter := bson.M{"platform_name": bson.M{"$exists": true}}
-	if err := c.listItems(ctx, "apps", filter, &platforms); err != nil {
+	if err := c.listItems(ctx, "apps_meta", filter, &platforms); err != nil {
 		return nil, err
 	}
 	return platforms, nil
@@ -66,8 +66,17 @@ func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, e
 func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
 	var archs []*model.Arch
 	filter := bson.M{"arch_id": bson.M{"$exists": true}}
-	if err := c.listItems(ctx, "apps", filter, &archs); err != nil {
+	if err := c.listItems(ctx, "apps_meta", filter, &archs); err != nil {
 		return nil, err
 	}
 	return archs, nil
+}
+
+func (c *appRepository) ListApps(ctx context.Context) ([]*model.App, error) {
+	var apps []*model.App
+	filter := bson.M{"app_name": bson.M{"$exists": true}}
+	if err := c.listItems(ctx, "apps_meta", filter, &apps); err != nil {
+		return nil, err
+	}
+	return apps, nil
 }
