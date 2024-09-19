@@ -4,7 +4,10 @@ on:
   pull_request:
     types:
       - closed
-
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ku9nov/faynosync
+  
 jobs:
   create-release:
     if: |
@@ -42,3 +45,50 @@ jobs:
           body_path: ${{ env.changelog_file }}
           draft: false
           prerelease: false
+          
+  push_to_registry:
+    if: |
+      contains(github.event.pull_request.title, 'release') == true &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Version
+        id: extract-version
+        run: |
+          # Use grep to find the first occurrence of the version number matching "## v0.0.0" pattern
+          version=$(grep -m 1 -oP '## v\d+\.\d+\.\d+' CHANGELOG.md | cut -d ' ' -f 2)
+          echo "version=$version" >> $GITHUB_ENV
+
+      - name: Set tag based on version
+        id: set_tag
+        run: |
+          echo "IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.version }}" >> $GITHUB_ENV
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_TAG }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
