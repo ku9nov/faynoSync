@@ -37,7 +37,7 @@ Responce:
 ```
 
 ### Login to App
-Authenticate and receive a token for accessing the API.
+Authenticate and receive a jwt token for accessing the API.
 
 `POST /login`
 
@@ -49,7 +49,7 @@ curl -X POST -H "Content-Type: application/json" -d '{"username": "admin", "pass
 Responce:
 
 ```
-{"token":"DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"}
+{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"}
 ```
 
 ### Create app
@@ -59,7 +59,7 @@ Create app.
 `POST /createApp`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body form data
 **app**: Name of the app.
@@ -67,7 +67,7 @@ Create app.
 ###### Request:
 ```
 curl --location 'http://localhost:9000/createApp' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --form 'data="{\"app\":\"myapp\"}"'
 ```
 
@@ -88,7 +88,7 @@ Create deployment channel.
 `POST /createChannel`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body form data
 **channel**: Name of the channel.
@@ -96,7 +96,7 @@ Create deployment channel.
 ###### Request:
 ```
 curl --location 'http://localhost:9000/createChannel' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --form 'data="{\"channel\":\"nightly\"}"'
 ```
 
@@ -117,7 +117,7 @@ Create deployment platform.
 `POST /createPlatform`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body form data
 **platform**: Name of the platform.
@@ -125,7 +125,7 @@ Create deployment platform.
 ###### Request:
 ```
 curl --location 'http://localhost:9000/createPlatform' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --form 'data="{\"platform\":\"linux\"}"'
 ```
 
@@ -146,7 +146,7 @@ Create deployment architecture.
 `POST /createArch`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body form data
 **arch**: Arch of the app.
@@ -154,7 +154,7 @@ Create deployment architecture.
 ###### Request:
 ```
 curl --location 'http://localhost:9000/createArch' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --form 'data="{\"arch\":\"amd64\"}"'
 ```
 
@@ -173,11 +173,11 @@ Retrieve a list of all apps.
 `GET /listApps`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/listApps -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X GET http://localhost:9000/listApps -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
 ###### Responce:
@@ -208,11 +208,11 @@ Retrieve a list of all channels.
 `GET /listChannels`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/listChannels -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X GET http://localhost:9000/listChannels -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
 ###### Responce:
@@ -241,11 +241,11 @@ Retrieve a list of all platforms.
 `GET /listPlatforms`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/listPlatforms -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X GET http://localhost:9000/listPlatforms -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
 ###### Responce:
@@ -274,11 +274,11 @@ Retrieve a list of all architectures.
 `GET /listArchs`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/listArchs -H "Authorization: DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X GET http://localhost:9000/listArchs -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
 ###### Responce:
@@ -308,11 +308,11 @@ Retrieve a list of all apps.
 `GET /`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/ -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X GET http://localhost:9000/ -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
 ###### Responce:
@@ -413,7 +413,7 @@ Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
 --form 'data="{\"app_name\":\"myapp\",\"version\":\"0.0.1\",\"channel\":\"\",\"publish\":true,\"platform\":\"\",\"arch\":\"\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}"'
 ```
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body
 **file**: file of the app.
@@ -439,14 +439,14 @@ Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
 ###### Request:
 ```
 curl -X POST --location 'http://localhost:9000/upload' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --form 'file=@"/path_to_file/secondapp.deb"' \
 --form 'data="{\"app_name\":\"secondapp\",\"version\":\"0.0.2\",\"channel\":\"stable\",\"publish\":true,\"platform\":\"linux\",\"arch\":\"amd64\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}"'
 ```
 ###### Request with multiple uploading:
 ```
 curl --location 'http://localhost:9000/upload' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --form 'file=@"/path_to_file/secondapp.deb"' \
 --form 'file=@"/path_to_file/secondapp.rpm"' \
 --form 'data="{\"app_name\":\"secondapp\",\"version\":\"0.0.2\",\"channel\":\"stable\",\"publish\":true,\"platform\":\"linux\",\"arch\":\"amd64\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}"'
@@ -497,7 +497,7 @@ Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
 data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body
 **file**: file of the app.
@@ -522,14 +522,14 @@ data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"vers
 ###### Request:
 ```
 curl --location 'http://localhost:9000/apps/update' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --form 'data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"' \
 --form 'file=@"/path_to_file/secondapp.deb"' \
 ```
 ###### Request with multiple uploading:
 ```
 curl --location 'http://localhost:9000/apps/update' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --form 'data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"' \
 --form 'file=@"/path_to_file/secondapp.deb"' \
 --form 'file=@"/path_to_file/secondapp.rpm"'
@@ -549,7 +549,7 @@ Search for all versions of an app by name.
 `GET /search?app_name=<app_name>`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
 **app_name**: Name of the app.
@@ -557,7 +557,7 @@ Search for all versions of an app by name.
 ###### Request:
 ```
 curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
---header 'Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ'
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q'
 
 ```
 
@@ -634,14 +634,14 @@ This endpoint allows you to delete a specific app.
 `DELETE /deleteApp?id=<id>`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
 **id**: The unique identifier of the app.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deleteApp\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X DELETE http://localhost:9000/deleteApp\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 
 ```
 
@@ -659,14 +659,14 @@ This endpoint allows you to delete a specific channel.
 `DELETE /deleteChannel?id=<id>`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
 **id**: The unique identifier of the channel.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deleteChannel\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X DELETE http://localhost:9000/deleteChannel\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 
 ```
 
@@ -684,14 +684,14 @@ This endpoint allows you to delete a specific platform.
 `DELETE /deletePlatform?id=<id>`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
 **id**: The unique identifier of the platform.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deletePlatform\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X DELETE http://localhost:9000/deletePlatform\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 
 ```
 
@@ -709,14 +709,14 @@ This endpoint allows you to delete a specific arch.
 `DELETE /deleteArch?id=<id>`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
 **id**: The unique identifier of the arch.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/deleteArch\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X DELETE http://localhost:9000/deleteArch\?\id\=\64145ebaedd163d59d52e1dc -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 
 ```
 
@@ -734,14 +734,14 @@ This endpoint allows you to delete a specific version of an app.
 `DELETE /apps/delete?id=<id>`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
 **id**: The unique identifier of the app version.
 
 ###### Request:
 ```
-curl -X DELETE http://localhost:9000/apps/delete\?\id\=\653a5e4f51ce5114611f5abb -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X DELETE http://localhost:9000/apps/delete\?\id\=\653a5e4f51ce5114611f5abb -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 
 ```
 
@@ -758,14 +758,14 @@ curl -X DELETE http://localhost:9000/apps/delete\?\id\=\653a5e4f51ce5114611f5abb
 `GET /search?app_name=<app_name>`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
 **app_name**: Name of the app.
 
 ###### Request:
 ```
-curl -X GET http://localhost:9000/search\?\app_name\=\secondapp -H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ"
+curl -X GET http://localhost:9000/search\?\app_name\=\secondapp -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 
 ```
 
@@ -815,7 +815,7 @@ Update existing channel.
 `POST /updateChannel`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body form-data
 
@@ -826,7 +826,7 @@ Update existing channel.
 ###### Request:
 ```
 curl --location 'http://localhost:9000/updateChannel' \
--H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ" \
+-H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
 --form 'data="{\"id\":\"66ae13fe4b663c058367f893\", \"channel\":\"new_name\"}"'
 ```
 ###### Responce:
@@ -847,7 +847,7 @@ Update existing app.
 `POST /updateApp`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body form-data
 
@@ -858,7 +858,7 @@ Update existing app.
 ###### Request:
 ```
 curl --location 'http://localhost:9000/updateApp' \
--H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ" \
+-H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
 --form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"app\":\"new_name\"}"'
 ```
 ###### Responce:
@@ -878,7 +878,7 @@ Update existing platform.
 `POST /updatePlatform`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body form-data
 
@@ -889,7 +889,7 @@ Update existing platform.
 ###### Request:
 ```
 curl --location 'http://localhost:9000/updatePlatform' \
--H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ" \
+-H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
 --form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"platform\":\"new_name\"}"'
 ```
 ###### Responce:
@@ -909,7 +909,7 @@ Update existing arch.
 `POST /updateArch`
 
 ###### Headers
-**Authorization**: Authorization header with encoded username and password.
+**Authorization**: Authorization header with jwt token.
 
 ###### Body form-data
 
@@ -920,7 +920,7 @@ Update existing arch.
 ###### Request:
 ```
 curl --location 'http://localhost:9000/updateArch' \
--H "Authorization: Bearer DwEFz1xU-vc1xS3NYA8HI4eXYQRef9JTQoljn7XpTujDmKo8arpRr7kQ" \
+-H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
 --form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"arch\":\"new_name\"}"'
 ```
 ###### Responce:

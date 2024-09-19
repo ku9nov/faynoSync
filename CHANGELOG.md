@@ -3,6 +3,7 @@
 ## v1.3.5
 
 ### Important Notes
+- **Important**: The authentication flow has changed to JWT.
 - **Important**: The route for deleting a specific app by ID has been renamed to  `/apps/delete` from `/deleteApp`.
 - **Important**: `/deleteApp` is now a new function.
 - **Important**: The route for updating specific app by ID has been renamed to  `/apps/update` from `/update`.

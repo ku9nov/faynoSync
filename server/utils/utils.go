@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -25,6 +28,32 @@ type DatabaseSetting struct {
 
 type ServerSettings struct {
 	Port string
+}
+
+// GenerateJWT generates a new JWT token for the given username
+func GenerateJWT(username string) (string, error) {
+	env := viper.GetViper()
+	// Define JWT claims
+	claims := jwt.MapClaims{
+		"username": username,
+		"exp":      time.Now().Add(24 * time.Hour).Unix(), // Token expiration time (24 hours)
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(env.GetString("JWT_SECRET")))
+}
+
+// ValidateJWT parses and validates the JWT token
+func ValidateJWT(tokenString string) (*jwt.Token, error) {
+	env := viper.GetViper()
+	// Parse the token with the secret key
+	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// Ensure the signing method is HMAC
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrInvalidKey
+		}
+		return []byte(env.GetString("JWT_SECRET")), nil
+	})
 }
 
 func GetStringValue(m map[string]interface{}, key string) string {
