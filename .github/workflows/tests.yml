@@ -1,0 +1,33 @@
+name: Docker Compose Test
+
+on:
+  pull_request:
+    branches:
+      - test
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
+
+      - name: Install Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose
+
+      - name: Build and Start Services
+        run: docker-compose up --build -d
+
+      - name: Run Tests
+        run: docker exec -it faynoSync_backend "/usr/bin/faynoSync_tests"
+        continue-on-error: false
+
+      - name: Stop Services
+        if: always()
+        run: docker-compose down
