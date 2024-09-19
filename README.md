@@ -105,7 +105,9 @@ The tests verify the implemented API using a test database and an existing S3 bu
 
     - TestHealthCheck
     - TestLogin
+    - TestFailedLogin (expected result from API "401")
     - TestListApps
+    - TestListAppsWithInvalidToken (expected result from API "401")
     - TestAppCreate
     - TestSecondaryAppCreate (expected result from API "failed")
     - TestUploadApp
@@ -133,6 +135,7 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestListPlatformsWhenExist
     - TestListChannelsWhenExist
     - TestSignUp
+    - TestFailedSignUp (expected result from API "401")
     - TestUpdateSpecificApp
     - TestListAppsWhenExist
     - TestDeleteAppMeta

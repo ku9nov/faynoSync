@@ -25,7 +25,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
 
 	// Add authentication middleware to required paths
-	authMiddleware := utils.AuthMiddleware(mongoDatabase)
+	authMiddleware := utils.AuthMiddleware()
 
 	router.GET("/health", handler.HealthCheck)
 	router.GET("/checkVersion", handler.FindLatestVersion)

@@ -23,10 +23,10 @@ func Login(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
-	defer ctxErr()
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
 
-	// check the user credentials against the admins collection in MongoDB
+	// Check user credentials against the MongoDB "admins" collection
 	admins := database.Collection("admins")
 	var result bson.M
 	err := admins.FindOne(ctx, bson.M{"username": credentials.Username}).Decode(&result)
@@ -35,18 +35,19 @@ func Login(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	// compare the hashed passwords
+	// Compare the hashed password
 	hashedPassword := result["password"].(string)
 	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(credentials.Password)); err != nil {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
-	tokenBytes, err := utils.EncryptUserCredentials([]byte(credentials.Username + ":" + credentials.Password))
+
+	// Create JWT token
+	token, err := utils.GenerateJWT(credentials.Username)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to create token"})
 		return
 	}
-	token := string(tokenBytes)
 
 	c.JSON(http.StatusOK, gin.H{"token": token})
 }
