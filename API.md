@@ -853,7 +853,7 @@ Update existing app.
 
 **id**: ID of the app which you want to change.
 
-**channel**: New app name.
+**app**: New app name.
 
 ###### Request:
 ```
@@ -884,7 +884,7 @@ Update existing platform.
 
 **id**: ID of the platform which you want to change.
 
-**channel**: New platform name.
+**platform**: New platform name.
 
 ###### Request:
 ```
@@ -915,7 +915,7 @@ Update existing arch.
 
 **id**: ID of the arch which you want to change.
 
-**channel**: New arch name.
+**arch**: New arch name.
 
 ###### Request:
 ```

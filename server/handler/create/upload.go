@@ -52,6 +52,9 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) 
 		}
 		results = append(results, result)
 	}
-
+	if len(results) == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no results found. Please check your files."})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": results[0]})
 }
