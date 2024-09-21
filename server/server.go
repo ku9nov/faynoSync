@@ -5,6 +5,7 @@ import (
 	"faynoSync/server/handler"
 	"faynoSync/server/utils"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -28,8 +29,12 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	authMiddleware := utils.AuthMiddleware()
 
 	router.GET("/health", handler.HealthCheck)
+
+	allowedCORS := config.GetString("ALLOWED_CORS")
+	allowedOrigins := strings.Split(allowedCORS, ",")
+
+	router.Use(corsMiddleware(allowedOrigins))
 	router.GET("/checkVersion", handler.FindLatestVersion)
-	router.Use(corsMiddleware(config.GetString("DASHBOARD_URL")))
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
 
@@ -65,12 +70,24 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.Run(":" + port)
 }
 
-func corsMiddleware(allowOrigin string) gin.HandlerFunc {
+func corsMiddleware(allowedOrigins []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", allowOrigin)
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+		origin := c.Request.Header.Get("Origin")
+
+		allowed := false
+		for _, allowedOrigin := range allowedOrigins {
+			if allowedOrigin == origin {
+				allowed = true
+				break
+			}
+		}
+
+		if allowed {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+		}
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

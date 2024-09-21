@@ -1,17 +1,11 @@
 package utils
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
@@ -46,42 +40,4 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("username", username)
 		c.Next()
 	}
-}
-
-func EncryptUserCredentials(data []byte) (string, error) {
-	block, err := aes.NewCipher([]byte(viper.GetViper().GetString("SYSTEM_KEY")))
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
-	}
-	ciphertext := gcm.Seal(nonce, nonce, data, nil)
-	return base64.URLEncoding.EncodeToString(ciphertext), nil
-}
-
-func DecryptUserCredentials(token string) ([]byte, error) {
-	ciphertext, err := base64.URLEncoding.DecodeString(token)
-	if err != nil {
-		return nil, err
-	}
-	block, err := aes.NewCipher([]byte(viper.GetViper().GetString("SYSTEM_KEY")))
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	if len(ciphertext) < gcm.NonceSize() {
-		return nil, errors.New("invalid ciphertext")
-	}
-	nonce := ciphertext[:gcm.NonceSize()]
-	ciphertext = ciphertext[gcm.NonceSize():]
-	return gcm.Open(nil, nonce, ciphertext, nil)
 }
