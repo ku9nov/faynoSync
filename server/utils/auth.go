@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
@@ -33,8 +33,17 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Extract claims and set the username in the context
-		claims := token.Claims.(jwt.MapClaims)
-		username := claims["username"].(string)
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok || !token.Valid {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid claims"})
+			return
+		}
+
+		username, ok := claims["username"].(string)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "username not found in claims"})
+			return
+		}
 
 		// Set the username in the context for later use
 		c.Set("username", username)
