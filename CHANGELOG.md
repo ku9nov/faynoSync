@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.3.6
+
+### Important Notes
+
+- **Important**: Fix "Authorization bypass in github.com/dgrijalva/jwt-go"
+
+### Features
+- Added `browser extension` support.
+- Implemented Performance Mode to optimize the `checkVersion` API request by caching responses in Redis.
+
+
 ## v1.3.5
 
 ### Important Notes

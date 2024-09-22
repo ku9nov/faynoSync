@@ -10,6 +10,7 @@ import (
 	"faynoSync/server/handler/update"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -42,13 +43,15 @@ type AppHandler interface {
 }
 
 type appHandler struct {
-	client     *mongo.Client
-	repository db.AppRepository
-	database   *mongo.Database
+	client          *mongo.Client
+	repository      db.AppRepository
+	database        *mongo.Database
+	redisClient     *redis.Client
+	performanceMode bool
 }
 
-func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Database) AppHandler {
-	return &appHandler{client: client, repository: repo, database: db}
+func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Database, redisClient *redis.Client, performanceMode bool) AppHandler {
+	return &appHandler{client: client, repository: repo, database: db, redisClient: redisClient, performanceMode: performanceMode}
 }
 
 func (ch *appHandler) HealthCheck(c *gin.Context) {
@@ -58,7 +61,7 @@ func (ch *appHandler) HealthCheck(c *gin.Context) {
 
 func (ch *appHandler) FindLatestVersion(c *gin.Context) {
 	// Call the FindLatestVersion function from the info package
-	info.FindLatestVersion(c, ch.repository, ch.database)
+	info.FindLatestVersion(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
 }
 
 func (ch *appHandler) GetAppByName(c *gin.Context) {
@@ -110,7 +113,7 @@ func (ch *appHandler) CreateApp(c *gin.Context) {
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
 	// Call the UploadApp function from the create package
-	create.UploadApp(c, ch.repository, ch.database)
+	create.UploadApp(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
 }
 
 func (ch *appHandler) UpdateSpecificApp(c *gin.Context) {

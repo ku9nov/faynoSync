@@ -16,11 +16,13 @@ import (
 	"time"
 
 	"faynoSync/mongod"
+	"faynoSync/redisdb"
 	"faynoSync/server/handler"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -36,6 +38,7 @@ var (
 	configDB      connstring.ConnString
 	s3Endpoint    string
 	apiKey        string
+	redisClient   *redis.Client
 )
 
 func TestMain(m *testing.M) {
@@ -87,6 +90,14 @@ func setup() {
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
+	if viper.GetBool("PERFORMANCE_MODE") {
+		redisConfig := redisdb.RedisConfig{
+			Addr:     viper.GetString("REDIS_HOST") + ":" + viper.GetString("REDIS_PORT"),
+			Password: viper.GetString("REDIS_PASSWORD"),
+			DB:       viper.GetInt("REDIS_DB"),
+		}
+		redisClient = redisdb.ConnectToRedis(redisConfig)
+	}
 	os.Setenv("API_KEY", viper.GetString("API_KEY"))
 	apiKey = viper.GetString("API_KEY")
 	copyFile("LICENSE", "testapp.dmg")
@@ -115,7 +126,7 @@ func TestHealthCheck(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/health", func(c *gin.Context) {
 		handler.HealthCheck(c)
 	})
@@ -137,7 +148,7 @@ func TestFailedSignUp(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/signup", func(c *gin.Context) {
 		handler.SignUp(c)
 	})
@@ -171,7 +182,7 @@ func TestSignUp(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/signup", func(c *gin.Context) {
 		handler.SignUp(c)
 	})
@@ -206,7 +217,7 @@ func TestFailedLogin(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})
@@ -244,7 +255,7 @@ func TestLogin(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})
@@ -288,7 +299,7 @@ func TestListApps(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listApps", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -316,7 +327,7 @@ func TestListAppsWithInvalidToken(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listApps", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -391,7 +402,7 @@ func TestAppCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /createChannel route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createApp", func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
@@ -457,7 +468,7 @@ func TestSecondaryAppCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /createChannel route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createApp", func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
@@ -513,7 +524,7 @@ func TestUpload(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -591,7 +602,7 @@ func TestUploadDuplicateApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -660,7 +671,7 @@ func TestDeleteApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.DELETE("/apps/delete", func(c *gin.Context) {
 		handler.DeleteSpecificVersionOfApp(c)
 	})
@@ -690,7 +701,7 @@ func TestListChannels(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listChannels", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
@@ -723,7 +734,7 @@ func TestChannelCreateNightly(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /createChannel route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createChannel", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
@@ -789,7 +800,7 @@ func TestSecondaryChannelCreateNightly(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /createChannel route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createChannel", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
@@ -843,7 +854,7 @@ func TestChannelCreateStable(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /createChannel route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createChannel", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
@@ -909,7 +920,7 @@ func TestUploadAppWithoutChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -978,7 +989,7 @@ func TestListPlatforms(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listPlatforms", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
@@ -1009,7 +1020,7 @@ func TestPlatformCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createPlatform", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
@@ -1071,7 +1082,7 @@ func TestSecondaryPlatformCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createPlatform", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
@@ -1124,7 +1135,7 @@ func TestUploadAppWithoutPlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -1193,7 +1204,7 @@ func TestListArchs(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listArchs", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
@@ -1224,7 +1235,7 @@ func TestArchCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createArch", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
@@ -1287,7 +1298,7 @@ func TestSecondaryArchCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/createArch", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
@@ -1340,7 +1351,7 @@ func TestUploadAppWithoutArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -1410,7 +1421,7 @@ func TestMultipleUpload(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -1519,7 +1530,7 @@ func TestUpdateSpecificApp(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/apps/update", func(c *gin.Context) {
 		handler.UpdateSpecificApp(c)
 	})
@@ -1608,7 +1619,7 @@ func TestSearch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -1823,7 +1834,7 @@ func TestSearch(t *testing.T) {
 
 func TestCheckVersion(t *testing.T) {
 	router := gin.Default()
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
@@ -1948,7 +1959,7 @@ func TestMultipleDelete(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the deleteApp endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.DELETE("/apps/delete", func(c *gin.Context) {
 		handler.DeleteSpecificVersionOfApp(c)
 	})
@@ -1981,7 +1992,7 @@ func TestUpdateChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /updateChannel route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/updateChannel", func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
@@ -2044,7 +2055,7 @@ func TestListChannelsWhenExist(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listChannels", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
@@ -2098,7 +2109,7 @@ func TestDeleteNightlyChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.DELETE("/deleteChannel", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
@@ -2128,7 +2139,7 @@ func TestDeleteStableChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.DELETE("/deleteChannel", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
@@ -2157,7 +2168,7 @@ func TestUpdatePlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /UpdatePlatform route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/updatePlatform", func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
@@ -2220,7 +2231,7 @@ func TestListPlatformsWhenExist(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listPlatforms", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
@@ -2271,7 +2282,7 @@ func TestDeletePlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.DELETE("/deletePlatform", func(c *gin.Context) {
 		handler.DeletePlatform(c)
 	})
@@ -2300,7 +2311,7 @@ func TestUpdateArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /updateArch route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/updateArch", func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
@@ -2363,7 +2374,7 @@ func TestListArchsWhenExist(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listArchs", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
@@ -2414,7 +2425,7 @@ func TestDeleteArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.DELETE("/deleteArch", func(c *gin.Context) {
 		handler.DeleteArch(c)
 	})
@@ -2443,7 +2454,7 @@ func TestUpdateApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /updateApp route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/updateApp", func(c *gin.Context) {
 		handler.UpdateApp(c)
 	})
@@ -2506,7 +2517,7 @@ func TestListAppsWhenExist(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.GET("/listApps", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -2557,7 +2568,7 @@ func TestDeleteAppMeta(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.DELETE("/deleteApp", func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})

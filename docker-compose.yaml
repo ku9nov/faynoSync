@@ -30,8 +30,13 @@ services:
       file: ./docker-compose/services/db.yml
       service: db
 
-
+  cache:
+    extends:
+      file: ./docker-compose/services/redis.yml
+      service: cache
 
 volumes:
   data:
   data-s3:
+  cache:
+    driver: local

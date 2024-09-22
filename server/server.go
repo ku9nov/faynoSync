@@ -2,12 +2,15 @@ package server
 
 import (
 	db "faynoSync/mongod"
+	"faynoSync/redisdb"
 	"faynoSync/server/handler"
 	"faynoSync/server/utils"
 	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -22,7 +25,20 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	mongoDatabase := client.Database(configDB.Database)
 
-	handler := handler.NewAppHandler(client, db, mongoDatabase)
+	// Check PERFORMANCE_MODE
+	var redisClient *redis.Client
+
+	if config.GetBool("PERFORMANCE_MODE") {
+		logrus.Infoln(("Perfomance mod is enabled. Connecting to Redis."))
+		redisConfig := redisdb.RedisConfig{
+			Addr:     config.GetString("REDIS_HOST") + ":" + config.GetString("REDIS_PORT"),
+			Password: config.GetString("REDIS_PASSWORD"),
+			DB:       config.GetInt("REDIS_DB"),
+		}
+		redisClient = redisdb.ConnectToRedis(redisConfig)
+	}
+
+	handler := handler.NewAppHandler(client, db, mongoDatabase, redisClient, config.GetBool("PERFORMANCE_MODE"))
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
 
 	// Add authentication middleware to required paths

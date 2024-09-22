@@ -130,10 +130,14 @@ func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interf
 	return validateCommonParams(ctxQueryMap, database, c)
 }
 func GetBoolParam(param interface{}) bool {
-	if str, ok := param.(string); ok {
-		return str == "true"
+	switch v := param.(type) {
+	case bool:
+		return v
+	case string:
+		return v == "true"
+	default:
+		return false
 	}
-	return false
 }
 func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 	jsonData := c.PostForm("data")
