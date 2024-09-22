@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func invalidateCache(ctx context.Context, params map[string]interface{}, rdb *redis.Client) error {
+func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *redis.Client) error {
 
 	appName, _ := params["app_name"].(string)
 	channel, _ := params["channel"].(string)
@@ -94,7 +94,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		logrus.Debugf("Uploaded app has publish: %t, invalidation of redis cache is starting.", publish)
 
 		if publish {
-			if err := invalidateCache(c.Request.Context(), ctxQueryMap, rdb); err != nil {
+			if err := InvalidateCache(c.Request.Context(), ctxQueryMap, rdb); err != nil {
 				logrus.Error("Error invalidating cache:", err)
 			}
 		}

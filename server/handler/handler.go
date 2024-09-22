@@ -118,7 +118,7 @@ func (ch *appHandler) UploadApp(c *gin.Context) {
 
 func (ch *appHandler) UpdateSpecificApp(c *gin.Context) {
 	// Call the UpdateSpecificApp function from the create package
-	update.UpdateSpecificApp(c, ch.repository, ch.database)
+	update.UpdateSpecificApp(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
 }
 
 func (ch *appHandler) Login(c *gin.Context) {
