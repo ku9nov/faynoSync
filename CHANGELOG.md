@@ -6,6 +6,10 @@
 
 - **Important**: Fix "Authorization bypass in github.com/dgrijalva/jwt-go"
 
+### Bug Fixes
+
+Fix: allow spaces in app name validation
+
 ### Features
 - Added `browser extension` support.
 - Implemented Performance Mode to optimize the `checkVersion` API request by caching responses in Redis.
