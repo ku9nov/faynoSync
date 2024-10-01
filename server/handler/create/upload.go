@@ -3,9 +3,12 @@ package create
 import (
 	"context"
 	db "faynoSync/mongod"
+	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -104,5 +107,73 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no results found. Please check your files."})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": results[0]})
+
+	if appData, ok := results[0].(model.SpecificApp); ok {
+		c.JSON(http.StatusOK, gin.H{"uploadResult": appData.ID.Hex()})
+		go func() {
+			if viper.GetBool("SLACK_ENABLE") {
+				message := fmt.Sprintf(
+					"🎉 *Application Uploaded Successfully!* 🎉\n"+
+						"📦 *App ID:* %s\n"+
+						"🌐 *Channel ID:* %s\n"+
+						"🔖 *Version:* %s\n"+
+						"📅 *Updated At:* %s\n"+
+						"🔗 *Artifacts:* \n%s\n"+
+						"📋 *Changelog:* \n%s\n",
+					ctxQueryMap["app_name"],
+					ctxQueryMap["channel"],
+					ctxQueryMap["version"],
+					time.Now().Format("2006-01-02 15:04:05"),
+					formatArtifacts(results),
+					formatChangelog(results),
+				)
+				utils.SendSlackNotification(message, viper.GetViper())
+			}
+		}()
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid result type"})
+	}
+}
+
+func formatArtifacts(results []interface{}) string {
+	if len(results) == 0 {
+		return "No artifacts available."
+	}
+
+	var artifacts []string
+	uniqueArtifacts := make(map[string]struct{})
+
+	for _, result := range results {
+		if appData, ok := result.(model.SpecificApp); ok {
+			for _, artifact := range appData.Artifacts {
+				key := fmt.Sprintf("%s|%s", artifact.Link, artifact.Package)
+
+				if _, exists := uniqueArtifacts[key]; !exists {
+					uniqueArtifacts[key] = struct{}{}
+					packageName := strings.TrimPrefix(artifact.Package, ".")
+					artifacts = append(artifacts, fmt.Sprintf("🔗 Link %s: %s\n",
+						packageName,
+						artifact.Link,
+					))
+				}
+			}
+		}
+	}
+	return strings.Join(artifacts, "\n")
+}
+
+func formatChangelog(results []interface{}) string {
+	if len(results) == 0 {
+		return "No changelog available."
+	}
+
+	var changelogs []string
+	if appData, ok := results[0].(model.SpecificApp); ok {
+		for _, changelog := range appData.Changelog {
+			changelogs = append(changelogs, fmt.Sprintf("📝 %s\n",
+				changelog.Changes,
+			))
+		}
+	}
+	return strings.Join(changelogs, "\n")
 }

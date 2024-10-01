@@ -37,7 +37,6 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 		}
 		redisClient = redisdb.ConnectToRedis(redisConfig)
 	}
-
 	handler := handler.NewAppHandler(client, db, mongoDatabase, redisClient, config.GetBool("PERFORMANCE_MODE"))
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
 

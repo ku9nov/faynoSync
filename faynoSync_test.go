@@ -187,7 +187,8 @@ func TestSignUp(t *testing.T) {
 		handler.SignUp(c)
 	})
 
-	payload := `{"username": "admin", "password": "password", "api_key": "UHp3aKb40fwpoKZluZByWQ"}`
+	regKey := os.Getenv("API_KEY")
+	payload := fmt.Sprintf(`{"username": "admin", "password": "password", "api_key": "%s"}`, regKey)
 	req, err := http.NewRequest("POST", "/signup", bytes.NewBufferString(payload))
 	if err != nil {
 		t.Fatal(err)
