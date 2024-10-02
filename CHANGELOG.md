@@ -5,6 +5,7 @@
 ### Important Notes
 
 - **Important**: Fix "Authorization bypass in github.com/dgrijalva/jwt-go"
+- **Important**: Now we can upload applications with the same extension, but this is only possible if the architectures are different.
 
 ### Bug Fixes
 
@@ -13,6 +14,7 @@ Fix: allow spaces in app name validation
 ### Features
 - Added `browser extension` support.
 - Implemented Performance Mode to optimize the `checkVersion` API request by caching responses in Redis.
+- Added `link` encoding.
 
 
 ## v1.3.5
