@@ -1,5 +1,14 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://stand-with-ukraine.pp.ua)
 
+<div align="center">
+  
+  [![Documentation](https://img.shields.io/badge/Documentation-available-brightgreen)](https://ku9nov.github.io/faynoSync-site/docs/intro)
+  ![Docker Pulls](https://img.shields.io/docker/pulls/ku9nov/faynosync)
+  ![GitHub Release](https://img.shields.io/github/v/release/ku9nov/faynoSync)
+  ![Docker Compose Test](https://github.com/ku9nov/faynoSync/actions/workflows/tests.yml/badge.svg)
+
+</div>
+
 # FaynoSync
 
 ![225881501-b8aab72a-31e7-45ec-9340-4cca2a7893e9 (1)](https://github.com/ku9nov/faynoSync/assets/69673517/59ee4531-5d6c-4bc3-8aab-96854e2a4844)
