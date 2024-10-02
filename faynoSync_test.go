@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1858,8 +1859,8 @@ func TestCheckVersion(t *testing.T) {
 				"changelog":        "### Changelog\n",
 				"update_available": true,
 				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg", s3Endpoint),
-				"update_url_pkg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg", s3Endpoint),
+				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg")),
+				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg")),
 			},
 			ExpectedCode: http.StatusOK,
 			// Published:    false,
@@ -1873,8 +1874,8 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg", s3Endpoint),
-				"update_url_pkg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg", s3Endpoint),
+				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg")),
+				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg")),
 			},
 			ExpectedCode: http.StatusOK,
 			// Published:    true,
@@ -1901,8 +1902,8 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("%s/testapp/stable/universalPlatform/universalArch/testapp-0.0.4.dmg", s3Endpoint),
-				"update_url_pkg":   fmt.Sprintf("%s/testapp/stable/universalPlatform/universalArch/testapp-0.0.4.pkg", s3Endpoint),
+				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.dmg")),
+				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.pkg")),
 			},
 			ExpectedCode: http.StatusOK,
 			// Published:    true,
