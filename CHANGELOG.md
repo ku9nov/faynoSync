@@ -15,6 +15,7 @@ Fix: allow spaces in app name validation
 - Added `browser extension` support.
 - Implemented Performance Mode to optimize the `checkVersion` API request by caching responses in Redis.
 - Added `link` encoding.
+- Added `build number` to version. (0.0.1 => 0.0.1.137)
 
 
 ## v1.3.5
