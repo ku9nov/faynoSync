@@ -210,7 +210,7 @@ func validateCommonParams(ctxQueryMap map[string]interface{}, database *mongo.Da
 
 func IsValidAppName(input string) bool {
 	// Only allow letters and numbers, no spaces or special characters
-	validName := regexp.MustCompile(`^[a-zA-Z0-9 ]+$`)
+	validName := regexp.MustCompile(`^[a-zA-Z0-9\- ]+$`)
 	return validName.MatchString(input)
 }
 func IsValidVersion(input string) bool {
