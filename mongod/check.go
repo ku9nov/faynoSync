@@ -132,11 +132,17 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 2}},
 				}},
 			}},
+			{Key: "build_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 3}},
+				}},
+			}},
 		}}},
 		{{Key: "$sort", Value: bson.D{
 			{Key: "major_v", Value: -1},
 			{Key: "minor_v", Value: -1},
 			{Key: "patch_v", Value: -1},
+			{Key: "build_v", Value: -1},
 		}}},
 		{{Key: "$limit", Value: 1}},
 	}
