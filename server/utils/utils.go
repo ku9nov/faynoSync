@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -152,6 +153,8 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 		return nil, errors.New("invalid JSON data")
 	}
 
+	upReq.Version = strings.ReplaceAll(upReq.Version, "-", ".")
+
 	publishStr := strconv.FormatBool(upReq.Publish)
 	criticalStr := strconv.FormatBool(upReq.Critical)
 	return map[string]interface{}{
@@ -168,9 +171,11 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 }
 
 func extractParamsFromGetOrDelete(c *gin.Context) (map[string]interface{}, error) {
+	version := c.Query("version")
+	version = strings.ReplaceAll(version, "-", ".")
 	return map[string]interface{}{
 		"app_name": c.Query("app_name"),
-		"version":  c.Query("version"),
+		"version":  version,
 		"channel":  c.Query("channel"),
 		"publish":  c.Query("publish"),
 		"platform": c.Query("platform"),
@@ -209,7 +214,7 @@ func validateCommonParams(ctxQueryMap map[string]interface{}, database *mongo.Da
 }
 
 func IsValidAppName(input string) bool {
-	// Only allow letters and numbers, no spaces or special characters
+	// Only allow letters and numbers, no special characters
 	validName := regexp.MustCompile(`^[a-zA-Z0-9\- ]+$`)
 	return validName.MatchString(input)
 }
