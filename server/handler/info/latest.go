@@ -150,6 +150,13 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		return
 	}
 
+	jsonData, err := json.MarshalIndent(checkResult, "", "  ")
+	if err != nil {
+		logrus.Errorf("Error marshaling checkResult: %v", err)
+	} else {
+		logrus.Debugf("Fetched latest version response: %s", string(jsonData))
+	}
+
 	downloadUrls := make(map[string]string)
 
 	if len(checkResult) > 0 {
