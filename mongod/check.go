@@ -201,6 +201,34 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	}
 
 }
+
+func (c *appRepository) FetchLatestVersionOfApp(appName string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
+	metaFilter := bson.D{{Key: "app_name", Value: appName}}
+	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
+	if err != nil {
+		return nil, errors.New("app_name not found in apps_meta collection")
+	}
+
+	collection := c.client.Database(c.config.Database).Collection("apps")
+
+	basePipeline := c.getBasePipeline()
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.M{"app_id": appMeta.ID}}},
+		bson.D{{Key: "$sort", Value: bson.M{"version": -1}}},
+		bson.D{{Key: "$limit", Value: 1}},
+	}
+	pipeline = append(pipeline, basePipeline...)
+
+	cur, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	return c.processApps(cur, ctx)
+}
+
 func (c *appRepository) getMeta(ctx context.Context, metaCollection *mongo.Collection, key, value string, result interface{}) error {
 	filter := bson.D{{Key: key, Value: value}}
 	err := metaCollection.FindOne(ctx, filter).Decode(result)
