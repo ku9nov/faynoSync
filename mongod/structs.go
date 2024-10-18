@@ -19,7 +19,7 @@ type AppRepository interface {
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
 	UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error)
 	CheckLatestVersion(appName, version, channel, platform, arch string, ctx context.Context) (CheckResult, error)
-	FetchLatestVersionOfApp(appName string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
+	FetchLatestVersionOfApp(appName, channel string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
 	CreateChannel(channelName string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context) ([]*model.Channel, error)
 	CreatePlatform(platformName string, ctx context.Context) (interface{}, error)
