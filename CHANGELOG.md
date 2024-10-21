@@ -21,6 +21,7 @@ Fix: allow spaces in app name validation
 ### Maintenance
 
 - Multiple API routes were renamed.
+- Added `semver` versions support.
 
 ## v1.3.5
 
