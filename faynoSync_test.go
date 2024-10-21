@@ -1832,7 +1832,75 @@ func TestSearch(t *testing.T) {
 	}
 
 }
+func TestFetchkLatestVersionOfApp(t *testing.T) {
+	router := gin.Default()
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/apps/latest", func(c *gin.Context) {
+		handler.FetchLatestVersionOfApp(c)
+	})
+	// Define test scenarios.
+	testScenarios := []struct {
+		AppName      string
+		ChannelName  string
+		ExpectedJSON map[string]interface{}
+		ExpectedCode int
+		Platform     string
+		Arch         string
+		TestName     string
+	}{
+		{
+			AppName:     "testapp",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"download_url_nightly_universalPlatform_universalArch_dmg": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
+				"download_url_nightly_universalPlatform_universalArch_pkg": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
+		},
+		{
+			AppName:     "testapp",
+			ChannelName: "stable",
+			ExpectedJSON: map[string]interface{}{
+				"download_url_stable_universalPlatform_universalArch_dmg": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg")),
+				"download_url_stable_universalPlatform_universalArch_pkg": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "StableUpdateAvailable",
+		},
+	}
 
+	for _, scenario := range testScenarios {
+		t.Run(scenario.TestName, func(t *testing.T) {
+			w := httptest.NewRecorder()
+
+			// Create a GET request for checking the version.
+			req, err := http.NewRequest("GET", fmt.Sprintf("/apps/latest?app_name=%s&channel=%s&platform=%s&arch=%s", scenario.AppName, scenario.ChannelName, scenario.Platform, scenario.Arch), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+
+			// Check the response status code.
+			assert.Equal(t, scenario.ExpectedCode, w.Code)
+
+			var actual map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &actual)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Compare the response with the expected values.
+			assert.Equal(t, scenario.ExpectedJSON, actual)
+		})
+	}
+}
 func TestCheckVersion(t *testing.T) {
 	router := gin.Default()
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)

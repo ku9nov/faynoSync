@@ -221,7 +221,7 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 		}
 	}
 	collection := c.client.Database(c.config.Database).Collection("apps")
-	matchFilter := bson.M{"app_id": appMeta.ID}
+	matchFilter := bson.M{"app_id": appMeta.ID, "published": true}
 
 	if channel != "" {
 		matchFilter["channel_id"] = channelMeta.ID

@@ -30,6 +30,25 @@ type ServerSettings struct {
 	Port string
 }
 
+func CountUrls(downloadUrls map[string]map[string]map[string]map[string]map[string]string) (int, string) {
+	count := 0
+	var singleUrl string
+	for _, platformMap := range downloadUrls {
+		for _, archMap := range platformMap {
+			for _, packageMap := range archMap {
+				for _, urlMap := range packageMap {
+					if url, exists := urlMap["url"]; exists {
+						count++
+						singleUrl = url
+					}
+				}
+			}
+		}
+	}
+
+	return count, singleUrl
+}
+
 // GenerateJWT generates a new JWT token for the given username
 func GenerateJWT(username string) (string, error) {
 	env := viper.GetViper()

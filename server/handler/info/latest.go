@@ -124,6 +124,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		"channel":  c.Query("channel"),
 		"platform": c.Query("platform"),
 		"arch":     c.Query("arch"),
+		"package":  c.Query("package"),
 	}
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
@@ -157,7 +158,43 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		logrus.Debugf("Fetched latest version response: %s", string(jsonData))
 	}
 
-	downloadUrls := make(map[string]string)
+	// downloadUrls := make(map[string]string)
+
+	// if len(checkResult) > 0 {
+	// 	latestApp := checkResult[0]
+	// 	for _, artifact := range latestApp.Artifacts {
+
+	// 		if params["channel"] != "" && params["channel"] != latestApp.Channel {
+	// 			continue
+	// 		}
+	// 		if params["platform"] != "" && params["platform"] != artifact.Platform {
+	// 			continue
+	// 		}
+	// 		if params["arch"] != "" && params["arch"] != artifact.Arch {
+	// 			continue
+	// 		}
+
+	// 		urlKeyParts := []string{"download_url"}
+
+	// 		if latestApp.Channel != "" {
+	// 			urlKeyParts = append(urlKeyParts, latestApp.Channel)
+	// 		}
+	// 		if artifact.Platform != "" {
+	// 			urlKeyParts = append(urlKeyParts, artifact.Platform)
+	// 		}
+	// 		if artifact.Arch != "" {
+	// 			urlKeyParts = append(urlKeyParts, artifact.Arch)
+	// 		}
+	// 		if artifact.Package != "" {
+	// 			urlKeyParts = append(urlKeyParts, strings.TrimPrefix(artifact.Package, "."))
+	// 		}
+
+	// 		urlKey := strings.Join(urlKeyParts, "_")
+	// 		downloadUrls[urlKey] = artifact.Link
+	// 	}
+	// }
+
+	downloadUrls := make(map[string]map[string]map[string]map[string]map[string]string)
 
 	if len(checkResult) > 0 {
 		latestApp := checkResult[0]
@@ -172,38 +209,42 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 			if params["arch"] != "" && params["arch"] != artifact.Arch {
 				continue
 			}
+			packageType := strings.TrimPrefix(artifact.Package, ".")
 
-			urlKeyParts := []string{"download_url"}
-
-			if latestApp.Channel != "" {
-				urlKeyParts = append(urlKeyParts, latestApp.Channel)
-			}
-			if artifact.Platform != "" {
-				urlKeyParts = append(urlKeyParts, artifact.Platform)
-			}
-			if artifact.Arch != "" {
-				urlKeyParts = append(urlKeyParts, artifact.Arch)
-			}
-			if artifact.Package != "" {
-				urlKeyParts = append(urlKeyParts, strings.TrimPrefix(artifact.Package, "."))
+			if params["package"] != "" && params["package"] != packageType {
+				continue
 			}
 
-			urlKey := strings.Join(urlKeyParts, "_")
-			downloadUrls[urlKey] = artifact.Link
+			if _, exists := downloadUrls[latestApp.Channel]; !exists {
+				downloadUrls[latestApp.Channel] = make(map[string]map[string]map[string]map[string]string)
+			}
+
+			if _, exists := downloadUrls[latestApp.Channel][artifact.Platform]; !exists {
+				downloadUrls[latestApp.Channel][artifact.Platform] = make(map[string]map[string]map[string]string)
+			}
+
+			if _, exists := downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch]; !exists {
+				downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch] = make(map[string]map[string]string)
+			}
+
+			downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch][packageType] = map[string]string{
+				"url": artifact.Link,
+			}
 		}
 	}
+
 	if len(downloadUrls) == 0 {
 		logrus.Warnf("No results found for parameters: %v", params)
 		c.JSON(http.StatusNotFound, gin.H{"error": "No matching data found for the provided parameters"})
 		return
 	}
 
-	if len(downloadUrls) == 1 {
-		for _, url := range downloadUrls {
-			logrus.Debugf("Redirecting to the single download URL: %v", url)
-			c.Redirect(http.StatusFound, url)
-			return
-		}
+	urlCount, singleUrl := utils.CountUrls(downloadUrls)
+
+	if urlCount == 1 {
+		logrus.Debugf("Redirecting to the single download URL: %v", singleUrl)
+		c.Redirect(http.StatusFound, singleUrl)
+		return
 	}
 
 	logrus.Debugf("Generated download URLs: %v", downloadUrls)
