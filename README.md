@@ -123,6 +123,7 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestMultipleUploadWithChannels
     - TestSearchApp
     - TestCheckVersionLatestVersion
+    - TestFetchkLatestVersionOfApp
     - TestMultipleDelete
     - TestDeleteNightlyChannel
     - TestDeleteStableChannel

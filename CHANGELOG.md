@@ -16,6 +16,11 @@ Fix: allow spaces in app name validation
 - Implemented Performance Mode to optimize the `checkVersion` API request by caching responses in Redis.
 - Added `link` encoding.
 - Added `build number` to version. (0.0.1 => 0.0.1.137)
+- Added new info API route which return links to latest build.
+
+### Maintenance
+
+- Multiple API routes were renamed.
 - Added `semver` versions support.
 
 ## v1.3.5
