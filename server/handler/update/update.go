@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	db "faynoSync/mongod"
+	"faynoSync/server/handler/create"
 	"faynoSync/server/utils"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -94,7 +96,7 @@ func UpdateApp(c *gin.Context, repository db.AppRepository) {
 	UpdateItem(c, repository, "app")
 }
 
-func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
+func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
 	ctxQueryMap, err := utils.ValidateParams(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -143,6 +145,15 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			return
 		}
 	}
+	if performanceMode && rdb != nil {
+		publish := utils.GetBoolParam(ctxQueryMap["publish"])
+		logrus.Debugf("Updating app has publish: %t, invalidation of redis cache is starting.", publish)
 
+		if publish {
+			if err := create.InvalidateCache(c.Request.Context(), ctxQueryMap, rdb); err != nil {
+				logrus.Error("Error invalidating cache:", err)
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"updatedResult.Updated": result})
 }

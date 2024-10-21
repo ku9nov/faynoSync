@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -28,6 +29,25 @@ type DatabaseSetting struct {
 
 type ServerSettings struct {
 	Port string
+}
+
+func CountUrls(downloadUrls map[string]map[string]map[string]map[string]map[string]string) (int, string) {
+	count := 0
+	var singleUrl string
+	for _, platformMap := range downloadUrls {
+		for _, archMap := range platformMap {
+			for _, packageMap := range archMap {
+				for _, urlMap := range packageMap {
+					if url, exists := urlMap["url"]; exists {
+						count++
+						singleUrl = url
+					}
+				}
+			}
+		}
+	}
+
+	return count, singleUrl
 }
 
 // GenerateJWT generates a new JWT token for the given username
@@ -130,10 +150,14 @@ func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interf
 	return validateCommonParams(ctxQueryMap, database, c)
 }
 func GetBoolParam(param interface{}) bool {
-	if str, ok := param.(string); ok {
-		return str == "true"
+	switch v := param.(type) {
+	case bool:
+		return v
+	case string:
+		return v == "true"
+	default:
+		return false
 	}
-	return false
 }
 func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 	jsonData := c.PostForm("data")
@@ -147,6 +171,8 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
 		return nil, errors.New("invalid JSON data")
 	}
+
+	upReq.Version = strings.ReplaceAll(upReq.Version, "-", ".")
 
 	publishStr := strconv.FormatBool(upReq.Publish)
 	criticalStr := strconv.FormatBool(upReq.Critical)
@@ -164,9 +190,11 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 }
 
 func extractParamsFromGetOrDelete(c *gin.Context) (map[string]interface{}, error) {
+	version := c.Query("version")
+	version = strings.ReplaceAll(version, "-", ".")
 	return map[string]interface{}{
 		"app_name": c.Query("app_name"),
-		"version":  c.Query("version"),
+		"version":  version,
 		"channel":  c.Query("channel"),
 		"publish":  c.Query("publish"),
 		"platform": c.Query("platform"),
@@ -205,8 +233,8 @@ func validateCommonParams(ctxQueryMap map[string]interface{}, database *mongo.Da
 }
 
 func IsValidAppName(input string) bool {
-	// Only allow letters and numbers, no spaces or special characters
-	validName := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+	// Only allow letters and numbers, no special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9\- ]+$`)
 	return validName.MatchString(input)
 }
 func IsValidVersion(input string) bool {

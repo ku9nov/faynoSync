@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -93,8 +94,8 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 		}
 
 		s3PathSegments = append(s3PathSegments, newFileName)
-
-		link = fmt.Sprintf("%s/%s", env.GetString("S3_ENDPOINT"), strings.Join(s3PathSegments, "/"))
+		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		link = fmt.Sprintf("%s/%s", env.GetString("S3_ENDPOINT"), encodedPath)
 		s3Key = strings.Join(s3PathSegments, "/")
 	}
 

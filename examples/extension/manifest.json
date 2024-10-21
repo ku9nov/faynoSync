@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Hello World Demo",
+  "description": "A hello world extension!",
+  "version": "1.0",
+  "icons": {
+    "128": "icon128.png",
+    "48": "icon48.png",
+    "16": "icon16.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["notifications", "tabs", "storage"],
+  "action": {
+    "default_icon": "icon16.png",
+    "default_popup": "popup.html"
+  }
+}

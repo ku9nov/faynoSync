@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/go-version"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -132,11 +133,17 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 2}},
 				}},
 			}},
+			{Key: "build_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 3}},
+				}},
+			}},
 		}}},
 		{{Key: "$sort", Value: bson.D{
 			{Key: "major_v", Value: -1},
 			{Key: "minor_v", Value: -1},
 			{Key: "patch_v", Value: -1},
+			{Key: "build_v", Value: -1},
 		}}},
 		{{Key: "$limit", Value: 1}},
 	}
@@ -195,6 +202,50 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	}
 
 }
+
+func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
+	metaFilter := bson.D{{Key: "app_name", Value: appName}}
+	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
+	if err != nil {
+		return nil, errors.New("app_name not found in apps_meta collection")
+	}
+	var channelMeta struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+	if channel != "" {
+		channelFilter := bson.D{{Key: "channel_name", Value: channel}}
+		err := metaCollection.FindOne(ctx, channelFilter).Decode(&channelMeta)
+		if err != nil {
+			return nil, errors.New("channel not found in apps_meta collection")
+		}
+	}
+	collection := c.client.Database(c.config.Database).Collection("apps")
+	matchFilter := bson.M{"app_id": appMeta.ID, "published": true}
+
+	if channel != "" {
+		matchFilter["channel_id"] = channelMeta.ID
+	}
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: matchFilter}},
+		{{Key: "$sort", Value: bson.D{{Key: "version", Value: -1}}}},
+		{{Key: "$limit", Value: 1}},
+	}
+	basePipeline := c.getBasePipeline()
+	pipeline = append(pipeline, basePipeline...)
+
+	logrus.Debug("MongoDB Pipeline: ", pipeline)
+
+	cur, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	return c.processApps(cur, ctx)
+}
+
 func (c *appRepository) getMeta(ctx context.Context, metaCollection *mongo.Collection, key, value string, result interface{}) error {
 	filter := bson.D{{Key: key, Value: value}}
 	err := metaCollection.FindOne(ctx, filter).Decode(result)
