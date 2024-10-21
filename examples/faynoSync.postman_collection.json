@@ -61,6 +61,52 @@
 			"response": []
 		},
 		{
+			"name": "Get latest app version",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:{{PORT}}/apps/latest?app_name={{app_name}}&channel={{channel}}&platform={{platform}}&arch={{arch}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{PORT}}",
+					"path": [
+						"apps",
+						"latest"
+					],
+					"query": [
+						{
+							"key": "app_name",
+							"value": "{{app_name}}"
+						},
+						{
+							"key": "channel",
+							"value": "{{channel}}"
+						},
+						{
+							"key": "platform",
+							"value": "{{platform}}"
+						},
+						{
+							"key": "arch",
+							"value": "{{arch}}"
+						},
+						{
+							"key": "package",
+							"value": "deb",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Get all apps",
 			"request": {
 				"auth": {
@@ -105,14 +151,15 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/listChannels",
+					"raw": "http://localhost:{{PORT}}/channel/list",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"listChannels"
+						"channel",
+						"list"
 					]
 				}
 			},
@@ -134,14 +181,15 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/listPlatforms",
+					"raw": "http://localhost:{{PORT}}/platform/list",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"listPlatforms"
+						"platform",
+						"list"
 					]
 				}
 			},
@@ -163,14 +211,15 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/listArchs",
+					"raw": "http://localhost:{{PORT}}/arch/list",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"listArchs"
+						"arch",
+						"list"
 					]
 				}
 			},
@@ -192,14 +241,15 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/listApps",
+					"raw": "http://localhost:{{PORT}}/app/list",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"listApps"
+						"app",
+						"list"
 					]
 				}
 			},
@@ -457,14 +507,15 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/updateChannel",
+					"raw": "http://localhost:{{PORT}}/channel/update",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"updateChannel"
+						"channel",
+						"update"
 					]
 				}
 			},
@@ -496,14 +547,15 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/updateArch",
+					"raw": "http://localhost:{{PORT}}/arch/update",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"updateArch"
+						"arch",
+						"update"
 					]
 				}
 			},
@@ -535,14 +587,15 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/updatePlatform",
+					"raw": "http://localhost:{{PORT}}/platform/update",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"updatePlatform"
+						"platform",
+						"update"
 					]
 				}
 			},
@@ -574,14 +627,15 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/updateApp",
+					"raw": "http://localhost:{{PORT}}/app/update",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"updateApp"
+						"app",
+						"update"
 					]
 				}
 			},
@@ -613,14 +667,15 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/createChannel",
+					"raw": "http://localhost:{{PORT}}/channel/create",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"createChannel"
+						"channel",
+						"create"
 					]
 				}
 			},
@@ -652,14 +707,15 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/createPlatform",
+					"raw": "http://localhost:{{PORT}}/platform/create",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"createPlatform"
+						"platform",
+						"create"
 					]
 				}
 			},
@@ -691,14 +747,15 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/createArch",
+					"raw": "http://localhost:{{PORT}}/arch/create",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"createArch"
+						"arch",
+						"create"
 					]
 				}
 			},
@@ -730,14 +787,15 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/createApp",
+					"raw": "http://localhost:{{PORT}}/app/create",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"createApp"
+						"app",
+						"create"
 					]
 				}
 			},
@@ -795,14 +853,15 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/deletePlatform?id",
+					"raw": "http://localhost:{{PORT}}/platform/delete?id",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"deletePlatform"
+						"platform",
+						"delete"
 					],
 					"query": [
 						{
@@ -830,14 +889,15 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/deleteChannel?id",
+					"raw": "http://localhost:{{PORT}}/channel/delete?id",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"deleteChannel"
+						"channel",
+						"delete"
 					],
 					"query": [
 						{
@@ -865,14 +925,15 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/deleteArch?id",
+					"raw": "http://localhost:{{PORT}}/arch/delete?id",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"deleteArch"
+						"arch",
+						"delete"
 					],
 					"query": [
 						{
@@ -900,14 +961,15 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/deleteApp?id",
+					"raw": "http://localhost:{{PORT}}/app/delete?id",
 					"protocol": "http",
 					"host": [
 						"localhost"
 					],
 					"port": "{{PORT}}",
 					"path": [
-						"deleteApp"
+						"app",
+						"delete"
 					],
 					"query": [
 						{

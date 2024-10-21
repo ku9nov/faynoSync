@@ -301,12 +301,12 @@ func TestListApps(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listApps", func(c *gin.Context) {
+	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listApps", nil)
+	req, err := http.NewRequest("GET", "/app/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestListAppsWithInvalidToken(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listApps", func(c *gin.Context) {
+	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
 
@@ -373,7 +373,7 @@ func TestListAppsWithInvalidToken(t *testing.T) {
 
 			logrus.Infof("Testing with token: %s", modifiedToken)
 
-			req, err := http.NewRequest("GET", "/listApps", nil)
+			req, err := http.NewRequest("GET", "/app/list", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -402,9 +402,9 @@ func TestAppCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createApp", func(c *gin.Context) {
+	router.POST("/app/create", func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
 
@@ -429,8 +429,8 @@ func TestAppCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createApp", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/app/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,9 +468,9 @@ func TestSecondaryAppCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createApp", func(c *gin.Context) {
+	router.POST("/app/create", func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
 
@@ -495,8 +495,8 @@ func TestSecondaryAppCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createApp", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/app/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,12 +703,12 @@ func TestListChannels(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listChannels", func(c *gin.Context) {
+	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listChannels", nil)
+	req, err := http.NewRequest("GET", "/channel/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,9 +734,9 @@ func TestChannelCreateNightly(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createChannel", func(c *gin.Context) {
+	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
 
@@ -761,8 +761,8 @@ func TestChannelCreateNightly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createChannel", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/channel/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -800,9 +800,9 @@ func TestSecondaryChannelCreateNightly(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createChannel", func(c *gin.Context) {
+	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
 
@@ -827,8 +827,8 @@ func TestSecondaryChannelCreateNightly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createChannel", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/channel/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,9 +854,9 @@ func TestChannelCreateStable(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createChannel", func(c *gin.Context) {
+	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
 
@@ -881,8 +881,8 @@ func TestChannelCreateStable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createChannel", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/channel/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -991,12 +991,12 @@ func TestListPlatforms(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listPlatforms", func(c *gin.Context) {
+	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listPlatforms", nil)
+	req, err := http.NewRequest("GET", "/platform/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1022,7 +1022,7 @@ func TestPlatformCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createPlatform", func(c *gin.Context) {
+	router.POST("/platform/create", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
 
@@ -1047,8 +1047,8 @@ func TestPlatformCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createPlatform", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1084,7 +1084,7 @@ func TestSecondaryPlatformCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createPlatform", func(c *gin.Context) {
+	router.POST("/platform/create", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
 
@@ -1109,8 +1109,8 @@ func TestSecondaryPlatformCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createPlatform", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1206,12 +1206,12 @@ func TestListArchs(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listArchs", func(c *gin.Context) {
+	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listArchs", nil)
+	req, err := http.NewRequest("GET", "/arch/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1237,7 +1237,7 @@ func TestArchCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createArch", func(c *gin.Context) {
+	router.POST("/arch/create", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
 
@@ -1262,8 +1262,8 @@ func TestArchCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createArch", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/arch/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1300,7 +1300,7 @@ func TestSecondaryArchCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createArch", func(c *gin.Context) {
+	router.POST("/arch/create", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
 
@@ -1325,8 +1325,8 @@ func TestSecondaryArchCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createArch", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/arch/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2080,9 +2080,9 @@ func TestUpdateChannel(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /updateChannel route
+	// Define the handler for the /channel/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/updateChannel", func(c *gin.Context) {
+	router.POST("/channel/update", func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
 
@@ -2107,8 +2107,8 @@ func TestUpdateChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /updateChannel endpoint
-	req, err := http.NewRequest("POST", "/updateChannel", body)
+	// Create a POST request to the /channel/update endpoint
+	req, err := http.NewRequest("POST", "/channel/update", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2145,12 +2145,12 @@ func TestListChannelsWhenExist(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listChannels", func(c *gin.Context) {
+	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listChannels", nil)
+	req, err := http.NewRequest("GET", "/channel/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2199,12 +2199,12 @@ func TestDeleteNightlyChannel(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deleteChannel", func(c *gin.Context) {
+	router.DELETE("/channel/delete", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteChannel?id="+idNightlyChannel, nil)
+	req, err := http.NewRequest("DELETE", "/channel/delete?id="+idNightlyChannel, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2229,12 +2229,12 @@ func TestDeleteStableChannel(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deleteChannel", func(c *gin.Context) {
+	router.DELETE("/channel/delete", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteChannel?id="+idStableChannel, nil)
+	req, err := http.NewRequest("DELETE", "/channel/delete?id="+idStableChannel, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2258,7 +2258,7 @@ func TestUpdatePlatform(t *testing.T) {
 
 	// Define the handler for the /UpdatePlatform route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/updatePlatform", func(c *gin.Context) {
+	router.POST("/platform/update", func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
 
@@ -2283,8 +2283,8 @@ func TestUpdatePlatform(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /updatePlatform endpoint
-	req, err := http.NewRequest("POST", "/updatePlatform", body)
+	// Create a POST request to the /platform/update endpoint
+	req, err := http.NewRequest("POST", "/platform/update", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2321,12 +2321,12 @@ func TestListPlatformsWhenExist(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listPlatforms", func(c *gin.Context) {
+	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listPlatforms", nil)
+	req, err := http.NewRequest("GET", "/platform/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2372,12 +2372,12 @@ func TestDeletePlatform(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deletePlatform", func(c *gin.Context) {
+	router.DELETE("/platform/delete", func(c *gin.Context) {
 		handler.DeletePlatform(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deletePlatform?id="+platformId, nil)
+	req, err := http.NewRequest("DELETE", "/platform/delete?id="+platformId, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2399,9 +2399,9 @@ func TestUpdateArch(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /updateArch route
+	// Define the handler for the /arch/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/updateArch", func(c *gin.Context) {
+	router.POST("/arch/update", func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
 
@@ -2426,8 +2426,8 @@ func TestUpdateArch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /updateArch endpoint
-	req, err := http.NewRequest("POST", "/updateArch", body)
+	// Create a POST request to the /arch/update endpoint
+	req, err := http.NewRequest("POST", "/arch/update", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2464,12 +2464,12 @@ func TestListArchsWhenExist(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listArchs", func(c *gin.Context) {
+	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listArchs", nil)
+	req, err := http.NewRequest("GET", "/arch/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2515,12 +2515,12 @@ func TestDeleteArch(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deleteArch", func(c *gin.Context) {
+	router.DELETE("/arch/delete", func(c *gin.Context) {
 		handler.DeleteArch(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteArch?id="+archId, nil)
+	req, err := http.NewRequest("DELETE", "/arch/delete?id="+archId, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2542,9 +2542,9 @@ func TestUpdateApp(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /updateApp route
+	// Define the handler for the /app/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/updateApp", func(c *gin.Context) {
+	router.POST("/app/update", func(c *gin.Context) {
 		handler.UpdateApp(c)
 	})
 
@@ -2569,8 +2569,8 @@ func TestUpdateApp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /updateApp endpoint
-	req, err := http.NewRequest("POST", "/updateApp", body)
+	// Create a POST request to the /app/update endpoint
+	req, err := http.NewRequest("POST", "/app/update", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2607,12 +2607,12 @@ func TestListAppsWhenExist(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listApps", func(c *gin.Context) {
+	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listApps", nil)
+	req, err := http.NewRequest("GET", "/app/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2658,12 +2658,12 @@ func TestDeleteAppMeta(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deleteApp", func(c *gin.Context) {
+	router.DELETE("/app/delete", func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteApp?id="+idTestappApp, nil)
+	req, err := http.NewRequest("DELETE", "/app/delete?id="+idTestappApp, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

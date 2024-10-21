@@ -18,6 +18,10 @@ Fix: allow spaces in app name validation
 - Added `build number` to version. (0.0.1 => 0.0.1.137)
 - Added new info API route which return links to latest build.
 
+### Maintenance
+
+- Multiple API routes were renamed.
+
 ## v1.3.5
 
 ### Important Notes
