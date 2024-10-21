@@ -18,11 +18,9 @@ func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *re
 
 	appName, _ := params["app_name"].(string)
 	channel, _ := params["channel"].(string)
-	platform, _ := params["platform"].(string)
-	arch, _ := params["arch"].(string)
 
-	pattern := fmt.Sprintf("app_name=%s&version=*&channel=%s&platform=%s&arch=%s",
-		appName, channel, platform, arch)
+	pattern := fmt.Sprintf("app_name=%s&version=*&channel=%s&platform=*&arch=*",
+		appName, channel)
 	logrus.Debugf("Redis pattern %s will be invalidated.", pattern)
 
 	keys, err := rdb.Keys(ctx, pattern).Result()

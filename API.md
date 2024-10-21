@@ -486,7 +486,7 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
 
 ### Fetch Latest Version of App
 
-Fetch latest version of a specific app.
+This API endpoint retrieves the latest version of a specific app based on the provided parameters.
 
 `GET /apps/latest?app_name=<app_name>&channel=stable&platform=linux&arch=amd64`
 
@@ -499,6 +499,8 @@ Fetch latest version of a specific app.
 
 **arch**: Current arch of the app.
 
+**package**: The package type (e.g., deb, rpm, dmg).
+
 ###### Request:
 ```
 curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&channel=stable&platform=linux&arch=amd64'
@@ -508,8 +510,20 @@ curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&cha
 
 ```
 {
-    "download_url_stable_linux_amd64_deb": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
-    "download_url_stable_linux_amd64_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
+  "stable": {
+    "linux": {
+      "amd64": {
+        "deb": {
+          "url": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb"
+        }
+      },
+      "amd64": {
+        "rpm": {
+          "url": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
+        }
+      }
+    }
+  }
 }
 ```
 

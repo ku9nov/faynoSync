@@ -1852,8 +1852,18 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 			AppName:     "testapp",
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
-				"download_url_nightly_universalPlatform_universalArch_dmg": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
-				"download_url_nightly_universalPlatform_universalArch_pkg": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+				"nightly": map[string]interface{}{
+					"universalPlatform": map[string]interface{}{
+						"universalArch": map[string]interface{}{
+							"dmg": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
+							},
+							"pkg": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+							},
+						},
+					},
+				},
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -1864,8 +1874,18 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 			AppName:     "testapp",
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
-				"download_url_stable_universalPlatform_universalArch_dmg": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg")),
-				"download_url_stable_universalPlatform_universalArch_pkg": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
+				"stable": map[string]interface{}{
+					"universalPlatform": map[string]interface{}{
+						"universalArch": map[string]interface{}{
+							"dmg": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg")),
+							},
+							"pkg": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
+							},
+						},
+					},
+				},
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",

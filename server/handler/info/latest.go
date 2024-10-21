@@ -158,42 +158,6 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		logrus.Debugf("Fetched latest version response: %s", string(jsonData))
 	}
 
-	// downloadUrls := make(map[string]string)
-
-	// if len(checkResult) > 0 {
-	// 	latestApp := checkResult[0]
-	// 	for _, artifact := range latestApp.Artifacts {
-
-	// 		if params["channel"] != "" && params["channel"] != latestApp.Channel {
-	// 			continue
-	// 		}
-	// 		if params["platform"] != "" && params["platform"] != artifact.Platform {
-	// 			continue
-	// 		}
-	// 		if params["arch"] != "" && params["arch"] != artifact.Arch {
-	// 			continue
-	// 		}
-
-	// 		urlKeyParts := []string{"download_url"}
-
-	// 		if latestApp.Channel != "" {
-	// 			urlKeyParts = append(urlKeyParts, latestApp.Channel)
-	// 		}
-	// 		if artifact.Platform != "" {
-	// 			urlKeyParts = append(urlKeyParts, artifact.Platform)
-	// 		}
-	// 		if artifact.Arch != "" {
-	// 			urlKeyParts = append(urlKeyParts, artifact.Arch)
-	// 		}
-	// 		if artifact.Package != "" {
-	// 			urlKeyParts = append(urlKeyParts, strings.TrimPrefix(artifact.Package, "."))
-	// 		}
-
-	// 		urlKey := strings.Join(urlKeyParts, "_")
-	// 		downloadUrls[urlKey] = artifact.Link
-	// 	}
-	// }
-
 	downloadUrls := make(map[string]map[string]map[string]map[string]map[string]string)
 
 	if len(checkResult) > 0 {
