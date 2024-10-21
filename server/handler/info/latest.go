@@ -198,6 +198,14 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		return
 	}
 
+	if len(downloadUrls) == 1 {
+		for _, url := range downloadUrls {
+			logrus.Debugf("Redirecting to the single download URL: %v", url)
+			c.Redirect(http.StatusFound, url)
+			return
+		}
+	}
+
 	logrus.Debugf("Generated download URLs: %v", downloadUrls)
 
 	c.JSON(http.StatusOK, downloadUrls)
