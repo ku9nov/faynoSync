@@ -484,6 +484,35 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
 }
 ```
 
+### Fetch Latest Version of App
+
+Fetch latest version of a specific app.
+
+`GET /apps/latest?app_name=<app_name>&channel=stable&platform=linux&arch=amd64`
+
+###### Query Parameters
+**app_name**: Name of the app.
+
+**channel**: Current channel of the app.
+
+**platform**: Current platform of the app.
+
+**arch**: Current arch of the app.
+
+###### Request:
+```
+curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&channel=stable&platform=linux&arch=amd64'
+```
+
+###### Responce:
+
+```
+{
+    "download_url_stable_linux_amd64_deb": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+    "download_url_stable_linux_amd64_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
+}
+```
+
 ### Update App
 
 Update existing specific app.

@@ -51,6 +51,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	router.Use(corsMiddleware(allowedOrigins))
 	router.GET("/checkVersion", handler.FindLatestVersion)
+	router.GET("/apps/latest", handler.FetchLatestVersionOfApp)
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
 
