@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.7
+
+### Features
+- Added `binary` app support.
+
 ## v1.3.6
 
 ### Important Notes

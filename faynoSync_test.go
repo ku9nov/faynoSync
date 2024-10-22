@@ -1428,7 +1428,7 @@ func TestMultipleUpload(t *testing.T) {
 	})
 
 	// Create a file to upload (you can replace this with a test file path).
-	filePaths := []string{"testapp.dmg", "testapp.pkg"}
+	filePaths := []string{"testapp.dmg", "testapp.pkg", "LICENSE"}
 	for _, filePath := range filePaths {
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -1657,7 +1657,6 @@ func TestSearch(t *testing.T) {
 
 	expected := []AppInfo{
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.1.137",
 			Channel:   "nightly",
@@ -1674,6 +1673,11 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
@@ -1684,7 +1688,6 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.2.137",
 			Channel:   "nightly",
@@ -1701,6 +1704,11 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
@@ -1711,7 +1719,6 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.3.137",
 			Channel:   "nightly",
@@ -1728,6 +1735,11 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
@@ -1738,7 +1750,6 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.4.137",
 			Channel:   "stable",
@@ -1755,6 +1766,11 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
@@ -1765,7 +1781,6 @@ func TestSearch(t *testing.T) {
 			},
 		},
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
 			Version:   "0.0.5.137",
 			Channel:   "stable",
@@ -1781,6 +1796,11 @@ func TestSearch(t *testing.T) {
 					Platform: "universalPlatform",
 					Arch:     "universalArch",
 					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
 				},
 			},
 			Changelog: []model.Changelog{
@@ -1806,7 +1826,6 @@ func TestSearch(t *testing.T) {
 	}
 
 	for i, expectedApp := range expected {
-		// assert.Equal(t, expectedApp.AppID, actual.Apps[i].AppID)
 		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
 		assert.Equal(t, expectedApp.Version, actual.Apps[i].Version)
 		assert.Equal(t, expectedApp.Channel, actual.Apps[i].Channel)
@@ -1861,6 +1880,9 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 							"pkg": map[string]interface{}{
 								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
 							},
+							"no-extension": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
+							},
 						},
 					},
 				},
@@ -1882,6 +1904,9 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 							},
 							"pkg": map[string]interface{}{
 								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
+							},
+							"no-extension": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137")),
 							},
 						},
 					},
@@ -1949,12 +1974,12 @@ func TestCheckVersion(t *testing.T) {
 				"critical":         true,
 				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
 				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
 			},
 			ExpectedCode: http.StatusOK,
-			// Published:    false,
-			Platform: "universalPlatform",
-			Arch:     "universalArch",
-			TestName: "NightlyUpdateAvailable",
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
 		},
 		{
 			AppName:     "testapp",
@@ -1964,12 +1989,12 @@ func TestCheckVersion(t *testing.T) {
 				"update_available": false,
 				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
 				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
 			},
 			ExpectedCode: http.StatusOK,
-			// Published:    true,
-			Platform: "universalPlatform",
-			Arch:     "universalArch",
-			TestName: "NightlyUpdateAvailable",
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
 		},
 		{
 			AppName:     "testapp",
@@ -1979,10 +2004,9 @@ func TestCheckVersion(t *testing.T) {
 				"error": "requested version 0.0.3.137 is newer than the latest version available",
 			},
 			ExpectedCode: http.StatusInternalServerError,
-			// Published:    false,
-			Platform: "universalPlatform",
-			Arch:     "universalArch",
-			TestName: "NightlyUpdateAvailable",
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
 		},
 		{
 			AppName:     "testapp",
@@ -1992,12 +2016,12 @@ func TestCheckVersion(t *testing.T) {
 				"update_available": false,
 				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg")),
 				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
+				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137")),
 			},
 			ExpectedCode: http.StatusOK,
-			// Published:    true,
-			Platform: "universalPlatform",
-			Arch:     "universalArch",
-			TestName: "StableUpdateAvailable",
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "StableUpdateAvailable",
 		},
 		{
 			AppName:     "testapp",
