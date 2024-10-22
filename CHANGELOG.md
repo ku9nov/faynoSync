@@ -4,6 +4,7 @@
 
 ### Features
 - Added `binary` app support.
+- Allowed `-` in platform name.
 
 ## v1.3.6
 
