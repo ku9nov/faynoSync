@@ -110,7 +110,7 @@ func ValidateParamsLatest(c *gin.Context, database *mongo.Database) (map[string]
 	}
 
 	if !IsValidArchName(ctxQueryMap["arch"].(string)) {
-		return nil, errors.New("invalid platform parameter")
+		return nil, errors.New("invalid arch parameter")
 	}
 
 	errChannels := CheckChannels(ctxQueryMap["channel"].(string), database, c)
@@ -244,14 +244,14 @@ func IsValidVersion(input string) bool {
 }
 
 func IsValidChannelName(input string) bool {
-	// Allow empty input or only letters, numbers, and hyphens, no spaces or other special characters
-	validName := regexp.MustCompile(`^[a-zA-Z0-9-]*$`)
+	// Allow empty input or only letters and numbers, no spaces or special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9]*$`)
 	return validName.MatchString(input)
 }
 
 func IsValidPlatformName(input string) bool {
-	// Allow empty input or only letters and numbers, no spaces or special characters
-	validName := regexp.MustCompile(`^[a-zA-Z0-9]*$`)
+	// Allow empty input or only letters, numbers, and hyphens, no spaces or other special characters
+	validName := regexp.MustCompile(`^[a-zA-Z0-9-]*$`)
 	return validName.MatchString(input)
 }
 
