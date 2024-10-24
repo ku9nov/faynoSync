@@ -6,6 +6,10 @@
 - Added `binary` app support.
 - Allowed `-` in platform name.
 
+### Bug Fixes
+
+- Added validateParams to Update\Create app/channel/platform/arch
+
 ## v1.3.6
 
 ### Important Notes

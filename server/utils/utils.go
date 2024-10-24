@@ -232,6 +232,30 @@ func validateCommonParams(ctxQueryMap map[string]interface{}, database *mongo.Da
 	return ctxQueryMap, nil
 }
 
+func ValidateItemName(itemType, paramValue string) error {
+	switch itemType {
+	case "channel":
+		if !IsValidChannelName(paramValue) {
+			return errors.New("invalid channel name")
+		}
+	case "platform":
+		if !IsValidPlatformName(paramValue) {
+			return errors.New("invalid platform name")
+		}
+	case "arch":
+		if !IsValidArchName(paramValue) {
+			return errors.New("invalid architecture name")
+		}
+	case "app":
+		if !IsValidAppName(paramValue) {
+			return errors.New("invalid app name")
+		}
+	default:
+		return errors.New("invalid item type")
+	}
+	return nil
+}
+
 func IsValidAppName(input string) bool {
 	// Only allow letters and numbers, no special characters
 	validName := regexp.MustCompile(`^[a-zA-Z0-9\- ]+$`)

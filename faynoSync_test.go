@@ -793,7 +793,59 @@ func TestChannelCreateNightly(t *testing.T) {
 	assert.True(t, idExists)
 	assert.NotEmpty(t, idNightlyChannel)
 }
+func TestChannelCreateWithWrongName(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
 
+	// Define the handler for the /channel/create route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/channel/create", func(c *gin.Context) {
+		handler.CreateChannel(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"channel": "nightly *"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/channel/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 400).
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"invalid channel name"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
 func TestSecondaryChannelCreateNightly(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -2337,6 +2389,61 @@ func TestUpdatePlatform(t *testing.T) {
 	assert.True(t, exists)
 	assert.True(t, updated.(bool))
 }
+
+func TestFailedUpdatePlatform(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /UpdatePlatform route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/platform/update", func(c *gin.Context) {
+		handler.UpdatePlatform(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"id": "%s", "platform":"new * Platform"}`, platformId)
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /platform/update endpoint
+	req, err := http.NewRequest("POST", "/platform/update", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 400).
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"invalid platform name"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
+
 func TestListPlatformsWhenExist(t *testing.T) {
 
 	router := gin.Default()
