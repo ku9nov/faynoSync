@@ -661,7 +661,7 @@ func TestUploadDuplicateApp(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	// Check the response body for the desired error message.
-	expectedErrorMessage := `{"error":"app with this name, version, and extension already exists"}`
+	expectedErrorMessage := `{"error":"app with this name, version, platform, architecture and extension already exists"}`
 	assert.Equal(t, expectedErrorMessage, w.Body.String())
 }
 
