@@ -50,6 +50,20 @@ func NewAppRepository(config *connstring.ConnString, client *mongo.Client) AppRe
 	return &appRepository{config: config, client: client}
 }
 
+type Artifact struct {
+	Link    string
+	Package string
+}
+type Changelog struct {
+	Changes string
+}
+type CheckResult struct {
+	Found     bool
+	Critical  bool
+	Artifacts []Artifact
+	Changelog []Changelog
+}
+
 func (c *appRepository) getBasePipeline() mongo.Pipeline {
 	return mongo.Pipeline{
 		bson.D{{Key: "$lookup", Value: bson.M{
@@ -129,18 +143,4 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 		}}},
 		bson.D{{Key: "$limit", Value: 100}},
 	}
-}
-
-type Artifact struct {
-	Link    string
-	Package string
-}
-type Changelog struct {
-	Changes string
-}
-type CheckResult struct {
-	Found     bool
-	Critical  bool
-	Artifacts []Artifact
-	Changelog []Changelog
 }
