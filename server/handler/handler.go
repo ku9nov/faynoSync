@@ -26,6 +26,7 @@ type AppHandler interface {
 	UpdateSpecificApp(*gin.Context)
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
+	FetchLatestVersionOfApp(*gin.Context)
 	Login(*gin.Context)
 	CreateChannel(*gin.Context)
 	ListChannels(*gin.Context)
@@ -63,6 +64,11 @@ func (ch *appHandler) HealthCheck(c *gin.Context) {
 func (ch *appHandler) FindLatestVersion(c *gin.Context) {
 	// Call the FindLatestVersion function from the info package
 	info.FindLatestVersion(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
+}
+
+func (ch *appHandler) FetchLatestVersionOfApp(c *gin.Context) {
+	// Call the FetchLatestVersionOfApp function from the info package
+	info.FetchLatestVersionOfApp(c, ch.repository, ch.redisClient, ch.performanceMode)
 }
 
 func (ch *appHandler) GetAppByName(c *gin.Context) {

@@ -1,15 +1,37 @@
 # Changelog
 
+## v1.3.7
+
+### Features
+- Added `binary` app support.
+- Allowed `-` in platform name.
+
+### Bug Fixes
+
+- Added validateParams to Update\Create app/channel/platform/arch
+
 ## v1.3.6
 
 ### Important Notes
 
 - **Important**: Fix "Authorization bypass in github.com/dgrijalva/jwt-go"
+- **Important**: Now we can upload applications with the same extension, but this is only possible if the architectures are different.
+
+### Bug Fixes
+
+Fix: allow spaces in app name validation
 
 ### Features
 - Added `browser extension` support.
 - Implemented Performance Mode to optimize the `checkVersion` API request by caching responses in Redis.
+- Added `link` encoding.
+- Added `build number` to version. (0.0.1 => 0.0.1.137)
+- Added new info API route which return links to latest build.
 
+### Maintenance
+
+- Multiple API routes were renamed.
+- Added `semver` versions support.
 
 ## v1.3.5
 

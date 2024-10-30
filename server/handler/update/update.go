@@ -47,7 +47,10 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": paramName + " is required"})
 		return
 	}
-
+	if err := utils.ValidateItemName(itemType, paramValue); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	var result interface{}
 	var err error
 	objectID, err := primitive.ObjectIDFromHex(id)

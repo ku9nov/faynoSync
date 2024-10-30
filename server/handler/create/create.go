@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	db "faynoSync/mongod"
+	"faynoSync/server/utils"
 	"net/http"
 	"time"
 
@@ -35,7 +36,10 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": paramName + " is required"})
 		return
 	}
-
+	if err := utils.ValidateItemName(itemType, paramValue); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	var result interface{}
 	var err error
 

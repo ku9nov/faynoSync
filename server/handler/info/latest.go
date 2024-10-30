@@ -75,8 +75,13 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			logrus.Infoln(checkResult)
 			response := gin.H{"update_available": false}
 			for _, artifact := range checkResult.Artifacts {
-				if artifact.Package != "" && artifact.Link != "" {
-					key := "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+				var key string
+				if artifact.Package == "" {
+					key = "update_url"
+				} else if artifact.Package != "" && artifact.Link != "" {
+					key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+				}
+				if artifact.Link != "" {
 					response[key] = artifact.Link
 				}
 			}
@@ -93,8 +98,13 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 
 	// Add update URLs to the response
 	for _, artifact := range checkResult.Artifacts {
-		if artifact.Package != "" && artifact.Link != "" {
-			key := "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+		var key string
+		if artifact.Package == "" {
+			key = "update_url"
+		} else if artifact.Package != "" && artifact.Link != "" {
+			key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+		}
+		if artifact.Link != "" {
 			response[key] = artifact.Link
 		}
 	}
@@ -116,4 +126,111 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		cacheResponse(ctx, rdb, cacheKey, response)
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *redis.Client, performanceMode bool) {
+	params := map[string]interface{}{
+		"app_name": c.Query("app_name"),
+		"channel":  c.Query("channel"),
+		"platform": c.Query("platform"),
+		"arch":     c.Query("arch"),
+		"package":  c.Query("package"),
+	}
+	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer ctxErr()
+
+	cacheKey := CreateCacheKey(params)
+	logrus.Debugf("Generated cache key: %s", cacheKey)
+
+	if performanceMode && rdb != nil {
+		cachedResponse, err := rdb.Get(ctx, cacheKey).Result()
+		if err == nil {
+			var cachedData map[string]interface{}
+			if json.Unmarshal([]byte(cachedResponse), &cachedData) == nil {
+				logrus.Debugln("Returning cached data: ", cachedData)
+				c.JSON(http.StatusOK, cachedData)
+				return
+			}
+		}
+	}
+
+	checkResult, err := repository.FetchLatestVersionOfApp(params["app_name"].(string), params["channel"].(string), ctx)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	jsonData, err := json.MarshalIndent(checkResult, "", "  ")
+	if err != nil {
+		logrus.Errorf("Error marshaling checkResult: %v", err)
+	} else {
+		logrus.Debugf("Fetched latest version response: %s", string(jsonData))
+	}
+
+	downloadUrls := make(map[string]map[string]map[string]map[string]map[string]string)
+
+	if len(checkResult) > 0 {
+		latestApp := checkResult[0]
+		for _, artifact := range latestApp.Artifacts {
+
+			if params["channel"] != "" && params["channel"] != latestApp.Channel {
+				continue
+			}
+			if params["platform"] != "" && params["platform"] != artifact.Platform {
+				continue
+			}
+			if params["arch"] != "" && params["arch"] != artifact.Arch {
+				continue
+			}
+
+			packageType := strings.TrimPrefix(artifact.Package, ".")
+			if packageType == "" {
+				packageType = "no-extension"
+			}
+
+			if params["package"] != "" && params["package"] != packageType {
+				continue
+			}
+
+			if _, exists := downloadUrls[latestApp.Channel]; !exists {
+				downloadUrls[latestApp.Channel] = make(map[string]map[string]map[string]map[string]string)
+			}
+
+			if _, exists := downloadUrls[latestApp.Channel][artifact.Platform]; !exists {
+				downloadUrls[latestApp.Channel][artifact.Platform] = make(map[string]map[string]map[string]string)
+			}
+
+			if _, exists := downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch]; !exists {
+				downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch] = make(map[string]map[string]string)
+			}
+
+			downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch][packageType] = map[string]string{
+				"url": artifact.Link,
+			}
+		}
+	}
+
+	if len(downloadUrls) == 0 {
+		logrus.Warnf("No results found for parameters: %v", params)
+		c.JSON(http.StatusNotFound, gin.H{"error": "No matching data found for the provided parameters"})
+		return
+	}
+
+	urlCount, singleUrl := utils.CountUrls(downloadUrls)
+
+	if urlCount == 1 {
+		logrus.Debugf("Redirecting to the single download URL: %v", singleUrl)
+		c.Redirect(http.StatusFound, singleUrl)
+		return
+	}
+
+	logrus.Debugf("Generated download URLs: %v", downloadUrls)
+
+	c.JSON(http.StatusOK, downloadUrls)
+
+	if performanceMode && rdb != nil {
+		jsonResponse, _ := json.Marshal(downloadUrls)
+		rdb.Set(ctx, cacheKey, jsonResponse, 0)
+	}
 }

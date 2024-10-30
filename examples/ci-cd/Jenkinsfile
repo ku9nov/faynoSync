@@ -1,0 +1,80 @@
+import groovy.json.JsonSlurper
+pipeline {
+  agent any
+  options {
+    disableConcurrentBuilds() 
+  }
+  stages {
+    stage('Update Version') {
+        steps {
+            script {
+                def currentVersion = sh(script: '''
+                    PACKAGE_VERSION=$(cat package.json | grep version | head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g')
+                    echo $PACKAGE_VERSION
+                ''', returnStdout: true).trim()
+
+                echo "Current version: ${currentVersion}"
+
+                def versionParts = currentVersion.split("\\.")
+                def newVersionWithBuild = "${versionParts[0]}.${versionParts[1]}.${versionParts[2]}.${env.BUILD_NUMBER}"
+
+                env.newVersion = newVersionWithBuild
+
+                sh """
+                    sed -i 's/"version": "[^"]*"/"version": "${env.newVersion}"/' package.json
+                """
+
+                echo "Updated version in package.json: ${env.newVersion}"
+            }
+        }
+    }
+
+    stage('Request Token') {
+      steps {
+        script {
+            def response = sh(script: '''
+                curl -X POST -H "Content-Type: application/json" \
+                -d '{"username": "admin", "password": "password"}' \
+                https://faynosync.example.com/login
+            ''', returnStdout: true).trim()
+
+            def jsonSlurper = new JsonSlurper()
+            def jsonResponse = jsonSlurper.parseText(response)
+            env.AUTH_TOKEN = jsonResponse.token
+
+            echo "Token: ${env.AUTH_TOKEN}"
+        }
+      }
+    }
+    stage('Deploy') {
+      when {
+        expression { return env.Deploy == 'true' }
+      }
+      steps {
+        script {
+          echo "Authorization: Bearer ${env.AUTH_TOKEN}"
+          def gitBranch = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+          def gitCommitMessage = sh(script: 'git log -1 --pretty=%s', returnStdout: true).trim()
+          echo "Preparing to upload the file..."
+          def uploadCommand = """
+            curl --location 'https://faynosync.example.com/upload' \
+            --header 'Authorization: Bearer ${AUTH_TOKEN}' \
+            --form 'file=@"./app.deb"' \
+            --form 'data={"app_name":"example","version":"${env.newVersion}","channel":"","publish":true,"critical":false,"platform":"","arch":"","changelog":"Branch: ${gitBranch}, Commit: ${gitCommitMessage}"}'
+          """
+
+          echo "Executing upload command: ${uploadCommand}"
+
+          def response = sh(script: uploadCommand, returnStdout: true).trim()
+          echo "Response: ${response}"
+
+          if (!response.contains('uploadResult.Uploaded')) {
+            unstable("Upload failed: 'uploadResult.Uploaded' is missing in the response.")
+          } else {
+            echo "Upload successful. Response contains 'uploadResult.Uploaded'."
+          }
+        }
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -301,12 +302,12 @@ func TestListApps(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listApps", func(c *gin.Context) {
+	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listApps", nil)
+	req, err := http.NewRequest("GET", "/app/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +330,7 @@ func TestListAppsWithInvalidToken(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listApps", func(c *gin.Context) {
+	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
 
@@ -373,7 +374,7 @@ func TestListAppsWithInvalidToken(t *testing.T) {
 
 			logrus.Infof("Testing with token: %s", modifiedToken)
 
-			req, err := http.NewRequest("GET", "/listApps", nil)
+			req, err := http.NewRequest("GET", "/app/list", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -402,9 +403,9 @@ func TestAppCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createApp", func(c *gin.Context) {
+	router.POST("/app/create", func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
 
@@ -429,8 +430,8 @@ func TestAppCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createApp", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/app/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,9 +469,9 @@ func TestSecondaryAppCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createApp", func(c *gin.Context) {
+	router.POST("/app/create", func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
 
@@ -495,8 +496,8 @@ func TestSecondaryAppCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createApp", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/app/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +554,7 @@ func TestUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app_name": "testapp", "version": "0.0.1"}`
+	payload := `{"app_name": "testapp", "version": "0.0.1.137"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -631,7 +632,7 @@ func TestUploadDuplicateApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app_name": "testapp", "version": "0.0.1"}`
+	payload := `{"app_name": "testapp", "version": "0.0.1.137"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -661,7 +662,7 @@ func TestUploadDuplicateApp(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	// Check the response body for the desired error message.
-	expectedErrorMessage := `{"error":"app with this name, version, and extension already exists"}`
+	expectedErrorMessage := `{"error":"app with this name, version, platform, architecture and extension already exists"}`
 	assert.Equal(t, expectedErrorMessage, w.Body.String())
 }
 
@@ -703,12 +704,12 @@ func TestListChannels(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listChannels", func(c *gin.Context) {
+	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listChannels", nil)
+	req, err := http.NewRequest("GET", "/channel/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,9 +735,9 @@ func TestChannelCreateNightly(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createChannel", func(c *gin.Context) {
+	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
 
@@ -761,8 +762,8 @@ func TestChannelCreateNightly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createChannel", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/channel/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,16 +794,68 @@ func TestChannelCreateNightly(t *testing.T) {
 	assert.True(t, idExists)
 	assert.NotEmpty(t, idNightlyChannel)
 }
+func TestChannelCreateWithWrongName(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
 
+	// Define the handler for the /channel/create route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/channel/create", func(c *gin.Context) {
+		handler.CreateChannel(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"channel": "nightly *"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/channel/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 400).
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"invalid channel name"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
 func TestSecondaryChannelCreateNightly(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createChannel", func(c *gin.Context) {
+	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
 
@@ -827,8 +880,8 @@ func TestSecondaryChannelCreateNightly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createChannel", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/channel/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,9 +907,9 @@ func TestChannelCreateStable(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /createChannel route
+	// Define the handler for the /channel/create route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createChannel", func(c *gin.Context) {
+	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
 
@@ -881,8 +934,8 @@ func TestChannelCreateStable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createChannel", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/channel/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -949,7 +1002,7 @@ func TestUploadAppWithoutChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app_name": "testapp", "version": "0.0.1"}`
+	payload := `{"app_name": "testapp", "version": "0.0.1.137"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -991,12 +1044,12 @@ func TestListPlatforms(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listPlatforms", func(c *gin.Context) {
+	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listPlatforms", nil)
+	req, err := http.NewRequest("GET", "/platform/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1022,7 +1075,7 @@ func TestPlatformCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createPlatform", func(c *gin.Context) {
+	router.POST("/platform/create", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
 
@@ -1047,8 +1100,8 @@ func TestPlatformCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createPlatform", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1084,7 +1137,7 @@ func TestSecondaryPlatformCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createPlatform", func(c *gin.Context) {
+	router.POST("/platform/create", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
 
@@ -1109,8 +1162,8 @@ func TestSecondaryPlatformCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createPlatform", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1164,7 +1217,7 @@ func TestUploadAppWithoutPlatform(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app_name": "testapp", "version": "0.0.1", "channel": "nightly"}`
+	payload := `{"app_name": "testapp", "version": "0.0.1.137", "channel": "nightly"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -1206,12 +1259,12 @@ func TestListArchs(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listArchs", func(c *gin.Context) {
+	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listArchs", nil)
+	req, err := http.NewRequest("GET", "/arch/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1237,7 +1290,7 @@ func TestArchCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createArch", func(c *gin.Context) {
+	router.POST("/arch/create", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
 
@@ -1262,8 +1315,8 @@ func TestArchCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createArch", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/arch/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1300,7 +1353,7 @@ func TestSecondaryArchCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/createArch", func(c *gin.Context) {
+	router.POST("/arch/create", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
 
@@ -1325,8 +1378,8 @@ func TestSecondaryArchCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /createChannel endpoint
-	req, err := http.NewRequest("POST", "/createArch", body)
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/arch/create", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1380,7 +1433,7 @@ func TestUploadAppWithoutArch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app_name": "testapp", "version": "0.0.1", "channel": "nightly", "platform": "universalPlatform"}`
+	payload := `{"app_name": "testapp", "version": "0.0.1.137", "channel": "nightly", "platform": "universalPlatform"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -1428,7 +1481,7 @@ func TestMultipleUpload(t *testing.T) {
 	})
 
 	// Create a file to upload (you can replace this with a test file path).
-	filePaths := []string{"testapp.dmg", "testapp.pkg"}
+	filePaths := []string{"testapp.dmg", "testapp.pkg", "LICENSE"}
 	for _, filePath := range filePaths {
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -1444,11 +1497,11 @@ func TestMultipleUpload(t *testing.T) {
 			Platform    string
 			Arch        string
 		}{
-			{"0.0.1", "nightly", true, false, "universalPlatform", "universalArch"},
-			{"0.0.2", "nightly", true, false, "universalPlatform", "universalArch"},
-			{"0.0.3", "nightly", false, false, "universalPlatform", "universalArch"},
-			{"0.0.4", "stable", true, true, "universalPlatform", "universalArch"},
-			{"0.0.5", "stable", false, false, "universalPlatform", "universalArch"},
+			{"0.0.1.137", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"0.0.2.137", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"0.0.3.137", "nightly", false, false, "universalPlatform", "universalArch"},
+			{"0.0.4.137", "stable", true, true, "universalPlatform", "universalArch"},
+			{"0.0.5.137", "stable", false, false, "universalPlatform", "universalArch"},
 		}
 
 		// Iterate through the combinations and upload the file for each combination.
@@ -1555,7 +1608,7 @@ func TestUpdateSpecificApp(t *testing.T) {
 			Arch        string
 			Changelog   string
 		}{
-			{uploadedAppIDs[1], "0.0.2", "nightly", true, true, "universalPlatform", "universalArch", "### Changelog"},
+			{uploadedAppIDs[1], "0.0.2.137", "nightly", true, true, "universalPlatform", "universalArch", "### Changelog"},
 		}
 
 		// Iterate through the combinations and upload the file for each combination.
@@ -1657,9 +1710,8 @@ func TestSearch(t *testing.T) {
 
 	expected := []AppInfo{
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
-			Version:   "0.0.1",
+			Version:   "0.0.1.137",
 			Channel:   "nightly",
 			Published: true,
 			Critical:  false,
@@ -1674,19 +1726,23 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
-					Version: "0.0.1",
+					Version: "0.0.1.137",
 					Changes: "",
 					Date:    time.Now().Format("2006-01-02"),
 				},
 			},
 		},
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
-			Version:   "0.0.2",
+			Version:   "0.0.2.137",
 			Channel:   "nightly",
 			Published: true,
 			Critical:  true,
@@ -1701,19 +1757,23 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
-					Version: "0.0.2",
+					Version: "0.0.2.137",
 					Changes: "### Changelog",
 					Date:    time.Now().Format("2006-01-02"),
 				},
 			},
 		},
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
-			Version:   "0.0.3",
+			Version:   "0.0.3.137",
 			Channel:   "nightly",
 			Published: false,
 			Critical:  false,
@@ -1728,19 +1788,23 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
-					Version: "0.0.3",
+					Version: "0.0.3.137",
 					Changes: "",
 					Date:    time.Now().Format("2006-01-02"),
 				},
 			},
 		},
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
-			Version:   "0.0.4",
+			Version:   "0.0.4.137",
 			Channel:   "stable",
 			Published: true,
 			Critical:  true,
@@ -1755,19 +1819,23 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
-					Version: "0.0.4",
+					Version: "0.0.4.137",
 					Changes: "",
 					Date:    time.Now().Format("2006-01-02"),
 				},
 			},
 		},
 		{
-			// AppID:     idTestappApp,
 			AppName:   "testapp",
-			Version:   "0.0.5",
+			Version:   "0.0.5.137",
 			Channel:   "stable",
 			Published: false,
 			Critical:  false,
@@ -1782,10 +1850,15 @@ func TestSearch(t *testing.T) {
 					Arch:     "universalArch",
 					Package:  ".pkg",
 				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
 			},
 			Changelog: []model.Changelog{
 				{
-					Version: "0.0.5",
+					Version: "0.0.5.137",
 					Changes: "",
 					Date:    time.Now().Format("2006-01-02"),
 				},
@@ -1806,7 +1879,6 @@ func TestSearch(t *testing.T) {
 	}
 
 	for i, expectedApp := range expected {
-		// assert.Equal(t, expectedApp.AppID, actual.Apps[i].AppID)
 		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
 		assert.Equal(t, expectedApp.Version, actual.Apps[i].Version)
 		assert.Equal(t, expectedApp.Channel, actual.Apps[i].Channel)
@@ -1832,7 +1904,101 @@ func TestSearch(t *testing.T) {
 	}
 
 }
+func TestFetchkLatestVersionOfApp(t *testing.T) {
+	router := gin.Default()
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/apps/latest", func(c *gin.Context) {
+		handler.FetchLatestVersionOfApp(c)
+	})
+	// Define test scenarios.
+	testScenarios := []struct {
+		AppName      string
+		ChannelName  string
+		ExpectedJSON map[string]interface{}
+		ExpectedCode int
+		Platform     string
+		Arch         string
+		TestName     string
+	}{
+		{
+			AppName:     "testapp",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"nightly": map[string]interface{}{
+					"universalPlatform": map[string]interface{}{
+						"universalArch": map[string]interface{}{
+							"dmg": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
+							},
+							"pkg": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+							},
+							"no-extension": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
+							},
+						},
+					},
+				},
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
+		},
+		{
+			AppName:     "testapp",
+			ChannelName: "stable",
+			ExpectedJSON: map[string]interface{}{
+				"stable": map[string]interface{}{
+					"universalPlatform": map[string]interface{}{
+						"universalArch": map[string]interface{}{
+							"dmg": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg")),
+							},
+							"pkg": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
+							},
+							"no-extension": map[string]interface{}{
+								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137")),
+							},
+						},
+					},
+				},
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "StableUpdateAvailable",
+		},
+	}
 
+	for _, scenario := range testScenarios {
+		t.Run(scenario.TestName, func(t *testing.T) {
+			w := httptest.NewRecorder()
+
+			// Create a GET request for checking the version.
+			req, err := http.NewRequest("GET", fmt.Sprintf("/apps/latest?app_name=%s&channel=%s&platform=%s&arch=%s", scenario.AppName, scenario.ChannelName, scenario.Platform, scenario.Arch), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+
+			// Check the response status code.
+			assert.Equal(t, scenario.ExpectedCode, w.Code)
+
+			var actual map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &actual)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Compare the response with the expected values.
+			assert.Equal(t, scenario.ExpectedJSON, actual)
+		})
+	}
+}
 func TestCheckVersion(t *testing.T) {
 	router := gin.Default()
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
@@ -1853,70 +2019,69 @@ func TestCheckVersion(t *testing.T) {
 	}{
 		{
 			AppName:     "testapp",
-			Version:     "0.0.1",
+			Version:     "0.0.1.137",
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
 				"changelog":        "### Changelog\n",
 				"update_available": true,
 				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg", s3Endpoint),
-				"update_url_pkg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg", s3Endpoint),
+				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
+				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
 			},
 			ExpectedCode: http.StatusOK,
-			// Published:    false,
-			Platform: "universalPlatform",
-			Arch:     "universalArch",
-			TestName: "NightlyUpdateAvailable",
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
 		},
 		{
 			AppName:     "testapp",
-			Version:     "0.0.2",
+			Version:     "0.0.2.137",
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.dmg", s3Endpoint),
-				"update_url_pkg":   fmt.Sprintf("%s/testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.pkg", s3Endpoint),
+				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
+				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
 			},
 			ExpectedCode: http.StatusOK,
-			// Published:    true,
-			Platform: "universalPlatform",
-			Arch:     "universalArch",
-			TestName: "NightlyUpdateAvailable",
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
 		},
 		{
 			AppName:     "testapp",
-			Version:     "0.0.3",
+			Version:     "0.0.3.137",
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
-				"error": "requested version 0.0.3 is newer than the latest version available",
+				"error": "requested version 0.0.3.137 is newer than the latest version available",
 			},
 			ExpectedCode: http.StatusInternalServerError,
-			// Published:    false,
-			Platform: "universalPlatform",
-			Arch:     "universalArch",
-			TestName: "NightlyUpdateAvailable",
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
 		},
 		{
 			AppName:     "testapp",
-			Version:     "0.0.4",
+			Version:     "0.0.4.137",
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("%s/testapp/stable/universalPlatform/universalArch/testapp-0.0.4.dmg", s3Endpoint),
-				"update_url_pkg":   fmt.Sprintf("%s/testapp/stable/universalPlatform/universalArch/testapp-0.0.4.pkg", s3Endpoint),
+				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg")),
+				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
+				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137")),
 			},
 			ExpectedCode: http.StatusOK,
-			// Published:    true,
-			Platform: "universalPlatform",
-			Arch:     "universalArch",
-			TestName: "StableUpdateAvailable",
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "StableUpdateAvailable",
 		},
 		{
 			AppName:     "testapp",
-			Version:     "0.0.5",
+			Version:     "0.0.5.137",
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
-				"error": "requested version 0.0.5 is newer than the latest version available",
+				"error": "requested version 0.0.5.137 is newer than the latest version available",
 			},
 			ExpectedCode: http.StatusInternalServerError,
 			// Published:    false,
@@ -1992,9 +2157,9 @@ func TestUpdateChannel(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /updateChannel route
+	// Define the handler for the /channel/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/updateChannel", func(c *gin.Context) {
+	router.POST("/channel/update", func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
 
@@ -2019,8 +2184,8 @@ func TestUpdateChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /updateChannel endpoint
-	req, err := http.NewRequest("POST", "/updateChannel", body)
+	// Create a POST request to the /channel/update endpoint
+	req, err := http.NewRequest("POST", "/channel/update", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2057,12 +2222,12 @@ func TestListChannelsWhenExist(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listChannels", func(c *gin.Context) {
+	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listChannels", nil)
+	req, err := http.NewRequest("GET", "/channel/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2111,12 +2276,12 @@ func TestDeleteNightlyChannel(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deleteChannel", func(c *gin.Context) {
+	router.DELETE("/channel/delete", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteChannel?id="+idNightlyChannel, nil)
+	req, err := http.NewRequest("DELETE", "/channel/delete?id="+idNightlyChannel, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2141,12 +2306,12 @@ func TestDeleteStableChannel(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deleteChannel", func(c *gin.Context) {
+	router.DELETE("/channel/delete", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteChannel?id="+idStableChannel, nil)
+	req, err := http.NewRequest("DELETE", "/channel/delete?id="+idStableChannel, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2170,7 +2335,7 @@ func TestUpdatePlatform(t *testing.T) {
 
 	// Define the handler for the /UpdatePlatform route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/updatePlatform", func(c *gin.Context) {
+	router.POST("/platform/update", func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
 
@@ -2195,8 +2360,8 @@ func TestUpdatePlatform(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /updatePlatform endpoint
-	req, err := http.NewRequest("POST", "/updatePlatform", body)
+	// Create a POST request to the /platform/update endpoint
+	req, err := http.NewRequest("POST", "/platform/update", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2225,6 +2390,61 @@ func TestUpdatePlatform(t *testing.T) {
 	assert.True(t, exists)
 	assert.True(t, updated.(bool))
 }
+
+func TestFailedUpdatePlatform(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /UpdatePlatform route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/platform/update", func(c *gin.Context) {
+		handler.UpdatePlatform(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"id": "%s", "platform":"new * Platform"}`, platformId)
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /platform/update endpoint
+	req, err := http.NewRequest("POST", "/platform/update", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 400).
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Check the response body for the desired error message.
+	expectedErrorMessage := `{"error":"invalid platform name"}`
+	assert.Equal(t, expectedErrorMessage, w.Body.String())
+}
+
 func TestListPlatformsWhenExist(t *testing.T) {
 
 	router := gin.Default()
@@ -2233,12 +2453,12 @@ func TestListPlatformsWhenExist(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listPlatforms", func(c *gin.Context) {
+	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listPlatforms", nil)
+	req, err := http.NewRequest("GET", "/platform/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2284,12 +2504,12 @@ func TestDeletePlatform(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deletePlatform", func(c *gin.Context) {
+	router.DELETE("/platform/delete", func(c *gin.Context) {
 		handler.DeletePlatform(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deletePlatform?id="+platformId, nil)
+	req, err := http.NewRequest("DELETE", "/platform/delete?id="+platformId, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2311,9 +2531,9 @@ func TestUpdateArch(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /updateArch route
+	// Define the handler for the /arch/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/updateArch", func(c *gin.Context) {
+	router.POST("/arch/update", func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
 
@@ -2338,8 +2558,8 @@ func TestUpdateArch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /updateArch endpoint
-	req, err := http.NewRequest("POST", "/updateArch", body)
+	// Create a POST request to the /arch/update endpoint
+	req, err := http.NewRequest("POST", "/arch/update", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2376,12 +2596,12 @@ func TestListArchsWhenExist(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listArchs", func(c *gin.Context) {
+	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listArchs", nil)
+	req, err := http.NewRequest("GET", "/arch/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2427,12 +2647,12 @@ func TestDeleteArch(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deleteArch", func(c *gin.Context) {
+	router.DELETE("/arch/delete", func(c *gin.Context) {
 		handler.DeleteArch(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteArch?id="+archId, nil)
+	req, err := http.NewRequest("DELETE", "/arch/delete?id="+archId, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2454,9 +2674,9 @@ func TestUpdateApp(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /updateApp route
+	// Define the handler for the /app/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.POST("/updateApp", func(c *gin.Context) {
+	router.POST("/app/update", func(c *gin.Context) {
 		handler.UpdateApp(c)
 	})
 
@@ -2481,8 +2701,8 @@ func TestUpdateApp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a POST request to the /updateApp endpoint
-	req, err := http.NewRequest("POST", "/updateApp", body)
+	// Create a POST request to the /app/update endpoint
+	req, err := http.NewRequest("POST", "/app/update", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2519,12 +2739,12 @@ func TestListAppsWhenExist(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/listApps", func(c *gin.Context) {
+	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("GET", "/listApps", nil)
+	req, err := http.NewRequest("GET", "/app/list", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2570,12 +2790,12 @@ func TestDeleteAppMeta(t *testing.T) {
 
 	// Define the route for the upload endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.DELETE("/deleteApp", func(c *gin.Context) {
+	router.DELETE("/app/delete", func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})
 
 	// Create a POST request for the upload endpoint.
-	req, err := http.NewRequest("DELETE", "/deleteApp?id="+idTestappApp, nil)
+	req, err := http.NewRequest("DELETE", "/app/delete?id="+idTestappApp, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

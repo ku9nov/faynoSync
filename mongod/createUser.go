@@ -23,7 +23,6 @@ func CreateUser(client *mongo.Client, dbName *mongo.Database, credentials *model
 		{Key: "password", Value: string(hashedPassword)},
 		{Key: "updated_at", Value: time.Now()},
 	}
-	// user := bson.D{Key: "username", Value: credentials.Username, Key: "password", Value: string(hashedPassword), Key: "updated_at", Value: time.Now()}
 
 	_, err = collection.InsertOne(context.Background(), filter)
 	if err != nil {

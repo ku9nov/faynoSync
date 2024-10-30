@@ -113,8 +113,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 
 		for _, artifact := range appData.Artifacts {
-			if artifact.Package == extension {
-				msg := "app with this name, version, and extension already exists"
+			if artifact.Package == extension && artifact.Arch == archMeta.ID && artifact.Platform == platformMeta.ID {
+				msg := "app with this name, version, platform, architecture and extension already exists"
 				return msg, errors.New(msg)
 			}
 		}
