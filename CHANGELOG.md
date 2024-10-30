@@ -5,6 +5,7 @@
 ### Features
 - Added `binary` app support.
 - Allowed `-` in platform name.
+- Added `Slack` notifications.
 
 ### Bug Fixes
 

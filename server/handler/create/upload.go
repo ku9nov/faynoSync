@@ -105,7 +105,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	}
 
 	if appData, ok := results[0].(model.SpecificApp); ok {
-		c.JSON(http.StatusOK, gin.H{"uploadResult": appData.ID.Hex()})
+		c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": appData.ID.Hex()})
 		artifacts := utils.ExtractArtifactLinks(results)
 		changelog := utils.ExtractChangelog(results)
 
