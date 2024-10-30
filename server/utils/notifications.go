@@ -9,19 +9,20 @@ import (
 	"github.com/spf13/viper"
 )
 
-func SendSlackNotification(appName, channel, version, platform, arch string, artifacts []string, changelog []string, extensions []string, env *viper.Viper) {
+func SendSlackNotification(appName, channel, version string, platforms, arches, artifacts, changelog, extensions []string, env *viper.Viper, publish, critical bool) {
 	token := env.GetString("SLACK_BOT_TOKEN")
 	channelID := env.GetString("SLACK_CHANNEL")
 	api := slack.New(token)
 
-	logrus.Debug("Preparing Slack message with the following details:")
-	logrus.Debugf("App Name: %s", appName)
-	logrus.Debugf("Channel: %s", channel)
-	logrus.Debugf("Version: %s", version)
-	logrus.Debugf("Platform: %s", platform)
-	logrus.Debugf("Arch: %s", arch)
-	logrus.Debugf("Number of Artifacts: %d", len(artifacts))
-	logrus.Debugf("Changelog Entries: %d", len(changelog))
+	logrus.WithFields(logrus.Fields{
+		"App Name":            appName,
+		"Channel":             channel,
+		"Version":             version,
+		"Platforms":           platforms,
+		"Archs":               arches,
+		"Number of Artifacts": len(artifacts),
+		"Changelog Entries":   len(changelog),
+	}).Debug("Preparing Slack message with the following details")
 
 	// Create blocks for Slack message
 	blocks := []slack.Block{
@@ -34,12 +35,13 @@ func SendSlackNotification(appName, channel, version, platform, arch string, art
 			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":package: *App name:*\n%s", appName), false, false),
 			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":bubbles: *Channel name:*\n%s", channel), false, false),
 			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":vs: *Version:*\n%s", version), false, false),
-			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":gear: *Platform:*\n%s", platform), false, false),
+			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":loudspeaker: *Published:*\n%t", publish), false, false),
+			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":warning: *Critical:*\n%t", critical), false, false),
 		}, nil),
 		slack.NewDividerBlock(),
 		slack.NewHeaderBlock(&slack.TextBlockObject{
 			Type:  slack.PlainTextType,
-			Text:  fmt.Sprintf(":link: Artifacts for `%s` architecture:", arch),
+			Text:  ":link: Artifacts:",
 			Emoji: true,
 		}),
 	}
@@ -59,8 +61,13 @@ func SendSlackNotification(appName, channel, version, platform, arch string, art
 		} else {
 			extension = "no-ext"
 		}
+		platform := platforms[i]
+		arch := arches[i]
+		downloadText := fmt.Sprintf("*Download for %s (architecture: %s):*",
+			platform, arch)
+
 		blocks = append(blocks, slack.NewSectionBlock(
-			slack.NewTextBlockObject("mrkdwn", "*Download:*", false, false),
+			slack.NewTextBlockObject("mrkdwn", downloadText, false, false),
 			nil,
 			slack.NewAccessory(slack.NewButtonBlockElement(
 				"button-action",

@@ -246,6 +246,28 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 	return c.processApps(cur, ctx)
 }
 
+func (c *appRepository) FetchAppByID(appID primitive.ObjectID, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+	collection := c.client.Database(c.config.Database).Collection("apps")
+
+	matchFilter := bson.M{"_id": appID}
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: matchFilter}},
+	}
+	basePipeline := c.getBasePipeline()
+	pipeline = append(pipeline, basePipeline...)
+
+	logrus.Debug("MongoDB Pipeline for FetchAppByID: ", pipeline)
+
+	cur, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	return c.processApps(cur, ctx)
+}
+
 func (c *appRepository) getMeta(ctx context.Context, metaCollection *mongo.Collection, key, value string, result interface{}) error {
 	filter := bson.D{{Key: key, Value: value}}
 	err := metaCollection.FindOne(ctx, filter).Decode(result)

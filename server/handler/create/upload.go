@@ -7,6 +7,7 @@ import (
 	"faynoSync/server/utils"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -45,7 +46,7 @@ func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *re
 }
 
 func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
-	// Debug received reauest (make sense for using only on localhost)
+	// Debug received request (make sense for using only on localhost)
 	// utils.DumpRequest(c)
 
 	ctxQueryMap, err := utils.ValidateParams(c, db)
@@ -112,21 +113,35 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 
 		go func() {
 			if viper.GetBool("SLACK_ENABLE") {
-				appName, _ := ctxQueryMap["app_name"].(string)
-				channel, _ := ctxQueryMap["channel"].(string)
-				version, _ := ctxQueryMap["version"].(string)
-				platform, _ := ctxQueryMap["platform"].(string)
-				arch, _ := ctxQueryMap["arch"].(string)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				humanReadableData, err := repository.FetchAppByID(appData.ID, ctx)
+				if err != nil || len(humanReadableData) == 0 {
+					logrus.Error("Error fetching human-readable data for Slack notification: ", err)
+					return
+				}
+
+				slackData := humanReadableData[0]
+
+				var platforms, arches, pkgs []string
+				for _, artifact := range slackData.Artifacts {
+					platforms = append(platforms, artifact.Platform)
+					arches = append(arches, artifact.Arch)
+					pkgs = append(pkgs, artifact.Package)
+				}
 				utils.SendSlackNotification(
-					appName,
-					channel,
-					version,
-					platform,
-					arch,
+					slackData.AppName,
+					slackData.Channel,
+					slackData.Version,
+					platforms,
+					arches,
 					artifacts,
 					changelog,
-					extensions,
+					pkgs,
 					viper.GetViper(),
+					slackData.Published,
+					slackData.Critical,
 				)
 			}
 		}()
