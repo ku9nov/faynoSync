@@ -45,7 +45,8 @@ func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *re
 }
 
 func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
-	utils.DumpRequest(c)
+	// Debug received reauest (make sense for using only on localhost)
+	// utils.DumpRequest(c)
 
 	ctxQueryMap, err := utils.ValidateParams(c, db)
 	if err != nil {

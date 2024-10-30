@@ -100,7 +100,6 @@ func setup() {
 		redisClient = redisdb.ConnectToRedis(redisConfig)
 	}
 	os.Setenv("API_KEY", viper.GetString("API_KEY"))
-	os.Setenv("SLACK_ENABLE", "false")
 	apiKey = viper.GetString("API_KEY")
 	copyFile("LICENSE", "testapp.dmg")
 	copyFile("LICENSE", "testapp.pkg")

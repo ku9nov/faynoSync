@@ -47,17 +47,17 @@ func SendSlackNotification(appName, channel, version, platform, arch string, art
 	// Add artifact buttons
 	for i, artifact := range artifacts {
 		// A hack for forming URLs for notifications for MinIO on localhost, since MinIO is currently used only for development and the main S3 is only used from AWS, so there is no point in digging into it. Uncomment this for local development.
-
+		// Also, if this code is uncommented, Slack notifications will be sent from Go tests.
 		// if !strings.HasPrefix(artifact, "http://") && !strings.HasPrefix(artifact, "https://") {
 		// 	artifact = "http://" + artifact
 		// }
 		logrus.Debugf("Adding artifact #%d: %s", i+1, artifact)
 
-		extension := extensions[i]
-		if extension == "" {
-			extension = "no-ext"
+		var extension string
+		if i < len(extensions) && extensions[i] != "" {
+			extension = strings.TrimPrefix(extensions[i], ".")
 		} else {
-			extension = strings.TrimPrefix(extension, ".")
+			extension = "no-ext"
 		}
 		blocks = append(blocks, slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn", "*Download:*", false, false),
@@ -93,7 +93,7 @@ func SendSlackNotification(appName, channel, version, platform, arch string, art
 	// 		logrus.Errorf("Error marshaling block #%d: %s", i+1, err)
 	// 		continue
 	// 	}
-	// 	logrus.Debugf("Block #%d JSON: %s", i+1, string(blockJSON))
+	// 	logrus.Infof("Block #%d JSON: %s", i+1, string(blockJSON))
 	// }
 
 	_, timestamp, err := api.PostMessage(
