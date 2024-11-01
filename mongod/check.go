@@ -58,6 +58,10 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 
+	var appMeta, channelMeta, platformMeta, archMeta struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+
 	// Find app_id from apps_meta by app_name
 	err := c.getMeta(ctx, metaCollection, "app_name", appName, &appMeta)
 	if err != nil {

@@ -10,6 +10,7 @@
 ### Bug Fixes
 
 - Added validateParams to Update\Create app/channel/platform/arch
+- Fixed an issue with `CheckLatestVersion` where cached metadata values persisted across calls, by moving `appMeta`, `channelMeta`, `platformMeta`, and `archMeta` to local variables.
 
 ## v1.3.6
 
