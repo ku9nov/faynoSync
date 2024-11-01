@@ -189,15 +189,30 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			}
 		}
 	}
+
 	switch v := uploadResult.(type) {
 	case *mongo.InsertOneResult:
 		insertedID, ok := v.InsertedID.(primitive.ObjectID)
 		if !ok {
 			return nil, errors.New("error extracting ID from InsertOneResult")
 		}
-		return insertedID.Hex(), nil
+		var appData model.SpecificApp
+		err = collection.FindOne(ctx, bson.D{{Key: "_id", Value: insertedID}}).Decode(&appData)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Debugf("Uploaded result to mongo: %+v", appData)
+		return appData, nil
+
 	case primitive.ObjectID:
-		return v.Hex(), nil
+		var appData model.SpecificApp
+		err = collection.FindOne(ctx, bson.D{{Key: "_id", Value: v}}).Decode(&appData)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Debugf("Updated result in mongo: %+v", appData)
+		return appData, nil
+
 	default:
 		return nil, errors.New("unexpected return type")
 	}

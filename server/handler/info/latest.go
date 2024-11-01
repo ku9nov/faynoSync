@@ -129,6 +129,12 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 }
 
 func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *redis.Client, performanceMode bool) {
+	if c.Query("app_name") == "" || c.Query("channel") == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Parameters 'app_name' and 'channel' are required",
+		})
+		return
+	}
 	params := map[string]interface{}{
 		"app_name": c.Query("app_name"),
 		"channel":  c.Query("channel"),

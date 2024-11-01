@@ -49,6 +49,7 @@ type appHandler struct {
 	database        *mongo.Database
 	redisClient     *redis.Client
 	performanceMode bool
+	slack           bool
 }
 
 func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Database, redisClient *redis.Client, performanceMode bool) AppHandler {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"faynoSync/server/model"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -122,4 +123,34 @@ func CountUrls(downloadUrls map[string]map[string]map[string]map[string]map[stri
 	}
 
 	return count, singleUrl
+}
+
+func ExtractArtifactLinks(results []interface{}) []string {
+	var artifacts []string
+	uniqueArtifacts := make(map[string]struct{})
+
+	for _, result := range results {
+		if appData, ok := result.(model.SpecificApp); ok {
+			for _, artifact := range appData.Artifacts {
+				key := fmt.Sprintf("%s|%s", artifact.Link, artifact.Package)
+				if _, exists := uniqueArtifacts[key]; !exists {
+					uniqueArtifacts[key] = struct{}{}
+					artifacts = append(artifacts, artifact.Link)
+				}
+			}
+		}
+	}
+	return artifacts
+}
+
+func ExtractChangelog(results []interface{}) []string {
+	var changelog []string
+	if appData, ok := results[0].(model.SpecificApp); ok {
+		for _, change := range appData.Changelog {
+			if change.Changes != "" {
+				changelog = append(changelog, change.Changes)
+			}
+		}
+	}
+	return changelog
 }
