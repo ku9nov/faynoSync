@@ -9,5 +9,5 @@
 - Add application code signing functionality for avoiding "Unknown Publisher" warnings 
 - Add "Forgot password" feature
 - Add email support
-- Add slack notifications
+- ~~Add slack notifications~~
 - Create SDKs
