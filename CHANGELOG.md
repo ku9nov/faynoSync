@@ -7,6 +7,7 @@
 - Allowed `-` in platform name.
 - Added `Slack` notifications.
 - Added required parameter validation for `app_name` and `channel` in `FetchLatestVersionOfApp` endpoint. Returns an error if either parameter is missing.
+- Added a database connection check to the health check.
 
 ### Bug Fixes
 

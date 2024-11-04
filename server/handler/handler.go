@@ -49,7 +49,6 @@ type appHandler struct {
 	database        *mongo.Database
 	redisClient     *redis.Client
 	performanceMode bool
-	slack           bool
 }
 
 func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Database, redisClient *redis.Client, performanceMode bool) AppHandler {
@@ -58,7 +57,7 @@ func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Databa
 
 func (ch *appHandler) HealthCheck(c *gin.Context) {
 	// Call the HealthCheck function from the info package
-	info.HealthCheck(c, ch.client)
+	info.HealthCheck(c, ch.client, ch.redisClient, ch.performanceMode)
 }
 
 func (ch *appHandler) FindLatestVersion(c *gin.Context) {
