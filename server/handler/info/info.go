@@ -2,27 +2,32 @@ package info
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func HealthCheck(c *gin.Context, client *mongo.Client) {
+func HealthCheck(c *gin.Context, mongoClient *mongo.Client, redisClient *redis.Client, performanceMode bool) {
 	ctx, ctxCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer ctxCancel()
 
-	if ctx.Err() != nil {
-		err := fmt.Errorf("failed to create context with error: %v", ctx.Err())
-		logrus.Error(err)
+	if err := mongoClient.Ping(ctx, nil); err != nil {
+		logrus.Error("MongoDB connection error: ", err)
+		c.JSON(http.StatusFailedDependency, gin.H{"status": "unhealthy", "details": "MongoDB connection failed"})
+		return
 	}
 
-	if err := client.Ping(ctx, nil); err != nil {
-		c.JSON(http.StatusFailedDependency, gin.H{"status": "unhealthy"})
-	} else {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+	if performanceMode {
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			logrus.Error("Redis connection error: ", err)
+			c.JSON(http.StatusFailedDependency, gin.H{"status": "unhealthy", "details": "Redis connection failed"})
+			return
+		}
 	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 }
