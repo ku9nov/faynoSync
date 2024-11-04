@@ -20,6 +20,7 @@ type AppRepository interface {
 	UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error)
 	CheckLatestVersion(appName, version, channel, platform, arch string, ctx context.Context) (CheckResult, error)
 	FetchLatestVersionOfApp(appName, channel string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
+	FetchAppByID(appID primitive.ObjectID, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
 	CreateChannel(channelName string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context) ([]*model.Channel, error)
 	CreatePlatform(platformName string, ctx context.Context) (interface{}, error)
@@ -48,6 +49,20 @@ var appMeta, channelMeta, platformMeta, archMeta struct {
 
 func NewAppRepository(config *connstring.ConnString, client *mongo.Client) AppRepository {
 	return &appRepository{config: config, client: client}
+}
+
+type Artifact struct {
+	Link    string
+	Package string
+}
+type Changelog struct {
+	Changes string
+}
+type CheckResult struct {
+	Found     bool
+	Critical  bool
+	Artifacts []Artifact
+	Changelog []Changelog
 }
 
 func (c *appRepository) getBasePipeline() mongo.Pipeline {
@@ -129,18 +144,4 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 		}}},
 		bson.D{{Key: "$limit", Value: 100}},
 	}
-}
-
-type Artifact struct {
-	Link    string
-	Package string
-}
-type Changelog struct {
-	Changes string
-}
-type CheckResult struct {
-	Found     bool
-	Critical  bool
-	Artifacts []Artifact
-	Changelog []Changelog
 }

@@ -57,7 +57,7 @@ func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Databa
 
 func (ch *appHandler) HealthCheck(c *gin.Context) {
 	// Call the HealthCheck function from the info package
-	info.HealthCheck(c, ch.client)
+	info.HealthCheck(c, ch.client, ch.redisClient, ch.performanceMode)
 }
 
 func (ch *appHandler) FindLatestVersion(c *gin.Context) {

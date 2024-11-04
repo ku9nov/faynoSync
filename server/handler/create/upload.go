@@ -3,9 +3,11 @@ package create
 import (
 	"context"
 	db "faynoSync/mongod"
+	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -44,7 +46,8 @@ func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *re
 }
 
 func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
-	utils.DumpRequest(c)
+	// Debug received request (make sense for using only on localhost)
+	// utils.DumpRequest(c)
 
 	ctxQueryMap, err := utils.ValidateParams(c, db)
 	if err != nil {
@@ -102,5 +105,47 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no results found. Please check your files."})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": results[0]})
+
+	if appData, ok := results[0].(model.SpecificApp); ok {
+		c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": appData.ID.Hex()})
+		artifacts := utils.ExtractArtifactLinks(results)
+		changelog := utils.ExtractChangelog(results)
+
+		go func() {
+			if viper.GetBool("SLACK_ENABLE") {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				humanReadableData, err := repository.FetchAppByID(appData.ID, ctx)
+				if err != nil || len(humanReadableData) == 0 {
+					logrus.Error("Error fetching human-readable data for Slack notification: ", err)
+					return
+				}
+
+				slackData := humanReadableData[0]
+
+				var platforms, arches, pkgs []string
+				for _, artifact := range slackData.Artifacts {
+					platforms = append(platforms, artifact.Platform)
+					arches = append(arches, artifact.Arch)
+					pkgs = append(pkgs, artifact.Package)
+				}
+				utils.SendSlackNotification(
+					slackData.AppName,
+					slackData.Channel,
+					slackData.Version,
+					platforms,
+					arches,
+					artifacts,
+					changelog,
+					pkgs,
+					viper.GetViper(),
+					slackData.Published,
+					slackData.Critical,
+				)
+			}
+		}()
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid result type"})
+	}
 }

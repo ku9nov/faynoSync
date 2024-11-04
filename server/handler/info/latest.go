@@ -75,8 +75,13 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			logrus.Infoln(checkResult)
 			response := gin.H{"update_available": false}
 			for _, artifact := range checkResult.Artifacts {
-				if artifact.Package != "" && artifact.Link != "" {
-					key := "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+				var key string
+				if artifact.Package == "" {
+					key = "update_url"
+				} else if artifact.Package != "" && artifact.Link != "" {
+					key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+				}
+				if artifact.Link != "" {
 					response[key] = artifact.Link
 				}
 			}
@@ -93,8 +98,13 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 
 	// Add update URLs to the response
 	for _, artifact := range checkResult.Artifacts {
-		if artifact.Package != "" && artifact.Link != "" {
-			key := "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+		var key string
+		if artifact.Package == "" {
+			key = "update_url"
+		} else if artifact.Package != "" && artifact.Link != "" {
+			key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+		}
+		if artifact.Link != "" {
 			response[key] = artifact.Link
 		}
 	}
@@ -119,6 +129,12 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 }
 
 func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *redis.Client, performanceMode bool) {
+	if c.Query("app_name") == "" || c.Query("channel") == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Parameters 'app_name' and 'channel' are required",
+		})
+		return
+	}
 	params := map[string]interface{}{
 		"app_name": c.Query("app_name"),
 		"channel":  c.Query("channel"),
@@ -173,7 +189,11 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 			if params["arch"] != "" && params["arch"] != artifact.Arch {
 				continue
 			}
+
 			packageType := strings.TrimPrefix(artifact.Package, ".")
+			if packageType == "" {
+				packageType = "no-extension"
+			}
 
 			if params["package"] != "" && params["package"] != packageType {
 				continue

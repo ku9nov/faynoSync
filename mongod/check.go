@@ -58,6 +58,10 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 
+	var appMeta, channelMeta, platformMeta, archMeta struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+
 	// Find app_id from apps_meta by app_name
 	err := c.getMeta(ctx, metaCollection, "app_name", appName, &appMeta)
 	if err != nil {
@@ -236,6 +240,28 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 	pipeline = append(pipeline, basePipeline...)
 
 	logrus.Debug("MongoDB Pipeline: ", pipeline)
+
+	cur, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	return c.processApps(cur, ctx)
+}
+
+func (c *appRepository) FetchAppByID(appID primitive.ObjectID, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+	collection := c.client.Database(c.config.Database).Collection("apps")
+
+	matchFilter := bson.M{"_id": appID}
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: matchFilter}},
+	}
+	basePipeline := c.getBasePipeline()
+	pipeline = append(pipeline, basePipeline...)
+
+	logrus.Debug("MongoDB Pipeline for FetchAppByID: ", pipeline)
 
 	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {

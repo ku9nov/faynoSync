@@ -157,6 +157,8 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestUpdateApp
     - TestUpdatePlatform
     - TestUpdateArch
+    - TestFailedUpdatePlatform (expected result from API "400")
+    - TestChannelCreateWithWrongName (expected result from API "400")
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

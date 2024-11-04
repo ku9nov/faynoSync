@@ -1,0 +1,171 @@
+name: Build app and upload assets to faynoSync
+on:
+  workflow_dispatch:
+    inputs:
+      VERSION:
+        description: "The version to set in Cargo.toml"
+        required: true
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-20.04, ubuntu-latest, windows-latest, macos-latest ]
+    name: Building, ${{ matrix.os }}
+    steps:
+
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install toolchain
+        id: rust-toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc
+
+      - name: Login and get token
+        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'windows-latest' || matrix.os == 'macos-latest' || matrix.os == 'ubuntu-latest'
+        id: login
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update && sudo apt-get install -y jq
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            choco install jq
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install jq
+          fi
+    
+          response=$(curl -s -X POST -H "Content-Type: application/json" \
+            -d "{\"username\": \"${{ secrets.USERNAME }}\", \"password\": \"${{ secrets.PASSWORD }}\"}" \
+            https://faynosync.example.com/login)
+    
+          echo "Response: $response"
+    
+          token=$(echo $response | jq -r '.token')
+    
+          if [ "$token" == "null" ]; then
+            echo "Failed to retrieve token. Check your username and password."
+            exit 1
+          fi
+    
+          echo "TOKEN=$token" >> $GITHUB_ENV
+    
+      - name: Debug - Print Token
+        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'windows-latest' || matrix.os == 'macos-latest' || matrix.os == 'ubuntu-latest'
+        run: |
+          echo "Printing token for debug purposes:"
+          echo $TOKEN
+
+
+      - name: Get version from Cargo.toml (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          (Get-Content Cargo.toml) | ForEach-Object { if (-not $done -and $_ -match 'version = ".*"') {$_ -replace 'version = ".*"', 'version = "${{ github.event.inputs.VERSION }}"'; $done = $true} else {$_} } | Set-Content Cargo.toml
+          Get-Content Cargo.toml 
+
+      - name: Update version in Cargo.toml (Linux)
+        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
+        run: |
+          sed -i '0,/version = ".*"/s/version = ".*"/version = "${{ github.event.inputs.VERSION }}"/' Cargo.toml
+          cat Cargo.toml 
+  
+      - name: Update version in Cargo.toml (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          sed -i '' '1,/version = "/s/version = ".*"/version = "${{ github.event.inputs.VERSION }}"/' Cargo.toml
+          cat Cargo.toml 
+
+      - name: Create bin directory
+        run: mkdir bin
+
+      - name: Build on Linux GNU
+        if: matrix.os == 'ubuntu-20.04'
+        run: |
+          cargo build --target=x86_64-unknown-linux-gnu --release
+          asset_name="testapp-linux-gnu-amd64"
+          strip ./target/x86_64-unknown-linux-gnu/release/testapp
+          mv ./target/x86_64-unknown-linux-gnu/release/testapp ./bin/${asset_name}
+
+      - name: Build on Linux musl
+        if: matrix.os == 'ubuntu-latest'
+        # We're using musl to make the binaries statically linked and portable
+        run: |
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --target=x86_64-unknown-linux-musl --release
+          asset_name="testapp-linux-musl-amd64"
+          strip ./target/x86_64-unknown-linux-musl/release/testapp
+          mv ./target/x86_64-unknown-linux-musl/release/testapp ./bin/${asset_name}
+
+      - name: Build on Windows
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cargo build --target=x86_64-pc-windows-msvc --release
+          asset_name="testapp-win64-amd64.exe"
+          mv ./target/x86_64-pc-windows-msvc/release/testapp.exe ./bin/${asset_name}
+
+      - name: Build on MacOS for x86_64
+        if: matrix.os == 'macos-latest'
+        run: |
+          rustup target add x86_64-apple-darwin
+          cargo build --target=x86_64-apple-darwin --release
+          asset_name="testapp-osx-amd64"
+          mv ./target/x86_64-apple-darwin/release/testapp ./bin/${asset_name}
+
+      - name: Build on MacOS for M1/2
+        if: matrix.os == 'macos-latest'
+        run: |
+          rustup target add aarch64-apple-darwin
+          cargo build --target=aarch64-apple-darwin --release
+          asset_name="testapp-osx-aarch64"
+          mv ./target/aarch64-apple-darwin/release/testapp ./bin/${asset_name}
+
+      - name: Upload Linux GNU build to faynoSync
+        if: matrix.os == 'ubuntu-20.04'
+        run: |
+          curl --location 'https://faynosync.example.com/upload' \
+            --header "Authorization: Bearer $TOKEN" \
+            --form "file=@./bin/testapp-linux-gnu-amd64" \
+            --form "data={\"app_name\":\"testapp\",\"version\":\"${{ github.event.inputs.VERSION }}\",\"channel\":\"stable\",\"publish\":true,\"critical\":false,\"platform\":\"linux-gnu\",\"arch\":\"amd64\",\"changelog\":\"\"}"
+
+      - name: Upload Linux Musl build to faynoSync
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          curl --location 'https://faynosync.example.com/upload' \
+            --header "Authorization: Bearer $TOKEN" \
+            --form "file=@./bin/testapp-linux-musl-amd64" \
+            --form "data={\"app_name\":\"testapp\",\"version\":\"${{ github.event.inputs.VERSION }}\",\"channel\":\"stable\",\"publish\":true,\"critical\":false,\"platform\":\"linux-musl\",\"arch\":\"amd64\",\"changelog\":\"\"}"
+
+      - name: Upload Windows build to faynoSync
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          curl --location 'https://faynosync.example.com/upload' \
+            --header "Authorization: Bearer $TOKEN" \
+            --form "file=@./bin/testapp-win64-amd64.exe" \
+            --form "data={\"app_name\":\"testapp\",\"version\":\"${{ github.event.inputs.VERSION }}\",\"channel\":\"stable\",\"publish\":true,\"critical\":false,\"platform\":\"windows\",\"arch\":\"amd64\",\"changelog\":\"\"}"
+
+      - name: Upload MacOS intel build to faynoSync
+        if: matrix.os == 'macos-latest'
+        run: |
+          curl --location 'https://faynosync.example.com/upload' \
+            --header "Authorization: Bearer $TOKEN" \
+            --form "file=@./bin/testapp-osx-amd64" \
+            --form "data={\"app_name\":\"testapp\",\"version\":\"${{ github.event.inputs.VERSION }}\",\"channel\":\"stable\",\"publish\":true,\"critical\":false,\"platform\":\"darwin\",\"arch\":\"amd64\",\"changelog\":\"\"}"
+
+      - name: Upload MacOS arm build to faynoSync
+        if: matrix.os == 'macos-latest'
+        run: |
+          curl --location 'https://faynosync.example.com/upload' \
+            --header "Authorization: Bearer $TOKEN" \
+            --form "file=@./bin/testapp-osx-aarch64" \
+            --form "data={\"app_name\":\"testapp\",\"version\":\"${{ github.event.inputs.VERSION }}\",\"channel\":\"stable\",\"publish\":true,\"critical\":false,\"platform\":\"darwin\",\"arch\":\"arm64\",\"changelog\":\"\"}"

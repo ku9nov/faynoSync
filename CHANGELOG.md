@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.3.7
+
+### Features
+- Added `binary` app support.
+- Allowed `-` in platform name.
+- Added `Slack` notifications.
+- Added required parameter validation for `app_name` and `channel` in `FetchLatestVersionOfApp` endpoint. Returns an error if either parameter is missing.
+- Added a database connection check to the health check.
+
+### Bug Fixes
+
+- Added validateParams to Update\Create app/channel/platform/arch
+- Fixed an issue with `CheckLatestVersion` where cached metadata values persisted across calls, by moving `appMeta`, `channelMeta`, `platformMeta`, and `archMeta` to local variables.
+
 ## v1.3.6
 
 ### Important Notes
