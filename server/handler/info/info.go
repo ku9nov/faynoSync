@@ -15,13 +15,15 @@ func HealthCheck(c *gin.Context, mongoClient *mongo.Client, redisClient *redis.C
 	ctx, ctxCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer ctxCancel()
 
-	if err := mongoClient.Ping(ctx, nil); err != nil {
-		logrus.Error("MongoDB connection error: ", err)
-		c.JSON(http.StatusFailedDependency, gin.H{"status": "unhealthy", "details": "MongoDB connection failed"})
-		return
+	if mongoClient != nil {
+		if err := mongoClient.Ping(ctx, nil); err != nil {
+			logrus.Error("MongoDB connection error: ", err)
+			c.JSON(http.StatusFailedDependency, gin.H{"status": "unhealthy", "details": "MongoDB connection failed"})
+			return
+		}
 	}
 
-	if performanceMode {
+	if performanceMode && redisClient != nil {
 		if err := redisClient.Ping(ctx).Err(); err != nil {
 			logrus.Error("Redis connection error: ", err)
 			c.JSON(http.StatusFailedDependency, gin.H{"status": "unhealthy", "details": "Redis connection failed"})
