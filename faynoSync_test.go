@@ -9,7 +9,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +37,7 @@ var (
 	mongoDatabase *mongo.Database
 	configDB      connstring.ConnString
 	s3Endpoint    string
+	s3Bucket      string
 	apiKey        string
 	redisClient   *redis.Client
 )
@@ -88,6 +88,7 @@ func setup() {
 		"rollback":  false,
 	}
 	s3Endpoint = viper.GetString("S3_ENDPOINT")
+	s3Bucket = viper.GetString("S3_BUCKET_NAME")
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
@@ -1926,13 +1927,13 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
+								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
+								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
+								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
 							},
 						},
 					},
@@ -1951,13 +1952,13 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg")),
+								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg"),
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
+								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg"),
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137")),
+								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137"),
 							},
 						},
 					},
@@ -2023,9 +2024,9 @@ func TestCheckVersion(t *testing.T) {
 				"changelog":        "### Changelog\n",
 				"update_available": true,
 				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
-				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
-				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
+				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
+				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
+				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2038,9 +2039,9 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg")),
-				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg")),
-				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137")),
+				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
+				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
+				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2065,9 +2066,9 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg")),
-				"update_url_pkg":   fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg")),
-				"update_url":       fmt.Sprintf("%s/%s", s3Endpoint, url.PathEscape("testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137")),
+				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg"),
+				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg"),
+				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",

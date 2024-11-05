@@ -2,6 +2,11 @@
 
 ## v1.3.9
 
+### Bug Fixes
+
+- Fix MinIO URLs for correct working on localhost.
+
+
 ### Maintenance
 
 - Added new mongoDB indexes for `apps` collection.
