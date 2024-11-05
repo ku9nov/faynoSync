@@ -2,6 +2,7 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 
@@ -14,14 +15,34 @@ import (
 // ValidateJWT parses and validates the JWT token
 func ValidateJWT(tokenString string) (*jwt.Token, error) {
 	env := viper.GetViper()
-	// Parse the token with the secret key
-	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		// Ensure the signing method is HMAC
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrInvalidKey
 		}
 		return []byte(env.GetString("JWT_SECRET")), nil
 	})
+
+	if err != nil {
+		// Check for specific error cases
+		switch {
+		case errors.Is(err, jwt.ErrTokenSignatureInvalid):
+			return nil, fmt.Errorf("invalid signature: %w", err)
+		case errors.Is(err, jwt.ErrTokenMalformed):
+			return nil, fmt.Errorf("malformed token: %w", err)
+		case errors.Is(err, jwt.ErrTokenUnverifiable):
+			return nil, fmt.Errorf("unverifiable token: %w", err)
+		case errors.Is(err, jwt.ErrTokenExpired):
+			return nil, fmt.Errorf("token expired: %w", err)
+		case errors.Is(err, jwt.ErrTokenNotValidYet):
+			return nil, fmt.Errorf("token not active yet: %w", err)
+		default:
+			return nil, fmt.Errorf("token validation error: %w", err)
+		}
+	}
+
+	return token, nil
 }
 
 func ValidateParamsLatest(c *gin.Context, database *mongo.Database) (map[string]interface{}, error) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.8
+
+### Potential bug fix
+
+- Fix: Bad documentation of error handling in `ParseWithClaims` can lead to potentially dangerous situations
+
+
 ## v1.3.7
 
 ### Features
