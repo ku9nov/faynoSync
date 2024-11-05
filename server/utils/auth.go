@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -27,8 +28,23 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// Validate the JWT token
 		token, err := ValidateJWT(tokenString)
-		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+		if err != nil {
+			var errMsg string
+			switch {
+			case errors.Is(err, jwt.ErrTokenSignatureInvalid):
+				errMsg = "invalid token signature"
+			case errors.Is(err, jwt.ErrTokenMalformed):
+				errMsg = "malformed token"
+			case errors.Is(err, jwt.ErrTokenUnverifiable):
+				errMsg = "unverifiable token"
+			case errors.Is(err, jwt.ErrTokenExpired):
+				errMsg = "token expired"
+			case errors.Is(err, jwt.ErrTokenNotValidYet):
+				errMsg = "token not active yet"
+			default:
+				errMsg = "invalid or expired token"
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": errMsg})
 			return
 		}
 
