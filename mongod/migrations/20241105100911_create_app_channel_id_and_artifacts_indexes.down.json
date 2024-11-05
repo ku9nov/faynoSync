@@ -1,0 +1,18 @@
+[
+    {
+        "dropIndexes": "apps",
+        "index": "index_on_app_id"
+    },
+    {
+        "dropIndexes": "apps",
+        "index": "index_on_channel_id"
+    },
+    {
+        "dropIndexes": "apps",
+        "index": "index_on_artifacts_platform"
+    },
+    {
+        "dropIndexes": "apps",
+        "index": "index_on_artifacts_arch"
+    }
+]

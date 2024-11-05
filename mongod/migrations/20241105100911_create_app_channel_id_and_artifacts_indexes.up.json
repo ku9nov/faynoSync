@@ -1,0 +1,33 @@
+[{
+    "createIndexes": "apps",
+    "indexes": [
+        {
+            "key": {
+                "app_id": 1
+            },
+            "name": "index_on_app_id",
+            "background": true
+        },
+        {
+            "key": {
+                "channel_id": 1
+            },
+            "name": "index_on_channel_id",
+            "background": true
+        },
+        {
+            "key": {
+                "artifacts.platform": 1
+            },
+            "name": "index_on_artifacts_platform",
+            "background": true
+        },
+        {
+            "key": {
+                "artifacts.arch": 1
+            },
+            "name": "index_on_artifacts_arch",
+            "background": true
+        }
+    ]
+}]

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.9
+
+### Maintenance
+
+- Added new mongoDB indexes for `apps` collection.
+
 ## v1.3.8
 
 ### Potential bug fix
