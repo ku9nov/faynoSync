@@ -28,9 +28,8 @@ type SpecificApp struct {
 	Artifacts  []Artifact         `bson:"artifacts"`
 	Changelog  []Changelog        `bson:"changelog"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
-	// Platform   string             `bson:"platform,omitempty"` // Add this
-	// Arch       string             `bson:"arch,omitempty"`
 }
+
 type SpecificArtifactsWithoutIDs struct {
 	Link     string `bson:"link" json:"link"`
 	Platform string `bson:"platform" json:"platform"`
