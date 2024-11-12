@@ -110,10 +110,13 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 		if err := existingDoc.Decode(&appData); err != nil {
 			return false, err
 		}
-		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
-		if ctxQuery["version"].(string) != "" {
-			updateFields = append(updateFields, bson.E{Key: "version", Value: ctxQuery["version"].(string)})
+
+		if channelMeta.ID != appData.ChannelID {
+			return false, errors.New("updating the channel is not allowed")
 		}
+
+		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
+
 		publishParam, publishExists := ctxQuery["publish"]
 		criticalParam, criticalExists := ctxQuery["critical"]
 

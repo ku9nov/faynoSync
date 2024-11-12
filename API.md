@@ -531,11 +531,11 @@ curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&cha
 
 Update existing specific app.
 
-:warning: You can't change `app_name` and `version`. They are used only for correct searching.
+:warning: You can't change `app_name`, `channel` and `version`. `app_name` and `version` are used for correct searching.
 
 `POST /apps/update`
 
-Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
+Optional with `channel`, `publish`, `critical`, `platform`, `arch` and `changelog`:
 
 data="{\"id\": \"653a6268f51dee6a99a3d88c\", \"app_name\": \"secondapp\", \"version\": \"0.0.2\", \"channel\": \"stable\", \"publish\": true, \"platform\": \"linux\", \"arch\": \"amd64\", \"changelog\": \"\"}"
 
