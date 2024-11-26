@@ -145,3 +145,41 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 		bson.D{{Key: "$limit", Value: 100}},
 	}
 }
+func (c *appRepository) sortVersionPipeline() mongo.Pipeline {
+	return mongo.Pipeline{
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "versions_arr", Value: bson.D{
+				{Key: "$split", Value: bson.A{"$version", "."}},
+			}},
+		}}},
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "major_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 0}},
+				}},
+			}},
+			{Key: "minor_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 1}},
+				}},
+			}},
+			{Key: "patch_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 2}},
+				}},
+			}},
+			{Key: "build_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 3}},
+				}},
+			}},
+		}}},
+		{{Key: "$sort", Value: bson.D{
+			{Key: "major_v", Value: -1},
+			{Key: "minor_v", Value: -1},
+			{Key: "patch_v", Value: -1},
+			{Key: "build_v", Value: -1},
+		}}},
+		{{Key: "$limit", Value: 1}},
+	}
+}

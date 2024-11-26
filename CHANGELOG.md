@@ -3,7 +3,7 @@
 ## v1.3.9
 
 ### Bug Fixes
-
+- Fixed issue where MongoDB documents were sorted incorrectly by version string for the /apps/latest route.
 - Fix MinIO URLs for correct working on localhost.
 
 
