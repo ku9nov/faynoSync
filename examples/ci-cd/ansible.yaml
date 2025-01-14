@@ -1,0 +1,69 @@
+---
+- name: Execute API tasks locally
+  hosts: localhost
+  gather_facts: no
+  vars:
+    USERNAME: "admin"
+    PASSWORD: "password"
+    VERSION: "1.0.0"
+    FILE_PATH: "./README.md"
+    UPLOAD_URL: "http://localhost:9000/upload"
+    LOGIN_URL: "http://localhost:9000/login"
+
+  tasks:
+    - name: Authenticate and retrieve token
+      uri:
+        url: "{{ LOGIN_URL }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body: |
+          {
+            "username": "{{ USERNAME }}",
+            "password": "{{ PASSWORD }}"
+          }
+        body_format: json
+        return_content: yes
+      register: login_response
+
+    - name: Debug login response
+      debug:
+        msg: "Login response: {{ login_response.json }}"
+
+    - name: Extract token from response
+      set_fact:
+        TOKEN: "{{ login_response.json.token }}"
+
+    - name: Debug extracted token
+      debug:
+        msg: "Extracted token: {{ TOKEN }}"
+
+    - name: Upload file using token
+      uri:
+        url: "{{ UPLOAD_URL }}"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ TOKEN }}"
+        body_format: form-multipart
+        body:
+          file:
+            filename: "{{ FILE_PATH }}"
+            mime_type: application/octet-stream
+          data:
+            content: "{{ {
+              'app_name': 'testapp',
+              'version': VERSION,
+              'channel': 'stable',
+              'publish': true,
+              'critical': false,
+              'platform': 'linux-gnu',
+              'arch': 'amd64',
+              'changelog': ''
+            } | to_json }}"
+            mime_type: application/json
+        return_content: true
+      register: upload_response
+
+    - name: Debug upload response
+      debug:
+        msg: "Upload response: {{ upload_response.json }}"

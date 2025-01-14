@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.9
+
+### Bug Fixes
+- Fixed issue where MongoDB documents were sorted incorrectly by version string for the /apps/latest route.
+- Fix MinIO URLs for correct working on localhost.
+- Resolve the issue where the /checkVersion route returns an incorrect link because all artifacts have the same extension.
+
+
+### Maintenance
+
+- Added new mongoDB indexes for `apps` collection.
+
 ## v1.3.8
 
 ### Potential bug fix

@@ -116,41 +116,8 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	// Use only bson.D for correct results
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: filter}},
-		{{Key: "$addFields", Value: bson.D{
-			{Key: "versions_arr", Value: bson.D{
-				{Key: "$split", Value: bson.A{"$version", "."}},
-			}},
-		}}},
-		{{Key: "$addFields", Value: bson.D{
-			{Key: "major_v", Value: bson.D{
-				{Key: "$toInt", Value: bson.D{
-					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 0}},
-				}},
-			}},
-			{Key: "minor_v", Value: bson.D{
-				{Key: "$toInt", Value: bson.D{
-					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 1}},
-				}},
-			}},
-			{Key: "patch_v", Value: bson.D{
-				{Key: "$toInt", Value: bson.D{
-					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 2}},
-				}},
-			}},
-			{Key: "build_v", Value: bson.D{
-				{Key: "$toInt", Value: bson.D{
-					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 3}},
-				}},
-			}},
-		}}},
-		{{Key: "$sort", Value: bson.D{
-			{Key: "major_v", Value: -1},
-			{Key: "minor_v", Value: -1},
-			{Key: "patch_v", Value: -1},
-			{Key: "build_v", Value: -1},
-		}}},
-		{{Key: "$limit", Value: 1}},
 	}
+	pipeline = append(pipeline, c.sortVersionPipeline()...)
 	logrus.Debug("MongoDB Filter: ", filter)
 	logrus.Debug("MongoDB Pipeline: ", pipeline)
 	// Execute the aggregation pipeline
@@ -233,9 +200,8 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: matchFilter}},
-		{{Key: "$sort", Value: bson.D{{Key: "version", Value: -1}}}},
-		{{Key: "$limit", Value: 1}},
 	}
+	pipeline = append(pipeline, c.sortVersionPipeline()...)
 	basePipeline := c.getBasePipeline()
 	pipeline = append(pipeline, basePipeline...)
 

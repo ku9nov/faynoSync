@@ -65,7 +65,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	checkResult, err := repository.CheckLatestVersion(validatedParams["app_name"].(string), validatedParams["version"].(string), validatedParams["channel"].(string), validatedParams["platform"].(string), validatedParams["arch"].(string), ctx)
 	if err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if !checkResult.Found {
@@ -81,7 +81,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 				} else if artifact.Package != "" && artifact.Link != "" {
 					key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
 				}
-				if artifact.Link != "" {
+				if artifact.Link != "" && strings.Contains(artifact.Link, validatedParams["platform"].(string)) && strings.Contains(artifact.Link, validatedParams["arch"].(string)) {
 					response[key] = artifact.Link
 				}
 			}
@@ -104,7 +104,8 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		} else if artifact.Package != "" && artifact.Link != "" {
 			key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
 		}
-		if artifact.Link != "" {
+		if artifact.Link != "" && strings.Contains(artifact.Link, validatedParams["platform"].(string)) && strings.Contains(artifact.Link, validatedParams["arch"].(string)) {
+			logrus.Debugf("Adding link for key %s: %s", key, artifact.Link)
 			response[key] = artifact.Link
 		}
 	}

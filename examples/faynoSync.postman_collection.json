@@ -12,12 +12,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/health",
-					"protocol": "http",
+					"raw": "{{URL}}/health",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"health"
 					]
@@ -41,12 +39,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/search?app_name={{app_name}}",
-					"protocol": "http",
+					"raw": "{{URL}}/search?app_name={{app_name}}",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"search"
 					],
@@ -69,12 +65,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/apps/latest?app_name={{app_name}}&channel={{channel}}&platform={{platform}}&arch={{arch}}",
-					"protocol": "http",
+					"raw": "{{URL}}/apps/latest?app_name={{app_name}}&channel={{channel}}&platform={{platform}}&arch={{arch}}",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"apps",
 						"latest"
@@ -122,12 +116,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/",
-					"protocol": "http",
+					"raw": "{{URL}}/",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						""
 					]
@@ -151,12 +143,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/channel/list",
-					"protocol": "http",
+					"raw": "{{URL}}/channel/list",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"channel",
 						"list"
@@ -181,12 +171,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/platform/list",
-					"protocol": "http",
+					"raw": "{{URL}}/platform/list",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"platform",
 						"list"
@@ -211,12 +199,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/arch/list",
-					"protocol": "http",
+					"raw": "{{URL}}/arch/list",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"arch",
 						"list"
@@ -241,12 +227,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/app/list",
-					"protocol": "http",
+					"raw": "{{URL}}/app/list",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"app",
 						"list"
@@ -264,12 +248,10 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/checkVersion?app_name={{app_name}}&version={{version}}&channel=&platform&arch",
-					"protocol": "http",
+					"raw": "{{URL}}/checkVersion?app_name={{app_name}}&version={{version}}&channel=&platform&arch",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"checkVersion"
 					],
@@ -331,15 +313,13 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\"username\": \"admin\", \"password\": \"password\"}"
+					"raw": "{\"username\": \"{{username}}\", \"password\": \"{{password}}\"}"
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/login",
-					"protocol": "http",
+					"raw": "{{URL}}/login",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"login"
 					]
@@ -363,15 +343,13 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\"username\": \"admin\", \"password\": \"password\", \"api_key\": \"UHp3aKb40fwpoKZluZByWQ\"}"
+					"raw": "{\"username\": \"{{username}}\", \"password\": \"{{password}}\", \"api_key\": \"{{api_key}}\"}"
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/signup",
-					"protocol": "http",
+					"raw": "{{URL}}/signup",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"signup"
 					]
@@ -418,12 +396,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/upload",
-					"protocol": "http",
+					"raw": "{{URL}}/upload",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"upload"
 					]
@@ -467,12 +443,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/apps/update",
-					"protocol": "http",
+					"raw": "{{URL}}/apps/update",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"apps",
 						"update"
@@ -507,12 +481,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/channel/update",
-					"protocol": "http",
+					"raw": "{{URL}}/channel/update",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"channel",
 						"update"
@@ -547,12 +519,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/arch/update",
-					"protocol": "http",
+					"raw": "{{URL}}/arch/update",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"arch",
 						"update"
@@ -587,12 +557,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/platform/update",
-					"protocol": "http",
+					"raw": "{{URL}}/platform/update",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"platform",
 						"update"
@@ -627,12 +595,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/app/update",
-					"protocol": "http",
+					"raw": "{{URL}}/app/update",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"app",
 						"update"
@@ -667,12 +633,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/channel/create",
-					"protocol": "http",
+					"raw": "{{URL}}/channel/create",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"channel",
 						"create"
@@ -707,12 +671,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/platform/create",
-					"protocol": "http",
+					"raw": "{{URL}}/platform/create",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"platform",
 						"create"
@@ -747,12 +709,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/arch/create",
-					"protocol": "http",
+					"raw": "{{URL}}/arch/create",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"arch",
 						"create"
@@ -787,12 +747,10 @@
 					]
 				},
 				"url": {
-					"raw": "http://localhost:{{PORT}}/app/create",
-					"protocol": "http",
+					"raw": "{{URL}}/app/create",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"app",
 						"create"
@@ -817,12 +775,10 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/apps/delete?id=",
-					"protocol": "http",
+					"raw": "{{URL}}/apps/delete?id=",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"apps",
 						"delete"
@@ -853,12 +809,10 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/platform/delete?id",
-					"protocol": "http",
+					"raw": "{{URL}}/platform/delete?id",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"platform",
 						"delete"
@@ -889,12 +843,10 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/channel/delete?id",
-					"protocol": "http",
+					"raw": "{{URL}}/channel/delete?id",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"channel",
 						"delete"
@@ -925,12 +877,10 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/arch/delete?id",
-					"protocol": "http",
+					"raw": "{{URL}}/arch/delete?id",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"arch",
 						"delete"
@@ -961,12 +911,10 @@
 				"method": "DELETE",
 				"header": [],
 				"url": {
-					"raw": "http://localhost:{{PORT}}/app/delete?id",
-					"protocol": "http",
+					"raw": "{{URL}}/app/delete?id",
 					"host": [
-						"localhost"
+						"{{URL}}"
 					],
-					"port": "{{PORT}}",
 					"path": [
 						"app",
 						"delete"
@@ -1034,8 +982,8 @@
 			"type": "string"
 		},
 		{
-			"key": "PORT",
-			"value": "9000",
+			"key": "URL",
+			"value": "http://localhost:9000",
 			"type": "string"
 		},
 		{
@@ -1051,6 +999,11 @@
 		{
 			"key": "arch",
 			"value": "universal",
+			"type": "string"
+		},
+		{
+			"key": "api_key",
+			"value": "UHp3aKb40fwpoKZluZByWQ",
 			"type": "string"
 		}
 	]

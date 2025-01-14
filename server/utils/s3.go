@@ -109,7 +109,11 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 	// Upload file to S3
 	switch client := storageClient.(type) {
 	case *minio.Client:
-		_, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), s3Key, fileReader, -1, minio.PutObjectOptions{})
+		var uploadInfo minio.UploadInfo
+		uploadInfo, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), s3Key, fileReader, -1, minio.PutObjectOptions{})
+
+		logrus.Debugln("Upload Info:", uploadInfo)
+		link = uploadInfo.Location
 	case *s3.Client:
 		_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
 			Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
@@ -144,7 +148,19 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 			GovernanceBypass: true,
 			VersionID:        "",
 		}
-		err = client.RemoveObject(context.Background(), env.GetString("S3_BUCKET_NAME"), objectKey, opts)
+		var objectKeyAfterBucket string
+		parts := strings.Split(objectKey, env.GetString("S3_BUCKET_NAME"))
+		if len(parts) > 1 {
+			objectKeyAfterBucket = strings.TrimPrefix(parts[1], "/")
+			logrus.Infof("Deleting object with key after bucket name: '%s'", objectKeyAfterBucket)
+		}
+		decodedKey, err := url.QueryUnescape(objectKeyAfterBucket)
+		if err != nil {
+			logrus.Error("Failed to decode object key: ", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode object key"})
+			return
+		}
+		err = client.RemoveObject(context.Background(), env.GetString("S3_BUCKET_NAME"), decodedKey, opts)
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from Minio"})
