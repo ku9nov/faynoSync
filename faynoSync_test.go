@@ -2055,7 +2055,7 @@ func TestCheckVersion(t *testing.T) {
 			ExpectedJSON: map[string]interface{}{
 				"error": "requested version 0.0.3.137 is newer than the latest version available",
 			},
-			ExpectedCode: http.StatusInternalServerError,
+			ExpectedCode: http.StatusBadRequest,
 			Platform:     "universalPlatform",
 			Arch:         "universalArch",
 			TestName:     "NightlyUpdateAvailable",
@@ -2082,7 +2082,7 @@ func TestCheckVersion(t *testing.T) {
 			ExpectedJSON: map[string]interface{}{
 				"error": "requested version 0.0.5.137 is newer than the latest version available",
 			},
-			ExpectedCode: http.StatusInternalServerError,
+			ExpectedCode: http.StatusBadRequest,
 			// Published:    false,
 			Platform: "universalPlatform",
 			Arch:     "universalArch",
