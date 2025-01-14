@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.10
+
+### Potential bug fix
+
+- Fix: Non-linear parsing of case-insensitive content in golang.org/x/net/html 
+- Fix: Misuse of ServerConfig.PublicKeyCallback may cause authorization bypass in golang.org/x/crypto
+
+
 ## v1.3.9
 
 ### Bug Fixes
