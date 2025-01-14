@@ -1183,6 +1183,72 @@ func TestSecondaryPlatformCreate(t *testing.T) {
 	expectedErrorMessage := `{"error":"platform with this name already exists"}`
 	assert.Equal(t, expectedErrorMessage, w.Body.String())
 }
+
+var secondPlatformId string
+
+func TestCreateSecondPlatform(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/platform/create", func(c *gin.Context) {
+		handler.CreatePlatform(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"platform": "secondPlatform"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /platform/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, idExists := response["createPlatformResult.Created"]
+	assert.True(t, idExists)
+	secondPlatformId = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, secondPlatformId)
+}
+
 func TestUploadAppWithoutPlatform(t *testing.T) {
 
 	router := gin.Default()
@@ -1398,6 +1464,73 @@ func TestSecondaryArchCreate(t *testing.T) {
 	expectedErrorMessage := `{"error":"arch with this name already exists"}`
 	assert.Equal(t, expectedErrorMessage, w.Body.String())
 }
+
+var secondArchId string
+
+func TestCreateSecondArch(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/arch/create", func(c *gin.Context) {
+		handler.CreateArch(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"arch": "secondArch"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /channel/create endpoint
+	req, err := http.NewRequest("POST", "/arch/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, idExists := response["createArchResult.Created"]
+	assert.True(t, idExists)
+	secondArchId = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, secondArchId)
+}
+
 func TestUploadAppWithoutArch(t *testing.T) {
 
 	router := gin.Default()
@@ -2150,6 +2283,270 @@ func TestMultipleDelete(t *testing.T) {
 		assert.Equal(t, expected, w.Body.String())
 	}
 }
+
+var uploadedAppIDsWithSameExtension []string
+
+func TestMultipleUploadWithSameExtension(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/upload", func(c *gin.Context) {
+		handler.UploadApp(c)
+	})
+
+	// Create a file to upload (you can replace this with a test file path).
+	filePaths := []string{"testapp.dmg"}
+	for _, filePath := range filePaths {
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+
+		combinations := []struct {
+			AppVersion  string
+			ChannelName string
+			Published   bool
+			Critical    bool
+			Platform    string
+			Arch        string
+		}{
+			{"0.0.1.138", "nightly", true, false, "secondPlatform", "secondArch"},
+			{"0.0.2.138", "nightly", true, false, "universalPlatform", "secondArch"},
+			{"0.0.2.138", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"0.0.4.138", "stable", true, true, "universalPlatform", "universalArch"},
+			{"0.0.4.138", "stable", true, true, "secondPlatform", "universalArch"},
+		}
+		logrus.Infof("Initial combinations: %v", combinations)
+		// Iterate through the combinations and upload the file for each combination.
+		for _, combo := range combinations {
+			logrus.Infof("Uploading payload for: %v", combo)
+			w := httptest.NewRecorder()
+			// Reset the request body for each iteration.
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = io.Copy(part, file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dataPart, err := writer.CreateFormField("data")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := fmt.Sprintf(`{"app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s"}`, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch)
+			_, err = dataPart.Write([]byte(payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Close the writer to finalize the form
+			err = writer.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			logrus.Infoln("Payload: ", payload)
+			// Create a POST request for the /upload endpoint with the current combination.
+			req, err := http.NewRequest("POST", "/upload", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Set the Content-Type header for multipart/form-data.
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+
+			// Set the Authorization header.
+			req.Header.Set("Authorization", "Bearer "+authToken)
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+
+			// Check the response status code.
+			assert.Equal(t, http.StatusOK, w.Code)
+			var response map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &response)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			id, idExists := response["uploadResult.Uploaded"]
+			assert.True(t, idExists)
+
+			// Check if the id already exists in the uploadedAppIDsWithSameExtension array
+			exists := false
+			for _, val := range uploadedAppIDsWithSameExtension {
+				if val == id {
+					exists = true
+					break
+				}
+			}
+
+			// If id does not exist in the array, append it
+			if !exists {
+				uploadedAppIDsWithSameExtension = append(uploadedAppIDsWithSameExtension, id.(string))
+			}
+
+			assert.True(t, idExists)
+			assert.NotEmpty(t, id.(string))
+		}
+	}
+}
+
+func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.T) {
+	router := gin.Default()
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/checkVersion", func(c *gin.Context) {
+		handler.FindLatestVersion(c)
+	})
+	// Define test scenarios.
+	testScenarios := []struct {
+		AppName      string
+		Version      string
+		ChannelName  string
+		ExpectedJSON map[string]interface{}
+		ExpectedCode int
+		Published    bool
+		Platform     string
+		Arch         string
+		TestName     string
+	}{
+		{
+			AppName:     "testapp",
+			Version:     "0.0.1.138",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"update_available": true,
+				"critical":         false,
+				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/secondArch/testapp-0.0.2.138.dmg"),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "universalPlatform",
+			Arch:         "secondArch",
+			TestName:     "NightlyUpdateAvailable",
+		},
+		{
+			AppName:     "testapp",
+			Version:     "0.0.1.138",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"update_available": true,
+				"critical":         false,
+				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.138.dmg"),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "NightlyUpdateAvailable",
+		},
+		{
+			AppName:     "testapp",
+			Version:     "0.0.3.138",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"error": "requested version 0.0.3.138 is newer than the latest version available",
+			},
+			ExpectedCode: http.StatusBadRequest,
+			Platform:     "secondPlatform",
+			Arch:         "secondArch",
+			TestName:     "NightlyUpdateAvailable",
+		},
+		{
+			AppName:     "testapp",
+			Version:     "0.0.3.138",
+			ChannelName: "stable",
+			ExpectedJSON: map[string]interface{}{
+				"update_available": true,
+				"critical":         true,
+				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.138.dmg"),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "universalPlatform",
+			Arch:         "universalArch",
+			TestName:     "StableUpdateAvailable",
+		},
+		{
+			AppName:     "testapp",
+			Version:     "0.0.3.138",
+			ChannelName: "stable",
+			ExpectedJSON: map[string]interface{}{
+				"update_available": true,
+				"critical":         true,
+				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/secondPlatform/universalArch/testapp-0.0.4.138.dmg"),
+			},
+			ExpectedCode: http.StatusOK,
+			// Published:    false,
+			Platform: "secondPlatform",
+			Arch:     "universalArch",
+			TestName: "StableUpdateAvailable",
+		},
+	}
+
+	for _, scenario := range testScenarios {
+		t.Run(scenario.TestName, func(t *testing.T) {
+			w := httptest.NewRecorder()
+
+			// Create a GET request for checking the version.
+			req, err := http.NewRequest("GET", fmt.Sprintf("/checkVersion?app_name=%s&version=%s&channel=%s&platform=%s&arch=%s", scenario.AppName, scenario.Version, scenario.ChannelName, scenario.Platform, scenario.Arch), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+
+			// Check the response status code.
+			assert.Equal(t, scenario.ExpectedCode, w.Code)
+
+			var actual map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &actual)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Compare the response with the expected values.
+			assert.Equal(t, scenario.ExpectedJSON, actual)
+		})
+	}
+}
+
+func TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	// Define the route for the /apps/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.DELETE("/apps/delete", func(c *gin.Context) {
+		handler.DeleteSpecificVersionOfApp(c)
+	})
+
+	// Iterate over the uploadedAppIDsWithSameExtension and send a DELETE request for each ID.
+	for _, appID := range uploadedAppIDsWithSameExtension {
+		w := httptest.NewRecorder()
+
+		req, err := http.NewRequest("DELETE", "/apps/delete?id="+appID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Set the Authorization header.
+		req.Header.Set("Authorization", "Bearer "+authToken)
+		// Serve the request using the Gin router.
+		router.ServeHTTP(w, req)
+
+		// Check the response status code for each request.
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		expected := `{"deleteSpecificAppResult.DeletedCount":1}`
+		assert.Equal(t, expected, w.Body.String())
+	}
+}
+
 func TestUpdateChannel(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -2326,6 +2723,37 @@ func TestDeleteStableChannel(t *testing.T) {
 	expected := `{"deleteChannelResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
 }
+
+func TestDeleteSecondPlatform(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /platform/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.DELETE("/platform/delete", func(c *gin.Context) {
+		handler.DeletePlatform(c)
+	})
+
+	// Create a DELETE request for the /platform/delete endpoint.
+	req, err := http.NewRequest("DELETE", "/platform/delete?id="+secondPlatformId, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deletePlatformResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
 func TestUpdatePlatform(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -2524,6 +2952,35 @@ func TestDeletePlatform(t *testing.T) {
 	expected := `{"deletePlatformResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
 }
+func TestDeleteSecondArch(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /arch/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.DELETE("/arch/delete", func(c *gin.Context) {
+		handler.DeleteArch(c)
+	})
+
+	// Create a DELETE request for the /arch/delete endpoint.
+	req, err := http.NewRequest("DELETE", "/arch/delete?id="+secondArchId, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deleteArchResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
 func TestUpdateArch(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -2617,7 +3074,7 @@ func TestListArchsWhenExist(t *testing.T) {
 		ArchID     string `json:"ArchID"`
 		Updated_at string `json:"Updated_at"`
 	}
-	type PlatformResponse struct {
+	type ArchResponse struct {
 		Archs []ArchInfo `json:"archs"`
 	}
 
@@ -2626,7 +3083,7 @@ func TestListArchsWhenExist(t *testing.T) {
 			ArchID: "newArch",
 		},
 	}
-	var actual PlatformResponse
+	var actual ArchResponse
 	err = json.Unmarshal(w.Body.Bytes(), &actual)
 	if err != nil {
 		t.Fatal(err)
