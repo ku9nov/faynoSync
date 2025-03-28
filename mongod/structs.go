@@ -100,6 +100,20 @@ func (c *appRepository) getBasePipeline(limit int64) mongo.Pipeline {
 			"artifacts.platform": "$platform_meta.platform_name",
 			"artifacts.arch":     "$arch_meta.arch_id",
 		}}},
+		bson.D{{Key: "$group", Value: bson.M{
+			"_id":        "$_id",
+			"app_name":   bson.M{"$first": "$app_meta.app_name"},
+			"channel":    bson.M{"$first": "$channel_meta.channel_name"},
+			"version":    bson.M{"$first": "$version"},
+			"published":  bson.M{"$first": "$published"},
+			"critical":   bson.M{"$first": "$critical"},
+			"artifacts":  bson.M{"$push": "$artifacts"},
+			"changelog":  bson.M{"$first": "$changelog"},
+			"updated_at": bson.M{"$first": "$updated_at"},
+		}}},
+		bson.D{{Key: "$sort", Value: bson.D{
+			{Key: "app_name", Value: 1},
+		}}},
 		bson.D{{Key: "$addFields", Value: bson.D{
 			{Key: "versions_arr", Value: bson.D{
 				{Key: "$split", Value: bson.A{"$version", "."}},
@@ -121,26 +135,17 @@ func (c *appRepository) getBasePipeline(limit int64) mongo.Pipeline {
 					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 2}},
 				}},
 			}},
+			{Key: "build_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 3}},
+				}},
+			}},
 		}}},
 		bson.D{{Key: "$sort", Value: bson.D{
 			{Key: "major_v", Value: -1},
 			{Key: "minor_v", Value: -1},
 			{Key: "patch_v", Value: -1},
-		}}},
-		bson.D{{Key: "$group", Value: bson.M{
-			"_id":        "$_id",
-			"app_name":   bson.M{"$first": "$app_meta.app_name"},
-			"channel":    bson.M{"$first": "$channel_meta.channel_name"},
-			"version":    bson.M{"$first": "$version"},
-			"published":  bson.M{"$first": "$published"},
-			"critical":   bson.M{"$first": "$critical"},
-			"artifacts":  bson.M{"$push": "$artifacts"},
-			"changelog":  bson.M{"$first": "$changelog"},
-			"updated_at": bson.M{"$first": "$updated_at"},
-		}}},
-		bson.D{{Key: "$sort", Value: bson.D{
-			{Key: "app_name", Value: 1},
-			{Key: "version", Value: 1},
+			{Key: "build_v", Value: -1},
 		}}},
 		bson.D{{Key: "$limit", Value: limit}},
 	}

@@ -1843,70 +1843,8 @@ func TestSearch(t *testing.T) {
 	expected := []AppInfo{
 		{
 			AppName:   "testapp",
-			Version:   "0.0.1.137",
-			Channel:   "nightly",
-			Published: true,
-			Critical:  false,
-			Artifacts: []model.SpecificArtifactsWithoutIDs{
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  ".dmg",
-				},
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  ".pkg",
-				},
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  "",
-				},
-			},
-			Changelog: []model.Changelog{
-				{
-					Version: "0.0.1.137",
-					Changes: "",
-					Date:    time.Now().Format("2006-01-02"),
-				},
-			},
-		},
-		{
-			AppName:   "testapp",
-			Version:   "0.0.2.137",
-			Channel:   "nightly",
-			Published: true,
-			Critical:  true,
-			Artifacts: []model.SpecificArtifactsWithoutIDs{
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  ".dmg",
-				},
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  ".pkg",
-				},
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  "",
-				},
-			},
-			Changelog: []model.Changelog{
-				{
-					Version: "0.0.2.137",
-					Changes: "### Changelog",
-					Date:    time.Now().Format("2006-01-02"),
-				},
-			},
-		},
-		{
-			AppName:   "testapp",
-			Version:   "0.0.3.137",
-			Channel:   "nightly",
+			Version:   "0.0.5.137",
+			Channel:   "stable",
 			Published: false,
 			Critical:  false,
 			Artifacts: []model.SpecificArtifactsWithoutIDs{
@@ -1928,7 +1866,7 @@ func TestSearch(t *testing.T) {
 			},
 			Changelog: []model.Changelog{
 				{
-					Version: "0.0.3.137",
+					Version: "0.0.5.137",
 					Changes: "",
 					Date:    time.Now().Format("2006-01-02"),
 				},
@@ -1967,8 +1905,8 @@ func TestSearch(t *testing.T) {
 		},
 		{
 			AppName:   "testapp",
-			Version:   "0.0.5.137",
-			Channel:   "stable",
+			Version:   "0.0.3.137",
+			Channel:   "nightly",
 			Published: false,
 			Critical:  false,
 			Artifacts: []model.SpecificArtifactsWithoutIDs{
@@ -1990,7 +1928,69 @@ func TestSearch(t *testing.T) {
 			},
 			Changelog: []model.Changelog{
 				{
-					Version: "0.0.5.137",
+					Version: "0.0.3.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+		{
+			AppName:   "testapp",
+			Version:   "0.0.2.137",
+			Channel:   "nightly",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.2.137",
+					Changes: "### Changelog",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+		{
+			AppName:   "testapp",
+			Version:   "0.0.1.137",
+			Channel:   "nightly",
+			Published: true,
+			Critical:  false,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.1.137",
 					Changes: "",
 					Date:    time.Now().Format("2006-01-02"),
 				},
