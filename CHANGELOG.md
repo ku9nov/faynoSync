@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.11
+
+### Potential bug fix
+
+- Fix: jwt-go allows excessive memory allocation during header parsing
+- Fix: HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net
+
 ## v1.3.10
 
 ### Potential bug fix
