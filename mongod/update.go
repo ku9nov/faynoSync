@@ -54,9 +54,13 @@ func (c *appRepository) UpdateArch(id primitive.ObjectID, archID string, ctx con
 }
 
 // UpdateApp updates an existing app_name document
-func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo string, ctx context.Context) (interface{}, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
-	update := bson.D{{Key: "$set", Value: bson.D{{Key: "app_name", Value: appName}}}}
+	updateFields := bson.D{{Key: "app_name", Value: appName}}
+	if logo != "" {
+		updateFields = append(updateFields, bson.E{Key: "logo", Value: logo})
+	}
+	update := bson.D{{Key: "$set", Value: updateFields}}
 	return c.UpdateDocument("apps_meta", filter, update, "app_name_sort_by_asc_updated", "app", ctx)
 }
 

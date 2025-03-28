@@ -8,6 +8,8 @@
 
 - Pagination Improvement: Introduced a limit for "Get Apps" requests to optimize performance.
 
+- Add application logo support.
+
 ## v1.3.11
 
 ### Potential bug fix

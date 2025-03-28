@@ -71,7 +71,12 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 		extension = baseFileName[dotIndex:]
 	}
 	// Generate new file name
-	newFileName := fmt.Sprintf("%s-%s%s", ctxQuery["app_name"].(string), ctxQuery["version"].(string), extension)
+	var newFileName string
+	if ctxQuery["type"] == "logo" {
+		newFileName = fmt.Sprintf("%s-logo%s", ctxQuery["app_name"].(string), extension)
+	} else {
+		newFileName = fmt.Sprintf("%s-%s%s", ctxQuery["app_name"].(string), ctxQuery["version"].(string), extension)
+	}
 
 	var link string
 	var s3Key string
