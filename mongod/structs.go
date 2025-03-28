@@ -12,8 +12,8 @@ import (
 )
 
 type AppRepository interface {
-	Get(ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
-	GetAppByName(email string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
+	Get(ctx context.Context, limit int64) ([]*model.SpecificAppWithoutIDs, error)
+	GetAppByName(email string, ctx context.Context, limit int64) ([]*model.SpecificAppWithoutIDs, error)
 	DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
@@ -65,7 +65,7 @@ type CheckResult struct {
 	Changelog []Changelog
 }
 
-func (c *appRepository) getBasePipeline() mongo.Pipeline {
+func (c *appRepository) getBasePipeline(limit int64) mongo.Pipeline {
 	return mongo.Pipeline{
 		bson.D{{Key: "$lookup", Value: bson.M{
 			"from":         "apps_meta",
@@ -142,7 +142,7 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 			{Key: "app_name", Value: 1},
 			{Key: "version", Value: 1},
 		}}},
-		bson.D{{Key: "$limit", Value: 100}},
+		bson.D{{Key: "$limit", Value: limit}},
 	}
 }
 func (c *appRepository) sortVersionPipeline() mongo.Pipeline {

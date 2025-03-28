@@ -307,6 +307,10 @@ Retrieve a list of all apps.
 
 `GET /`
 
+###### Query Parameters
+
+**limit**: Maximum number of records to return in the response.
+
 ###### Headers
 **Authorization**: Authorization header with jwt token.
 
@@ -597,6 +601,8 @@ Search for all versions of an app by name.
 ###### Query Parameters
 **app_name**: Name of the app.
 
+**limit**: Maximum number of records to return in the response.
+
 ###### Request:
 ```
 curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
@@ -777,9 +783,11 @@ This endpoint allows you to delete a specific version of an app.
 `DELETE /apps/delete?id=<id>`
 
 ###### Headers
+
 **Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
+
 **id**: The unique identifier of the app version.
 
 ###### Request:
@@ -801,10 +809,14 @@ curl -X DELETE http://localhost:9000/apps/delete\?\id\=\653a5e4f51ce5114611f5abb
 `GET /search?app_name=<app_name>`
 
 ###### Headers
+
 **Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
+
 **app_name**: Name of the app.
+
+**limit**: Maximum number of records to return in the response.
 
 ###### Request:
 ```

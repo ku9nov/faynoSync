@@ -5,6 +5,7 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/server/model"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,11 +18,17 @@ func GetAppByName(c *gin.Context, repository db.AppRepository) {
 
 	var appList []*model.SpecificAppWithoutIDs
 
-	//get parameter
+	//get parameters
 	appName := c.Query("app_name")
+	limit := int64(100) // default value
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.ParseInt(limitStr, 10, 64); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
 
 	//request on repository
-	if result, err := repository.GetAppByName(appName, ctx); err != nil {
+	if result, err := repository.GetAppByName(appName, ctx, limit); err != nil {
 		logrus.Error(err)
 	} else {
 		appList = result
@@ -36,8 +43,16 @@ func GetAllApps(c *gin.Context, repository db.AppRepository) {
 
 	var appList []*model.SpecificAppWithoutIDs
 
+	//get limit parameter
+	limit := int64(100) // default value
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.ParseInt(limitStr, 10, 64); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
 	//request on repository
-	if result, err := repository.Get(ctx); err != nil {
+	if result, err := repository.Get(ctx, limit); err != nil {
 		logrus.Error(err)
 	} else {
 		appList = result

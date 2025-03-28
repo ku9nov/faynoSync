@@ -13,9 +13,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+func (c *appRepository) Get(ctx context.Context, limit int64) ([]*model.SpecificAppWithoutIDs, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
-	basePipeline := c.getBasePipeline()
+	basePipeline := c.getBasePipeline(limit)
 	pipeline := mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.M{"app_id": bson.M{"$exists": true}}}},
 	}
@@ -29,7 +29,8 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificAppWithoutIDs
 	defer cur.Close(ctx)
 	return c.processApps(cur, ctx)
 }
-func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+
+func (c *appRepository) GetAppByName(appName string, ctx context.Context, limit int64) ([]*model.SpecificAppWithoutIDs, error) {
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	metaFilter := bson.D{{Key: "app_name", Value: appName}}
 	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
@@ -39,7 +40,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
-	basePipeline := c.getBasePipeline()
+	basePipeline := c.getBasePipeline(limit)
 	pipeline := mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.M{"app_id": appMeta.ID}}},
 	}
@@ -54,6 +55,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 
 	return c.processApps(cur, ctx)
 }
+
 func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName, platformName, archName string, ctx context.Context) (CheckResult, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
@@ -202,7 +204,7 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 		{{Key: "$match", Value: matchFilter}},
 	}
 	pipeline = append(pipeline, c.sortVersionPipeline()...)
-	basePipeline := c.getBasePipeline()
+	basePipeline := c.getBasePipeline(1)
 	pipeline = append(pipeline, basePipeline...)
 
 	logrus.Debug("MongoDB Pipeline: ", pipeline)
@@ -224,7 +226,7 @@ func (c *appRepository) FetchAppByID(appID primitive.ObjectID, ctx context.Conte
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: matchFilter}},
 	}
-	basePipeline := c.getBasePipeline()
+	basePipeline := c.getBasePipeline(1)
 	pipeline = append(pipeline, basePipeline...)
 
 	logrus.Debug("MongoDB Pipeline for FetchAppByID: ", pipeline)
