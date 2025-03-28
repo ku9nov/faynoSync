@@ -48,6 +48,7 @@ type SpecificAppWithoutIDs struct {
 	Changelog []Changelog                   `bson:"changelog" json:"Changelog"`
 	UpdatedAt primitive.DateTime            `bson:"updated_at" json:"Updated_at"`
 }
+
 type Channel struct {
 	ID          primitive.ObjectID `bson:"_id"`
 	ChannelName string             `bson:"channel_name"`
@@ -88,4 +89,11 @@ type UpRequest struct {
 	Platform  string `json:"platform"`
 	Arch      string `json:"arch"`
 	Changelog string `json:"changelog"`
+}
+
+type PaginatedResponse struct {
+	Items []*SpecificAppWithoutIDs `json:"items"`
+	Total int64                    `json:"total"`
+	Page  int64                    `json:"page"`
+	Limit int64                    `json:"limit"`
 }

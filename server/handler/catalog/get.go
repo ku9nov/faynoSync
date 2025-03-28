@@ -16,11 +16,17 @@ func GetAppByName(c *gin.Context, repository db.AppRepository) {
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
-	var appList []*model.SpecificAppWithoutIDs
-
 	//get parameters
 	appName := c.Query("app_name")
-	limit := int64(100) // default value
+
+	page := int64(1) // default value
+	if pageStr := c.Query("page"); pageStr != "" {
+		if parsedPage, err := strconv.ParseInt(pageStr, 10, 64); err == nil && parsedPage > 0 {
+			page = parsedPage
+		}
+	}
+
+	limit := int64(9) // default value
 	if limitStr := c.Query("limit"); limitStr != "" {
 		if parsedLimit, err := strconv.ParseInt(limitStr, 10, 64); err == nil && parsedLimit > 0 {
 			limit = parsedLimit
@@ -28,13 +34,14 @@ func GetAppByName(c *gin.Context, repository db.AppRepository) {
 	}
 
 	//request on repository
-	if result, err := repository.GetAppByName(appName, ctx, limit); err != nil {
+	result, err := repository.GetAppByName(appName, ctx, page, limit)
+	if err != nil {
 		logrus.Error(err)
-	} else {
-		appList = result
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"apps": appList})
+	c.JSON(http.StatusOK, result)
 }
 
 func GetAllApps(c *gin.Context, repository db.AppRepository) {

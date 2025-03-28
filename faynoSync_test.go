@@ -1837,7 +1837,10 @@ func TestSearch(t *testing.T) {
 		Updated_at string                              `json:"Updated_at"`
 	}
 	type AppResponse struct {
-		Apps []AppInfo `json:"apps"`
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
 	}
 
 	expected := []AppInfo{
@@ -2005,36 +2008,38 @@ func TestSearch(t *testing.T) {
 	}
 
 	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
-
-	if len(actual.Apps) != len(expected) {
-		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Apps))
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
 	}
 
 	for i, expectedApp := range expected {
-		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
-		assert.Equal(t, expectedApp.Version, actual.Apps[i].Version)
-		assert.Equal(t, expectedApp.Channel, actual.Apps[i].Channel)
-		assert.Equal(t, expectedApp.Published, actual.Apps[i].Published)
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
 
-		if len(expectedApp.Artifacts) != len(actual.Apps[i].Artifacts) {
-			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.AppID, expectedApp.Version, len(actual.Apps[i].Artifacts))
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
 		}
 		for j, expectedArtifact := range expectedApp.Artifacts {
-			assert.Equal(t, expectedArtifact.Platform, actual.Apps[i].Artifacts[j].Platform)
-			assert.Equal(t, expectedArtifact.Arch, actual.Apps[i].Artifacts[j].Arch)
-			assert.Equal(t, expectedArtifact.Package, actual.Apps[i].Artifacts[j].Package)
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
 		}
 
-		if len(expectedApp.Changelog) != len(actual.Apps[i].Changelog) {
-			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.AppID, len(actual.Apps[i].Changelog))
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
 		}
 		for c, expectedChanges := range expectedApp.Changelog {
-			assert.Equal(t, expectedChanges.Version, actual.Apps[i].Changelog[c].Version)
-			assert.Equal(t, expectedChanges.Changes, actual.Apps[i].Changelog[c].Changes)
-			assert.Equal(t, expectedChanges.Date, actual.Apps[i].Changelog[c].Date)
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
 		}
 	}
 
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
 }
 func TestFetchkLatestVersionOfApp(t *testing.T) {
 	router := gin.Default()
