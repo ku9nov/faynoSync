@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.12
+
+### Features
+
+- Enhanced API Responses: Updated the return results for "Get All Apps" and "Search by Name" requests.
+
+- Pagination Improvement: Introduced a limit for "Get Apps" requests to optimize performance.
+
 ## v1.3.11
 
 ### Potential bug fix
