@@ -10,6 +10,8 @@
 
 - Add application logo support.
 
+- Add application description.
+
 ## v1.3.11
 
 ### Potential bug fix

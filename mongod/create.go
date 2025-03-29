@@ -56,10 +56,13 @@ func (c *appRepository) CreateArch(archID string, ctx context.Context) (interfac
 }
 
 // CreateApp creates a new app_name document
-func (c *appRepository) CreateApp(appName string, logo string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreateApp(appName string, logo string, description string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "app_name", Value: appName}}
 	if logo != "" {
 		document = append(document, bson.E{Key: "logo", Value: logo})
+	}
+	if description != "" {
+		document = append(document, bson.E{Key: "description", Value: description})
 	}
 	return c.CreateDocument("apps_meta", document, "app_name_sort_by_asc_created", "app", ctx)
 }

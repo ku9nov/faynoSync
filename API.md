@@ -58,17 +58,25 @@ Create app.
 
 `POST /app/create`
 
+Optional with `description`, `logo`. 
+
 ###### Headers
 **Authorization**: Authorization header with jwt token.
 
+###### Body
+**file**: logo of the app.
+
 ###### Body form data
 **app**: Name of the app.
+
+**description**: App description.
 
 ###### Request:
 ```
 curl --location 'http://localhost:9000/app/create' \
 --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
---form 'data="{\"app\":\"myapp\"}"'
+--form 'data="{\"app\":\"myapp\", \"description\": \"description of app\"}"' \
+--form 'file=@"path_to_logo.png"'
 ```
 
 ###### Responce:
@@ -901,8 +909,13 @@ Update existing app.
 
 `POST /app/update`
 
+Optional with `description`, `logo`. 
+
 ###### Headers
 **Authorization**: Authorization header with jwt token.
+
+###### Body
+**file**: logo of the app.
 
 ###### Body form-data
 
@@ -910,11 +923,14 @@ Update existing app.
 
 **app**: New app name.
 
+**description**: App description.
+
 ###### Request:
 ```
 curl --location 'http://localhost:9000/app/update' \
 -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
---form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"app\":\"new_name\"}"'
+--form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"app\":\"new_name\", \"description\": \"description of app\"}"' \
+--form 'file=@"path_to_logo.png"'
 ```
 ###### Responce:
 

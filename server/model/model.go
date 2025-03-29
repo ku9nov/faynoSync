@@ -10,10 +10,11 @@ type Artifact struct {
 }
 
 type App struct {
-	ID         primitive.ObjectID `bson:"_id"`
-	AppName    string             `bson:"app_name"`
-	Logo       string             `bson:"logo"`
-	Updated_at primitive.DateTime `bson:"updated_at"`
+	ID          primitive.ObjectID `bson:"_id"`
+	AppName     string             `bson:"app_name"`
+	Logo        string             `bson:"logo"`
+	Description string             `bson:"description"`
+	Updated_at  primitive.DateTime `bson:"updated_at"`
 }
 
 type SpecificApp struct {

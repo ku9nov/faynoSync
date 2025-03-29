@@ -72,14 +72,7 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			files := form.File["file"]
 			if len(files) > 0 {
 				file := files[0]
-				logoLink, _, err = utils.UploadToS3(map[string]interface{}{
-					"app_name": paramValue,
-					"version":  "0.0.0",
-					"type":     "logo",
-					"channel":  "",
-					"platform": "",
-					"arch":     "",
-				}, file, c, viper.GetViper())
+				logoLink, err = utils.UploadLogo(paramValue, file, c, viper.GetViper())
 				if err != nil {
 					logrus.Error(err)
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload logo to S3"})
@@ -87,7 +80,8 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 				}
 			}
 		}
-		result, err = repository.UpdateApp(objectID, paramValue, logoLink, ctx)
+		description := params["description"]
+		result, err = repository.UpdateApp(objectID, paramValue, logoLink, description, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
