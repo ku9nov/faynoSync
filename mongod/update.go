@@ -124,40 +124,35 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 
 		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
 
-		publishParam, publishExists := ctxQuery["publish"]
-		criticalParam, criticalExists := ctxQuery["critical"]
-
-		publish := false
-		if publishExists {
-			publish = utils.GetBoolParam(publishParam)
+		if publishParam, publishExists := ctxQuery["publish"]; publishExists {
+			publish := utils.GetBoolParam(publishParam)
 			updateFields = append(updateFields, bson.E{Key: "published", Value: publish})
 		}
 
-		critical := false
-		if criticalExists {
-			critical = utils.GetBoolParam(criticalParam)
+		if criticalParam, criticalExists := ctxQuery["critical"]; criticalExists {
+			critical := utils.GetBoolParam(criticalParam)
 			updateFields = append(updateFields, bson.E{Key: "critical", Value: critical})
 		}
 
-		duplicateFound := false
-		for _, artifact := range appData.Artifacts {
-			if artifact.Link == appLink && artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID && artifact.Package == extension {
-				duplicateFound = true
-				break
+		if appLink != "" && extension != "" {
+			duplicateFound := false
+			for _, artifact := range appData.Artifacts {
+				if artifact.Link == appLink && artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID && artifact.Package == extension {
+					duplicateFound = true
+					break
+				}
 			}
-		}
 
-		if !duplicateFound && appLink != "" && extension != "" {
-			newArtifact := model.Artifact{
-				Link:     appLink,
-				Platform: platformMeta.ID,
-				Arch:     archMeta.ID,
-				Package:  extension,
+			if !duplicateFound {
+				newArtifact := model.Artifact{
+					Link:     appLink,
+					Platform: platformMeta.ID,
+					Arch:     archMeta.ID,
+					Package:  extension,
+				}
+				appData.Artifacts = append(appData.Artifacts, newArtifact)
+				updateFields = append(updateFields, bson.E{Key: "artifacts", Value: appData.Artifacts})
 			}
-			appData.Artifacts = append(appData.Artifacts, newArtifact)
-		}
-		if len(appData.Artifacts) > 0 {
-			updateFields = append(updateFields, bson.E{Key: "artifacts", Value: appData.Artifacts})
 		}
 
 		// Add or update changelog

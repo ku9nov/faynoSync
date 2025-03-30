@@ -115,7 +115,7 @@ func UpdateApp(c *gin.Context, repository db.AppRepository) {
 }
 
 func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
-	ctxQueryMap, err := utils.ValidateParams(c, db)
+	ctxQueryMap, err := utils.ValidateUpdateParams(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -126,6 +126,9 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	delete(ctxQueryMap, "id")
+
 	form, _ := c.MultipartForm()
 	var links []string
 	var extensions []string
