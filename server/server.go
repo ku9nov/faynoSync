@@ -77,7 +77,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.POST("/app/create", handler.CreateApp)
 	router.GET("/app/list", handler.ListApps)
 	router.DELETE("/app/delete", handler.DeleteApp)
-
+	router.POST("/artifact/delete", handler.DeleteSpecificArtifactOfApp)
 	// get the port from the configuration file
 	port := config.GetString("PORT")
 	if port == "" {

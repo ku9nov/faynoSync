@@ -36,6 +36,7 @@ type AppRepository interface {
 	UpdateChannel(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
 	UpdatePlatform(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
 	UpdateArch(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
+	DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context) ([]string, bool, error)
 }
 
 type appRepository struct {

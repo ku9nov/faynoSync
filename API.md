@@ -10,7 +10,7 @@ Request:
 curl -X GET http://localhost:9000/health
 ```
 
-Responce:
+Response:
 
 ```
 {
@@ -28,7 +28,7 @@ Request:
 curl -X POST -H "Content-Type: application/json" -d '{"username": "admin", "password": "password", "api_key": "UHp3aKb40fwpoKZluZByWQ"}' http://localhost:9000/signup
 ```
 
-Responce:
+Response:
 
 ```
 {
@@ -46,7 +46,7 @@ Request:
 curl -X POST -H "Content-Type: application/json" -d '{"username": "admin", "password": "password"}' http://localhost:9000/login
 ```
 
-Responce:
+Response:
 
 ```
 {"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"}
@@ -79,7 +79,7 @@ curl --location 'http://localhost:9000/app/create' \
 --form 'file=@"path_to_logo.png"'
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -108,7 +108,7 @@ curl --location 'http://localhost:9000/channel/create' \
 --form 'data="{\"channel\":\"nightly\"}"'
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -137,7 +137,7 @@ curl --location 'http://localhost:9000/platform/create' \
 --form 'data="{\"platform\":\"linux\"}"'
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -166,7 +166,7 @@ curl --location 'http://localhost:9000/arch/create' \
 --form 'data="{\"arch\":\"amd64\"}"'
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -188,7 +188,7 @@ Retrieve a list of all apps.
 curl -X GET http://localhost:9000/app/list -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -223,7 +223,7 @@ Retrieve a list of all channels.
 curl -X GET http://localhost:9000/channel/list -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -256,7 +256,7 @@ Retrieve a list of all platforms.
 curl -X GET http://localhost:9000/platform/list -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -289,7 +289,7 @@ Retrieve a list of all architectures.
 curl -X GET http://localhost:9000/arch/list -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -327,7 +327,7 @@ Retrieve a list of all apps.
 curl -X GET http://localhost:9000/ -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q"
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -404,7 +404,7 @@ Check if there is a newer version of a specific app.
 curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64'
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -463,7 +463,7 @@ curl --location 'http://localhost:9000/upload' \
 --form 'file=@"/path_to_file/secondapp.rpm"' \
 --form 'data="{\"app_name\":\"secondapp\",\"version\":\"0.0.2\",\"channel\":\"stable\",\"publish\":true,\"platform\":\"linux\",\"arch\":\"amd64\",\"changelog\":\"### Changelog\\n\\n- Added new feature X\\n- Fixed bug Y\"}"'
 ```
-###### Responce:
+###### Response:
 
 ```
 {
@@ -486,7 +486,7 @@ Check if there is a newer version of a specific app after uploading a new versio
 curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64'
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -518,7 +518,7 @@ This API endpoint retrieves the latest version of a specific app based on the pr
 curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&channel=stable&platform=linux&arch=amd64'
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -589,7 +589,7 @@ curl --location 'http://localhost:9000/apps/update' \
 --form 'file=@"/path_to_file/secondapp.deb"' \
 --form 'file=@"/path_to_file/secondapp.rpm"'
 ```
-###### Responce:
+###### Response:
 
 ```
 {
@@ -618,7 +618,7 @@ curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
 
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -702,7 +702,7 @@ curl -X DELETE http://localhost:9000/app/delete\?\id\=\64145ebaedd163d59d52e1dc 
 
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -727,7 +727,7 @@ curl -X DELETE http://localhost:9000/channel/delete\?\id\=\64145ebaedd163d59d52e
 
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -752,7 +752,7 @@ curl -X DELETE http://localhost:9000/platform/delete\?\id\=\64145ebaedd163d59d52
 
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -777,7 +777,7 @@ curl -X DELETE http://localhost:9000/arch/delete\?\id\=\64145ebaedd163d59d52e1dc
 
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -804,7 +804,7 @@ curl -X DELETE http://localhost:9000/apps/delete\?\id\=\653a5e4f51ce5114611f5abb
 
 ```
 
-###### Responce:
+###### Response:
 
 ```
 {
@@ -832,7 +832,7 @@ curl -X GET http://localhost:9000/search\?\app_name\=\secondapp -H "Authorizatio
 
 ```
 
-###### Responce:
+###### Response:
 ```
 {
     "apps": [
@@ -892,7 +892,7 @@ curl --location 'http://localhost:9000/channel/update' \
 -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
 --form 'data="{\"id\":\"66ae13fe4b663c058367f893\", \"channel\":\"new_name\"}"'
 ```
-###### Responce:
+###### Response:
 
 ```
 {
@@ -932,7 +932,7 @@ curl --location 'http://localhost:9000/app/update' \
 --form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"app\":\"new_name\", \"description\": \"description of app\"}"' \
 --form 'file=@"path_to_logo.png"'
 ```
-###### Responce:
+###### Response:
 
 ```
 {
@@ -963,7 +963,7 @@ curl --location 'http://localhost:9000/platform/update' \
 -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
 --form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"platform\":\"new_name\"}"'
 ```
-###### Responce:
+###### Response:
 
 ```
 {
@@ -994,10 +994,43 @@ curl --location 'http://localhost:9000/arch/update' \
 -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
 --form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"arch\":\"new_name\"}"'
 ```
-###### Responce:
+###### Response:
 
 ```
 {
     "updateArchResult.Updated": true
+}
+```
+
+### Delete Artifact
+
+This endpoint allows you to delete artifacts of a specific application by its identifier.
+
+`POST /artifact/delete`
+
+###### Headers
+**Authorization**: Authorization header with JWT token.
+
+###### Body form-data
+**id**: Unique identifier of the artifact to be deleted.
+
+**app_name**: Name of the application to which the artifact belongs.
+
+**version**: Current version of the application.
+
+**artifacts_to_delete**: Array of identifiers of the artifacts to be deleted. Example: ["0", "1"]
+
+###### Request:
+```
+curl -X POST --location 'http://localhost:9000/artifact/delete' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
+--form 'data="{\"id\":\"653a5e4f51ce5114611f5abb\", \"app_name\":\"secondapp\", \"version\":\"0.0.1\", \"artifacts_to_delete\":[\"0\"]}"'
+```
+
+###### Response:
+
+```
+{
+    "deleteSpecificArtifactResult": true
 }
 ```

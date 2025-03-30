@@ -81,15 +81,16 @@ type Credentials struct {
 }
 
 type UpRequest struct {
-	Id        string `json:"id"`
-	AppName   string `json:"app_name"`
-	Version   string `json:"version"`
-	Channel   string `json:"channel"`
-	Publish   bool   `json:"publish"`
-	Critical  bool   `json:"critical"`
-	Platform  string `json:"platform"`
-	Arch      string `json:"arch"`
-	Changelog string `json:"changelog"`
+	Id                string   `json:"id"`
+	AppName           string   `json:"app_name"`
+	Version           string   `json:"version"`
+	Channel           string   `json:"channel"`
+	Publish           bool     `json:"publish"`
+	Critical          bool     `json:"critical"`
+	Platform          string   `json:"platform"`
+	Arch              string   `json:"arch"`
+	Changelog         string   `json:"changelog"`
+	ArtifactsToDelete []string `json:"artifacts_to_delete"`
 }
 
 type PaginatedResponse struct {

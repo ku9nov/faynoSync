@@ -61,15 +61,16 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 	publishStr := strconv.FormatBool(upReq.Publish)
 	criticalStr := strconv.FormatBool(upReq.Critical)
 	return map[string]interface{}{
-		"id":        upReq.Id,
-		"app_name":  upReq.AppName,
-		"version":   upReq.Version,
-		"channel":   upReq.Channel,
-		"publish":   publishStr,
-		"critical":  criticalStr,
-		"platform":  upReq.Platform,
-		"arch":      upReq.Arch,
-		"changelog": upReq.Changelog,
+		"id":                  upReq.Id,
+		"app_name":            upReq.AppName,
+		"version":             upReq.Version,
+		"channel":             upReq.Channel,
+		"publish":             publishStr,
+		"critical":            criticalStr,
+		"platform":            upReq.Platform,
+		"arch":                upReq.Arch,
+		"changelog":           upReq.Changelog,
+		"artifacts_to_delete": upReq.ArtifactsToDelete,
 	}, nil
 }
 
