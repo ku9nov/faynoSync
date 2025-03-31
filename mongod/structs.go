@@ -82,7 +82,7 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 			"as":           "channel_meta",
 		}}},
 		bson.D{{Key: "$unwind", Value: bson.M{"path": "$channel_meta", "preserveNullAndEmptyArrays": true}}},
-		bson.D{{Key: "$unwind", Value: "$artifacts"}},
+		bson.D{{Key: "$unwind", Value: bson.M{"path": "$artifacts", "preserveNullAndEmptyArrays": true}}},
 		bson.D{{Key: "$lookup", Value: bson.M{
 			"from":         "apps_meta",
 			"localField":   "artifacts.platform",

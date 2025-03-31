@@ -134,7 +134,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 			updateFields = append(updateFields, bson.E{Key: "critical", Value: critical})
 		}
 
-		if appLink != "" && extension != "" {
+		if appLink != "" {
 			duplicateFound := false
 			for _, artifact := range appData.Artifacts {
 				if artifact.Link == appLink && artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID && artifact.Package == extension {

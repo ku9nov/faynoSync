@@ -47,6 +47,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 	}
 	countCursor, err := collection.Aggregate(ctx, countPipeline)
 	if err != nil {
+		logrus.Errorf("Error during count aggregation: %v", err)
 		return nil, err
 	}
 	defer countCursor.Close(ctx)
@@ -56,6 +57,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 	}
 	if countCursor.Next(ctx) {
 		if err := countCursor.Decode(&countResult); err != nil {
+			logrus.Errorf("Error decoding count result: %v", err)
 			return nil, err
 		}
 	}
@@ -73,12 +75,14 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 
 	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
+		logrus.Errorf("Error during aggregation: %v", err)
 		return nil, err
 	}
 	defer cur.Close(ctx)
 
 	items, err := c.processApps(cur, ctx)
 	if err != nil {
+		logrus.Errorf("Error processing apps: %v", err)
 		return nil, err
 	}
 
