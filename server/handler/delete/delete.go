@@ -111,7 +111,7 @@ func deleteEntity(c *gin.Context, repository db.AppRepository, itemType string) 
 	}
 	if err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete " + itemType})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete " + itemType, "details": err.Error()})
 		return
 	}
 	var tag language.Tag

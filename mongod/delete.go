@@ -108,7 +108,6 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 	collection := c.client.Database(c.config.Database).Collection(collectionName)
 
 	filter := bson.D{primitive.E{Key: "_id", Value: id}}
-
 	// Retrieve the document before deletion
 	err := collection.FindOne(ctx, filter).Decode(docType)
 	if err != nil {
@@ -116,6 +115,38 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 			return 0, fmt.Errorf("no document found with ID %s", id)
 		}
 		return 0, fmt.Errorf("error retrieving document with ID %s: %s", id, err.Error())
+	}
+
+	var relatedFilter bson.D
+
+	switch docType.(type) {
+	case *model.App:
+		relatedFilter = bson.D{primitive.E{Key: "app_id", Value: id}}
+	case *model.Channel:
+		relatedFilter = bson.D{primitive.E{Key: "channel_id", Value: id}}
+	case *model.Platform:
+		relatedFilter = bson.D{
+			primitive.E{Key: "artifacts", Value: bson.D{
+				primitive.E{Key: "$elemMatch", Value: bson.D{primitive.E{Key: "platform", Value: id}}},
+			}},
+		}
+	case *model.Arch:
+		relatedFilter = bson.D{
+			primitive.E{Key: "artifacts", Value: bson.D{
+				primitive.E{Key: "$elemMatch", Value: bson.D{primitive.E{Key: "arch", Value: id}}},
+			}},
+		}
+	default:
+		return 0, fmt.Errorf("unsupported document type")
+	}
+
+	checkRelatedApps := c.client.Database(c.config.Database).Collection("apps")
+
+	var foundDoc bson.M
+
+	err = checkRelatedApps.FindOne(ctx, relatedFilter).Decode(&foundDoc)
+	if err == nil {
+		return 0, fmt.Errorf("you can't delete this item because it is related to other items")
 	}
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
