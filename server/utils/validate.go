@@ -192,3 +192,46 @@ func IsValidArchName(input string) bool {
 	validName := regexp.MustCompile(`^[a-zA-Z0-9]*$`)
 	return validName.MatchString(input)
 }
+
+func ValidateUpdateParams(c *gin.Context, database *mongo.Database) (map[string]interface{}, error) {
+	var ctxQueryMap map[string]interface{}
+	var err error
+
+	if c.Request.Method == http.MethodPost {
+		ctxQueryMap, err = extractParamsFromPost(c)
+	} else {
+		return nil, errors.New("unsupported request method")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return validateUpdateCommonParams(ctxQueryMap, database, c)
+}
+
+func validateUpdateCommonParams(ctxQueryMap map[string]interface{}, database *mongo.Database, c *gin.Context) (map[string]interface{}, error) {
+
+	form, _ := c.MultipartForm()
+	hasFile := form != nil && len(form.File["file"]) > 0
+
+	if hasFile {
+		platform, _ := ctxQueryMap["platform"].(string)
+		if !IsValidPlatformName(platform) {
+			return nil, errors.New("invalid platform parameter")
+		}
+		if err := CheckPlatforms(platform, database, c); err != nil {
+			return nil, err
+		}
+
+		arch, _ := ctxQueryMap["arch"].(string)
+		if !IsValidArchName(arch) {
+			return nil, errors.New("invalid arch parameter")
+		}
+		if err := CheckArchs(arch, database, c); err != nil {
+			return nil, err
+		}
+	}
+
+	return ctxQueryMap, nil
+}

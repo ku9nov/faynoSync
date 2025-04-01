@@ -41,6 +41,7 @@ type AppHandler interface {
 	UpdateChannel(*gin.Context)
 	UpdatePlatform(*gin.Context)
 	UpdateArch(*gin.Context)
+	DeleteSpecificArtifactOfApp(*gin.Context)
 }
 
 type appHandler struct {
@@ -180,4 +181,8 @@ func (ch *appHandler) UpdatePlatform(c *gin.Context) {
 func (ch *appHandler) UpdateArch(c *gin.Context) {
 	// Call the UpdateArch function from the create package
 	update.UpdateArch(c, ch.repository)
+}
+func (ch *appHandler) DeleteSpecificArtifactOfApp(c *gin.Context) {
+	// Call the DeleteSpecificArtifactOfApp function from the delete package
+	delete.DeleteSpecificArtifactOfApp(c, ch.repository, ch.database)
 }

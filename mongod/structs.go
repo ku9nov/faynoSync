@@ -12,8 +12,8 @@ import (
 )
 
 type AppRepository interface {
-	Get(ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
-	GetAppByName(email string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
+	Get(ctx context.Context, limit int64) ([]*model.SpecificAppWithoutIDs, error)
+	GetAppByName(appName string, ctx context.Context, page, limit int64) (*model.PaginatedResponse, error)
 	DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
@@ -29,13 +29,14 @@ type AppRepository interface {
 	CreateArch(archName string, ctx context.Context) (interface{}, error)
 	ListArchs(ctx context.Context) ([]*model.Arch, error)
 	DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error)
-	CreateApp(archName string, ctx context.Context) (interface{}, error)
+	CreateApp(appName string, logo string, description string, ctx context.Context) (interface{}, error)
 	ListApps(ctx context.Context) ([]*model.App, error)
 	DeleteApp(id primitive.ObjectID, ctx context.Context) (int64, error)
-	UpdateApp(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
+	UpdateApp(id primitive.ObjectID, appName string, logo string, description string, ctx context.Context) (interface{}, error)
 	UpdateChannel(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
 	UpdatePlatform(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
 	UpdateArch(id primitive.ObjectID, paramValue string, ctx context.Context) (interface{}, error)
+	DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context) ([]string, bool, error)
 }
 
 type appRepository struct {
@@ -81,7 +82,7 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 			"as":           "channel_meta",
 		}}},
 		bson.D{{Key: "$unwind", Value: bson.M{"path": "$channel_meta", "preserveNullAndEmptyArrays": true}}},
-		bson.D{{Key: "$unwind", Value: "$artifacts"}},
+		bson.D{{Key: "$unwind", Value: bson.M{"path": "$artifacts", "preserveNullAndEmptyArrays": true}}},
 		bson.D{{Key: "$lookup", Value: bson.M{
 			"from":         "apps_meta",
 			"localField":   "artifacts.platform",
@@ -99,6 +100,17 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 		bson.D{{Key: "$addFields", Value: bson.M{
 			"artifacts.platform": "$platform_meta.platform_name",
 			"artifacts.arch":     "$arch_meta.arch_id",
+		}}},
+		bson.D{{Key: "$group", Value: bson.M{
+			"_id":        "$_id",
+			"app_name":   bson.M{"$first": "$app_meta.app_name"},
+			"channel":    bson.M{"$first": "$channel_meta.channel_name"},
+			"version":    bson.M{"$first": "$version"},
+			"published":  bson.M{"$first": "$published"},
+			"critical":   bson.M{"$first": "$critical"},
+			"artifacts":  bson.M{"$push": "$artifacts"},
+			"changelog":  bson.M{"$first": "$changelog"},
+			"updated_at": bson.M{"$first": "$updated_at"},
 		}}},
 		bson.D{{Key: "$addFields", Value: bson.D{
 			{Key: "versions_arr", Value: bson.D{
@@ -121,28 +133,18 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 2}},
 				}},
 			}},
+			{Key: "build_v", Value: bson.D{
+				{Key: "$toInt", Value: bson.D{
+					{Key: "$arrayElemAt", Value: bson.A{"$versions_arr", 3}},
+				}},
+			}},
 		}}},
 		bson.D{{Key: "$sort", Value: bson.D{
 			{Key: "major_v", Value: -1},
 			{Key: "minor_v", Value: -1},
 			{Key: "patch_v", Value: -1},
+			{Key: "build_v", Value: -1},
 		}}},
-		bson.D{{Key: "$group", Value: bson.M{
-			"_id":        "$_id",
-			"app_name":   bson.M{"$first": "$app_meta.app_name"},
-			"channel":    bson.M{"$first": "$channel_meta.channel_name"},
-			"version":    bson.M{"$first": "$version"},
-			"published":  bson.M{"$first": "$published"},
-			"critical":   bson.M{"$first": "$critical"},
-			"artifacts":  bson.M{"$push": "$artifacts"},
-			"changelog":  bson.M{"$first": "$changelog"},
-			"updated_at": bson.M{"$first": "$updated_at"},
-		}}},
-		bson.D{{Key: "$sort", Value: bson.D{
-			{Key: "app_name", Value: 1},
-			{Key: "version", Value: 1},
-		}}},
-		bson.D{{Key: "$limit", Value: 100}},
 	}
 }
 func (c *appRepository) sortVersionPipeline() mongo.Pipeline {

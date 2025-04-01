@@ -12,6 +12,8 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
@@ -51,7 +53,22 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 	case "arch":
 		result, err = repository.CreateArch(paramValue, ctx)
 	case "app":
-		result, err = repository.CreateApp(paramValue, ctx)
+		var logoLink string
+		form, _ := c.MultipartForm()
+		if form != nil {
+			files := form.File["file"]
+			if len(files) > 0 {
+				file := files[0]
+				logoLink, err = utils.UploadLogo(paramValue, file, c, viper.GetViper())
+				if err != nil {
+					logrus.Error(err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload logo to S3"})
+					return
+				}
+			}
+		}
+		description := params["description"]
+		result, err = repository.CreateApp(paramValue, logoLink, description, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return

@@ -928,6 +928,44 @@
 				}
 			},
 			"response": []
+		},
+		{
+			"name": "Delete specific artifact by app id",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"value": "{\"id\": \"\", \"app_name\": \"{{app_name}}\", \"version\": \"{{version}}\", \"artifacts_to_delete\": [ \"0\"]}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{URL}}/artifact/delete",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"artifact",
+						"delete"
+					]
+				}
+			},
+			"response": []
 		}
 	],
 	"auth": {

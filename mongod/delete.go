@@ -5,6 +5,8 @@ import (
 	"faynoSync/server/model"
 	"fmt"
 	"log"
+	"strconv"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
@@ -42,6 +44,62 @@ func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx co
 	}
 
 	return links, deleteResult.DeletedCount, nil
+}
+
+func (c *appRepository) DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context) ([]string, bool, error) {
+	var err error
+	var links []string
+	collection := c.client.Database(c.config.Database).Collection("apps")
+	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
+
+	err = c.getMeta(ctx, metaCollection, "app_name", ctxQuery["app_name"].(string), &appMeta)
+	if err != nil {
+		logrus.Errorln("Error getting app_id in DeleteSpecificArtifactOfApp:", err)
+	}
+	existingDoc := collection.FindOne(ctx, bson.D{
+		{Key: "_id", Value: id},
+		{Key: "app_id", Value: appMeta.ID},
+		{Key: "version", Value: ctxQuery["version"].(string)},
+	})
+
+	if existingDoc.Err() == nil {
+
+		var appData model.SpecificApp
+		if err := existingDoc.Decode(&appData); err != nil {
+			logrus.Errorln("Error decoding appData in DeleteSpecificArtifactOfApp:", err)
+		}
+
+		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
+		var deletedLinks []string
+
+		if artifactsToDelete, ok := ctxQuery["artifacts_to_delete"].([]string); ok {
+			for _, index := range artifactsToDelete {
+				if idx, err := strconv.Atoi(index); err == nil && idx < len(appData.Artifacts) {
+					deletedLinks = append(deletedLinks, string(appData.Artifacts[idx].Link))
+					appData.Artifacts = append(appData.Artifacts[:idx], appData.Artifacts[idx+1:]...)
+				} else {
+					logrus.Errorf("Invalid index in DeleteSpecificArtifactOfApp: %s\n", index)
+					return nil, false, err
+				}
+			}
+			updateFields = append(updateFields, bson.E{Key: "artifacts", Value: appData.Artifacts})
+		}
+
+		links = append(links, deletedLinks...)
+
+		_, err = collection.UpdateOne(
+			ctx,
+			bson.D{{Key: "_id", Value: id}},
+			bson.D{{Key: "$set", Value: updateFields}},
+		)
+		if err != nil {
+			logrus.Fatal(err)
+
+			return nil, false, err
+		}
+
+	}
+	return links, true, nil
 }
 
 type Document interface{}

@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -39,6 +40,33 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository) {
 		utils.DeleteFromS3(subLink, c, viper.GetViper())
 	}
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
+}
+
+func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
+	env := viper.GetViper()
+	ctxQueryMap, err := utils.ValidateUpdateParams(c, db)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Convert string to ObjectID
+	objID, err := primitive.ObjectIDFromHex(ctxQueryMap["id"].(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	delete(ctxQueryMap, "id")
+	links, result, err := repository.DeleteSpecificArtifactOfApp(objID, ctxQueryMap, c.Request.Context())
+	if err != nil {
+		logrus.Error(err)
+	}
+
+	for _, link := range links {
+		subLink := strings.TrimPrefix(link, env.GetString("S3_ENDPOINT"))
+		utils.DeleteFromS3(subLink, c, viper.GetViper())
+	}
+	c.JSON(http.StatusOK, gin.H{"deleteSpecificArtifactResult": result})
 }
 
 func DeleteApp(c *gin.Context, repository db.AppRepository) {

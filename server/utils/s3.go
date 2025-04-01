@@ -54,6 +54,18 @@ func createStorageClient() interface{} {
 	}
 }
 
+func UploadLogo(appName string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, error) {
+	logoLink, _, err := UploadToS3(map[string]interface{}{
+		"app_name": appName,
+		"version":  "0.0.0",
+		"type":     "logo",
+		"channel":  "",
+		"platform": "",
+		"arch":     "",
+	}, file, c, env)
+	return logoLink, err
+}
+
 func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, string, error) {
 	// // Create an S3 client using another func
 	storageClient := createStorageClient()
@@ -71,7 +83,12 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 		extension = baseFileName[dotIndex:]
 	}
 	// Generate new file name
-	newFileName := fmt.Sprintf("%s-%s%s", ctxQuery["app_name"].(string), ctxQuery["version"].(string), extension)
+	var newFileName string
+	if ctxQuery["type"] == "logo" {
+		newFileName = fmt.Sprintf("%s-logo%s", ctxQuery["app_name"].(string), extension)
+	} else {
+		newFileName = fmt.Sprintf("%s-%s%s", ctxQuery["app_name"].(string), ctxQuery["version"].(string), extension)
+	}
 
 	var link string
 	var s3Key string

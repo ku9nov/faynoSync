@@ -13,13 +13,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+func (c *appRepository) Get(ctx context.Context, limit int64) ([]*model.SpecificAppWithoutIDs, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	basePipeline := c.getBasePipeline()
 	pipeline := mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.M{"app_id": bson.M{"$exists": true}}}},
 	}
 	pipeline = append(pipeline, basePipeline...)
+	pipeline = append(pipeline, bson.D{{Key: "$limit", Value: limit}})
 
 	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
@@ -29,7 +30,8 @@ func (c *appRepository) Get(ctx context.Context) ([]*model.SpecificAppWithoutIDs
 	defer cur.Close(ctx)
 	return c.processApps(cur, ctx)
 }
-func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+
+func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64) (*model.PaginatedResponse, error) {
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	metaFilter := bson.D{{Key: "app_name", Value: appName}}
 	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
@@ -39,21 +41,59 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context) ([]*mo
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
+	countPipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.M{"app_id": appMeta.ID}}},
+		bson.D{{Key: "$count", Value: "total"}},
+	}
+	countCursor, err := collection.Aggregate(ctx, countPipeline)
+	if err != nil {
+		logrus.Errorf("Error during count aggregation: %v", err)
+		return nil, err
+	}
+	defer countCursor.Close(ctx)
+
+	var countResult struct {
+		Total int64 `bson:"total"`
+	}
+	if countCursor.Next(ctx) {
+		if err := countCursor.Decode(&countResult); err != nil {
+			logrus.Errorf("Error decoding count result: %v", err)
+			return nil, err
+		}
+	}
+	total := countResult.Total
+
 	basePipeline := c.getBasePipeline()
 	pipeline := mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.M{"app_id": appMeta.ID}}},
 	}
 	pipeline = append(pipeline, basePipeline...)
+	pipeline = append(pipeline,
+		bson.D{{Key: "$skip", Value: (page - 1) * limit}},
+		bson.D{{Key: "$limit", Value: limit}},
+	)
 
 	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		logrus.Fatal(err)
+		logrus.Errorf("Error during aggregation: %v", err)
 		return nil, err
 	}
 	defer cur.Close(ctx)
 
-	return c.processApps(cur, ctx)
+	items, err := c.processApps(cur, ctx)
+	if err != nil {
+		logrus.Errorf("Error processing apps: %v", err)
+		return nil, err
+	}
+
+	return &model.PaginatedResponse{
+		Items: items,
+		Total: total,
+		Page:  page,
+		Limit: limit,
+	}, nil
 }
+
 func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName, platformName, archName string, ctx context.Context) (CheckResult, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")

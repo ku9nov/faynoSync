@@ -66,7 +66,22 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 	case "arch":
 		result, err = repository.UpdateArch(objectID, paramValue, ctx)
 	case "app":
-		result, err = repository.UpdateApp(objectID, paramValue, ctx)
+		var logoLink string
+		form, _ := c.MultipartForm()
+		if form != nil {
+			files := form.File["file"]
+			if len(files) > 0 {
+				file := files[0]
+				logoLink, err = utils.UploadLogo(paramValue, file, c, viper.GetViper())
+				if err != nil {
+					logrus.Error(err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload logo to S3"})
+					return
+				}
+			}
+		}
+		description := params["description"]
+		result, err = repository.UpdateApp(objectID, paramValue, logoLink, description, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
@@ -100,7 +115,7 @@ func UpdateApp(c *gin.Context, repository db.AppRepository) {
 }
 
 func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
-	ctxQueryMap, err := utils.ValidateParams(c, db)
+	ctxQueryMap, err := utils.ValidateUpdateParams(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -111,6 +126,9 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	delete(ctxQueryMap, "id")
+
 	form, _ := c.MultipartForm()
 	var links []string
 	var extensions []string
