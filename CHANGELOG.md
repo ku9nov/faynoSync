@@ -12,6 +12,8 @@
 
 - Add application description.
 
+- Add artifact deletion route.
+
 ## v1.3.11
 
 ### Potential bug fix

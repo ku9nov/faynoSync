@@ -1004,7 +1004,7 @@ curl --location 'http://localhost:9000/arch/update' \
 
 ### Delete Artifact
 
-This endpoint allows you to delete artifacts of a specific application by its identifier.
+This endpoint allows you to delete artifacts of a specific application by its identifier in array.
 
 `POST /artifact/delete`
 
@@ -1012,7 +1012,8 @@ This endpoint allows you to delete artifacts of a specific application by its id
 **Authorization**: Authorization header with JWT token.
 
 ###### Body form-data
-**id**: Unique identifier of the artifact to be deleted.
+
+**id**: Unique identifier of the specific version of application.
 
 **app_name**: Name of the application to which the artifact belongs.
 

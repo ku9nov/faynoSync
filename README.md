@@ -1,5 +1,3 @@
-[![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://stand-with-ukraine.pp.ua)
-
 <div align="center">
   
   [![Documentation](https://img.shields.io/badge/Documentation-available-brightgreen)](https://ku9nov.github.io/faynoSync-site/docs/intro)
@@ -16,6 +14,12 @@
 "FaynoSync" is derived from the Ukrainian word "файно" (fayno), which is transliterated as "fayno" in English. In the Ukrainian language, "файно" (fayno) is an informal term used to describe something as excellent, fine, or great, indicating a positive, satisfactory, or enjoyable state or experience.
 
 This application is a simple auto updater service written in Golang. It allows you to upload your application to S3 and set the version number. The client application can then check the version number against the auto updater service API. If the auto updater service has a newer version, it will return a link to the updated service, and the client application will show an alert.
+
+## Documentation
+The documentation is available in this repository [faynoSync-site](https://github.com/ku9nov/faynoSync-site) and at this link [faynoSync Documentation](https://ku9nov.github.io/faynoSync-site/docs/intro).
+
+## Frontend
+The repository with the available frontend is available in this repository [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard).
 
 ## Installation
 
