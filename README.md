@@ -20,10 +20,12 @@ The documentation is available in this repository [faynoSync-site](https://githu
 The repository with the available frontend is available in this repository [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard).
 
 ###  Client Application Examples
+
 You can find examples of client applications [here](https://github.com/ku9nov/faynoSync/tree/main/examples).
 
-### Postman template
-You can find postman template [here](https://github.com/ku9nov/faynoSync/blob/main/examples/faynoSync.postman_collection.json).
+### API usage template
+
+You can find the Postman template [here](https://github.com/ku9nov/faynoSync/blob/main/examples/faynoSync.postman_collection.json), or you can check available API requests [here](https://github.com/ku9nov/faynoSync/blob/main/API.md).
 
 
 ## Installation
