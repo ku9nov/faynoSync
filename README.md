@@ -1,3 +1,5 @@
+# FaynoSync
+
 <div align="center">
   
   [![Documentation](https://img.shields.io/badge/Documentation-available-brightgreen)](https://ku9nov.github.io/faynoSync-site/docs/intro)
@@ -7,19 +9,22 @@
 
 </div>
 
-# FaynoSync
+This application is a simple API server for automatically updating client applications. It allows you to upload your application to S3 and set the version number. The client application can then check the version number against the auto updater service API. If the service has a newer version, it will return a link to the updated service, and the client application will show an alert.
 
-![225881501-b8aab72a-31e7-45ec-9340-4cca2a7893e9 (1)](https://github.com/ku9nov/faynoSync/assets/69673517/59ee4531-5d6c-4bc3-8aab-96854e2a4844)
-
-"FaynoSync" is derived from the Ukrainian word "файно" (fayno), which is transliterated as "fayno" in English. In the Ukrainian language, "файно" (fayno) is an informal term used to describe something as excellent, fine, or great, indicating a positive, satisfactory, or enjoyable state or experience.
-
-This application is a simple auto updater service written in Golang. It allows you to upload your application to S3 and set the version number. The client application can then check the version number against the auto updater service API. If the auto updater service has a newer version, it will return a link to the updated service, and the client application will show an alert.
+The API server is designed for straightforward and intuitive application management. It supports updating client applications both in the background and on-demand, depending on how it's implemented in the client application. This provides flexibility in choosing the update method that best suits your needs.
 
 ## Documentation
 The documentation is available in this repository [faynoSync-site](https://github.com/ku9nov/faynoSync-site) and at this link [faynoSync Documentation](https://ku9nov.github.io/faynoSync-site/docs/intro).
 
 ## Frontend
 The repository with the available frontend is available in this repository [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard).
+
+###  Client Application Examples
+You can find examples of client applications [here](https://github.com/ku9nov/faynoSync/tree/main/examples).
+
+### Postman template
+You can find postman template [here](https://github.com/ku9nov/faynoSync/blob/main/examples/faynoSync.postman_collection.json).
+
 
 ## Installation
 
@@ -82,9 +87,9 @@ Note: To rollback your migrations run:
 ./faynoSync --migration --rollback
 ```
 
-3. Upload your application to S3 and set the version number in Admin Api.
+3. Upload your application to S3 and set the version number in [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) or using API.
 
-4. In your client application, make a POST request to the auto updater service API, passing the current version number as a query parameter:
+4. In your client application, make a GET request to the auto updater service API, passing the current version number as a query parameter:
 ```
 http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1
 ```
