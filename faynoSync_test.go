@@ -36,9 +36,8 @@ var (
 	appDB         mongod.AppRepository
 	mongoDatabase *mongo.Database
 	configDB      connstring.ConnString
-	s3Endpoint    string
-	s3Bucket      string
 	apiKey        string
+	apiUrl        string
 	redisClient   *redis.Client
 )
 
@@ -87,8 +86,7 @@ func setup() {
 		"migration": true,
 		"rollback":  false,
 	}
-	s3Endpoint = viper.GetString("S3_ENDPOINT")
-	s3Bucket = viper.GetString("S3_BUCKET_NAME")
+	apiUrl = viper.GetString("API_URL")
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
@@ -2065,13 +2063,13 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
 							},
 						},
 					},
@@ -2090,13 +2088,13 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.dmg"),
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.pkg"),
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137"),
 							},
 						},
 					},
@@ -2162,9 +2160,9 @@ func TestCheckVersion(t *testing.T) {
 				"changelog":        "### Changelog\n",
 				"update_available": true,
 				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
-				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
-				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
+				"update_url_pkg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
+				"update_url":       fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2177,9 +2175,9 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
-				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
-				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
+				"update_url_pkg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
+				"update_url":       fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2204,9 +2202,9 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg"),
-				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg"),
-				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.dmg"),
+				"update_url_pkg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.pkg"),
+				"update_url":       fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2427,7 +2425,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
 				"critical":         false,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/secondArch/testapp-0.0.2.138.dmg"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FsecondArch%2Ftestapp-0.0.2.138.dmg"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2441,7 +2439,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
 				"critical":         false,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.138.dmg"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.138.dmg"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2467,7 +2465,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
 				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.138.dmg"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.138.dmg"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2481,7 +2479,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
 				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/secondPlatform/universalArch/testapp-0.0.4.138.dmg"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FsecondPlatform%2FuniversalArch%2Ftestapp-0.0.4.138.dmg"),
 			},
 			ExpectedCode: http.StatusOK,
 			// Published:    false,

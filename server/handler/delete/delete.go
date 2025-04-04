@@ -4,6 +4,7 @@ import (
 	"context"
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository) {
 	}
 
 	for _, link := range links {
-		subLink := strings.TrimPrefix(link, env.GetString("S3_ENDPOINT"))
+		subLink := strings.TrimPrefix(link, fmt.Sprintf("%s/download?key=", env.GetString("API_URL")))
 		utils.DeleteFromS3(subLink, c, viper.GetViper())
 	}
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
@@ -63,7 +64,7 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	}
 
 	for _, link := range links {
-		subLink := strings.TrimPrefix(link, env.GetString("S3_ENDPOINT"))
+		subLink := strings.TrimPrefix(link, fmt.Sprintf("%s/download?key=", env.GetString("API_URL")))
 		utils.DeleteFromS3(subLink, c, viper.GetViper())
 	}
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificArtifactResult": result})

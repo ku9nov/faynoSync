@@ -3,13 +3,13 @@ module faynoSync
 go 1.23.7
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.17.5
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.15
 	github.com/hashicorp/go-version v1.6.0
 	github.com/spf13/viper v1.14.0
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.17.5 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.23 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.29 // indirect
@@ -57,7 +57,6 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go v1.44.216
 	github.com/aws/aws-sdk-go-v2/config v1.18.15
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.30.5
 	github.com/fsnotify/fsnotify v1.6.0 // indirect

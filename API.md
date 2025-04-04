@@ -340,7 +340,7 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer eyJhbGciOiJIUzI1NiI
             "Published": false,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/firstapp/nightly/linux/amd64/firstapp-0.0.1.deb",
+                    "Link": "http://localhost:9000/download?key=firstapp/nightly/linux/amd64/firstapp-0.0.1.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
@@ -363,13 +363,13 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer eyJhbGciOiJIUzI1NiI
             "Published": true,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
                 },
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
@@ -392,7 +392,7 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer eyJhbGciOiJIUzI1NiI
 
 Check if there is a newer version of a specific app.
 
-`POST /checkVersion?app_name=<app_name>&version=<version>`
+`GET /checkVersion?app_name=<app_name>&version=<version>`
 
 ###### Query Parameters
 **app_name**: Name of the app.
@@ -409,8 +409,8 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
 ```
 {
     "update_available": false,
-    "update_url_deb": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
-    "update_url_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm"
+    "update_url_deb": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+    "update_url_rpm": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.rpm"
 }
 ```
 
@@ -491,8 +491,8 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
 ```
 {
     "update_available": true,
-    "update_url_deb": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
-    "update_url_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
+    "update_url_deb": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+    "update_url_rpm": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
 }
 ```
 
@@ -526,12 +526,12 @@ curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&cha
     "linux": {
       "amd64": {
         "deb": {
-          "url": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb"
+          "url": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.deb"
         }
       },
       "amd64": {
         "rpm": {
-          "url": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
+          "url": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
         }
       }
     }
@@ -631,13 +631,13 @@ curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
             "Published": true,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
                 },
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
@@ -660,13 +660,13 @@ curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
             "Published": true,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
                 },
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
@@ -844,13 +844,13 @@ curl -X GET http://localhost:9000/search\?\app_name\=\secondapp -H "Authorizatio
             "Published": true,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
                 },
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
@@ -1034,4 +1034,19 @@ curl -X POST --location 'http://localhost:9000/artifact/delete' \
 {
     "deleteSpecificArtifactResult": true
 }
+```
+
+### Download
+
+This request returns a signed URL for downloading a file.
+
+`GET /download`
+
+###### Query Parameters
+
+**key**: Key for finding the object on S3.
+
+###### Request:
+```
+curl -X GET --location 'http://localhost:9000/download?key=secondapp%2Fstable%2Flinux%2Famd64%2Fsecondapp-0.0.1.deb'
 ```

@@ -53,6 +53,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.GET("/apps/latest", handler.FetchLatestVersionOfApp)
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
+	router.GET("/download", handler.DownloadArtifact)
 
 	router.Use(authMiddleware)
 

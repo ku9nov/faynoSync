@@ -966,6 +966,29 @@
 				}
 			},
 			"response": []
+		},
+		{
+			"name": "Download",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/download?key=",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"download"
+					],
+					"query": [
+						{
+							"key": "key",
+							"value": ""
+						}
+					]
+				}
+			},
+			"response": []
 		}
 	],
 	"auth": {
