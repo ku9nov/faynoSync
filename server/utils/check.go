@@ -166,3 +166,24 @@ func CheckPlatformsLatest(input string, db *mongo.Database, ctx *gin.Context) (s
 	}
 	return input, nil
 }
+
+func CheckPrivate(input string, db *mongo.Database, ctx *gin.Context) (bool, error) {
+	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"app_name": input})
+	if err != nil {
+		return false, err
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var document bson.M
+		if err := cursor.Decode(&document); err != nil {
+			logrus.Errorln("Error decoding document:", err)
+			continue
+		}
+		if privateValue, ok := document["private"].(bool); ok {
+			return privateValue, nil
+		} else {
+			return false, nil
+		}
+	}
+	return false, nil
+}

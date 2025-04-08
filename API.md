@@ -58,7 +58,7 @@ Create app.
 
 `POST /app/create`
 
-Optional with `description`, `logo`. 
+Optional with `description`, `logo`, `private`. 
 
 ###### Headers
 **Authorization**: Authorization header with jwt token.
@@ -70,6 +70,8 @@ Optional with `description`, `logo`.
 **app**: Name of the app.
 
 **description**: App description.
+
+**private**: Lock app. (If selected, the app will be stored in a private bucket)
 
 ###### Request:
 ```

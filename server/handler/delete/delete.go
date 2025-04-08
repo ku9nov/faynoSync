@@ -4,9 +4,7 @@ import (
 	"context"
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +16,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository) {
+func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
 	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
@@ -31,14 +29,24 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository) {
 	}
 
 	//request on repository
-	links, result, err := repository.DeleteSpecificVersionOfApp(objID, ctx)
+	links, result, appName, err := repository.DeleteSpecificVersionOfApp(objID, ctx)
 	if err != nil {
 		logrus.Error(err)
 	}
+	checkAppVisibility, err := utils.CheckPrivate(appName, db, c)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
+		return
+	}
 
 	for _, link := range links {
-		subLink := strings.TrimPrefix(link, fmt.Sprintf("%s/download?key=", env.GetString("API_URL")))
-		utils.DeleteFromS3(subLink, c, viper.GetViper())
+		subLink, err := utils.ExtractS3Key(link, checkAppVisibility, env)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
 	}
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
 }
@@ -62,10 +70,20 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	if err != nil {
 		logrus.Error(err)
 	}
+	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
+		return
+	}
 
 	for _, link := range links {
-		subLink := strings.TrimPrefix(link, fmt.Sprintf("%s/download?key=", env.GetString("API_URL")))
-		utils.DeleteFromS3(subLink, c, viper.GetViper())
+		subLink, err := utils.ExtractS3Key(link, checkAppVisibility, env)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
 	}
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificArtifactResult": result})
 }

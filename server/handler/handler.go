@@ -147,7 +147,7 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 
 func (ch *appHandler) DeleteSpecificVersionOfApp(c *gin.Context) {
 	// Call the DeleteSpecificVersionOfApp function from the delete package
-	delete.DeleteSpecificVersionOfApp(c, ch.repository)
+	delete.DeleteSpecificVersionOfApp(c, ch.repository, ch.database)
 }
 
 func (ch *appHandler) DeleteChannel(c *gin.Context) {

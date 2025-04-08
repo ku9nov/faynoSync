@@ -47,6 +47,8 @@ S3_SECRET_KEY (Your AWS or Minio secret access key.)
 S3_REGION (The AWS region in which your S3 bucket is located. For Minio this value should be empty.)
 S3_BUCKET_NAME (The name of your S3 bucket.)
 S3_ENDPOINT (s3 endpoint, check documentation of your cloud provider)
+S3_BUCKET_NAME_PUBLIC (The name of your public S3 bucket. Artifacts will be uploaded here by default.)
+S3_ENDPOINT_PUBLIC (The public bucket endpoint for S3. Check the documentation of your cloud provider. Artifacts will be uploaded here by default.)
 ALLOWED_CORS ( urls to allow CORS configuration)
 PORT (The port on which the auto updater service will listen. Default: 9000)
 MONGODB_URL=mongodb://root:MheCk6sSKB1m4xKNw5I@127.0.0.1/cb_faynosync_db?authSource=admin (see docker-compose file)
@@ -178,6 +180,8 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchs
     - TestDeleteSecondPlatform
     - TestDeleteSecondArch
+    - TestCreatePublicApp
+    - TestDeletePublicAppMeta
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

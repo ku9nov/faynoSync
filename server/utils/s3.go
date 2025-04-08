@@ -65,11 +65,11 @@ func UploadLogo(appName string, file *multipart.FileHeader, c *gin.Context, env 
 		"channel":  "",
 		"platform": "",
 		"arch":     "",
-	}, file, c, env)
+	}, file, c, env, true)
 	return logoLink, err
 }
 
-func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, string, error) {
+func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper, checkAppVisibility bool) (string, string, error) {
 	// // Create an S3 client using another func
 	storageClient := createStorageClient()
 
@@ -131,13 +131,29 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 	// Upload file to S3
 	switch client := storageClient.(type) {
 	case *minio.Client:
-		_, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), s3Key, fileReader, -1, minio.PutObjectOptions{})
+		if ctxQuery["type"] == "logo" || checkAppVisibility == false {
+			var uploadInfo minio.UploadInfo
+			// Use public bucket for logo uploads
+			uploadInfo, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME_PUBLIC"), s3Key, fileReader, -1, minio.PutObjectOptions{})
+			link = uploadInfo.Location
+		} else {
+			_, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), s3Key, fileReader, -1, minio.PutObjectOptions{})
+		}
 	case *s3.Client:
-		_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
-			Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
-			Key:    aws.String(s3Key),
-			Body:   fileReader,
-		})
+		if ctxQuery["type"] == "logo" || checkAppVisibility == false {
+			link = fmt.Sprintf("%s/%s", env.GetString("S3_ENDPOINT_PUBLIC"), encodedPath)
+			_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
+				Bucket: aws.String(env.GetString("S3_BUCKET_NAME_PUBLIC")),
+				Key:    aws.String(s3Key),
+				Body:   fileReader,
+			})
+		} else {
+			_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
+				Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
+				Key:    aws.String(s3Key),
+				Body:   fileReader,
+			})
+		}
 	default:
 		logrus.Errorf("unknown storage client type")
 		return "", "", errors.New("unknown storage client type")
@@ -150,7 +166,7 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 	return link, extension, err
 }
 
-func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
+func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bool) {
 
 	storageClient := createStorageClient()
 
@@ -166,6 +182,12 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 		return
 	}
 	logrus.Debugln("decodedKey in delete from s3: ", decodedKey)
+	var bucketName string
+	if private {
+		bucketName = env.GetString("S3_BUCKET_NAME")
+	} else {
+		bucketName = env.GetString("S3_BUCKET_NAME_PUBLIC")
+	}
 	// Delete object from bucket
 	switch client := storageClient.(type) {
 	case *minio.Client:
@@ -173,7 +195,7 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 			GovernanceBypass: true,
 			VersionID:        "",
 		}
-		err = client.RemoveObject(context.Background(), env.GetString("S3_BUCKET_NAME"), decodedKey, opts)
+		err = client.RemoveObject(context.Background(), bucketName, decodedKey, opts)
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from Minio"})
@@ -181,7 +203,7 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 
 	case *s3.Client:
 		_, err = client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
-			Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
+			Bucket: aws.String(bucketName),
 			Key:    aws.String(decodedKey),
 		})
 		if err != nil {
@@ -193,7 +215,7 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unknown storage client type"})
 	}
 
-	logrus.Infof("Object '%s' deleted from bucket '%s'\n", objectKey, env.GetString("S3_BUCKET_NAME"))
+	logrus.Infof("Object '%s' deleted from bucket '%s'\n", objectKey, bucketName)
 }
 
 func GeneratePresignedURL(c *gin.Context, objectKey string, expiration time.Duration) (string, error) {
