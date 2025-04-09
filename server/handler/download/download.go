@@ -4,6 +4,7 @@ import (
 	"context"
 	"faynoSync/server/utils"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,10 @@ func DownloadArtifact(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate pre-signed URL"})
 		return
 	}
-	logrus.Debugln("Downloading artifact: ", urlStr)
-	c.Redirect(http.StatusFound, urlStr)
+	logrus.Debugln("Generated download URL: ", urlStr)
+	if os.Getenv("ENABLE_PRIVATE_APP_DOWNLOADING") == "true" {
+		c.Redirect(http.StatusFound, urlStr)
+	} else {
+		c.JSON(http.StatusOK, gin.H{"download_url": urlStr})
+	}
 }
