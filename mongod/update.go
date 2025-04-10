@@ -11,10 +11,26 @@ import (
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) UpdateDocument(collectionName string, filter bson.D, update bson.D, uniqueKey, keyType string, ctx context.Context) (bool, error) {
+func (c *appRepository) UpdateDocument(collectionName string, filter bson.D, update bson.D, uniqueKey, keyType string, owner string, ctx context.Context) (bool, error) {
 	collection := c.client.Database(c.config.Database).Collection(collectionName)
+
+	// Check if the document exists and belongs to the owner
+	var existingDoc bson.M
+	err := collection.FindOne(ctx, filter).Decode(&existingDoc)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return false, fmt.Errorf("%s not found", keyType)
+		}
+		return false, err
+	}
+
+	// Check ownership
+	if docOwner, ok := existingDoc["owner"].(string); !ok || docOwner != owner {
+		return false, fmt.Errorf("you don't have permission to update this %s", keyType)
+	}
 
 	// Set the updated_at field to the current time
 	update = append(update, bson.E{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}}})
@@ -33,28 +49,28 @@ func (c *appRepository) UpdateDocument(collectionName string, filter bson.D, upd
 }
 
 // UpdateChannel updates an existing channel document
-func (c *appRepository) UpdateChannel(id primitive.ObjectID, channelName string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) UpdateChannel(id primitive.ObjectID, channelName string, owner string, ctx context.Context) (interface{}, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	update := bson.D{{Key: "$set", Value: bson.D{{Key: "channel_name", Value: channelName}}}}
-	return c.UpdateDocument("apps_meta", filter, update, "channel_name_sort_by_asc_updated", "channel", ctx)
+	return c.UpdateDocument("apps_meta", filter, update, "channel_name_sort_by_asc_updated", "channel", owner, ctx)
 }
 
 // UpdatePlatform updates an existing platform document
-func (c *appRepository) UpdatePlatform(id primitive.ObjectID, platformName string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) UpdatePlatform(id primitive.ObjectID, platformName string, owner string, ctx context.Context) (interface{}, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	update := bson.D{{Key: "$set", Value: bson.D{{Key: "platform_name", Value: platformName}}}}
-	return c.UpdateDocument("apps_meta", filter, update, "platform_name_sort_by_asc_updated", "platform", ctx)
+	return c.UpdateDocument("apps_meta", filter, update, "platform_name_sort_by_asc_updated", "platform", owner, ctx)
 }
 
 // UpdateArch updates an existing arch document
-func (c *appRepository) UpdateArch(id primitive.ObjectID, archID string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) UpdateArch(id primitive.ObjectID, archID string, owner string, ctx context.Context) (interface{}, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	update := bson.D{{Key: "$set", Value: bson.D{{Key: "arch_id", Value: archID}}}}
-	return c.UpdateDocument("apps_meta", filter, update, "arch_id_sort_by_asc_updated", "arch", ctx)
+	return c.UpdateDocument("apps_meta", filter, update, "arch_id_sort_by_asc_updated", "arch", owner, ctx)
 }
 
 // UpdateApp updates an existing app_name document
-func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo string, description string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo string, description string, owner string, ctx context.Context) (interface{}, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	updateFields := bson.D{{Key: "app_name", Value: appName}}
 	if logo != "" {
@@ -64,23 +80,23 @@ func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo st
 		updateFields = append(updateFields, bson.E{Key: "description", Value: description})
 	}
 	update := bson.D{{Key: "$set", Value: updateFields}}
-	return c.UpdateDocument("apps_meta", filter, update, "app_name_sort_by_asc_updated", "app", ctx)
+	return c.UpdateDocument("apps_meta", filter, update, "app_name_sort_by_asc_updated", "app", owner, ctx)
 }
 
-func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error) {
+func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	var err error
 
 	// Find app_id from apps_meta by app_name
-	err = c.getMeta(ctx, metaCollection, "app_name", ctxQuery["app_name"].(string), &appMeta)
+	err = c.getMeta(ctx, metaCollection, "app_name", ctxQuery["app_name"].(string), &appMeta, owner)
 	if err != nil {
 		return false, err
 	}
 
 	// Fetch channel_id
 	if channelName, ok := ctxQuery["channel"].(string); ok && channelName != "" {
-		err = c.getMeta(ctx, metaCollection, "channel_name", channelName, &channelMeta)
+		err = c.getMeta(ctx, metaCollection, "channel_name", channelName, &channelMeta, owner)
 		if err != nil {
 			return false, err
 		}
@@ -89,7 +105,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 
 	// Fetch platform_id
 	if platformName, ok := ctxQuery["platform"].(string); ok && platformName != "" {
-		err = c.getMeta(ctx, metaCollection, "platform_name", platformName, &platformMeta)
+		err = c.getMeta(ctx, metaCollection, "platform_name", platformName, &platformMeta, owner)
 		if err != nil {
 			return false, err
 		}
@@ -98,7 +114,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 
 	// Fetch arch_id
 	if archName, ok := ctxQuery["arch"].(string); ok && archName != "" {
-		err = c.getMeta(ctx, metaCollection, "arch_id", archName, &archMeta)
+		err = c.getMeta(ctx, metaCollection, "arch_id", archName, &archMeta, owner)
 		if err != nil {
 			return false, err
 		}
@@ -110,6 +126,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map
 		{Key: "_id", Value: objID},
 		{Key: "app_id", Value: appMeta.ID},
 		{Key: "version", Value: ctxQuery["version"].(string)},
+		{Key: "owner", Value: owner},
 	})
 
 	if existingDoc.Err() == nil {

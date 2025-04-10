@@ -15,11 +15,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) CreateDocument(collectionName string, document bson.D, uniqueKey, keyType string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreateDocument(collectionName string, document bson.D, uniqueKey, keyType string, owner string, ctx context.Context) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection(collectionName)
 
 	// Set the updated_at field to the current time
 	document = append(document, bson.E{Key: "updated_at", Value: time.Now()})
+	// Add owner field
+	document = append(document, bson.E{Key: "owner", Value: owner})
 	logrus.Debugln("Document: ", document)
 	uploadResult, err := collection.InsertOne(ctx, document)
 	if err != nil {
@@ -38,25 +40,25 @@ func (c *appRepository) CreateDocument(collectionName string, document bson.D, u
 }
 
 // CreateChannel creates a new channel document
-func (c *appRepository) CreateChannel(channelName string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreateChannel(channelName string, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "channel_name", Value: channelName}}
-	return c.CreateDocument("apps_meta", document, "channel_name_sort_by_asc_created", "channel", ctx)
+	return c.CreateDocument("apps_meta", document, "channel_name_owner_sort_by_asc_created", "channel", owner, ctx)
 }
 
 // CreatePlatform creates a new platform document
-func (c *appRepository) CreatePlatform(platformName string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreatePlatform(platformName string, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "platform_name", Value: platformName}}
-	return c.CreateDocument("apps_meta", document, "platform_name_sort_by_asc_created", "platform", ctx)
+	return c.CreateDocument("apps_meta", document, "platform_name_owner_sort_by_asc_created", "platform", owner, ctx)
 }
 
 // CreateArch creates a new arch document
-func (c *appRepository) CreateArch(archID string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreateArch(archID string, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "arch_id", Value: archID}}
-	return c.CreateDocument("apps_meta", document, "arch_id_sort_by_asc_created", "arch", ctx)
+	return c.CreateDocument("apps_meta", document, "arch_id_owner_sort_by_asc_created", "arch", owner, ctx)
 }
 
 // CreateApp creates a new app_name document
-func (c *appRepository) CreateApp(appName string, logo string, description string, private bool, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreateApp(appName string, logo string, description string, private bool, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "app_name", Value: appName}}
 	if logo != "" {
 		document = append(document, bson.E{Key: "logo", Value: logo})
@@ -67,44 +69,60 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 	if private == true {
 		document = append(document, bson.E{Key: "private", Value: private})
 	}
-	return c.CreateDocument("apps_meta", document, "app_name_sort_by_asc_created", "app", ctx)
+	return c.CreateDocument("apps_meta", document, "app_name_owner_sort_by_asc_created", "app", owner, ctx)
 }
 
-func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	var uploadResult interface{}
 	var err error
 
-	// Find app_id from apps_meta by app_name
-	err = c.getMeta(ctx, metaCollection, "app_name", ctxQuery["app_name"].(string), &appMeta)
+	// Find app_id from apps_meta by app_name and owner
+	metaFilter := bson.D{
+		{Key: "app_name", Value: ctxQuery["app_name"].(string)},
+		{Key: "owner", Value: owner},
+	}
+	err = metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app_name not found in apps_meta collection or you don't have permission to access it")
 	}
 
 	// Fetch channel_id
 	if channelName, ok := ctxQuery["channel"].(string); ok && channelName != "" {
-		err = c.getMeta(ctx, metaCollection, "channel_name", channelName, &channelMeta)
+		channelFilter := bson.D{
+			{Key: "channel_name", Value: channelName},
+			{Key: "owner", Value: owner},
+		}
+		err = metaCollection.FindOne(ctx, channelFilter).Decode(&channelMeta)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("channel not found in apps_meta collection or you don't have permission to access it")
 		}
 		logrus.Debugf("Found channelMeta: %v", channelMeta)
 	}
 
 	// Fetch platform_id
 	if platformName, ok := ctxQuery["platform"].(string); ok && platformName != "" {
-		err = c.getMeta(ctx, metaCollection, "platform_name", platformName, &platformMeta)
+		platformFilter := bson.D{
+			{Key: "platform_name", Value: platformName},
+			{Key: "owner", Value: owner},
+		}
+		err = metaCollection.FindOne(ctx, platformFilter).Decode(&platformMeta)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("platform not found in apps_meta collection or you don't have permission to access it")
 		}
 		logrus.Debugf("Found platformMeta: %v", platformMeta)
 	}
 
 	// Fetch arch_id
 	if archName, ok := ctxQuery["arch"].(string); ok && archName != "" {
-		err = c.getMeta(ctx, metaCollection, "arch_id", archName, &archMeta)
+		archFilter := bson.D{
+			{Key: "arch_id", Value: archName},
+			{Key: "owner", Value: owner},
+		}
+		err = metaCollection.FindOne(ctx, archFilter).Decode(&archMeta)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("arch not found in apps_meta collection or you don't have permission to access it")
 		}
 		logrus.Debugf("Found archMeta: %v", archMeta)
 	}
@@ -113,6 +131,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 	existingDoc := collection.FindOne(ctx, bson.D{
 		{Key: "app_id", Value: appMeta.ID},
 		{Key: "version", Value: ctxQuery["version"].(string)},
+		{Key: "owner", Value: owner},
 	})
 
 	if existingDoc.Err() == nil {
@@ -136,7 +155,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		})
 		_, err = collection.UpdateOne(
 			ctx,
-			bson.D{{Key: "app_id", Value: appMeta.ID}, {Key: "version", Value: ctxQuery["version"].(string)}},
+			bson.D{{Key: "app_id", Value: appMeta.ID}, {Key: "version", Value: ctxQuery["version"].(string)}, {Key: "owner", Value: owner}},
 			bson.D{{Key: "$set", Value: bson.D{{Key: "artifacts", Value: appData.Artifacts}, {Key: "updated_at", Value: time.Now()}}}},
 		)
 		if err != nil {
@@ -179,6 +198,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			{Key: "artifacts", Value: []model.Artifact{artifact}},
 			{Key: "changelog", Value: []model.Changelog{changelog}},
 			{Key: "updated_at", Value: time.Now()},
+			{Key: "owner", Value: owner},
 		}
 		logrus.Debugf("Channel Meta: %v", channelMeta)
 		logrus.Debugf("Platform Meta: %v", platformMeta)

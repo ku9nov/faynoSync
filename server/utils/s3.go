@@ -57,9 +57,9 @@ func createStorageClient() interface{} {
 	}
 }
 
-func UploadLogo(appName string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, error) {
+func UploadLogo(appName string, owner string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, error) {
 	logoLink, _, err := UploadToS3(map[string]interface{}{
-		"app_name": appName,
+		"app_name": fmt.Sprintf("%s-%s", appName, owner),
 		"version":  "0.0.0",
 		"type":     "logo",
 		"channel":  "",

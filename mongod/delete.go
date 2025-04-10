@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, string, error) {
+func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, owner string, ctx context.Context) ([]string, int64, string, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
@@ -29,6 +29,17 @@ func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx co
 		}
 		return nil, 0, "", fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
 	}
+	// Check ownership
+	var docMap bson.M
+	err = collection.FindOne(ctx, filter).Decode(&docMap)
+	if err != nil {
+		return nil, 0, "", err
+	}
+
+	if docOwner, ok := docMap["owner"].(string); !ok || docOwner != owner {
+		return nil, 0, "", fmt.Errorf("you don't have permission to delete this item")
+	}
+
 	appName, err := c.FetchAppByID(app.ID, ctx)
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
@@ -47,13 +58,13 @@ func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx co
 	return links, deleteResult.DeletedCount, appName[0].AppName, nil
 }
 
-func (c *appRepository) DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context) ([]string, bool, error) {
+func (c *appRepository) DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context, owner string) ([]string, bool, error) {
 	var err error
 	var links []string
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 
-	err = c.getMeta(ctx, metaCollection, "app_name", ctxQuery["app_name"].(string), &appMeta)
+	err = c.getMeta(ctx, metaCollection, "app_name", ctxQuery["app_name"].(string), &appMeta, owner)
 	if err != nil {
 		logrus.Errorln("Error getting app_id in DeleteSpecificArtifactOfApp:", err)
 	}
@@ -105,7 +116,7 @@ func (c *appRepository) DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQu
 
 type Document interface{}
 
-func (c *appRepository) DeleteDocument(collectionName string, id primitive.ObjectID, docType Document, ctx context.Context) (int64, error) {
+func (c *appRepository) DeleteDocument(collectionName string, id primitive.ObjectID, docType Document, owner string, ctx context.Context) (int64, error) {
 	collection := c.client.Database(c.config.Database).Collection(collectionName)
 
 	filter := bson.D{primitive.E{Key: "_id", Value: id}}
@@ -116,6 +127,17 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 			return 0, fmt.Errorf("no document found with ID %s", id)
 		}
 		return 0, fmt.Errorf("error retrieving document with ID %s: %s", id, err.Error())
+	}
+
+	// Check ownership
+	var docMap bson.M
+	err = collection.FindOne(ctx, filter).Decode(&docMap)
+	if err != nil {
+		return 0, err
+	}
+
+	if docOwner, ok := docMap["owner"].(string); !ok || docOwner != owner {
+		return 0, fmt.Errorf("you don't have permission to delete this item")
 	}
 
 	var relatedFilter bson.D
@@ -159,22 +181,22 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 	return deleteResult.DeletedCount, nil
 }
 
-func (c *appRepository) DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error) {
+func (c *appRepository) DeleteChannel(id primitive.ObjectID, owner string, ctx context.Context) (int64, error) {
 	var channel model.Channel
-	return c.DeleteDocument("apps_meta", id, &channel, ctx)
+	return c.DeleteDocument("apps_meta", id, &channel, owner, ctx)
 }
 
-func (c *appRepository) DeletePlatform(id primitive.ObjectID, ctx context.Context) (int64, error) {
+func (c *appRepository) DeletePlatform(id primitive.ObjectID, owner string, ctx context.Context) (int64, error) {
 	var platform model.Platform
-	return c.DeleteDocument("apps_meta", id, &platform, ctx)
+	return c.DeleteDocument("apps_meta", id, &platform, owner, ctx)
 }
 
-func (c *appRepository) DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error) {
+func (c *appRepository) DeleteArch(id primitive.ObjectID, owner string, ctx context.Context) (int64, error) {
 	var arch model.Arch
-	return c.DeleteDocument("apps_meta", id, &arch, ctx)
+	return c.DeleteDocument("apps_meta", id, &arch, owner, ctx)
 }
 
-func (c *appRepository) DeleteApp(id primitive.ObjectID, ctx context.Context) (int64, error) {
+func (c *appRepository) DeleteApp(id primitive.ObjectID, owner string, ctx context.Context) (int64, error) {
 	var app model.App
-	return c.DeleteDocument("apps_meta", id, &app, ctx)
+	return c.DeleteDocument("apps_meta", id, &app, owner, ctx)
 }

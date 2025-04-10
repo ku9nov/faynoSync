@@ -49,6 +49,13 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	// Debug received request (make sense for using only on localhost)
 	// utils.DumpRequest(c)
 
+	// Get username from JWT token
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	ctxQueryMap, err := utils.ValidateParams(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -84,7 +91,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	}
 	var results []interface{}
 	for i, link := range links {
-		result, err := repository.Upload(ctxQueryMap, link, extensions[i], c.Request.Context())
+		result, err := repository.Upload(ctxQueryMap, link, extensions[i], owner, c.Request.Context())
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

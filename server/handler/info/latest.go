@@ -62,7 +62,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	}
 
 	// Request on repository
-	checkResult, err := repository.CheckLatestVersion(validatedParams["app_name"].(string), validatedParams["version"].(string), validatedParams["channel"].(string), validatedParams["platform"].(string), validatedParams["arch"].(string), ctx)
+	checkResult, err := repository.CheckLatestVersion(validatedParams["app_name"].(string), validatedParams["version"].(string), validatedParams["channel"].(string), validatedParams["platform"].(string), validatedParams["arch"].(string), ctx, validatedParams["owner"].(string))
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -142,6 +142,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		"platform": c.Query("platform"),
 		"arch":     c.Query("arch"),
 		"package":  c.Query("package"),
+		"owner":    c.Query("owner"),
 	}
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
@@ -161,7 +162,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		}
 	}
 
-	checkResult, err := repository.FetchLatestVersionOfApp(params["app_name"].(string), params["channel"].(string), ctx)
+	checkResult, err := repository.FetchLatestVersionOfApp(params["app_name"].(string), params["channel"].(string), ctx, params["owner"].(string))
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

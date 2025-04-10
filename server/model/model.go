@@ -15,6 +15,7 @@ type App struct {
 	Logo        string             `bson:"logo"`
 	Private     bool               `bson:"private"`
 	Description string             `bson:"description"`
+	Owner       string             `bson:"owner"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`
 }
 
@@ -30,6 +31,7 @@ type SpecificApp struct {
 	Artifacts  []Artifact         `bson:"artifacts"`
 	Changelog  []Changelog        `bson:"changelog"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
+	Owner      string             `bson:"owner"`
 }
 
 type SpecificArtifactsWithoutIDs struct {
@@ -54,18 +56,21 @@ type SpecificAppWithoutIDs struct {
 type Channel struct {
 	ID          primitive.ObjectID `bson:"_id"`
 	ChannelName string             `bson:"channel_name"`
+	Owner       string             `bson:"owner"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`
 }
 
 type Platform struct {
 	ID           primitive.ObjectID `bson:"_id"`
 	PlatformName string             `bson:"platform_name"`
+	Owner        string             `bson:"owner"`
 	Updated_at   primitive.DateTime `bson:"updated_at"`
 }
 
 type Arch struct {
 	ID         primitive.ObjectID `bson:"_id"`
 	ArchID     string             `bson:"arch_id"`
+	Owner      string             `bson:"owner"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
 

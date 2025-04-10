@@ -20,7 +20,11 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
@@ -29,10 +33,13 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	}
 
 	//request on repository
-	links, result, appName, err := repository.DeleteSpecificVersionOfApp(objID, ctx)
+	links, result, appName, err := repository.DeleteSpecificVersionOfApp(objID, owner, ctx)
 	if err != nil {
 		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete specific version of app", "details": err.Error()})
+		return
 	}
+
 	checkAppVisibility, err := utils.CheckPrivate(appName, db, c)
 	if err != nil {
 		logrus.Error(err)
@@ -58,6 +65,11 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(ctxQueryMap["id"].(string))
 	if err != nil {
@@ -66,7 +78,7 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	}
 
 	delete(ctxQueryMap, "id")
-	links, result, err := repository.DeleteSpecificArtifactOfApp(objID, ctxQueryMap, c.Request.Context())
+	links, result, err := repository.DeleteSpecificArtifactOfApp(objID, ctxQueryMap, c.Request.Context(), owner)
 	if err != nil {
 		logrus.Error(err)
 	}
@@ -114,16 +126,23 @@ func deleteEntity(c *gin.Context, repository db.AppRepository, itemType string) 
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	var result interface{}
 	switch itemType {
 	case "channel":
-		result, err = repository.DeleteChannel(objID, ctx)
+		result, err = repository.DeleteChannel(objID, owner, ctx)
 	case "platform":
-		result, err = repository.DeletePlatform(objID, ctx)
+		result, err = repository.DeletePlatform(objID, owner, ctx)
 	case "arch":
-		result, err = repository.DeleteArch(objID, ctx)
+		result, err = repository.DeleteArch(objID, owner, ctx)
 	case "app":
-		result, err = repository.DeleteApp(objID, ctx)
+		result, err = repository.DeleteApp(objID, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return

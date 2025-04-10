@@ -183,6 +183,20 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestDeleteSecondArch
     - TestCreatePublicApp
     - TestDeletePublicAppMeta
+    - TestUpdateSpecificAppWithSecondUser (expected result from API "500")
+    - TestListAppsWithSecondUser
+    - TestListChannelsWithSecondUser
+    - TestListPlatformsWithSecondUser
+    - TestListArchsWithSecondUser
+    - TestUpdateAppWithSecondUser (expected result from API "500")
+    - TestUpdateChannelWithSecondUser (expected result from API "500")
+    - TestUpdatePlatformWithSecondUser (expected result from API "500")
+    - TestUpdateArchWithSecondUser (expected result from API "500")
+    - TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchsWithSecondUser (expected result from API "500")
+    - TestDeleteNightlyChannelWithSecondUser (expected result from API "500")
+    - TestDeletePlatformWithSecondUser (expected result from API "500")
+    - TestDeleteArchWithSecondUser (expected result from API "500")
+    - TestDeleteAppMetaWithSecondUser (expected result from API "500")
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

@@ -10,9 +10,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func (c *appRepository) listItems(ctx context.Context, collectionName string, filter bson.M, resultSlice interface{}) error {
+func (c *appRepository) listItems(ctx context.Context, collectionName string, filter bson.M, owner string, resultSlice interface{}) error {
 	findOptions := options.Find()
 	findOptions.SetLimit(100)
+
+	// Add owner filter if owner is provided
+	if owner != "" {
+		filter["owner"] = owner
+	}
 
 	collection := c.client.Database(c.config.Database).Collection(collectionName)
 
@@ -45,37 +50,37 @@ func (c *appRepository) listItems(ctx context.Context, collectionName string, fi
 	return nil
 }
 
-func (c *appRepository) ListChannels(ctx context.Context) ([]*model.Channel, error) {
+func (c *appRepository) ListChannels(ctx context.Context, owner string) ([]*model.Channel, error) {
 	var channels []*model.Channel
 	filter := bson.M{"channel_name": bson.M{"$exists": true}}
-	if err := c.listItems(ctx, "apps_meta", filter, &channels); err != nil {
+	if err := c.listItems(ctx, "apps_meta", filter, owner, &channels); err != nil {
 		return nil, err
 	}
 	return channels, nil
 }
 
-func (c *appRepository) ListPlatforms(ctx context.Context) ([]*model.Platform, error) {
+func (c *appRepository) ListPlatforms(ctx context.Context, owner string) ([]*model.Platform, error) {
 	var platforms []*model.Platform
 	filter := bson.M{"platform_name": bson.M{"$exists": true}}
-	if err := c.listItems(ctx, "apps_meta", filter, &platforms); err != nil {
+	if err := c.listItems(ctx, "apps_meta", filter, owner, &platforms); err != nil {
 		return nil, err
 	}
 	return platforms, nil
 }
 
-func (c *appRepository) ListArchs(ctx context.Context) ([]*model.Arch, error) {
+func (c *appRepository) ListArchs(ctx context.Context, owner string) ([]*model.Arch, error) {
 	var archs []*model.Arch
 	filter := bson.M{"arch_id": bson.M{"$exists": true}}
-	if err := c.listItems(ctx, "apps_meta", filter, &archs); err != nil {
+	if err := c.listItems(ctx, "apps_meta", filter, owner, &archs); err != nil {
 		return nil, err
 	}
 	return archs, nil
 }
 
-func (c *appRepository) ListApps(ctx context.Context) ([]*model.App, error) {
+func (c *appRepository) ListApps(ctx context.Context, owner string) ([]*model.App, error) {
 	var apps []*model.App
 	filter := bson.M{"app_name": bson.M{"$exists": true}}
-	if err := c.listItems(ctx, "apps_meta", filter, &apps); err != nil {
+	if err := c.listItems(ctx, "apps_meta", filter, owner, &apps); err != nil {
 		return nil, err
 	}
 	return apps, nil

@@ -401,9 +401,11 @@ Check if there is a newer version of a specific app.
 
 **version**: Current version of the app.
 
+**owner**: Name of your user.
+
 ###### Request:
 ```
-curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64'
+curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64&owner=admin'
 ```
 
 ###### Response:
@@ -485,7 +487,7 @@ Check if there is a newer version of a specific app after uploading a new versio
 
 ###### Request:
 ```
-curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64'
+curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64owner=admin'
 ```
 
 ###### Response:
@@ -515,9 +517,11 @@ This API endpoint retrieves the latest version of a specific app based on the pr
 
 **package**: The package type (e.g., deb, rpm, dmg).
 
+**owner**: Name of your user.
+
 ###### Request:
 ```
-curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&channel=stable&platform=linux&arch=amd64'
+curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&channel=stable&platform=linux&arch=amd64owner=admin'
 ```
 
 ###### Response:

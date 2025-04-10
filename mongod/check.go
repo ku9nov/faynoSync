@@ -13,11 +13,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) Get(ctx context.Context, limit int64) ([]*model.SpecificAppWithoutIDs, error) {
+func (c *appRepository) Get(ctx context.Context, limit int64, owner string) ([]*model.SpecificAppWithoutIDs, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	basePipeline := c.getBasePipeline()
 	pipeline := mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.M{"app_id": bson.M{"$exists": true}}}},
+		bson.D{{Key: "$match", Value: bson.M{
+			"app_id": bson.M{"$exists": true},
+			"owner":  owner,
+		}}},
 	}
 	pipeline = append(pipeline, basePipeline...)
 	pipeline = append(pipeline, bson.D{{Key: "$limit", Value: limit}})
@@ -31,9 +34,12 @@ func (c *appRepository) Get(ctx context.Context, limit int64) ([]*model.Specific
 	return c.processApps(cur, ctx)
 }
 
-func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64) (*model.PaginatedResponse, error) {
+func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64, owner string) (*model.PaginatedResponse, error) {
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
-	metaFilter := bson.D{{Key: "app_name", Value: appName}}
+	metaFilter := bson.D{
+		{Key: "app_name", Value: appName},
+		{Key: "owner", Value: owner},
+	}
 	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
 	if err != nil {
 		return nil, errors.New("app_name not found in apps_meta collection")
@@ -42,7 +48,10 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
 	countPipeline := mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.M{"app_id": appMeta.ID}}},
+		bson.D{{Key: "$match", Value: bson.M{
+			"app_id": appMeta.ID,
+			"owner":  owner,
+		}}},
 		bson.D{{Key: "$count", Value: "total"}},
 	}
 	countCursor, err := collection.Aggregate(ctx, countPipeline)
@@ -65,7 +74,10 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 
 	basePipeline := c.getBasePipeline()
 	pipeline := mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.M{"app_id": appMeta.ID}}},
+		bson.D{{Key: "$match", Value: bson.M{
+			"app_id": appMeta.ID,
+			"owner":  owner,
+		}}},
 	}
 	pipeline = append(pipeline, basePipeline...)
 	pipeline = append(pipeline,
@@ -94,7 +106,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 	}, nil
 }
 
-func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName, platformName, archName string, ctx context.Context) (CheckResult, error) {
+func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName, platformName, archName string, ctx context.Context, owner string) (CheckResult, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 
@@ -103,14 +115,14 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	}
 
 	// Find app_id from apps_meta by app_name
-	err := c.getMeta(ctx, metaCollection, "app_name", appName, &appMeta)
+	err := c.getMeta(ctx, metaCollection, "app_name", appName, &appMeta, owner)
 	if err != nil {
 		return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 	}
 
 	// Fetch channel_id
 	if channelName != "" {
-		err = c.getMeta(ctx, metaCollection, "channel_name", channelName, &channelMeta)
+		err = c.getMeta(ctx, metaCollection, "channel_name", channelName, &channelMeta, owner)
 		if err != nil {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
@@ -119,7 +131,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 
 	// Fetch platform_id
 	if platformName != "" {
-		err = c.getMeta(ctx, metaCollection, "platform_name", platformName, &platformMeta)
+		err = c.getMeta(ctx, metaCollection, "platform_name", platformName, &platformMeta, owner)
 		if err != nil {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
@@ -128,7 +140,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 
 	// Fetch arch_id
 	if archName != "" {
-		err = c.getMeta(ctx, metaCollection, "arch_id", archName, &archMeta)
+		err = c.getMeta(ctx, metaCollection, "arch_id", archName, &archMeta, owner)
 		if err != nil {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
@@ -214,9 +226,9 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 
 }
 
-func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx context.Context, owner string) ([]*model.SpecificAppWithoutIDs, error) {
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
-	metaFilter := bson.D{{Key: "app_name", Value: appName}}
+	metaFilter := bson.D{{Key: "app_name", Value: appName}, {Key: "owner", Value: owner}}
 	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
 	if err != nil {
 		return nil, errors.New("app_name not found in apps_meta collection")
@@ -225,14 +237,14 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 		ID primitive.ObjectID `bson:"_id"`
 	}
 	if channel != "" {
-		channelFilter := bson.D{{Key: "channel_name", Value: channel}}
+		channelFilter := bson.D{{Key: "channel_name", Value: channel}, {Key: "owner", Value: owner}}
 		err := metaCollection.FindOne(ctx, channelFilter).Decode(&channelMeta)
 		if err != nil {
 			return nil, errors.New("channel not found in apps_meta collection")
 		}
 	}
 	collection := c.client.Database(c.config.Database).Collection("apps")
-	matchFilter := bson.M{"app_id": appMeta.ID, "published": true}
+	matchFilter := bson.M{"app_id": appMeta.ID, "published": true, "owner": owner}
 
 	if channel != "" {
 		matchFilter["channel_id"] = channelMeta.ID
@@ -278,8 +290,8 @@ func (c *appRepository) FetchAppByID(appID primitive.ObjectID, ctx context.Conte
 	return c.processApps(cur, ctx)
 }
 
-func (c *appRepository) getMeta(ctx context.Context, metaCollection *mongo.Collection, key, value string, result interface{}) error {
-	filter := bson.D{{Key: key, Value: value}}
+func (c *appRepository) getMeta(ctx context.Context, metaCollection *mongo.Collection, key, value string, result interface{}, owner string) error {
+	filter := bson.D{{Key: key, Value: value}, {Key: "owner", Value: owner}}
 	err := metaCollection.FindOne(ctx, filter).Decode(result)
 	if err != nil {
 		return fmt.Errorf("%s not found in apps_meta collection", key)
