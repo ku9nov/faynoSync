@@ -13,6 +13,7 @@ type App struct {
 	ID          primitive.ObjectID `bson:"_id"`
 	AppName     string             `bson:"app_name"`
 	Logo        string             `bson:"logo"`
+	Private     bool               `bson:"private"`
 	Description string             `bson:"description"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`
 }

@@ -36,9 +36,10 @@ var (
 	appDB         mongod.AppRepository
 	mongoDatabase *mongo.Database
 	configDB      connstring.ConnString
+	apiKey        string
+	apiUrl        string
 	s3Endpoint    string
 	s3Bucket      string
-	apiKey        string
 	redisClient   *redis.Client
 )
 
@@ -88,7 +89,8 @@ func setup() {
 		"rollback":  false,
 	}
 	s3Endpoint = viper.GetString("S3_ENDPOINT")
-	s3Bucket = viper.GetString("S3_BUCKET_NAME")
+	s3Bucket = viper.GetString("S3_BUCKET_NAME_PUBLIC")
+	apiUrl = viper.GetString("API_URL")
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
@@ -397,6 +399,7 @@ func TestListAppsWithInvalidToken(t *testing.T) {
 }
 
 var idTestappApp string
+var idPublicTestappApp string
 
 func TestAppCreate(t *testing.T) {
 	// Initialize Gin router and recorder for the test
@@ -419,7 +422,7 @@ func TestAppCreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app": "testapp"}`
+	payload := `{"app": "testapp", "private": "true"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -460,6 +463,72 @@ func TestAppCreate(t *testing.T) {
 	id, idExists := response["createAppResult.Created"]
 	assert.True(t, idExists)
 	idTestappApp = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, idTestappApp)
+}
+
+func TestCreatePublicApp(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /app/create route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/app/create", func(c *gin.Context) {
+		handler.CreateApp(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"app": "public testapp"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /app/create endpoint
+	req, err := http.NewRequest("POST", "/app/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "createAppResult.Created" key in the response
+	idPublic, idExists := response["createAppResult.Created"]
+	assert.True(t, idExists)
+	idPublicTestappApp = idPublic.(string)
 	assert.True(t, idExists)
 	assert.NotEmpty(t, idTestappApp)
 }
@@ -1623,6 +1692,7 @@ func TestMultipleUpload(t *testing.T) {
 		defer file.Close()
 
 		combinations := []struct {
+			AppName     string
 			AppVersion  string
 			ChannelName string
 			Published   bool
@@ -1630,11 +1700,11 @@ func TestMultipleUpload(t *testing.T) {
 			Platform    string
 			Arch        string
 		}{
-			{"0.0.1.137", "nightly", true, false, "universalPlatform", "universalArch"},
-			{"0.0.2.137", "nightly", true, false, "universalPlatform", "universalArch"},
-			{"0.0.3.137", "nightly", false, false, "universalPlatform", "universalArch"},
-			{"0.0.4.137", "stable", true, true, "universalPlatform", "universalArch"},
-			{"0.0.5.137", "stable", false, false, "universalPlatform", "universalArch"},
+			{"public testapp", "0.0.1.137", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"testapp", "0.0.2.137", "nightly", true, false, "universalPlatform", "universalArch"},
+			{"testapp", "0.0.3.137", "nightly", false, false, "universalPlatform", "universalArch"},
+			{"testapp", "0.0.4.137", "stable", true, true, "universalPlatform", "universalArch"},
+			{"testapp", "0.0.5.137", "stable", false, false, "universalPlatform", "universalArch"},
 		}
 
 		// Iterate through the combinations and upload the file for each combination.
@@ -1655,7 +1725,7 @@ func TestMultipleUpload(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			payload := fmt.Sprintf(`{"app_name": "testapp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s"}`, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch)
+			payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s"}`, combo.AppName, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch)
 			_, err = dataPart.Write([]byte(payload))
 			if err != nil {
 				t.Fatal(err)
@@ -1968,37 +2038,6 @@ func TestSearch(t *testing.T) {
 				},
 			},
 		},
-		{
-			AppName:   "testapp",
-			Version:   "0.0.1.137",
-			Channel:   "nightly",
-			Published: true,
-			Critical:  false,
-			Artifacts: []model.SpecificArtifactsWithoutIDs{
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  ".dmg",
-				},
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  ".pkg",
-				},
-				{
-					Platform: "universalPlatform",
-					Arch:     "universalArch",
-					Package:  "",
-				},
-			},
-			Changelog: []model.Changelog{
-				{
-					Version: "0.0.1.137",
-					Changes: "",
-					Date:    time.Now().Format("2006-01-02"),
-				},
-			},
-		},
 	}
 
 	var actual AppResponse
@@ -2065,13 +2104,13 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
 							},
 						},
 					},
@@ -2090,13 +2129,13 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.dmg"),
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.pkg"),
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137"),
+								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137"),
 							},
 						},
 					},
@@ -2155,16 +2194,16 @@ func TestCheckVersion(t *testing.T) {
 		TestName     string
 	}{
 		{
-			AppName:     "testapp",
+			AppName:     "public%20testapp",
 			Version:     "0.0.1.137",
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
-				"changelog":        "### Changelog\n",
-				"update_available": true,
-				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
-				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
-				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
+				// "changelog":        "### Changelog\n",
+				"update_available": false,
+				// "critical":         true,
+				"update_url_dmg": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "public%20testapp/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137.dmg"),
+				"update_url_pkg": fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "public%20testapp/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137.pkg"),
+				"update_url":     fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "public%20testapp/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2177,9 +2216,9 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "nightly",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.dmg"),
-				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137.pkg"),
-				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.137"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
+				"update_url_pkg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
+				"update_url":       fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2204,9 +2243,9 @@ func TestCheckVersion(t *testing.T) {
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
 				"update_available": false,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.dmg"),
-				"update_url_pkg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137.pkg"),
-				"update_url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.137"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.dmg"),
+				"update_url_pkg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.pkg"),
+				"update_url":       fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2427,7 +2466,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
 				"critical":         false,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/secondArch/testapp-0.0.2.138.dmg"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FsecondArch%2Ftestapp-0.0.2.138.dmg"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2441,7 +2480,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
 				"critical":         false,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/nightly/universalPlatform/universalArch/testapp-0.0.2.138.dmg"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.138.dmg"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2467,7 +2506,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
 				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/universalPlatform/universalArch/testapp-0.0.4.138.dmg"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.138.dmg"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",
@@ -2481,7 +2520,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			ExpectedJSON: map[string]interface{}{
 				"update_available": true,
 				"critical":         true,
-				"update_url_dmg":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "testapp/stable/secondPlatform/universalArch/testapp-0.0.4.138.dmg"),
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp%2Fstable%2FsecondPlatform%2FuniversalArch%2Ftestapp-0.0.4.138.dmg"),
 			},
 			ExpectedCode: http.StatusOK,
 			// Published:    false,
@@ -3257,6 +3296,36 @@ func TestDeleteAppMeta(t *testing.T) {
 
 	// Create a DELETE request for the /app/delete endpoint.
 	req, err := http.NewRequest("DELETE", "/app/delete?id="+idTestappApp, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deleteAppResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestDeletePublicAppMeta(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /app/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.DELETE("/app/delete", func(c *gin.Context) {
+		handler.DeleteApp(c)
+	})
+
+	// Create a DELETE request for the /app/delete endpoint.
+	req, err := http.NewRequest("DELETE", "/app/delete?id="+idPublicTestappApp, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

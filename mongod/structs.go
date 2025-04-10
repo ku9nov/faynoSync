@@ -14,7 +14,7 @@ import (
 type AppRepository interface {
 	Get(ctx context.Context, limit int64) ([]*model.SpecificAppWithoutIDs, error)
 	GetAppByName(appName string, ctx context.Context, page, limit int64) (*model.PaginatedResponse, error)
-	DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error)
+	DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, string, error)
 	DeleteChannel(id primitive.ObjectID, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (interface{}, error)
 	UpdateSpecificApp(objID primitive.ObjectID, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error)
@@ -29,7 +29,7 @@ type AppRepository interface {
 	CreateArch(archName string, ctx context.Context) (interface{}, error)
 	ListArchs(ctx context.Context) ([]*model.Arch, error)
 	DeleteArch(id primitive.ObjectID, ctx context.Context) (int64, error)
-	CreateApp(appName string, logo string, description string, ctx context.Context) (interface{}, error)
+	CreateApp(appName string, logo string, description string, private bool, ctx context.Context) (interface{}, error)
 	ListApps(ctx context.Context) ([]*model.App, error)
 	DeleteApp(id primitive.ObjectID, ctx context.Context) (int64, error)
 	UpdateApp(id primitive.ObjectID, appName string, logo string, description string, ctx context.Context) (interface{}, error)

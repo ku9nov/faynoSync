@@ -4,15 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
 	minioCredentials "github.com/minio/minio-go/v7/pkg/credentials"
@@ -62,11 +65,11 @@ func UploadLogo(appName string, file *multipart.FileHeader, c *gin.Context, env 
 		"channel":  "",
 		"platform": "",
 		"arch":     "",
-	}, file, c, env)
+	}, file, c, env, true)
 	return logoLink, err
 }
 
-func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, string, error) {
+func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper, checkAppVisibility bool) (string, string, error) {
 	// // Create an S3 client using another func
 	storageClient := createStorageClient()
 
@@ -92,11 +95,12 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 
 	var link string
 	var s3Key string
+	s3PathSegments := []string{ctxQuery["app_name"].(string)}
 	if ctxQuery["channel"].(string) == "" && ctxQuery["platform"].(string) == "" && ctxQuery["arch"].(string) == "" {
-		link = fmt.Sprintf("%s/%s/%s", env.GetString("S3_ENDPOINT"), ctxQuery["app_name"].(string), newFileName)
-		s3Key = ctxQuery["app_name"].(string) + "/" + newFileName
+
+		s3PathSegments = append(s3PathSegments, newFileName)
+
 	} else {
-		s3PathSegments := []string{ctxQuery["app_name"].(string)}
 
 		if ctxQuery["channel"].(string) != "" {
 			s3PathSegments = append(s3PathSegments, ctxQuery["channel"].(string))
@@ -111,10 +115,11 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 		}
 
 		s3PathSegments = append(s3PathSegments, newFileName)
-		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
-		link = fmt.Sprintf("%s/%s", env.GetString("S3_ENDPOINT"), encodedPath)
-		s3Key = strings.Join(s3PathSegments, "/")
+
 	}
+	encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+	link = fmt.Sprintf("%s/download?key=%s", env.GetString("API_URL"), encodedPath)
+	s3Key = strings.Join(s3PathSegments, "/")
 
 	// Open the file for reading
 	fileReader, err := file.Open()
@@ -126,17 +131,29 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 	// Upload file to S3
 	switch client := storageClient.(type) {
 	case *minio.Client:
-		var uploadInfo minio.UploadInfo
-		uploadInfo, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), s3Key, fileReader, -1, minio.PutObjectOptions{})
-
-		logrus.Debugln("Upload Info:", uploadInfo)
-		link = uploadInfo.Location
+		if ctxQuery["type"] == "logo" || checkAppVisibility == false {
+			var uploadInfo minio.UploadInfo
+			// Use public bucket for logo uploads
+			uploadInfo, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME_PUBLIC"), s3Key, fileReader, -1, minio.PutObjectOptions{})
+			link = uploadInfo.Location
+		} else {
+			_, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), s3Key, fileReader, -1, minio.PutObjectOptions{})
+		}
 	case *s3.Client:
-		_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
-			Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
-			Key:    aws.String(s3Key),
-			Body:   fileReader,
-		})
+		if ctxQuery["type"] == "logo" || checkAppVisibility == false {
+			link = fmt.Sprintf("%s/%s", env.GetString("S3_ENDPOINT_PUBLIC"), encodedPath)
+			_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
+				Bucket: aws.String(env.GetString("S3_BUCKET_NAME_PUBLIC")),
+				Key:    aws.String(s3Key),
+				Body:   fileReader,
+			})
+		} else {
+			_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
+				Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
+				Key:    aws.String(s3Key),
+				Body:   fileReader,
+			})
+		}
 	default:
 		logrus.Errorf("unknown storage client type")
 		return "", "", errors.New("unknown storage client type")
@@ -149,7 +166,7 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 	return link, extension, err
 }
 
-func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
+func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bool) {
 
 	storageClient := createStorageClient()
 
@@ -158,6 +175,19 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 	}
 	var err error
 	objectKey = strings.TrimPrefix(objectKey, "/")
+	decodedKey, err := url.QueryUnescape(objectKey)
+	if err != nil {
+		logrus.Error("Failed to decode object key: ", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode object key"})
+		return
+	}
+	logrus.Debugln("decodedKey in delete from s3: ", decodedKey)
+	var bucketName string
+	if private {
+		bucketName = env.GetString("S3_BUCKET_NAME")
+	} else {
+		bucketName = env.GetString("S3_BUCKET_NAME_PUBLIC")
+	}
 	// Delete object from bucket
 	switch client := storageClient.(type) {
 	case *minio.Client:
@@ -165,19 +195,7 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 			GovernanceBypass: true,
 			VersionID:        "",
 		}
-		var objectKeyAfterBucket string
-		parts := strings.Split(objectKey, env.GetString("S3_BUCKET_NAME"))
-		if len(parts) > 1 {
-			objectKeyAfterBucket = strings.TrimPrefix(parts[1], "/")
-			logrus.Infof("Deleting object with key after bucket name: '%s'", objectKeyAfterBucket)
-		}
-		decodedKey, err := url.QueryUnescape(objectKeyAfterBucket)
-		if err != nil {
-			logrus.Error("Failed to decode object key: ", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode object key"})
-			return
-		}
-		err = client.RemoveObject(context.Background(), env.GetString("S3_BUCKET_NAME"), decodedKey, opts)
+		err = client.RemoveObject(context.Background(), bucketName, decodedKey, opts)
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from Minio"})
@@ -185,8 +203,8 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 
 	case *s3.Client:
 		_, err = client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
-			Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
-			Key:    aws.String(objectKey),
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(decodedKey),
 		})
 		if err != nil {
 			logrus.Error(err)
@@ -197,5 +215,54 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unknown storage client type"})
 	}
 
-	logrus.Infof("Object '%s' deleted from bucket '%s'\n", objectKey, env.GetString("S3_BUCKET_NAME"))
+	logrus.Infof("Object '%s' deleted from bucket '%s'\n", objectKey, bucketName)
+}
+
+func GeneratePresignedURL(c *gin.Context, objectKey string, expiration time.Duration) (string, error) {
+	env := viper.GetViper()
+	storageClient := createStorageClient()
+
+	if storageClient == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
+	}
+	switch client := storageClient.(type) {
+	case *minio.Client:
+		urlStr, err := client.PresignedGetObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), objectKey, expiration, nil)
+		if err != nil {
+			return "", err
+		}
+		return urlStr.String(), nil
+	case *s3.Client:
+		presignClient := s3.NewPresignClient(storageClient.(*s3.Client))
+		presigner := Presigner{PresignClient: presignClient}
+
+		req, err := presigner.GetObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), objectKey, int64(expiration.Seconds()))
+		if err != nil {
+			return "", err
+		}
+		return req.URL, nil
+	default:
+		logrus.Errorf("unknown storage client type")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unknown storage client type"})
+		return "", errors.New("unknown storage client type")
+	}
+}
+
+// Presigner encapsulates the Amazon Simple Storage Service (Amazon S3) presign actions
+type Presigner struct {
+	PresignClient *s3.PresignClient
+}
+
+// GetObject makes a presigned request that can be used to get an object from a bucket
+func (presigner Presigner) GetObject(ctx context.Context, bucketName string, objectKey string, lifetimeSecs int64) (*v4.PresignedHTTPRequest, error) {
+	request, err := presigner.PresignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = time.Duration(lifetimeSecs * int64(time.Second))
+	})
+	if err != nil {
+		log.Printf("Couldn't get a presigned request to get %v:%v. Here's why: %v\n", bucketName, objectKey, err)
+	}
+	return request, err
 }

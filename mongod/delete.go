@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, error) {
+func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx context.Context) ([]string, int64, string, error) {
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
@@ -25,16 +25,17 @@ func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx co
 	err := collection.FindOne(ctx, filter).Decode(&app)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil, 0, fmt.Errorf("no app found with ID %s", id)
+			return nil, 0, "", fmt.Errorf("no app found with ID %s", id)
 		}
-		return nil, 0, fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
+		return nil, 0, "", fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
 	}
+	appName, err := c.FetchAppByID(app.ID, ctx)
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
 		logrus.Fatal(err)
 
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 
 	var links []string
@@ -43,7 +44,7 @@ func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, ctx co
 		links = append(links, link)
 	}
 
-	return links, deleteResult.DeletedCount, nil
+	return links, deleteResult.DeletedCount, appName[0].AppName, nil
 }
 
 func (c *appRepository) DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context) ([]string, bool, error) {

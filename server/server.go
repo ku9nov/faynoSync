@@ -39,7 +39,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	}
 	handler := handler.NewAppHandler(client, db, mongoDatabase, redisClient, config.GetBool("PERFORMANCE_MODE"))
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
-
+	os.Setenv("ENABLE_PRIVATE_APP_DOWNLOADING", config.GetString("ENABLE_PRIVATE_APP_DOWNLOADING"))
 	// Add authentication middleware to required paths
 	authMiddleware := utils.AuthMiddleware()
 
@@ -54,7 +54,13 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
 
-	router.Use(authMiddleware)
+	if config.GetBool("ENABLE_PRIVATE_APP_DOWNLOADING") {
+		router.GET("/download", handler.DownloadArtifact)
+		router.Use(authMiddleware)
+	} else {
+		router.Use(authMiddleware)
+		router.GET("/download", handler.DownloadArtifact)
+	}
 
 	router.GET("/", handler.GetAllApps)
 	router.POST("/upload", handler.UploadApp)

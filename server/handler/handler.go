@@ -5,6 +5,7 @@ import (
 	"faynoSync/server/handler/catalog"
 	"faynoSync/server/handler/create"
 	"faynoSync/server/handler/delete"
+	"faynoSync/server/handler/download"
 	"faynoSync/server/handler/info"
 	"faynoSync/server/handler/sign"
 	"faynoSync/server/handler/update"
@@ -42,6 +43,7 @@ type AppHandler interface {
 	UpdatePlatform(*gin.Context)
 	UpdateArch(*gin.Context)
 	DeleteSpecificArtifactOfApp(*gin.Context)
+	DownloadArtifact(*gin.Context)
 }
 
 type appHandler struct {
@@ -145,7 +147,7 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 
 func (ch *appHandler) DeleteSpecificVersionOfApp(c *gin.Context) {
 	// Call the DeleteSpecificVersionOfApp function from the delete package
-	delete.DeleteSpecificVersionOfApp(c, ch.repository)
+	delete.DeleteSpecificVersionOfApp(c, ch.repository, ch.database)
 }
 
 func (ch *appHandler) DeleteChannel(c *gin.Context) {
@@ -185,4 +187,9 @@ func (ch *appHandler) UpdateArch(c *gin.Context) {
 func (ch *appHandler) DeleteSpecificArtifactOfApp(c *gin.Context) {
 	// Call the DeleteSpecificArtifactOfApp function from the delete package
 	delete.DeleteSpecificArtifactOfApp(c, ch.repository, ch.database)
+}
+
+func (ch *appHandler) DownloadArtifact(c *gin.Context) {
+	// Call the DownloadArtifact function from the download package
+	download.DownloadArtifact(c)
 }

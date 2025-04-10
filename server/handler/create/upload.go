@@ -64,11 +64,16 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	}
 
 	files := form.File["file"] // Assuming the field name is "file" not "files"
-
+	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
+		return
+	}
 	var links []string
 	var extensions []string
 	for _, file := range files {
-		link, ext, err := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper())
+		link, ext, err := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper(), checkAppVisibility)
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})

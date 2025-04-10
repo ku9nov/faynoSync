@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.13
+
+### Features
+
+- Enhanced the `DeleteDocument` function to check for related documents in the `apps` collection before deletion.
+- Add `download` route.
+- Add support for private S3 bucket.
+- Add presigned URL support for MinIO and AWS.
+
 ## v1.3.12
 
 ### Features
