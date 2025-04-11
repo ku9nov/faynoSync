@@ -21,7 +21,9 @@ type CreateTeamUserRequest struct {
 	Permissions model.Permissions `json:"permissions" binding:"required"`
 }
 
-func CreateTeamUser(c *gin.Context) {
+// CreateTeamUser creates a new team user
+// This function should be called from the handler with the database connection
+func CreateTeamUser(c *gin.Context, database *mongo.Database) {
 	var req CreateTeamUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logrus.Errorf("Failed to bind JSON: %v", err)
@@ -40,15 +42,6 @@ func CreateTeamUser(c *gin.Context) {
 	}
 
 	logrus.Debugf("Team user will be owned by admin: %s", owner)
-
-	// Get database from context
-	db, exists := c.Get("database")
-	if !exists {
-		logrus.Error("Database connection not found in context")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database connection not found"})
-		return
-	}
-	database := db.(*mongo.Database)
 
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)

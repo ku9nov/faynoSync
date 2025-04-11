@@ -46,6 +46,7 @@ type AppHandler interface {
 	DeleteSpecificArtifactOfApp(*gin.Context)
 	DownloadArtifact(*gin.Context)
 	CreateTeamUser(*gin.Context)
+	UpdateTeamUser(*gin.Context)
 }
 
 type appHandler struct {
@@ -196,6 +197,10 @@ func (ch *appHandler) DownloadArtifact(c *gin.Context) {
 	download.DownloadArtifact(c)
 }
 
-func (h *appHandler) CreateTeamUser(c *gin.Context) {
-	team.CreateTeamUser(c)
+func (ch *appHandler) CreateTeamUser(c *gin.Context) {
+	team.CreateTeamUser(c, ch.database)
+}
+
+func (ch *appHandler) UpdateTeamUser(c *gin.Context) {
+	team.UpdateTeamUser(c, ch.database)
 }

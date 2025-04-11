@@ -31,7 +31,9 @@ const (
 	ResourceArchs     ResourceType = "archs"
 )
 
-func CheckPermission(permissionType PermissionType, resourceType ResourceType) gin.HandlerFunc {
+// CheckPermission creates a middleware that checks if the user has the required permission
+// This function should be called with the database connection
+func CheckPermission(permissionType PermissionType, resourceType ResourceType, database *mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		username, err := GetUsernameFromContext(c)
 		if err != nil {
@@ -39,15 +41,6 @@ func CheckPermission(permissionType PermissionType, resourceType ResourceType) g
 			c.Abort()
 			return
 		}
-
-		// Get database from context
-		db, exists := c.Get("database")
-		if !exists {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database connection not found"})
-			c.Abort()
-			return
-		}
-		database := db.(*mongo.Database)
 
 		// First check if user is an admin
 		adminsCollection := database.Collection("admins")
@@ -140,8 +133,9 @@ func CheckPermission(permissionType PermissionType, resourceType ResourceType) g
 	}
 }
 
-// AdminOnlyMiddleware перевіряє, чи користувач є адміном
-func AdminOnlyMiddleware() gin.HandlerFunc {
+// AdminOnlyMiddleware checks if the user is an admin
+// This function should be called with the database connection
+func AdminOnlyMiddleware(database *mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		username, err := GetUsernameFromContext(c)
 		if err != nil {
@@ -149,15 +143,6 @@ func AdminOnlyMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-
-		// Get database from context
-		db, exists := c.Get("database")
-		if !exists {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database connection not found"})
-			c.Abort()
-			return
-		}
-		database := db.(*mongo.Database)
 
 		// Check if user is an admin
 		adminsCollection := database.Collection("admins")
