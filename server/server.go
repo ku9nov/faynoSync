@@ -55,11 +55,6 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
 
-	// Team user management - only admins can create team users
-	router.POST("/user/create", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.CreateTeamUser)
-	router.POST("/user/update", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.UpdateTeamUser)
-	router.GET("/users/list", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.ListTeamUsers)
-
 	if config.GetBool("ENABLE_PRIVATE_APP_DOWNLOADING") {
 		router.GET("/download", handler.DownloadArtifact)
 		router.Use(authMiddleware)
@@ -99,6 +94,12 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.GET("/app/list", handler.ListApps)
 	router.DELETE("/app/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), handler.DeleteApp)
 	router.POST("/artifact/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), handler.DeleteSpecificArtifactOfApp)
+
+	// Team user management - only admins can create team users
+	router.POST("/user/create", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.CreateTeamUser)
+	router.POST("/user/update", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.UpdateTeamUser)
+	router.GET("/users/list", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.ListTeamUsers)
+	router.DELETE("/user/delete", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.DeleteTeamUser)
 
 	// get the port from the configuration file
 	port := config.GetString("PORT")
