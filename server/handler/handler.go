@@ -47,6 +47,7 @@ type AppHandler interface {
 	DownloadArtifact(*gin.Context)
 	CreateTeamUser(*gin.Context)
 	UpdateTeamUser(*gin.Context)
+	ListTeamUsers(*gin.Context)
 }
 
 type appHandler struct {
@@ -203,4 +204,8 @@ func (ch *appHandler) CreateTeamUser(c *gin.Context) {
 
 func (ch *appHandler) UpdateTeamUser(c *gin.Context) {
 	team.UpdateTeamUser(c, ch.database)
+}
+
+func (ch *appHandler) ListTeamUsers(c *gin.Context) {
+	team.ListTeamUsers(c, ch.database)
 }

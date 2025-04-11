@@ -58,6 +58,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	// Team user management - only admins can create team users
 	router.POST("/user/create", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.CreateTeamUser)
 	router.POST("/user/update", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.UpdateTeamUser)
+	router.GET("/users/list", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.ListTeamUsers)
 
 	if config.GetBool("ENABLE_PRIVATE_APP_DOWNLOADING") {
 		router.GET("/download", handler.DownloadArtifact)
