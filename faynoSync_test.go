@@ -3162,7 +3162,7 @@ func TestDeleteNightlyChannelWithSecondUser(t *testing.T) {
 	// Check the response status code.
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
-	expected := `{"details":"you don't have permission to delete this item","error":"failed to delete channel"}`
+	expected := `{"details":"you don't have permission to delete this channel","error":"failed to delete channel"}`
 	assert.Equal(t, expected, w.Body.String())
 }
 
@@ -3192,7 +3192,7 @@ func TestDeletePlatformWithSecondUser(t *testing.T) {
 	// Check the response status code.
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
-	expected := `{"details":"you don't have permission to delete this item","error":"failed to delete platform"}`
+	expected := `{"details":"you don't have permission to delete this platform","error":"failed to delete platform"}`
 	assert.Equal(t, expected, w.Body.String())
 }
 
@@ -3222,7 +3222,7 @@ func TestDeleteArchWithSecondUser(t *testing.T) {
 	// Check the response status code.
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
-	expected := `{"details":"you don't have permission to delete this item","error":"failed to delete arch"}`
+	expected := `{"details":"you don't have permission to delete this arch","error":"failed to delete arch"}`
 	assert.Equal(t, expected, w.Body.String())
 }
 
@@ -3252,7 +3252,7 @@ func TestDeleteAppMetaWithSecondUser(t *testing.T) {
 	// Check the response status code.
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
-	expected := `{"details":"you don't have permission to delete this item","error":"failed to delete app"}`
+	expected := `{"details":"you don't have permission to delete this app","error":"failed to delete app"}`
 	assert.Equal(t, expected, w.Body.String())
 }
 func TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.T) {

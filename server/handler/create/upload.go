@@ -13,6 +13,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -50,10 +51,22 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	// utils.DumpRequest(c)
 
 	// Get username from JWT token
-	owner, err := utils.GetUsernameFromContext(c)
+	username, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Check if the user is a team user
+	teamUsersCollection := db.Collection("team_users")
+	var teamUser model.TeamUser
+	err = teamUsersCollection.FindOne(c.Request.Context(), bson.M{"username": username}).Decode(&teamUser)
+
+	// Determine the actual owner to use for operations
+	owner := username
+	if err == nil {
+		// User is a team user, use their admin as the owner
+		owner = teamUser.Owner
 	}
 
 	ctxQueryMap, err := utils.ValidateParams(c, db)

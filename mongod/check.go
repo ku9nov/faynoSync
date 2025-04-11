@@ -40,17 +40,60 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 		{Key: "app_name", Value: appName},
 		{Key: "owner", Value: owner},
 	}
-	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
+
+	// Check if the user is a team user
+	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
+	var teamUser model.TeamUser
+	err := teamUsersCollection.FindOne(ctx, bson.M{"username": owner}).Decode(&teamUser)
+
+	// If user is a team user, we need to check their permissions
+	if err == nil {
+		logrus.Debugf("User %s is a team user owned by %s", owner, teamUser.Owner)
+		// Update the meta filter to use the team user's owner
+		metaFilter = bson.D{
+			{Key: "app_name", Value: appName},
+			{Key: "owner", Value: teamUser.Owner},
+		}
+
+		// Check if the user has any allowed apps
+		if len(teamUser.Permissions.Apps.Allowed) == 0 {
+			return nil, errors.New("you don't have permission to access any apps")
+		}
+	}
+
+	err = metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
 	if err != nil {
 		return nil, errors.New("app_name not found in apps_meta collection")
 	}
 
+	// If user is a team user, verify the app is in their allowed list
+	if teamUser.Username != "" {
+		appID := appMeta.ID.Hex()
+		appAllowed := false
+		for _, allowedAppID := range teamUser.Permissions.Apps.Allowed {
+			if allowedAppID == appID {
+				appAllowed = true
+				break
+			}
+		}
+
+		if !appAllowed {
+			return nil, errors.New("you don't have permission to access this app")
+		}
+	}
+
 	collection := c.client.Database(c.config.Database).Collection("apps")
+
+	// Determine the owner for the pipeline
+	pipelineOwner := owner
+	if teamUser.Username != "" {
+		pipelineOwner = teamUser.Owner
+	}
 
 	countPipeline := mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.M{
 			"app_id": appMeta.ID,
-			"owner":  owner,
+			"owner":  pipelineOwner,
 		}}},
 		bson.D{{Key: "$count", Value: "total"}},
 	}
@@ -76,7 +119,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 	pipeline := mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.M{
 			"app_id": appMeta.ID,
-			"owner":  owner,
+			"owner":  pipelineOwner,
 		}}},
 	}
 	pipeline = append(pipeline, basePipeline...)

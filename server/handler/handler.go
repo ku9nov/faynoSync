@@ -8,6 +8,7 @@ import (
 	"faynoSync/server/handler/download"
 	"faynoSync/server/handler/info"
 	"faynoSync/server/handler/sign"
+	"faynoSync/server/handler/team"
 	"faynoSync/server/handler/update"
 
 	"github.com/gin-gonic/gin"
@@ -44,6 +45,7 @@ type AppHandler interface {
 	UpdateArch(*gin.Context)
 	DeleteSpecificArtifactOfApp(*gin.Context)
 	DownloadArtifact(*gin.Context)
+	CreateTeamUser(*gin.Context)
 }
 
 type appHandler struct {
@@ -192,4 +194,8 @@ func (ch *appHandler) DeleteSpecificArtifactOfApp(c *gin.Context) {
 func (ch *appHandler) DownloadArtifact(c *gin.Context) {
 	// Call the DownloadArtifact function from the download package
 	download.DownloadArtifact(c)
+}
+
+func (h *appHandler) CreateTeamUser(c *gin.Context) {
+	team.CreateTeamUser(c)
 }

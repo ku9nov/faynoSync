@@ -105,3 +105,41 @@ type PaginatedResponse struct {
 	Page  int64                    `json:"page"`
 	Limit int64                    `json:"limit"`
 }
+
+type TeamUser struct {
+	ID          primitive.ObjectID `bson:"_id"`
+	Username    string             `bson:"username"`
+	Password    string             `bson:"password"`
+	Owner       string             `bson:"owner"`
+	Permissions Permissions        `bson:"permissions"`
+	Updated_at  primitive.DateTime `bson:"updated_at"`
+}
+
+type Permissions struct {
+	Apps struct {
+		Create   bool     `bson:"create"`
+		Delete   bool     `bson:"delete"`
+		Edit     bool     `bson:"edit"`
+		Download bool     `bson:"download"`
+		Upload   bool     `bson:"upload"`
+		Allowed  []string `bson:"allowed,omitempty"` // List of app IDs this user can access
+	} `bson:"apps"`
+	Channels struct {
+		Create  bool     `bson:"create"`
+		Delete  bool     `bson:"delete"`
+		Edit    bool     `bson:"edit"`
+		Allowed []string `bson:"allowed,omitempty"` // List of channel IDs this user can access
+	} `bson:"channels"`
+	Platforms struct {
+		Create  bool     `bson:"create"`
+		Delete  bool     `bson:"delete"`
+		Edit    bool     `bson:"edit"`
+		Allowed []string `bson:"allowed,omitempty"` // List of platform IDs this user can access
+	} `bson:"platforms"`
+	Archs struct {
+		Create  bool     `bson:"create"`
+		Delete  bool     `bson:"delete"`
+		Edit    bool     `bson:"edit"`
+		Allowed []string `bson:"allowed,omitempty"` // List of arch IDs this user can access
+	} `bson:"archs"`
+}

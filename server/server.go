@@ -49,10 +49,20 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	allowedOrigins := strings.Split(allowedCORS, ",")
 
 	router.Use(corsMiddleware(allowedOrigins))
+
+	// Add database to context
+	router.Use(func(c *gin.Context) {
+		c.Set("database", mongoDatabase)
+		c.Next()
+	})
+
 	router.GET("/checkVersion", handler.FindLatestVersion)
 	router.GET("/apps/latest", handler.FetchLatestVersionOfApp)
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
+
+	// Team user management - only admins can create team users
+	router.POST("/user/create", authMiddleware, utils.AdminOnlyMiddleware(), handler.CreateTeamUser)
 
 	if config.GetBool("ENABLE_PRIVATE_APP_DOWNLOADING") {
 		router.GET("/download", handler.DownloadArtifact)
@@ -62,28 +72,38 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 		router.GET("/download", handler.DownloadArtifact)
 	}
 
+	// App routes
 	router.GET("/", handler.GetAllApps)
-	router.POST("/upload", handler.UploadApp)
-	router.POST("/apps/update", handler.UpdateSpecificApp)
-	router.POST("/app/update", handler.UpdateApp)
-	router.POST("/channel/update", handler.UpdateChannel)
-	router.POST("/platform/update", handler.UpdatePlatform)
-	router.POST("/arch/update", handler.UpdateArch)
+	router.POST("/upload", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps), handler.UploadApp)
+	router.POST("/apps/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps), handler.UpdateSpecificApp)
+	router.POST("/app/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps), handler.UpdateApp)
+	router.DELETE("/apps/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps), handler.DeleteSpecificVersionOfApp)
 	router.GET("/search", handler.GetAppByName)
-	router.DELETE("/apps/delete", handler.DeleteSpecificVersionOfApp)
-	router.POST("/channel/create", handler.CreateChannel)
+
+	// Channel routes
+	router.POST("/channel/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceChannels), handler.CreateChannel)
 	router.GET("/channel/list", handler.ListChannels)
-	router.DELETE("/channel/delete", handler.DeleteChannel)
-	router.POST("/platform/create", handler.CreatePlatform)
+	router.DELETE("/channel/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceChannels), handler.DeleteChannel)
+	router.POST("/channel/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceChannels), handler.UpdateChannel)
+
+	// Platform routes
+	router.POST("/platform/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourcePlatforms), handler.CreatePlatform)
 	router.GET("/platform/list", handler.ListPlatforms)
-	router.DELETE("/platform/delete", handler.DeletePlatform)
-	router.POST("/arch/create", handler.CreateArch)
+	router.DELETE("/platform/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourcePlatforms), handler.DeletePlatform)
+	router.POST("/platform/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourcePlatforms), handler.UpdatePlatform)
+
+	// Arch routes
+	router.POST("/arch/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceArchs), handler.CreateArch)
 	router.GET("/arch/list", handler.ListArchs)
-	router.DELETE("/arch/delete", handler.DeleteArch)
-	router.POST("/app/create", handler.CreateApp)
+	router.DELETE("/arch/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceArchs), handler.DeleteArch)
+	router.POST("/arch/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceArchs), handler.UpdateArch)
+
+	// App management routes
+	router.POST("/app/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceApps), handler.CreateApp)
 	router.GET("/app/list", handler.ListApps)
-	router.DELETE("/app/delete", handler.DeleteApp)
-	router.POST("/artifact/delete", handler.DeleteSpecificArtifactOfApp)
+	router.DELETE("/app/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps), handler.DeleteApp)
+	router.POST("/artifact/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps), handler.DeleteSpecificArtifactOfApp)
+
 	// get the port from the configuration file
 	port := config.GetString("PORT")
 	if port == "" {
