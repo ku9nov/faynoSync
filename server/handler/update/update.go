@@ -157,7 +157,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		files := form.File["file"] // Assuming the field name is "file" not "files"
 
 		for _, file := range files {
-			link, ext, err := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper(), checkAppVisibility)
+			link, ext, err := utils.UploadToS3(ctxQueryMap, owner, file, c, viper.GetViper(), checkAppVisibility)
 			if err != nil {
 				logrus.Error(err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})

@@ -59,17 +59,17 @@ func createStorageClient() interface{} {
 
 func UploadLogo(appName string, owner string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, error) {
 	logoLink, _, err := UploadToS3(map[string]interface{}{
-		"app_name": fmt.Sprintf("%s-%s", appName, owner),
+		"app_name": appName,
 		"version":  "0.0.0",
 		"type":     "logo",
 		"channel":  "",
 		"platform": "",
 		"arch":     "",
-	}, file, c, env, true)
+	}, owner, file, c, env, true)
 	return logoLink, err
 }
 
-func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *gin.Context, env *viper.Viper, checkAppVisibility bool) (string, string, error) {
+func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper, checkAppVisibility bool) (string, string, error) {
 	// // Create an S3 client using another func
 	storageClient := createStorageClient()
 
@@ -95,7 +95,7 @@ func UploadToS3(ctxQuery map[string]interface{}, file *multipart.FileHeader, c *
 
 	var link string
 	var s3Key string
-	s3PathSegments := []string{ctxQuery["app_name"].(string)}
+	s3PathSegments := []string{fmt.Sprintf("%s-%s", ctxQuery["app_name"].(string), owner)}
 	if ctxQuery["channel"].(string) == "" && ctxQuery["platform"].(string) == "" && ctxQuery["arch"].(string) == "" {
 
 		s3PathSegments = append(s3PathSegments, newFileName)

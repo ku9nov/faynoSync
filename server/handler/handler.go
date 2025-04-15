@@ -49,6 +49,7 @@ type AppHandler interface {
 	UpdateTeamUser(*gin.Context)
 	ListTeamUsers(*gin.Context)
 	DeleteTeamUser(*gin.Context)
+	Whoami(*gin.Context)
 }
 
 type appHandler struct {
@@ -213,4 +214,8 @@ func (ch *appHandler) ListTeamUsers(c *gin.Context) {
 
 func (ch *appHandler) DeleteTeamUser(c *gin.Context) {
 	team.DeleteTeamUser(c, ch.database)
+}
+
+func (ch *appHandler) Whoami(c *gin.Context) {
+	team.Whoami(c, ch.database)
 }
