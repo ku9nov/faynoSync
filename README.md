@@ -197,6 +197,42 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestDeletePlatformWithSecondUser (expected result from API "500")
     - TestDeleteArchWithSecondUser (expected result from API "500")
     - TestDeleteAppMetaWithSecondUser (expected result from API "500")
+    - TestCreateTeamUser
+    - TestTeamUserLogin
+    - TestFailedUploadAppUsingTeamUser (expected result from API "403")
+    - TestFailedUpdateAppUsingTeamUser (expected result from API "403")
+    - TestFailedUpdateChannelUsingTeamUser (expected result from API "403")
+    - TestFailedUpdatePlatformUsingTeamUser (expected result from API "403")
+    - TestFailedUpdateArchUsingTeamUser (expected result from API "403")
+    - TestListAppsUsingTeamUserBeforeCreate
+    - TestListChannelsUsingTeamUserBeforeCreate
+    - TestListPlatformsUsingTeamUserBeforeCreate
+    - TestListArchsUsingTeamUserBeforeCreate
+    - TestAppCreateTeamUser
+    - TestListAppsUsingTeamUser
+    - TestFailedDeleteTeamUserApp (expected result from API "403")
+    - TestChannelCreateTeamUser
+    - TestListChannelsUsingTeamUser
+    - TestFailedDeleteTeamUserChannel (expected result from API "403")
+    - TestPlatformCreateTeamUser
+    - TestListPlatformsUsingTeamUser
+    - TestFailedDeleteTeamUserPlatform (expected result from API "403")
+    - TestArchCreateTeamUser
+    - TestListArchsUsingTeamUser
+    - TestFailedDeleteTeamUserArch (expected result from API "403")
+    - TestFailedUpdateTeamUser (expected result from API "403")
+    - TestUpdateTeamUser
+    - TestUpdateAppUsingTeamUser
+    - TestUpdateChannelUsingTeamUser
+    - TestUpdatePlatformUsingTeamUser
+    - TestUpdateArchUsingTeamUser
+    - TestFailedAppCreateTeamUser (expected result from API "403")
+    - TestDeleteTeamUserApp 
+    - TestDeleteTeamUserChannel 
+    - TestDeleteTeamUserPlatform
+    - TestDeleteTeamUserArch
+    - TestListTeamUsers
+    - TestDeleteTeamUser
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

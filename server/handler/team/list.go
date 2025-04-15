@@ -10,15 +10,17 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // TeamUserResponse represents the response for a team user
 type TeamUserResponse struct {
-	Username    string            `json:"username"`
-	Permissions model.Permissions `json:"permissions"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	ID          primitive.ObjectID `json:"id"`
+	Username    string             `json:"username"`
+	Permissions model.Permissions  `json:"permissions"`
+	UpdatedAt   time.Time          `json:"updated_at"`
 }
 
 // ListTeamUsers returns a list of team users owned by the admin
@@ -62,6 +64,7 @@ func ListTeamUsers(c *gin.Context, database *mongo.Database) {
 
 		// Convert to response format
 		response := TeamUserResponse{
+			ID:          teamUser.ID,
 			Username:    teamUser.Username,
 			Permissions: teamUser.Permissions,
 			UpdatedAt:   teamUser.Updated_at.Time(),
