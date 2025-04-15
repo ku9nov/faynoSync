@@ -1056,3 +1056,227 @@ This request returns a signed URL for downloading a file.
 ```
 curl -X GET --location 'http://localhost:9000/download?key=secondapp%2Fstable%2Flinux%2Famd64%2Fsecondapp-0.0.1.deb'
 ```
+
+### Create Team User
+
+Create a new team user with specific permissions.
+
+`POST /user/create`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Body
+**username**: Username for the new team user.
+**password**: Password for the new team user.
+**permissions**: Object containing permission settings for different resources.
+
+###### Request:
+```
+curl -X POST \
+  'http://localhost:9000/user/create' \
+  -H 'Authorization: Bearer {{token}}' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "username": "teamuser1",
+    "password": "password123",
+    "permissions": {
+      "apps": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "download": true,
+        "upload": false,
+        "allowed": [""]
+      },
+      "channels": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      },
+      "platforms": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      },
+      "archs": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      }
+    }
+  }'
+```
+
+###### Response:
+
+```
+{
+    "message": "Team user created successfully"
+}
+```
+
+### Update Team User
+
+Update an existing team user's permissions.
+
+`POST /user/update`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Body
+**username**: Username of the team user to update.
+**password**: New password for the team user (optional).
+**permissions**: Updated permission settings.
+
+###### Request:
+```
+curl -X POST \
+  'http://localhost:9000/user/update' \
+  -H 'Authorization: Bearer {{token}}' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "username": "teamuser1",
+    "password": "password123",
+    "permissions": {
+      "apps": {
+        "create": false,
+        "delete": true,
+        "edit": true,
+        "download": true,
+        "upload": true,
+        "allowed": ["", ""]
+      },
+      "channels": {
+        "create": true,
+        "delete": true,
+        "edit": true,
+        "allowed": [""]
+      },
+      "platforms": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      },
+      "archs": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      }
+    }
+  }'
+```
+
+###### Response:
+
+```
+{
+    "message": "Team user updated successfully"
+}
+```
+
+
+### List Team Users
+
+Retrieve a list of all team users.
+
+`GET /users/list`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Request:
+```
+curl -X GET \
+  'http://localhost:9000/users/list' \
+  -H 'Authorization: Bearer {{token}}'
+```
+
+###### Response:
+
+```
+{
+  "users": [
+    {
+      "id": "67fd2a63a70df16a87034b83",
+      "username": "teamuser1",
+      "permissions": {
+        "Apps": {
+          "Create": true,
+          "Delete": false,
+          "Edit": true,
+          "Download": true,
+          "Upload": false,
+          "Allowed": [
+            "67f8070fba341940a3ae4542"
+          ]
+        },
+        "Channels": {
+          "Create": true,
+          "Delete": false,
+          "Edit": true,
+          "Allowed": [
+            "67f826fa5c0a2b68411b2111"
+          ]
+        },
+        "Platforms": {
+          "Create": true,
+          "Delete": false,
+          "Edit": true,
+          "Allowed": [
+            "67f82615a27c60636bd57308"
+          ]
+        },
+        "Archs": {
+          "Create": true,
+          "Delete": false,
+          "Edit": true,
+          "Allowed": [
+            "67f8261aa27c60636bd57309"
+          ]
+        }
+      },
+      "updated_at": "2025-04-14T18:31:47.575+03:00"
+    }
+  ]
+}
+```
+
+
+
+### Delete Team User
+
+Delete a team user.
+
+`DELETE /user/delete`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Body
+**id**: ID of the team user to delete.
+
+###### Request:
+```
+curl -X DELETE \
+  'http://localhost:9000/user/delete' \
+  -H 'Authorization: Bearer {{token}}' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "67f8e842675a6e160d48a59c"
+  }'
+```
+
+###### Response:
+
+```
+{
+    "message": "Team user deleted successfully"
+}
+```
