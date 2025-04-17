@@ -4,6 +4,7 @@ import (
 	"context"
 	db "faynoSync/mongod"
 	"faynoSync/server/model"
+	"faynoSync/server/utils"
 	"net/http"
 	"strconv"
 	"time"
@@ -15,6 +16,13 @@ import (
 func GetAppByName(c *gin.Context, repository db.AppRepository) {
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
+
+	// Get username from JWT token
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 
 	//get parameters
 	appName := c.Query("app_name")
@@ -34,7 +42,7 @@ func GetAppByName(c *gin.Context, repository db.AppRepository) {
 	}
 
 	//request on repository
-	result, err := repository.GetAppByName(appName, ctx, page, limit)
+	result, err := repository.GetAppByName(appName, ctx, page, limit, owner)
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -48,6 +56,13 @@ func GetAllApps(c *gin.Context, repository db.AppRepository) {
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
+	// Get username from JWT token
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	var appList []*model.SpecificAppWithoutIDs
 
 	//get limit parameter
@@ -59,7 +74,7 @@ func GetAllApps(c *gin.Context, repository db.AppRepository) {
 	}
 
 	//request on repository
-	if result, err := repository.Get(ctx, limit); err != nil {
+	if result, err := repository.Get(ctx, limit, owner); err != nil {
 		logrus.Error(err)
 	} else {
 		appList = result

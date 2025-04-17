@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.4.0
+
+### Features
+
+- Enhanced the `DeleteDocument` function to check for related documents in the `apps` collection before deletion.
+- Add `download` route.
+- Add support for private S3 bucket.
+- Add presigned URL support for MinIO and AWS.
+- Add team based authorization matrix
+- Add `whoami` route.
+
 ## v1.3.12
 
 ### Features

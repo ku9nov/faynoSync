@@ -39,7 +39,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	}
 	handler := handler.NewAppHandler(client, db, mongoDatabase, redisClient, config.GetBool("PERFORMANCE_MODE"))
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
-
+	os.Setenv("ENABLE_PRIVATE_APP_DOWNLOADING", config.GetString("ENABLE_PRIVATE_APP_DOWNLOADING"))
 	// Add authentication middleware to required paths
 	authMiddleware := utils.AuthMiddleware()
 
@@ -49,35 +49,59 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	allowedOrigins := strings.Split(allowedCORS, ",")
 
 	router.Use(corsMiddleware(allowedOrigins))
+
 	router.GET("/checkVersion", handler.FindLatestVersion)
 	router.GET("/apps/latest", handler.FetchLatestVersionOfApp)
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
 
-	router.Use(authMiddleware)
+	if config.GetBool("ENABLE_PRIVATE_APP_DOWNLOADING") {
+		router.GET("/download", handler.DownloadArtifact)
+		router.Use(authMiddleware)
+	} else {
+		router.Use(authMiddleware)
+		router.GET("/download", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.DownloadArtifact)
+	}
 
-	router.GET("/", handler.GetAllApps)
-	router.POST("/upload", handler.UploadApp)
-	router.POST("/apps/update", handler.UpdateSpecificApp)
-	router.POST("/app/update", handler.UpdateApp)
-	router.POST("/channel/update", handler.UpdateChannel)
-	router.POST("/platform/update", handler.UpdatePlatform)
-	router.POST("/arch/update", handler.UpdateArch)
+	// App routes
+	// router.GET("/", handler.GetAllApps)
+	router.GET("/whoami", handler.Whoami)
+	router.POST("/upload", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase), handler.UploadApp)
+	router.POST("/apps/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.UpdateSpecificApp)
+	router.POST("/app/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.UpdateApp)
+	router.DELETE("/apps/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), handler.DeleteSpecificVersionOfApp)
 	router.GET("/search", handler.GetAppByName)
-	router.DELETE("/apps/delete", handler.DeleteSpecificVersionOfApp)
-	router.POST("/channel/create", handler.CreateChannel)
+
+	// Channel routes
+	router.POST("/channel/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceChannels, mongoDatabase), handler.CreateChannel)
 	router.GET("/channel/list", handler.ListChannels)
-	router.DELETE("/channel/delete", handler.DeleteChannel)
-	router.POST("/platform/create", handler.CreatePlatform)
+	router.DELETE("/channel/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceChannels, mongoDatabase), handler.DeleteChannel)
+	router.POST("/channel/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceChannels, mongoDatabase), handler.UpdateChannel)
+
+	// Platform routes
+	router.POST("/platform/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourcePlatforms, mongoDatabase), handler.CreatePlatform)
 	router.GET("/platform/list", handler.ListPlatforms)
-	router.DELETE("/platform/delete", handler.DeletePlatform)
-	router.POST("/arch/create", handler.CreateArch)
+	router.DELETE("/platform/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourcePlatforms, mongoDatabase), handler.DeletePlatform)
+	router.POST("/platform/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourcePlatforms, mongoDatabase), handler.UpdatePlatform)
+
+	// Arch routes
+	router.POST("/arch/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceArchs, mongoDatabase), handler.CreateArch)
 	router.GET("/arch/list", handler.ListArchs)
-	router.DELETE("/arch/delete", handler.DeleteArch)
-	router.POST("/app/create", handler.CreateApp)
+	router.DELETE("/arch/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceArchs, mongoDatabase), handler.DeleteArch)
+	router.POST("/arch/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceArchs, mongoDatabase), handler.UpdateArch)
+
+	// App management routes
+	router.POST("/app/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceApps, mongoDatabase), handler.CreateApp)
 	router.GET("/app/list", handler.ListApps)
-	router.DELETE("/app/delete", handler.DeleteApp)
-	router.POST("/artifact/delete", handler.DeleteSpecificArtifactOfApp)
+	router.DELETE("/app/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), handler.DeleteApp)
+	router.POST("/artifact/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), handler.DeleteSpecificArtifactOfApp)
+
+	// Team user management - only admins can create team users
+	router.POST("/user/create", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.CreateTeamUser)
+	router.POST("/user/update", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.UpdateTeamUser)
+	router.GET("/users/list", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.ListTeamUsers)
+	router.DELETE("/user/delete", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.DeleteTeamUser)
+
 	// get the port from the configuration file
 	port := config.GetString("PORT")
 	if port == "" {

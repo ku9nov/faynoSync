@@ -5,7 +5,6 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,11 +16,15 @@ import (
 	"golang.org/x/text/language"
 )
 
-func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository) {
+func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
 	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(c.Query("id"))
 	if err != nil {
@@ -30,14 +33,27 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository) {
 	}
 
 	//request on repository
-	links, result, err := repository.DeleteSpecificVersionOfApp(objID, ctx)
+	links, result, appName, err := repository.DeleteSpecificVersionOfApp(objID, owner, ctx)
 	if err != nil {
 		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete specific version of app", "details": err.Error()})
+		return
+	}
+
+	checkAppVisibility, err := utils.CheckPrivate(appName, db, c)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
+		return
 	}
 
 	for _, link := range links {
-		subLink := strings.TrimPrefix(link, env.GetString("S3_ENDPOINT"))
-		utils.DeleteFromS3(subLink, c, viper.GetViper())
+		subLink, err := utils.ExtractS3Key(link, checkAppVisibility, env)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
 	}
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
 }
@@ -49,6 +65,11 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(ctxQueryMap["id"].(string))
 	if err != nil {
@@ -57,14 +78,24 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	}
 
 	delete(ctxQueryMap, "id")
-	links, result, err := repository.DeleteSpecificArtifactOfApp(objID, ctxQueryMap, c.Request.Context())
+	links, result, err := repository.DeleteSpecificArtifactOfApp(objID, ctxQueryMap, c.Request.Context(), owner)
 	if err != nil {
 		logrus.Error(err)
 	}
+	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
+		return
+	}
 
 	for _, link := range links {
-		subLink := strings.TrimPrefix(link, env.GetString("S3_ENDPOINT"))
-		utils.DeleteFromS3(subLink, c, viper.GetViper())
+		subLink, err := utils.ExtractS3Key(link, checkAppVisibility, env)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
 	}
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificArtifactResult": result})
 }
@@ -95,23 +126,30 @@ func deleteEntity(c *gin.Context, repository db.AppRepository, itemType string) 
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	var result interface{}
 	switch itemType {
 	case "channel":
-		result, err = repository.DeleteChannel(objID, ctx)
+		result, err = repository.DeleteChannel(objID, owner, ctx)
 	case "platform":
-		result, err = repository.DeletePlatform(objID, ctx)
+		result, err = repository.DeletePlatform(objID, owner, ctx)
 	case "arch":
-		result, err = repository.DeleteArch(objID, ctx)
+		result, err = repository.DeleteArch(objID, owner, ctx)
 	case "app":
-		result, err = repository.DeleteApp(objID, ctx)
+		result, err = repository.DeleteApp(objID, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
 	}
 	if err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete " + itemType})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete " + itemType, "details": err.Error()})
 		return
 	}
 	var tag language.Tag

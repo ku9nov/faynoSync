@@ -58,7 +58,7 @@ Create app.
 
 `POST /app/create`
 
-Optional with `description`, `logo`. 
+Optional with `description`, `logo`, `private`. 
 
 ###### Headers
 **Authorization**: Authorization header with jwt token.
@@ -70,6 +70,8 @@ Optional with `description`, `logo`.
 **app**: Name of the app.
 
 **description**: App description.
+
+**private**: Lock app. (If selected, the app will be stored in a private bucket)
 
 ###### Request:
 ```
@@ -309,7 +311,7 @@ curl -X GET http://localhost:9000/arch/list -H "Authorization: Bearer eyJhbGciOi
 ```
 
 
-### Get All Apps
+### Get All Apps (deprecated)
 
 Retrieve a list of all apps.
 
@@ -340,7 +342,7 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer eyJhbGciOiJIUzI1NiI
             "Published": false,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/firstapp/nightly/linux/amd64/firstapp-0.0.1.deb",
+                    "Link": "http://localhost:9000/download?key=firstapp/nightly/linux/amd64/firstapp-0.0.1.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
@@ -363,13 +365,13 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer eyJhbGciOiJIUzI1NiI
             "Published": true,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
                 },
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
@@ -392,16 +394,18 @@ curl -X GET http://localhost:9000/ -H "Authorization: Bearer eyJhbGciOiJIUzI1NiI
 
 Check if there is a newer version of a specific app.
 
-`POST /checkVersion?app_name=<app_name>&version=<version>`
+`GET /checkVersion?app_name=<app_name>&version=<version>`
 
 ###### Query Parameters
 **app_name**: Name of the app.
 
 **version**: Current version of the app.
 
+**owner**: Name of your admin user.
+
 ###### Request:
 ```
-curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64'
+curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64&owner=admin'
 ```
 
 ###### Response:
@@ -409,8 +413,8 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
 ```
 {
     "update_available": false,
-    "update_url_deb": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
-    "update_url_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm"
+    "update_url_deb": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+    "update_url_rpm": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.rpm"
 }
 ```
 
@@ -483,7 +487,7 @@ Check if there is a newer version of a specific app after uploading a new versio
 
 ###### Request:
 ```
-curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64'
+curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&version=0.0.1&channel=stable&platform=linux&arch=amd64owner=admin'
 ```
 
 ###### Response:
@@ -491,8 +495,8 @@ curl -X GET --location 'http://localhost:9000/checkVersion?app_name=secondapp&ve
 ```
 {
     "update_available": true,
-    "update_url_deb": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
-    "update_url_rpm": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
+    "update_url_deb": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+    "update_url_rpm": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
 }
 ```
 
@@ -513,9 +517,11 @@ This API endpoint retrieves the latest version of a specific app based on the pr
 
 **package**: The package type (e.g., deb, rpm, dmg).
 
+**owner**: Name of your user.
+
 ###### Request:
 ```
-curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&channel=stable&platform=linux&arch=amd64'
+curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&channel=stable&platform=linux&arch=amd64owner=admin'
 ```
 
 ###### Response:
@@ -526,12 +532,12 @@ curl -X GET --location 'http://localhost:9000/apps/latest?app_name=secondapp&cha
     "linux": {
       "amd64": {
         "deb": {
-          "url": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb"
+          "url": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.deb"
         }
       },
       "amd64": {
         "rpm": {
-          "url": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
+          "url": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.rpm"
         }
       }
     }
@@ -631,13 +637,13 @@ curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
             "Published": true,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
                 },
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.1.rpm",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
@@ -660,13 +666,13 @@ curl -X GET --location 'http://localhost:9000/search?app_name=secondapp' \
             "Published": true,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
                 },
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
@@ -844,13 +850,13 @@ curl -X GET http://localhost:9000/search\?\app_name\=\secondapp -H "Authorizatio
             "Published": true,
             "Artifacts": [
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.deb",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".deb"
                 },
                 {
-                    "Link": "https://<bucket_name>.s3.amazonaws.com/secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
+                    "Link": "http://localhost:9000/download?key=secondapp/stable/linux/amd64/secondapp-0.0.3.rpm",
                     "Platform": "linux",
                     "Arch": "amd64",
                     "Package": ".rpm"
@@ -1033,5 +1039,313 @@ curl -X POST --location 'http://localhost:9000/artifact/delete' \
 ```
 {
     "deleteSpecificArtifactResult": true
+}
+```
+
+### Download
+
+This request returns a signed URL for downloading a file.
+
+`GET /download`
+
+###### Query Parameters
+
+**key**: Key for finding the object on S3.
+
+###### Request:
+```
+curl -X GET --location 'http://localhost:9000/download?key=secondapp%2Fstable%2Flinux%2Famd64%2Fsecondapp-0.0.1.deb'
+```
+
+### Create Team User
+
+Create a new team user with specific permissions.
+
+`POST /user/create`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Body
+**username**: Username for the new team user.
+**password**: Password for the new team user.
+**permissions**: Object containing permission settings for different resources.
+
+###### Request:
+```
+curl -X POST \
+  'http://localhost:9000/user/create' \
+  -H 'Authorization: Bearer {{token}}' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "username": "teamuser1",
+    "password": "password123",
+    "permissions": {
+      "apps": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "download": true,
+        "upload": false,
+        "allowed": [""]
+      },
+      "channels": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      },
+      "platforms": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      },
+      "archs": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      }
+    }
+  }'
+```
+
+###### Response:
+
+```
+{
+    "message": "Team user created successfully"
+}
+```
+
+### Update Team User
+
+Update an existing team user's permissions.
+
+`POST /user/update`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Body
+**username**: Username of the team user to update.
+**password**: New password for the team user (optional).
+**permissions**: Updated permission settings.
+
+###### Request:
+```
+curl -X POST \
+  'http://localhost:9000/user/update' \
+  -H 'Authorization: Bearer {{token}}' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "username": "teamuser1",
+    "password": "password123",
+    "permissions": {
+      "apps": {
+        "create": false,
+        "delete": true,
+        "edit": true,
+        "download": true,
+        "upload": true,
+        "allowed": ["", ""]
+      },
+      "channels": {
+        "create": true,
+        "delete": true,
+        "edit": true,
+        "allowed": [""]
+      },
+      "platforms": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      },
+      "archs": {
+        "create": true,
+        "delete": false,
+        "edit": true,
+        "allowed": [""]
+      }
+    }
+  }'
+```
+
+###### Response:
+
+```
+{
+    "message": "Team user updated successfully"
+}
+```
+
+
+### List Team Users
+
+Retrieve a list of all team users.
+
+`GET /users/list`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Request:
+```
+curl -X GET \
+  'http://localhost:9000/users/list' \
+  -H 'Authorization: Bearer {{token}}'
+```
+
+###### Response:
+
+```
+{
+  "users": [
+    {
+      "id": "67fd2a63a70df16a87034b83",
+      "username": "teamuser1",
+      "permissions": {
+        "Apps": {
+          "Create": true,
+          "Delete": false,
+          "Edit": true,
+          "Download": true,
+          "Upload": false,
+          "Allowed": [
+            "67f8070fba341940a3ae4542"
+          ]
+        },
+        "Channels": {
+          "Create": true,
+          "Delete": false,
+          "Edit": true,
+          "Allowed": [
+            "67f826fa5c0a2b68411b2111"
+          ]
+        },
+        "Platforms": {
+          "Create": true,
+          "Delete": false,
+          "Edit": true,
+          "Allowed": [
+            "67f82615a27c60636bd57308"
+          ]
+        },
+        "Archs": {
+          "Create": true,
+          "Delete": false,
+          "Edit": true,
+          "Allowed": [
+            "67f8261aa27c60636bd57309"
+          ]
+        }
+      },
+      "updated_at": "2025-04-14T18:31:47.575+03:00"
+    }
+  ]
+}
+```
+
+
+
+### Delete Team User
+
+Delete a team user.
+
+`DELETE /user/delete`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Body
+**id**: ID of the team user to delete.
+
+###### Request:
+```
+curl -X DELETE \
+  'http://localhost:9000/user/delete' \
+  -H 'Authorization: Bearer {{token}}' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "67f8e842675a6e160d48a59c"
+  }'
+```
+
+###### Response:
+
+```
+{
+    "message": "Team user deleted successfully"
+}
+```
+
+### Whoami
+
+Get information about current user. 
+
+`GET /whoami`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Request:
+```
+curl -X GET \
+  'http://localhost:9000/whoami' \
+  -H 'Authorization: Bearer {{token}}' 
+```
+
+###### Response:
+
+```
+{
+    "username": "admin",
+    "is_admin": true
+}
+# Or for team user
+{
+  "username": "teamuser1",
+  "is_admin": false,
+  "owner": "admin",
+  "permissions": {
+    "Apps": {
+      "Create": true,
+      "Delete": false,
+      "Edit": false,
+      "Download": true,
+      "Upload": true,
+      "Allowed": [
+        "67fe34c804d701fb7f3cc656",
+        "67fe3669cebd0550e07763de"
+      ]
+    },
+    "Channels": {
+      "Create": true,
+      "Delete": false,
+      "Edit": false,
+      "Allowed": [
+        "67f826fa5c0a2b68411b2111"
+      ]
+    },
+    "Platforms": {
+      "Create": false,
+      "Delete": false,
+      "Edit": true,
+      "Allowed": [
+        "67f82615a27c60636bd57308"
+      ]
+    },
+    "Archs": {
+      "Create": true,
+      "Delete": true,
+      "Edit": false,
+      "Allowed": [
+        "67f8261aa27c60636bd57309",
+        "67f827ac8ffe38b6de325c07"
+      ]
+    }
+  }
 }
 ```

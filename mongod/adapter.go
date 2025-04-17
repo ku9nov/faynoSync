@@ -33,5 +33,5 @@ func ConnectToDatabase(mongoUrl string, flags map[string]interface{}) (*mongo.Cl
 	if flags["migration"].(bool) {
 		RunMigrations(client, uriOptions.Database, flags)
 	}
-	return client, uriOptions
+	return client, *uriOptions
 }

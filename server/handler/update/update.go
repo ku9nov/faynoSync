@@ -23,6 +23,13 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
+	// Get username from JWT token
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	jsonData := c.PostForm("data")
 	if jsonData == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No JSON data provided"})
@@ -52,7 +59,7 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		return
 	}
 	var result interface{}
-	var err error
+
 	objectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
@@ -60,11 +67,11 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 	}
 	switch itemType {
 	case "channel":
-		result, err = repository.UpdateChannel(objectID, paramValue, ctx)
+		result, err = repository.UpdateChannel(objectID, paramValue, owner, ctx)
 	case "platform":
-		result, err = repository.UpdatePlatform(objectID, paramValue, ctx)
+		result, err = repository.UpdatePlatform(objectID, paramValue, owner, ctx)
 	case "arch":
-		result, err = repository.UpdateArch(objectID, paramValue, ctx)
+		result, err = repository.UpdateArch(objectID, paramValue, owner, ctx)
 	case "app":
 		var logoLink string
 		form, _ := c.MultipartForm()
@@ -72,7 +79,7 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			files := form.File["file"]
 			if len(files) > 0 {
 				file := files[0]
-				logoLink, err = utils.UploadLogo(paramValue, file, c, viper.GetViper())
+				logoLink, err = utils.UploadLogo(paramValue, owner, file, c, viper.GetViper())
 				if err != nil {
 					logrus.Error(err)
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload logo to S3"})
@@ -81,7 +88,7 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			}
 		}
 		description := params["description"]
-		result, err = repository.UpdateApp(objectID, paramValue, logoLink, description, ctx)
+		result, err = repository.UpdateApp(objectID, paramValue, logoLink, description, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
@@ -120,6 +127,13 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// Get username from JWT token
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(ctxQueryMap["id"].(string))
 	if err != nil {
@@ -130,6 +144,12 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	delete(ctxQueryMap, "id")
 
 	form, _ := c.MultipartForm()
+	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
+		return
+	}
 	var links []string
 	var extensions []string
 	var result bool
@@ -137,7 +157,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		files := form.File["file"] // Assuming the field name is "file" not "files"
 
 		for _, file := range files {
-			link, ext, err := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper())
+			link, ext, err := utils.UploadToS3(ctxQueryMap, owner, file, c, viper.GetViper(), checkAppVisibility)
 			if err != nil {
 				logrus.Error(err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})
@@ -150,7 +170,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 
 	if len(links) > 0 {
 		for i, link := range links {
-			result, err = repository.UpdateSpecificApp(objID, ctxQueryMap, link, extensions[i], c.Request.Context())
+			result, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, link, extensions[i], c.Request.Context())
 			if err != nil {
 				logrus.Errorf("Error updating link %d: %v", i, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -159,7 +179,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		}
 	} else {
 		// Handle the case when there are no files to upload
-		result, err = repository.UpdateSpecificApp(objID, ctxQueryMap, "", "", c.Request.Context())
+		result, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, "", "", c.Request.Context())
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

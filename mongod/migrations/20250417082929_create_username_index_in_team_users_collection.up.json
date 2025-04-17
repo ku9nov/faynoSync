@@ -1,0 +1,23 @@
+
+
+[{
+    "createIndexes": "team_users",
+    "indexes": [
+      {
+        "key": {
+          "username": 1,
+          "created": -1
+        },
+        "name": "username_sort_by_asc_created",
+        "unique": true,
+        "background": true
+      },
+      {
+        "key": {
+          "password": 1
+        },
+        "name": "password_of_team_user",
+        "background": true
+      }
+    ]
+  }]
