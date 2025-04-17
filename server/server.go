@@ -60,11 +60,11 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 		router.Use(authMiddleware)
 	} else {
 		router.Use(authMiddleware)
-		router.GET("/download", handler.DownloadArtifact)
+		router.GET("/download", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.DownloadArtifact)
 	}
 
 	// App routes
-	router.GET("/", handler.GetAllApps)
+	// router.GET("/", handler.GetAllApps)
 	router.GET("/whoami", handler.Whoami)
 	router.POST("/upload", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase), handler.UploadApp)
 	router.POST("/apps/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.UpdateSpecificApp)

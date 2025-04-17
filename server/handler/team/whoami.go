@@ -19,7 +19,6 @@ type WhoamiResponse struct {
 	IsAdmin     bool               `json:"is_admin"`
 	Owner       string             `json:"owner,omitempty"`
 	Permissions *model.Permissions `json:"permissions,omitempty"`
-	// UpdatedAt   time.Time          `json:"updated_at,omitempty"`
 }
 
 // Whoami returns information about the current user
@@ -67,7 +66,6 @@ func Whoami(c *gin.Context, database *mongo.Database) {
 	response.IsAdmin = false
 	response.Owner = teamUser.Owner
 	response.Permissions = &teamUser.Permissions
-	// response.UpdatedAt = teamUser.Updated_at.Time()
 
 	c.JSON(http.StatusOK, response)
 }

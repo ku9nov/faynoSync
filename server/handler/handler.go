@@ -17,7 +17,7 @@ import (
 )
 
 type AppHandler interface {
-	GetAllApps(*gin.Context)
+	// GetAllApps(*gin.Context)
 	GetAppByName(*gin.Context)
 	DeleteSpecificVersionOfApp(*gin.Context)
 	DeleteApp(*gin.Context)
@@ -84,10 +84,10 @@ func (ch *appHandler) GetAppByName(c *gin.Context) {
 	catalog.GetAppByName(c, ch.repository)
 }
 
-func (ch *appHandler) GetAllApps(c *gin.Context) {
-	// Call the GetAllApps function from the catalog package
-	catalog.GetAllApps(c, ch.repository)
-}
+// func (ch *appHandler) GetAllApps(c *gin.Context) {
+// 	// Call the GetAllApps function from the catalog package
+// 	catalog.GetAllApps(c, ch.repository)
+// }
 
 func (ch *appHandler) ListChannels(c *gin.Context) {
 	// Call the ListChannels function from the catalog package

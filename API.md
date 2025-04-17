@@ -311,7 +311,7 @@ curl -X GET http://localhost:9000/arch/list -H "Authorization: Bearer eyJhbGciOi
 ```
 
 
-### Get All Apps
+### Get All Apps (deprecated)
 
 Retrieve a list of all apps.
 
@@ -401,7 +401,7 @@ Check if there is a newer version of a specific app.
 
 **version**: Current version of the app.
 
-**owner**: Name of your user.
+**owner**: Name of your admin user.
 
 ###### Request:
 ```

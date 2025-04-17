@@ -97,7 +97,7 @@ Note: To rollback your migrations run:
 
 4. In your client application, make a GET request to the auto updater service API, passing the current version number as a query parameter:
 ```
-http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1
+http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin
 ```
 
 The auto updater service will return a JSON response with the following structure:
