@@ -1280,3 +1280,72 @@ curl -X DELETE \
     "message": "Team user deleted successfully"
 }
 ```
+
+### Whoami
+
+Get information about current user. 
+
+`GET /whoami`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Request:
+```
+curl -X GET \
+  'http://localhost:9000/whoami' \
+  -H 'Authorization: Bearer {{token}}' 
+```
+
+###### Response:
+
+```
+{
+    "username": "admin",
+    "is_admin": true
+}
+# Or for team user
+{
+  "username": "teamuser1",
+  "is_admin": false,
+  "owner": "admin",
+  "permissions": {
+    "Apps": {
+      "Create": true,
+      "Delete": false,
+      "Edit": false,
+      "Download": true,
+      "Upload": true,
+      "Allowed": [
+        "67fe34c804d701fb7f3cc656",
+        "67fe3669cebd0550e07763de"
+      ]
+    },
+    "Channels": {
+      "Create": true,
+      "Delete": false,
+      "Edit": false,
+      "Allowed": [
+        "67f826fa5c0a2b68411b2111"
+      ]
+    },
+    "Platforms": {
+      "Create": false,
+      "Delete": false,
+      "Edit": true,
+      "Allowed": [
+        "67f82615a27c60636bd57308"
+      ]
+    },
+    "Archs": {
+      "Create": true,
+      "Delete": true,
+      "Edit": false,
+      "Allowed": [
+        "67f8261aa27c60636bd57309",
+        "67f827ac8ffe38b6de325c07"
+      ]
+    }
+  }
+}
+```

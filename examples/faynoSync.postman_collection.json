@@ -1143,6 +1143,33 @@
 				}
 			},
 			"response": []
+		},
+		{
+			"name": "Whoami",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/whoami",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"whoami"
+					]
+				}
+			},
+			"response": []
 		}
 	],
 	"auth": {
