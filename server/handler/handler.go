@@ -8,6 +8,7 @@ import (
 	"faynoSync/server/handler/download"
 	"faynoSync/server/handler/info"
 	"faynoSync/server/handler/sign"
+	"faynoSync/server/handler/team"
 	"faynoSync/server/handler/update"
 
 	"github.com/gin-gonic/gin"
@@ -16,7 +17,7 @@ import (
 )
 
 type AppHandler interface {
-	GetAllApps(*gin.Context)
+	// GetAllApps(*gin.Context)
 	GetAppByName(*gin.Context)
 	DeleteSpecificVersionOfApp(*gin.Context)
 	DeleteApp(*gin.Context)
@@ -44,6 +45,11 @@ type AppHandler interface {
 	UpdateArch(*gin.Context)
 	DeleteSpecificArtifactOfApp(*gin.Context)
 	DownloadArtifact(*gin.Context)
+	CreateTeamUser(*gin.Context)
+	UpdateTeamUser(*gin.Context)
+	ListTeamUsers(*gin.Context)
+	DeleteTeamUser(*gin.Context)
+	Whoami(*gin.Context)
 }
 
 type appHandler struct {
@@ -78,10 +84,10 @@ func (ch *appHandler) GetAppByName(c *gin.Context) {
 	catalog.GetAppByName(c, ch.repository)
 }
 
-func (ch *appHandler) GetAllApps(c *gin.Context) {
-	// Call the GetAllApps function from the catalog package
-	catalog.GetAllApps(c, ch.repository)
-}
+// func (ch *appHandler) GetAllApps(c *gin.Context) {
+// 	// Call the GetAllApps function from the catalog package
+// 	catalog.GetAllApps(c, ch.repository)
+// }
 
 func (ch *appHandler) ListChannels(c *gin.Context) {
 	// Call the ListChannels function from the catalog package
@@ -192,4 +198,24 @@ func (ch *appHandler) DeleteSpecificArtifactOfApp(c *gin.Context) {
 func (ch *appHandler) DownloadArtifact(c *gin.Context) {
 	// Call the DownloadArtifact function from the download package
 	download.DownloadArtifact(c)
+}
+
+func (ch *appHandler) CreateTeamUser(c *gin.Context) {
+	team.CreateTeamUser(c, ch.database)
+}
+
+func (ch *appHandler) UpdateTeamUser(c *gin.Context) {
+	team.UpdateTeamUser(c, ch.database)
+}
+
+func (ch *appHandler) ListTeamUsers(c *gin.Context) {
+	team.ListTeamUsers(c, ch.database)
+}
+
+func (ch *appHandler) DeleteTeamUser(c *gin.Context) {
+	team.DeleteTeamUser(c, ch.database)
+}
+
+func (ch *appHandler) Whoami(c *gin.Context) {
+	team.Whoami(c, ch.database)
 }

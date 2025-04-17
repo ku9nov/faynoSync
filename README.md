@@ -97,7 +97,7 @@ Note: To rollback your migrations run:
 
 4. In your client application, make a GET request to the auto updater service API, passing the current version number as a query parameter:
 ```
-http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1
+http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin
 ```
 
 The auto updater service will return a JSON response with the following structure:
@@ -183,6 +183,56 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestDeleteSecondArch
     - TestCreatePublicApp
     - TestDeletePublicAppMeta
+    - TestUpdateSpecificAppWithSecondUser (expected result from API "500")
+    - TestListAppsWithSecondUser
+    - TestListChannelsWithSecondUser
+    - TestListPlatformsWithSecondUser
+    - TestListArchsWithSecondUser
+    - TestUpdateAppWithSecondUser (expected result from API "500")
+    - TestUpdateChannelWithSecondUser (expected result from API "500")
+    - TestUpdatePlatformWithSecondUser (expected result from API "500")
+    - TestUpdateArchWithSecondUser (expected result from API "500")
+    - TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchsWithSecondUser (expected result from API "500")
+    - TestDeleteNightlyChannelWithSecondUser (expected result from API "500")
+    - TestDeletePlatformWithSecondUser (expected result from API "500")
+    - TestDeleteArchWithSecondUser (expected result from API "500")
+    - TestDeleteAppMetaWithSecondUser (expected result from API "500")
+    - TestCreateTeamUser
+    - TestTeamUserLogin
+    - TestFailedUploadAppUsingTeamUser (expected result from API "403")
+    - TestFailedUpdateAppUsingTeamUser (expected result from API "403")
+    - TestFailedUpdateChannelUsingTeamUser (expected result from API "403")
+    - TestFailedUpdatePlatformUsingTeamUser (expected result from API "403")
+    - TestFailedUpdateArchUsingTeamUser (expected result from API "403")
+    - TestListAppsUsingTeamUserBeforeCreate
+    - TestListChannelsUsingTeamUserBeforeCreate
+    - TestListPlatformsUsingTeamUserBeforeCreate
+    - TestListArchsUsingTeamUserBeforeCreate
+    - TestAppCreateTeamUser
+    - TestListAppsUsingTeamUser
+    - TestFailedDeleteTeamUserApp (expected result from API "403")
+    - TestChannelCreateTeamUser
+    - TestListChannelsUsingTeamUser
+    - TestFailedDeleteTeamUserChannel (expected result from API "403")
+    - TestPlatformCreateTeamUser
+    - TestListPlatformsUsingTeamUser
+    - TestFailedDeleteTeamUserPlatform (expected result from API "403")
+    - TestArchCreateTeamUser
+    - TestListArchsUsingTeamUser
+    - TestFailedDeleteTeamUserArch (expected result from API "403")
+    - TestFailedUpdateTeamUser (expected result from API "403")
+    - TestUpdateTeamUser
+    - TestUpdateAppUsingTeamUser
+    - TestUpdateChannelUsingTeamUser
+    - TestUpdatePlatformUsingTeamUser
+    - TestUpdateArchUsingTeamUser
+    - TestFailedAppCreateTeamUser (expected result from API "403")
+    - TestDeleteTeamUserApp 
+    - TestDeleteTeamUserChannel 
+    - TestDeleteTeamUserPlatform
+    - TestDeleteTeamUserArch
+    - TestListTeamUsers
+    - TestDeleteTeamUser
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

@@ -65,7 +65,7 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "{{URL}}/apps/latest?app_name={{app_name}}&channel={{channel}}&platform={{platform}}&arch={{arch}}",
+					"raw": "{{URL}}/apps/latest?app_name={{app_name}}&channel={{channel}}&platform={{platform}}&arch={{arch}}&owner={{username}}",
 					"host": [
 						"{{URL}}"
 					],
@@ -94,6 +94,10 @@
 							"key": "package",
 							"value": "deb",
 							"disabled": true
+						},
+						{
+							"key": "owner",
+							"value": "{{username}}"
 						}
 					]
 				}
@@ -248,7 +252,7 @@
 				"method": "GET",
 				"header": [],
 				"url": {
-					"raw": "{{URL}}/checkVersion?app_name={{app_name}}&version={{version}}&channel=&platform&arch",
+					"raw": "{{URL}}/checkVersion?app_name={{app_name}}&version={{version}}&channel={{channel}}&platform={{platform}}&arch={{arch}}&owner={{username}}",
 					"host": [
 						"{{URL}}"
 					],
@@ -266,15 +270,19 @@
 						},
 						{
 							"key": "channel",
-							"value": ""
+							"value": "{{channel}}"
 						},
 						{
 							"key": "platform",
-							"value": null
+							"value": "{{platform}}"
 						},
 						{
 							"key": "arch",
-							"value": null
+							"value": "{{arch}}"
+						},
+						{
+							"key": "owner",
+							"value": "{{username}}"
 						}
 					]
 				}
@@ -985,6 +993,179 @@
 							"key": "key",
 							"value": ""
 						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create Team User",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"username\": \"teamuser1\",\n  \"password\": \"password123\",\n  \"permissions\": {\n    \"apps\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"download\": true,\n      \"upload\": false,\n      \"allowed\": [\"\"]\n    },\n    \"channels\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    },\n    \"platforms\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    },\n    \"archs\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    }\n  }\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/user/create",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"user",
+						"create"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Team User",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"username\": \"teamuser1\",\n  \"password\": \"password123\",\n  \"permissions\": {\n    \"apps\": {\n      \"create\": false,\n      \"delete\": true,\n      \"edit\": true,\n      \"download\": true,\n      \"upload\": true,\n      \"allowed\": [\"\", \"\"]\n    },\n    \"channels\": {\n      \"create\": true,\n      \"delete\": true,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    },\n    \"platforms\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    },\n    \"archs\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    }\n  }\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/user/update",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"user",
+						"update"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "List Team Users",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/users/list",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"users",
+						"list"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Team User",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"id\": \"\"}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/user/delete",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"user",
+						"delete"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": "67f8e842675a6e160d48a59c",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Whoami",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/whoami",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"whoami"
 					]
 				}
 			},

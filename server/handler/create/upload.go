@@ -13,6 +13,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -49,6 +50,25 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	// Debug received request (make sense for using only on localhost)
 	// utils.DumpRequest(c)
 
+	// Get username from JWT token
+	username, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check if the user is a team user
+	teamUsersCollection := db.Collection("team_users")
+	var teamUser model.TeamUser
+	err = teamUsersCollection.FindOne(c.Request.Context(), bson.M{"username": username}).Decode(&teamUser)
+
+	// Determine the actual owner to use for operations
+	owner := username
+	if err == nil {
+		// User is a team user, use their admin as the owner
+		owner = teamUser.Owner
+	}
+
 	ctxQueryMap, err := utils.ValidateParams(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -73,7 +93,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	var links []string
 	var extensions []string
 	for _, file := range files {
-		link, ext, err := utils.UploadToS3(ctxQueryMap, file, c, viper.GetViper(), checkAppVisibility)
+		link, ext, err := utils.UploadToS3(ctxQueryMap, owner, file, c, viper.GetViper(), checkAppVisibility)
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})
@@ -84,7 +104,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	}
 	var results []interface{}
 	for i, link := range links {
-		result, err := repository.Upload(ctxQueryMap, link, extensions[i], c.Request.Context())
+		result, err := repository.Upload(ctxQueryMap, link, extensions[i], owner, c.Request.Context())
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

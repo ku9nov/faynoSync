@@ -219,3 +219,11 @@ func ExtractS3Key(link string, checkAppVisibility bool, env *viper.Viper) (strin
 
 	return decodedKey, nil
 }
+
+func GetUsernameFromContext(c *gin.Context) (string, error) {
+	username, exists := c.Get("username")
+	if !exists {
+		return "", errors.New("username not found in token")
+	}
+	return username.(string), nil
+}

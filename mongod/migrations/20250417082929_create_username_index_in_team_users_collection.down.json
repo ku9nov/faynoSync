@@ -1,0 +1,10 @@
+[
+    {
+      "dropIndexes": "team_users",
+      "index": "username_sort_by_asc_created"
+    },
+    {
+      "dropIndexes": "team_users",
+      "index": "password_of_team_user"
+    }
+]

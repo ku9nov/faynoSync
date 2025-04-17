@@ -53,6 +53,7 @@ func ValidateParamsLatest(c *gin.Context, database *mongo.Database) (map[string]
 		"publish":  c.Query("publish"),
 		"platform": c.Query("platform"),
 		"arch":     c.Query("arch"),
+		"owner":    c.Query("owner"),
 	}
 
 	if !IsValidAppName(ctxQueryMap["app_name"].(string)) {

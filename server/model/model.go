@@ -15,6 +15,7 @@ type App struct {
 	Logo        string             `bson:"logo"`
 	Private     bool               `bson:"private"`
 	Description string             `bson:"description"`
+	Owner       string             `bson:"owner"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`
 }
 
@@ -30,6 +31,7 @@ type SpecificApp struct {
 	Artifacts  []Artifact         `bson:"artifacts"`
 	Changelog  []Changelog        `bson:"changelog"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
+	Owner      string             `bson:"owner"`
 }
 
 type SpecificArtifactsWithoutIDs struct {
@@ -54,18 +56,21 @@ type SpecificAppWithoutIDs struct {
 type Channel struct {
 	ID          primitive.ObjectID `bson:"_id"`
 	ChannelName string             `bson:"channel_name"`
+	Owner       string             `bson:"owner"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`
 }
 
 type Platform struct {
 	ID           primitive.ObjectID `bson:"_id"`
 	PlatformName string             `bson:"platform_name"`
+	Owner        string             `bson:"owner"`
 	Updated_at   primitive.DateTime `bson:"updated_at"`
 }
 
 type Arch struct {
 	ID         primitive.ObjectID `bson:"_id"`
 	ArchID     string             `bson:"arch_id"`
+	Owner      string             `bson:"owner"`
 	Updated_at primitive.DateTime `bson:"updated_at"`
 }
 
@@ -99,4 +104,42 @@ type PaginatedResponse struct {
 	Total int64                    `json:"total"`
 	Page  int64                    `json:"page"`
 	Limit int64                    `json:"limit"`
+}
+
+type TeamUser struct {
+	ID          primitive.ObjectID `bson:"_id"`
+	Username    string             `bson:"username"`
+	Password    string             `bson:"password"`
+	Owner       string             `bson:"owner"`
+	Permissions Permissions        `bson:"permissions"`
+	Updated_at  primitive.DateTime `bson:"updated_at"`
+}
+
+type Permissions struct {
+	Apps struct {
+		Create   bool     `bson:"create"`
+		Delete   bool     `bson:"delete"`
+		Edit     bool     `bson:"edit"`
+		Download bool     `bson:"download"`
+		Upload   bool     `bson:"upload"`
+		Allowed  []string `bson:"allowed,omitempty"` // List of app IDs this user can access
+	} `bson:"apps"`
+	Channels struct {
+		Create  bool     `bson:"create"`
+		Delete  bool     `bson:"delete"`
+		Edit    bool     `bson:"edit"`
+		Allowed []string `bson:"allowed,omitempty"` // List of channel IDs this user can access
+	} `bson:"channels"`
+	Platforms struct {
+		Create  bool     `bson:"create"`
+		Delete  bool     `bson:"delete"`
+		Edit    bool     `bson:"edit"`
+		Allowed []string `bson:"allowed,omitempty"` // List of platform IDs this user can access
+	} `bson:"platforms"`
+	Archs struct {
+		Create  bool     `bson:"create"`
+		Delete  bool     `bson:"delete"`
+		Edit    bool     `bson:"edit"`
+		Allowed []string `bson:"allowed,omitempty"` // List of arch IDs this user can access
+	} `bson:"archs"`
 }
