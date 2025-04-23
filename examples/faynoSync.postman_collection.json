@@ -1052,7 +1052,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"username\": \"teamuser1\",\n  \"password\": \"password123\",\n  \"permissions\": {\n    \"apps\": {\n      \"create\": false,\n      \"delete\": true,\n      \"edit\": true,\n      \"download\": true,\n      \"upload\": true,\n      \"allowed\": [\"\", \"\"]\n    },\n    \"channels\": {\n      \"create\": true,\n      \"delete\": true,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    },\n    \"platforms\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    },\n    \"archs\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    }\n  }\n}",
+					"raw": "{\n  \"id\": \"67ffc3f5a2120e73468ce66c\",\n  \"username\": \"teamuser1\",\n  \"password\": \"password123\",\n  \"permissions\": {\n    \"apps\": {\n      \"create\": false,\n      \"delete\": true,\n      \"edit\": true,\n      \"download\": true,\n      \"upload\": true,\n      \"allowed\": [\"\", \"\"]\n    },\n    \"channels\": {\n      \"create\": true,\n      \"delete\": true,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    },\n    \"platforms\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    },\n    \"archs\": {\n      \"create\": true,\n      \"delete\": false,\n      \"edit\": true,\n      \"allowed\": [\"\"]\n    }\n  }\n}",
 					"options": {
 						"raw": {
 							"language": "json"

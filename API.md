@@ -1140,6 +1140,7 @@ curl -X POST \
   -H 'Authorization: Bearer {{token}}' \
   -H 'Content-Type: application/json' \
   -d '{
+    "id": "67ffc3f5a2120e73468ce66c",
     "username": "teamuser1",
     "password": "password123",
     "permissions": {

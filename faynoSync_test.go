@@ -4640,6 +4640,45 @@ func TestFailedUpdateTeamUser(t *testing.T) {
 	assert.Equal(t, expected, w.Body.String())
 }
 
+var teamUserID string
+
+func TestListTeamUsers(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/users/list", utils.AuthMiddleware(), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
+		handler.ListTeamUsers(c)
+	})
+
+	req, err := http.NewRequest("GET", "/users/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Parse the response to get the team user ID
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Extract the team user ID from the response
+	users := response["users"].([]interface{})
+	teamUser := users[0].(map[string]interface{})
+	teamUserID = teamUser["id"].(string)
+	// Check that the teamUserID variable has been set
+	assert.NotEmpty(t, teamUserID)
+}
+
 func TestUpdateTeamUser(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
@@ -4660,6 +4699,7 @@ func TestUpdateTeamUser(t *testing.T) {
 	}
 
 	type Payload struct {
+		ID          string `json:"id"`
 		Username    string `json:"username"`
 		Password    string `json:"password"`
 		Permissions struct {
@@ -4671,6 +4711,7 @@ func TestUpdateTeamUser(t *testing.T) {
 	}
 
 	payload := Payload{
+		ID:       teamUserID,
 		Username: "teamuser1",
 		Password: "password123",
 	}
@@ -5165,45 +5206,6 @@ func TestDeleteTeamUserArch(t *testing.T) {
 
 	expected := `{"deleteArchResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
-}
-
-var teamUserID string
-
-func TestListTeamUsers(t *testing.T) {
-	router := gin.Default()
-	router.Use(utils.AuthMiddleware())
-	w := httptest.NewRecorder()
-
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
-	router.GET("/users/list", utils.AuthMiddleware(), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
-		handler.ListTeamUsers(c)
-	})
-
-	req, err := http.NewRequest("GET", "/users/list", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer "+authToken)
-
-	// Serve the request using the Gin router.
-	router.ServeHTTP(w, req)
-
-	// Check the response status code
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	// Parse the response to get the team user ID
-	var response map[string]interface{}
-	err = json.Unmarshal(w.Body.Bytes(), &response)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Extract the team user ID from the response
-	users := response["users"].([]interface{})
-	teamUser := users[0].(map[string]interface{})
-	teamUserID = teamUser["id"].(string)
-	// Check that the teamUserID variable has been set
-	assert.NotEmpty(t, teamUserID)
 }
 
 // TestDeleteTeamUser tests deleting the team user

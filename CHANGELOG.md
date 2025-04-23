@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.1
+
+### Important Notes
+
+- Team users update route using the id instead of the username.
+
 ## v1.4.0
 
 ### Features
