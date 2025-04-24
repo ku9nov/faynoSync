@@ -224,17 +224,17 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 		return nil
 	}
 
-	hasAccess := false
 	logrus.Debugf("Checking if team user has access to %s ID: %s", entityType, entityID)
 	logrus.Debugf("Team user allowed %ss: %v", entityType, allowedIDs)
 
-	for _, allowedID := range allowedIDs {
-		if allowedID == entityID {
-			hasAccess = true
-			break
-		}
+	// Create a map for O(1) lookup
+	allowedMap := make(map[string]struct{}, len(allowedIDs))
+	for _, id := range allowedIDs {
+		allowedMap[id] = struct{}{}
 	}
-	if !hasAccess {
+
+	// Check if entityID exists in the map
+	if _, hasAccess := allowedMap[entityID]; !hasAccess {
 		logrus.Debugf("Team user %s does not have access to %s ID: %s", teamUser.ID.Hex(), entityType, entityID)
 		return fmt.Errorf("you don't have access to this %s", entityType)
 	}
