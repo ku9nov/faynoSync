@@ -218,6 +218,31 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 	)
 }
 
+// checkEntityAccess is a helper function to check if a team user has access to a specific entity
+func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []string, entityType string) error {
+	if teamUser.ID == primitive.NilObjectID {
+		return nil
+	}
+
+	hasAccess := false
+	logrus.Debugf("Checking if team user has access to %s ID: %s", entityType, entityID)
+	logrus.Debugf("Team user allowed %ss: %v", entityType, allowedIDs)
+
+	for _, allowedID := range allowedIDs {
+		if allowedID == entityID {
+			hasAccess = true
+			break
+		}
+	}
+	if !hasAccess {
+		logrus.Debugf("Team user %s does not have access to %s ID: %s", teamUser.ID.Hex(), entityType, entityID)
+		return fmt.Errorf("you don't have access to this %s", entityType)
+	}
+
+	logrus.Debugf("Team user has access to %s ID: %s", entityType, entityID)
+	return nil
+}
+
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
@@ -264,22 +289,9 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 
 	// If user is a team user, check if they have access to this specific app
 	if teamUser.ID != primitive.NilObjectID {
-		appID := appMeta.ID.Hex()
-		hasAccess := false
-		logrus.Debugf("Checking if team user has access to app ID: %s", appID)
-		logrus.Debugf("Team user allowed apps: %v", teamUser.Permissions.Apps.Allowed)
-
-		for _, allowedAppID := range teamUser.Permissions.Apps.Allowed {
-			if allowedAppID == appID {
-				hasAccess = true
-				break
-			}
+		if err := checkEntityAccess(teamUser, appMeta.ID.Hex(), teamUser.Permissions.Apps.Allowed, "app"); err != nil {
+			return nil, err
 		}
-		if !hasAccess {
-			logrus.Debugf("Team user %s does not have access to app ID: %s", owner, appID)
-			return nil, errors.New("you don't have access to this app")
-		}
-		logrus.Debugf("Team user has access to app ID: %s", appID)
 	}
 
 	// Fetch channel_id
@@ -296,24 +308,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		logrus.Debugf("Found channel meta with ID: %s", channelMeta.ID.Hex())
 
-		// If user is a team user, check if they have access to this specific channel
-		if teamUser.ID != primitive.NilObjectID {
-			channelID := channelMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to channel ID: %s", channelID)
-			logrus.Debugf("Team user allowed channels: %v", teamUser.Permissions.Channels.Allowed)
-
-			for _, allowedChannelID := range teamUser.Permissions.Channels.Allowed {
-				if allowedChannelID == channelID {
-					hasAccess = true
-					break
-				}
-			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to channel ID: %s", owner, channelID)
-				return nil, errors.New("you don't have access to this channel")
-			}
-			logrus.Debugf("Team user has access to channel ID: %s", channelID)
+		if err := checkEntityAccess(teamUser, channelMeta.ID.Hex(), teamUser.Permissions.Channels.Allowed, "channel"); err != nil {
+			return nil, err
 		}
 	}
 
@@ -331,24 +327,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		logrus.Debugf("Found platform meta with ID: %s", platformMeta.ID.Hex())
 
-		// If user is a team user, check if they have access to this specific platform
-		if teamUser.ID != primitive.NilObjectID {
-			platformID := platformMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to platform ID: %s", platformID)
-			logrus.Debugf("Team user allowed platforms: %v", teamUser.Permissions.Platforms.Allowed)
-
-			for _, allowedPlatformID := range teamUser.Permissions.Platforms.Allowed {
-				if allowedPlatformID == platformID {
-					hasAccess = true
-					break
-				}
-			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to platform ID: %s", owner, platformID)
-				return nil, errors.New("you don't have access to this platform")
-			}
-			logrus.Debugf("Team user has access to platform ID: %s", platformID)
+		if err := checkEntityAccess(teamUser, platformMeta.ID.Hex(), teamUser.Permissions.Platforms.Allowed, "platform"); err != nil {
+			return nil, err
 		}
 	}
 
@@ -366,24 +346,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		logrus.Debugf("Found arch meta with ID: %s", archMeta.ID.Hex())
 
-		// If user is a team user, check if they have access to this specific arch
-		if teamUser.ID != primitive.NilObjectID {
-			archID := archMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to arch ID: %s", archID)
-			logrus.Debugf("Team user allowed archs: %v", teamUser.Permissions.Archs.Allowed)
-
-			for _, allowedArchID := range teamUser.Permissions.Archs.Allowed {
-				if allowedArchID == archID {
-					hasAccess = true
-					break
-				}
-			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to arch ID: %s", owner, archID)
-				return nil, errors.New("you don't have access to this architecture")
-			}
-			logrus.Debugf("Team user has access to arch ID: %s", archID)
+		if err := checkEntityAccess(teamUser, archMeta.ID.Hex(), teamUser.Permissions.Archs.Allowed, "architecture"); err != nil {
+			return nil, err
 		}
 	}
 
