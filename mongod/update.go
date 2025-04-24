@@ -275,21 +275,9 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		// If user is a team user, check if they have access to this specific channel
 		if teamUser.ID != primitive.NilObjectID {
 			channelID := channelMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to channel ID: %s", channelID)
-			logrus.Debugf("Team user allowed channels: %v", teamUser.Permissions.Channels.Allowed)
-
-			for _, allowedChannelID := range teamUser.Permissions.Channels.Allowed {
-				if allowedChannelID == channelID {
-					hasAccess = true
-					break
-				}
+			if err := checkEntityAccess(teamUser, channelID, teamUser.Permissions.Channels.Allowed, "channel"); err != nil {
+				return false, err
 			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to channel ID: %s", owner, channelID)
-				return false, errors.New("you don't have access to this channel")
-			}
-			logrus.Debugf("Team user has access to channel ID: %s", channelID)
 		}
 	}
 
@@ -306,21 +294,9 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		// If user is a team user, check if they have access to this specific platform
 		if teamUser.ID != primitive.NilObjectID {
 			platformID := platformMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to platform ID: %s", platformID)
-			logrus.Debugf("Team user allowed platforms: %v", teamUser.Permissions.Platforms.Allowed)
-
-			for _, allowedPlatformID := range teamUser.Permissions.Platforms.Allowed {
-				if allowedPlatformID == platformID {
-					hasAccess = true
-					break
-				}
+			if err := checkEntityAccess(teamUser, platformID, teamUser.Permissions.Platforms.Allowed, "platform"); err != nil {
+				return false, err
 			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to platform ID: %s", owner, platformID)
-				return false, errors.New("you don't have access to this platform")
-			}
-			logrus.Debugf("Team user has access to platform ID: %s", platformID)
 		}
 	}
 
@@ -337,21 +313,9 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		// If user is a team user, check if they have access to this specific arch
 		if teamUser.ID != primitive.NilObjectID {
 			archID := archMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to arch ID: %s", archID)
-			logrus.Debugf("Team user allowed archs: %v", teamUser.Permissions.Archs.Allowed)
-
-			for _, allowedArchID := range teamUser.Permissions.Archs.Allowed {
-				if allowedArchID == archID {
-					hasAccess = true
-					break
-				}
+			if err := checkEntityAccess(teamUser, archID, teamUser.Permissions.Archs.Allowed, "architecture"); err != nil {
+				return false, err
 			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to arch ID: %s", owner, archID)
-				return false, errors.New("you don't have access to this architecture")
-			}
-			logrus.Debugf("Team user has access to arch ID: %s", archID)
 		}
 	}
 
