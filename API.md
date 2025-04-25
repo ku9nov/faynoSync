@@ -1140,6 +1140,7 @@ curl -X POST \
   -H 'Authorization: Bearer {{token}}' \
   -H 'Content-Type: application/json' \
   -d '{
+    "id": "67ffc3f5a2120e73468ce66c",
     "username": "teamuser1",
     "password": "password123",
     "permissions": {
@@ -1301,6 +1302,7 @@ curl -X GET \
 
 ```
 {
+    "id": "67f806cdba341940a3ae4540",
     "username": "admin",
     "is_admin": true
 }
@@ -1347,5 +1349,40 @@ curl -X GET \
       ]
     }
   }
+}
+```
+
+### Update Admin
+
+Update an existing admin's passswords.
+
+`POST /admin/update`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Body
+**id**: ID of the admin to update (can't be updated).
+**username**: Username of the admin to update (can't be updated).
+**password**: New password for the admin.
+
+###### Request:
+```
+curl -X POST \
+  'http://localhost:9000/admin/update' \
+  -H 'Authorization: Bearer {{token}}' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "67ffc3f5a2120e73468ce66c",
+    "username": "admin",
+    "password": "newpassword123"
+  }'
+```
+
+###### Response:
+
+```
+{
+    "message": "Admin updated successfully"
 }
 ```

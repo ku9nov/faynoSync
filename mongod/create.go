@@ -6,6 +6,7 @@ import (
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func (c *appRepository) CreateDocument(collectionName string, document bson.D, uniqueKey, keyType string, owner string, ctx context.Context) (interface{}, error) {
@@ -86,24 +89,60 @@ func (c *appRepository) createMetaDocument(
 	return result, nil
 }
 
+// updateTeamUserPermissions is a generic function that updates team user permissions for any resource type
+func (c *appRepository) updateTeamUserPermissions(teamUser model.TeamUser, result interface{}, teamUsername string, resourceType string, ctx context.Context) error {
+	resourceID := result.(primitive.ObjectID).Hex()
+	var allowedList []string
+	var permissionsField string
+
+	switch resourceType {
+	case "channel":
+		allowedList = teamUser.Permissions.Channels.Allowed
+		permissionsField = "channels"
+	case "platform":
+		allowedList = teamUser.Permissions.Platforms.Allowed
+		permissionsField = "platforms"
+	case "arch":
+		allowedList = teamUser.Permissions.Archs.Allowed
+		permissionsField = "archs"
+	case "app":
+		allowedList = teamUser.Permissions.Apps.Allowed
+		permissionsField = "apps"
+	default:
+		return fmt.Errorf("unknown resource type: %s", resourceType)
+	}
+
+	if !contains(allowedList, resourceID) {
+		// Create a new permissions object to avoid modifying the original
+		updatedPermissions := teamUser.Permissions
+
+		// Update the appropriate field using reflection
+		permissionsValue := reflect.ValueOf(&updatedPermissions).Elem()
+		resourceField := permissionsValue.FieldByName(cases.Title(language.English).String(permissionsField))
+		if resourceField.IsValid() {
+			allowedField := resourceField.FieldByName("Allowed")
+			if allowedField.IsValid() {
+				allowedField.Set(reflect.Append(allowedField, reflect.ValueOf(resourceID)))
+			}
+		}
+
+		update := bson.M{"$set": bson.M{"permissions": updatedPermissions}}
+		_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
+			ctx,
+			bson.M{"username": teamUsername},
+			update,
+		)
+		return err
+	}
+	return nil
+}
+
 // CreateChannel creates a new channel document
 func (c *appRepository) CreateChannel(channelName string, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "channel_name", Value: channelName}}
 
 	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
-		// Add the channel ID to their allowed channels
-		channelID := result.(primitive.ObjectID).Hex()
-		if !contains(teamUser.Permissions.Channels.Allowed, channelID) {
-			teamUser.Permissions.Channels.Allowed = append(teamUser.Permissions.Channels.Allowed, channelID)
-			update := bson.M{"$set": bson.M{"permissions": teamUser.Permissions}}
-			_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
-				ctx,
-				bson.M{"username": teamUsername},
-				update,
-			)
-			return err
-		}
-		return nil
+		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "channel", ctx)
 	}
 
 	return c.createMetaDocument(
@@ -121,19 +160,7 @@ func (c *appRepository) CreatePlatform(platformName string, owner string, ctx co
 	document := bson.D{{Key: "platform_name", Value: platformName}}
 
 	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
-		// Add the platform ID to their allowed platforms
-		platformID := result.(primitive.ObjectID).Hex()
-		if !contains(teamUser.Permissions.Platforms.Allowed, platformID) {
-			teamUser.Permissions.Platforms.Allowed = append(teamUser.Permissions.Platforms.Allowed, platformID)
-			update := bson.M{"$set": bson.M{"permissions": teamUser.Permissions}}
-			_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
-				ctx,
-				bson.M{"username": teamUsername},
-				update,
-			)
-			return err
-		}
-		return nil
+		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "platform", ctx)
 	}
 
 	return c.createMetaDocument(
@@ -151,19 +178,7 @@ func (c *appRepository) CreateArch(archID string, owner string, ctx context.Cont
 	document := bson.D{{Key: "arch_id", Value: archID}}
 
 	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
-		// Add the arch ID to their allowed archs
-		archID := result.(primitive.ObjectID).Hex()
-		if !contains(teamUser.Permissions.Archs.Allowed, archID) {
-			teamUser.Permissions.Archs.Allowed = append(teamUser.Permissions.Archs.Allowed, archID)
-			update := bson.M{"$set": bson.M{"permissions": teamUser.Permissions}}
-			_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
-				ctx,
-				bson.M{"username": teamUsername},
-				update,
-			)
-			return err
-		}
-		return nil
+		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "arch", ctx)
 	}
 
 	return c.createMetaDocument(
@@ -190,19 +205,7 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 	}
 
 	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
-		// Add the app ID to their allowed apps
-		appID := result.(primitive.ObjectID).Hex()
-		if !contains(teamUser.Permissions.Apps.Allowed, appID) {
-			teamUser.Permissions.Apps.Allowed = append(teamUser.Permissions.Apps.Allowed, appID)
-			update := bson.M{"$set": bson.M{"permissions": teamUser.Permissions}}
-			_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
-				ctx,
-				bson.M{"username": teamUsername},
-				update,
-			)
-			return err
-		}
-		return nil
+		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "app", ctx)
 	}
 
 	return c.createMetaDocument(
@@ -213,6 +216,31 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 		ctx,
 		updateTeamUserPermissions,
 	)
+}
+
+// checkEntityAccess is a helper function to check if a team user has access to a specific entity
+func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []string, entityType string) error {
+	if teamUser.ID == primitive.NilObjectID {
+		return nil
+	}
+
+	logrus.Debugf("Checking if team user has access to %s ID: %s", entityType, entityID)
+	logrus.Debugf("Team user allowed %ss: %v", entityType, allowedIDs)
+
+	// Create a map for O(1) lookup
+	allowedMap := make(map[string]struct{}, len(allowedIDs))
+	for _, id := range allowedIDs {
+		allowedMap[id] = struct{}{}
+	}
+
+	// Check if entityID exists in the map
+	if _, hasAccess := allowedMap[entityID]; !hasAccess {
+		logrus.Debugf("Team user %s does not have access to %s ID: %s", teamUser.ID.Hex(), entityType, entityID)
+		return fmt.Errorf("you don't have access to this %s", entityType)
+	}
+
+	logrus.Debugf("Team user has access to %s ID: %s", entityType, entityID)
+	return nil
 }
 
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context) (interface{}, error) {
@@ -261,22 +289,9 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 
 	// If user is a team user, check if they have access to this specific app
 	if teamUser.ID != primitive.NilObjectID {
-		appID := appMeta.ID.Hex()
-		hasAccess := false
-		logrus.Debugf("Checking if team user has access to app ID: %s", appID)
-		logrus.Debugf("Team user allowed apps: %v", teamUser.Permissions.Apps.Allowed)
-
-		for _, allowedAppID := range teamUser.Permissions.Apps.Allowed {
-			if allowedAppID == appID {
-				hasAccess = true
-				break
-			}
+		if err := checkEntityAccess(teamUser, appMeta.ID.Hex(), teamUser.Permissions.Apps.Allowed, "app"); err != nil {
+			return nil, err
 		}
-		if !hasAccess {
-			logrus.Debugf("Team user %s does not have access to app ID: %s", owner, appID)
-			return nil, errors.New("you don't have access to this app")
-		}
-		logrus.Debugf("Team user has access to app ID: %s", appID)
 	}
 
 	// Fetch channel_id
@@ -293,24 +308,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		logrus.Debugf("Found channel meta with ID: %s", channelMeta.ID.Hex())
 
-		// If user is a team user, check if they have access to this specific channel
-		if teamUser.ID != primitive.NilObjectID {
-			channelID := channelMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to channel ID: %s", channelID)
-			logrus.Debugf("Team user allowed channels: %v", teamUser.Permissions.Channels.Allowed)
-
-			for _, allowedChannelID := range teamUser.Permissions.Channels.Allowed {
-				if allowedChannelID == channelID {
-					hasAccess = true
-					break
-				}
-			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to channel ID: %s", owner, channelID)
-				return nil, errors.New("you don't have access to this channel")
-			}
-			logrus.Debugf("Team user has access to channel ID: %s", channelID)
+		if err := checkEntityAccess(teamUser, channelMeta.ID.Hex(), teamUser.Permissions.Channels.Allowed, "channel"); err != nil {
+			return nil, err
 		}
 	}
 
@@ -328,24 +327,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		logrus.Debugf("Found platform meta with ID: %s", platformMeta.ID.Hex())
 
-		// If user is a team user, check if they have access to this specific platform
-		if teamUser.ID != primitive.NilObjectID {
-			platformID := platformMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to platform ID: %s", platformID)
-			logrus.Debugf("Team user allowed platforms: %v", teamUser.Permissions.Platforms.Allowed)
-
-			for _, allowedPlatformID := range teamUser.Permissions.Platforms.Allowed {
-				if allowedPlatformID == platformID {
-					hasAccess = true
-					break
-				}
-			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to platform ID: %s", owner, platformID)
-				return nil, errors.New("you don't have access to this platform")
-			}
-			logrus.Debugf("Team user has access to platform ID: %s", platformID)
+		if err := checkEntityAccess(teamUser, platformMeta.ID.Hex(), teamUser.Permissions.Platforms.Allowed, "platform"); err != nil {
+			return nil, err
 		}
 	}
 
@@ -363,24 +346,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		logrus.Debugf("Found arch meta with ID: %s", archMeta.ID.Hex())
 
-		// If user is a team user, check if they have access to this specific arch
-		if teamUser.ID != primitive.NilObjectID {
-			archID := archMeta.ID.Hex()
-			hasAccess := false
-			logrus.Debugf("Checking if team user has access to arch ID: %s", archID)
-			logrus.Debugf("Team user allowed archs: %v", teamUser.Permissions.Archs.Allowed)
-
-			for _, allowedArchID := range teamUser.Permissions.Archs.Allowed {
-				if allowedArchID == archID {
-					hasAccess = true
-					break
-				}
-			}
-			if !hasAccess {
-				logrus.Debugf("Team user %s does not have access to arch ID: %s", owner, archID)
-				return nil, errors.New("you don't have access to this architecture")
-			}
-			logrus.Debugf("Team user has access to arch ID: %s", archID)
+		if err := checkEntityAccess(teamUser, archMeta.ID.Hex(), teamUser.Permissions.Archs.Allowed, "architecture"); err != nil {
+			return nil, err
 		}
 	}
 

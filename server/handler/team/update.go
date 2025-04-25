@@ -16,6 +16,7 @@ import (
 )
 
 type UpdateTeamUserRequest struct {
+	ID          string            `json:"id" binding:"required"`
 	Username    string            `json:"username" binding:"required"`
 	Password    string            `json:"password,omitempty"`
 	Permissions model.Permissions `json:"permissions,omitempty"`
@@ -48,11 +49,18 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
+	// Convert string to ObjectID
+	objID, err := primitive.ObjectIDFromHex(req.ID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	var teamUser model.TeamUser
-	err = collection.FindOne(ctx, bson.M{"username": req.Username}).Decode(&teamUser)
+	err = collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&teamUser)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			logrus.Errorf("Team user not found: %s", req.Username)
+			logrus.Errorf("Team user with id %s not found", req.ID)
 			c.JSON(http.StatusNotFound, gin.H{"error": "Team user not found"})
 			return
 		}
@@ -69,7 +77,7 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 	}
 
 	// Prepare update document
-	update := bson.M{}
+	update := bson.M{"username": req.Username}
 
 	// Update password if provided
 	if req.Password != "" {
@@ -101,7 +109,7 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 	// Apply the update
 	_, err = collection.UpdateOne(
 		ctx,
-		bson.M{"username": req.Username},
+		bson.M{"_id": objID},
 		bson.M{"$set": update},
 	)
 	if err != nil {
@@ -110,6 +118,6 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	logrus.Debugf("Team user updated successfully: %s", req.Username)
+	logrus.Debugf("Team user with id %s updated successfully: %s", req.ID, req.Username)
 	c.JSON(http.StatusOK, gin.H{"message": "Team user updated successfully"})
 }
