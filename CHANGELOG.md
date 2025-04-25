@@ -8,6 +8,10 @@
 - Optimize check permisiion logic. 
 - Add update admin route.
 
+### Potential bug fix
+
+- Fix: golang.org/x/net vulnerable to Cross-site Scripting
+
 ## v1.4.0
 
 ### Features
