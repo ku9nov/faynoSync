@@ -1170,6 +1170,43 @@
 				}
 			},
 			"response": []
+		},
+		{
+			"name": "Update Admin",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"id\": \"\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n    \n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/admin/update",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"admin",
+						"update"
+					]
+				}
+			},
+			"response": []
 		}
 	],
 	"auth": {

@@ -5,6 +5,8 @@
 ### Important Notes
 
 - Team users update route using the id instead of the username.
+- Optimize check permisiion logic. 
+- Add update admin route.
 
 ## v1.4.0
 

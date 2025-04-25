@@ -10,11 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // WhoamiResponse represents the response for the whoami endpoint
 type WhoamiResponse struct {
+	ID          primitive.ObjectID `json:"id"`
 	Username    string             `json:"username"`
 	IsAdmin     bool               `json:"is_admin"`
 	Owner       string             `json:"owner,omitempty"`
@@ -48,6 +50,7 @@ func Whoami(c *gin.Context, database *mongo.Database) {
 	if err == nil {
 		// User is an admin - just set is_admin flag
 		response.IsAdmin = true
+		response.ID = adminUser["_id"].(primitive.ObjectID)
 		c.JSON(http.StatusOK, response)
 		return
 	}

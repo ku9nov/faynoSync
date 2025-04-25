@@ -4679,6 +4679,86 @@ func TestListTeamUsers(t *testing.T) {
 	assert.NotEmpty(t, teamUserID)
 }
 
+var adminID string
+
+func TestWhoAmIAdmin(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/whoami", utils.AuthMiddleware(), func(c *gin.Context) {
+		handler.Whoami(c)
+	})
+
+	req, err := http.NewRequest("GET", "/whoami", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Parse the response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Extract the team user ID from the response
+	adminID = response["id"].(string)
+	adminName := response["username"].(string)
+	isAdmin := response["is_admin"].(bool)
+	// Check that the teamUserID variable has been set
+	assert.NotEmpty(t, adminID)
+	assert.NotEmpty(t, adminName)
+	assert.True(t, isAdmin)
+}
+
+func TestWhoAmITeamUser(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/whoami", utils.AuthMiddleware(), func(c *gin.Context) {
+		handler.Whoami(c)
+	})
+
+	req, err := http.NewRequest("GET", "/whoami", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+teamUserToken)
+
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Parse the response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Extract the team user ID from the response
+	teamUserName := response["username"].(string)
+	isAdmin := response["is_admin"].(bool)
+	permissions := response["permissions"].(map[string]interface{})
+	// Check that the teamUserID variable has been set
+	assert.NotEmpty(t, teamUserName)
+	assert.False(t, isAdmin)
+	assert.NotNil(t, permissions)
+	assert.Equal(t, 4, len(permissions))
+}
 func TestUpdateTeamUser(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
@@ -6007,4 +6087,170 @@ func TestDeletePublicAppMeta(t *testing.T) {
 
 	expected := `{"deleteAppResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestFailedUpdateAdminUser(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /app/update route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/admin/update", func(c *gin.Context) {
+		handler.UpdateAdmin(c)
+	})
+
+	payload := fmt.Sprintf(`{"id": "%s", "username":"administrator", "password":"password1234"}`, adminID)
+	fmt.Println(payload)
+
+	// Create a POST request to the /admin/update endpoint
+	req, err := http.NewRequest("POST", "/admin/update", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for application/json
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d; got %d", http.StatusForbidden, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := `{"error":"Username mismatch"}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestUpdateAdminUser(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /app/update route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/admin/update", func(c *gin.Context) {
+		handler.UpdateAdmin(c)
+	})
+
+	payload := fmt.Sprintf(`{"id": "%s", "username":"admin", "password":"password1234"}`, adminID)
+	fmt.Println(payload)
+
+	// Create a POST request to the /admin/update endpoint
+	req, err := http.NewRequest("POST", "/admin/update", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for application/json
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := `{"message":"Admin updated successfully"}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestFailedLoginWithOldPassword(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/login", func(c *gin.Context) {
+		handler.Login(c)
+	})
+
+	// Create a JSON payload for the request
+	payload := `{"username": "admin", "password": "password"}`
+
+	req, err := http.NewRequest("POST", "/login", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// Parse the JSON response body to extract the token.
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := `{"error":"invalid username or password"}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestSuccessfulLoginWithNewPassword(t *testing.T) {
+
+	router := gin.Default()
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/login", func(c *gin.Context) {
+		handler.Login(c)
+	})
+
+	// Create a JSON payload for the request
+	payload := `{"username": "admin", "password": "password1234"}`
+
+	req, err := http.NewRequest("POST", "/login", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Parse the JSON response body to extract the token.
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check that the "token" key exists in the response.
+	token, tokenExists := response["token"]
+	assert.True(t, tokenExists)
+
+	authToken = token.(string)
+
+	// Check that the authToken variable has been set (assuming authToken is a global variable).
+	assert.NotEmpty(t, authToken)
 }
