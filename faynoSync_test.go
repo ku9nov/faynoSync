@@ -5288,6 +5288,50 @@ func TestDeleteTeamUserArch(t *testing.T) {
 	assert.Equal(t, expected, w.Body.String())
 }
 
+func TestFailedUpdateAdminUserUsingTeamUser(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /app/update route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/admin/update", func(c *gin.Context) {
+		handler.UpdateAdmin(c)
+	})
+
+	payload := fmt.Sprintf(`{"id": "%s", "username":"admin", "password":"password1234"}`, adminID)
+	fmt.Println(payload)
+
+	// Create a POST request to the /admin/update endpoint
+	req, err := http.NewRequest("POST", "/admin/update", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+teamUserToken)
+	// Set the Content-Type header for application/json
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d; got %d", http.StatusForbidden, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := `{"error":"Username mismatch"}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
 // TestDeleteTeamUser tests deleting the team user
 func TestDeleteTeamUser(t *testing.T) {
 	router := gin.Default()
