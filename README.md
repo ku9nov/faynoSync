@@ -240,6 +240,14 @@ The tests verify the implemented API using a test database and an existing S3 bu
     - TestFailedLoginWithOldPassword
     - TestSuccessfulLoginWithNewPassword
     - TestFailedUpdateAdminUserUsingTeamUser
+    - TestFilterSearchWithChannel
+    - TestFilterSearchWithChannelAndPublished
+    - TestFilterSearchWithChannelAndPublishedAndCritical
+    - TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatform
+    - TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatformAndArch
+    - TestSearchOnlyPublished
+    - TestSearchOnlyCritical
+    - TestSearchOnlyUniversalPlatform
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

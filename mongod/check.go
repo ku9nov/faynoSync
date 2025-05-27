@@ -34,7 +34,7 @@ func (c *appRepository) Get(ctx context.Context, limit int64, owner string) ([]*
 	return c.processApps(cur, ctx)
 }
 
-func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64, owner string) (*model.PaginatedResponse, error) {
+func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64, owner string, filters map[string]interface{}) (*model.PaginatedResponse, error) {
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	metaFilter := bson.D{
 		{Key: "app_name", Value: appName},
@@ -90,11 +90,64 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 		pipelineOwner = teamUser.Owner
 	}
 
+	// Build the match stage with filters
+	matchStage := bson.M{
+		"app_id": appMeta.ID,
+		"owner":  pipelineOwner,
+	}
+
+	// Add filters to match stage if they exist
+	for key, value := range filters {
+		switch key {
+		case "channel":
+			// For channel, we need to get the channel_id from apps_meta
+			var channelMeta struct {
+				ID primitive.ObjectID `bson:"_id"`
+			}
+			err := metaCollection.FindOne(ctx, bson.M{
+				"channel_name": value,
+				"owner":        pipelineOwner,
+			}).Decode(&channelMeta)
+			if err != nil {
+				return nil, fmt.Errorf("channel not found in apps_meta collection")
+			}
+			matchStage["channel_id"] = channelMeta.ID
+		case "published", "critical":
+			matchStage[key] = value
+		case "platform", "arch":
+			// For platform and arch, we need to get the ObjectID first
+			var meta struct {
+				ID primitive.ObjectID `bson:"_id"`
+			}
+			metaKey := "platform_name"
+			if key == "arch" {
+				metaKey = "arch_id"
+			}
+			err := metaCollection.FindOne(ctx, bson.M{
+				metaKey: value,
+				"owner": pipelineOwner,
+			}).Decode(&meta)
+			if err != nil {
+				return nil, fmt.Errorf("%s not found in apps_meta collection", key)
+			}
+
+			// Add the filter to the artifacts array
+			if matchStage["artifacts"] == nil {
+				matchStage["artifacts"] = bson.M{
+					"$elemMatch": bson.M{
+						key: meta.ID,
+					},
+				}
+			} else {
+				// If we already have an $elemMatch, add to it
+				elemMatch := matchStage["artifacts"].(bson.M)["$elemMatch"].(bson.M)
+				elemMatch[key] = meta.ID
+			}
+		}
+	}
+
 	countPipeline := mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.M{
-			"app_id": appMeta.ID,
-			"owner":  pipelineOwner,
-		}}},
+		bson.D{{Key: "$match", Value: matchStage}},
 		bson.D{{Key: "$count", Value: "total"}},
 	}
 	countCursor, err := collection.Aggregate(ctx, countPipeline)
@@ -117,10 +170,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 
 	basePipeline := c.getBasePipeline()
 	pipeline := mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.M{
-			"app_id": appMeta.ID,
-			"owner":  pipelineOwner,
-		}}},
+		bson.D{{Key: "$match", Value: matchStage}},
 	}
 	pipeline = append(pipeline, basePipeline...)
 	pipeline = append(pipeline,

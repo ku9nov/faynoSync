@@ -613,9 +613,21 @@ Search for all versions of an app by name.
 **Authorization**: Authorization header with jwt token.
 
 ###### Query Parameters
-**app_name**: Name of the app.
+**app_name** (required): Name of the app.
 
 **limit**: Maximum number of records to return in the response.
+
+Optional filters:
+
+**channel**: Name of the channel.
+
+**published**: Set to `true` to return only published versions.
+
+**critical**: Set to `true` to return only critical versions.
+
+**platform**: Platform of the application to return.
+
+**arch**: Architecture of the application to return.
 
 ###### Request:
 ```

@@ -13,7 +13,7 @@ import (
 
 type AppRepository interface {
 	Get(ctx context.Context, limit int64, owner string) ([]*model.SpecificAppWithoutIDs, error)
-	GetAppByName(appName string, ctx context.Context, page, limit int64, owner string) (*model.PaginatedResponse, error)
+	GetAppByName(appName string, ctx context.Context, page, limit int64, owner string, filters map[string]interface{}) (*model.PaginatedResponse, error)
 	DeleteSpecificVersionOfApp(id primitive.ObjectID, owner string, ctx context.Context) ([]string, int64, string, error)
 	DeleteChannel(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context) (interface{}, error)

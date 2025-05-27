@@ -27,6 +27,28 @@ func GetAppByName(c *gin.Context, repository db.AppRepository) {
 	//get parameters
 	appName := c.Query("app_name")
 
+	// Get filter parameters
+	filters := make(map[string]interface{})
+	if channel := c.Query("channel"); channel != "" {
+		filters["channel"] = channel
+	}
+	if published := c.Query("published"); published != "" {
+		if publishedBool, err := strconv.ParseBool(published); err == nil {
+			filters["published"] = publishedBool
+		}
+	}
+	if critical := c.Query("critical"); critical != "" {
+		if criticalBool, err := strconv.ParseBool(critical); err == nil {
+			filters["critical"] = criticalBool
+		}
+	}
+	if platform := c.Query("platform"); platform != "" {
+		filters["platform"] = platform
+	}
+	if arch := c.Query("arch"); arch != "" {
+		filters["arch"] = arch
+	}
+
 	page := int64(1) // default value
 	if pageStr := c.Query("page"); pageStr != "" {
 		if parsedPage, err := strconv.ParseInt(pageStr, 10, 64); err == nil && parsedPage > 0 {
@@ -42,7 +64,7 @@ func GetAppByName(c *gin.Context, repository db.AppRepository) {
 	}
 
 	//request on repository
-	result, err := repository.GetAppByName(appName, ctx, page, limit, owner)
+	result, err := repository.GetAppByName(appName, ctx, page, limit, owner, filters)
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

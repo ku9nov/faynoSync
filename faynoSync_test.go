@@ -2244,6 +2244,1154 @@ func TestSearch(t *testing.T) {
 	assert.Equal(t, 9, actual.Limit)
 	assert.Equal(t, len(expected), actual.Total)
 }
+
+func TestFilterSearchWithChannel(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /search endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/search", func(c *gin.Context) {
+		handler.GetAppByName(c)
+	})
+
+	// Create a POST request for the /search endpoint.
+	req, err := http.NewRequest("GET", "/search?app_name=testapp&channel=nightly", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+	fmt.Println(w.Body.String())
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Define the expected JSON response as a slice of AppInfo.
+	type AppInfo struct {
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
+	}
+
+	expected := []AppInfo{
+		{
+			AppName:   "testapp",
+			Version:   "0.0.3.137",
+			Channel:   "nightly",
+			Published: false,
+			Critical:  false,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.3.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+		{
+			AppName:   "testapp",
+			Version:   "0.0.2.137",
+			Channel:   "nightly",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.2.137",
+					Changes: "### Changelog",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+	}
+
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
+	}
+
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
+
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
+		}
+		for j, expectedArtifact := range expectedApp.Artifacts {
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
+		}
+
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
+		}
+		for c, expectedChanges := range expectedApp.Changelog {
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
+		}
+	}
+
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
+}
+
+func TestFilterSearchWithChannelAndPublished(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /search endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/search", func(c *gin.Context) {
+		handler.GetAppByName(c)
+	})
+
+	// Create a POST request for the /search endpoint.
+	req, err := http.NewRequest("GET", "/search?app_name=testapp&channel=stable&published=true", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+	fmt.Println(w.Body.String())
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Define the expected JSON response as a slice of AppInfo.
+	type AppInfo struct {
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
+	}
+
+	expected := []AppInfo{
+		{
+			AppName:   "testapp",
+			Version:   "0.0.4.137",
+			Channel:   "stable",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.4.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+	}
+
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
+	}
+
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
+
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
+		}
+		for j, expectedArtifact := range expectedApp.Artifacts {
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
+		}
+
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
+		}
+		for c, expectedChanges := range expectedApp.Changelog {
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
+		}
+	}
+
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
+}
+
+func TestFilterSearchWithChannelAndPublishedAndCritical(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /search endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/search", func(c *gin.Context) {
+		handler.GetAppByName(c)
+	})
+
+	// Create a POST request for the /search endpoint.
+	req, err := http.NewRequest("GET", "/search?app_name=testapp&channel=stable&published=true&critical=true", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+	fmt.Println(w.Body.String())
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Define the expected JSON response as a slice of AppInfo.
+	type AppInfo struct {
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
+	}
+
+	expected := []AppInfo{
+		{
+			AppName:   "testapp",
+			Version:   "0.0.4.137",
+			Channel:   "stable",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.4.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+	}
+
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
+	}
+
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
+
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
+		}
+		for j, expectedArtifact := range expectedApp.Artifacts {
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
+		}
+
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
+		}
+		for c, expectedChanges := range expectedApp.Changelog {
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
+		}
+	}
+
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
+}
+
+func TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatform(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /search endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/search", func(c *gin.Context) {
+		handler.GetAppByName(c)
+	})
+
+	// Create a POST request for the /search endpoint.
+	req, err := http.NewRequest("GET", "/search?app_name=testapp&channel=nightly&published=true&critical=true&platform=universalPlatform", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+	fmt.Println(w.Body.String())
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Define the expected JSON response as a slice of AppInfo.
+	type AppInfo struct {
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
+	}
+
+	expected := []AppInfo{
+		{
+			AppName:   "testapp",
+			Version:   "0.0.2.137",
+			Channel:   "nightly",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.2.137",
+					Changes: "### Changelog",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+	}
+
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
+	}
+
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
+
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
+		}
+		for j, expectedArtifact := range expectedApp.Artifacts {
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
+		}
+
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
+		}
+		for c, expectedChanges := range expectedApp.Changelog {
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
+		}
+	}
+
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
+}
+
+func TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatformAndArch(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /search endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/search", func(c *gin.Context) {
+		handler.GetAppByName(c)
+	})
+
+	// Create a POST request for the /search endpoint.
+	req, err := http.NewRequest("GET", "/search?app_name=testapp&channel=stable&published=true&critical=true&platform=universalPlatform&arch=universalArch", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+	fmt.Println(w.Body.String())
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Define the expected JSON response as a slice of AppInfo.
+	type AppInfo struct {
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
+	}
+
+	expected := []AppInfo{
+
+		{
+			AppName:   "testapp",
+			Version:   "0.0.4.137",
+			Channel:   "stable",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.4.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+	}
+
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
+	}
+
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
+
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
+		}
+		for j, expectedArtifact := range expectedApp.Artifacts {
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
+		}
+
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
+		}
+		for c, expectedChanges := range expectedApp.Changelog {
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
+		}
+	}
+
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
+}
+
+func TestSearchOnlyPublished(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /search endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/search", func(c *gin.Context) {
+		handler.GetAppByName(c)
+	})
+
+	// Create a POST request for the /search endpoint.
+	req, err := http.NewRequest("GET", "/search?app_name=testapp&published=true", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Define the expected JSON response as a slice of AppInfo.
+	type AppInfo struct {
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
+	}
+
+	expected := []AppInfo{
+		{
+			AppName:   "testapp",
+			Version:   "0.0.4.137",
+			Channel:   "stable",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.4.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+		{
+			AppName:   "testapp",
+			Version:   "0.0.2.137",
+			Channel:   "nightly",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.2.137",
+					Changes: "### Changelog",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+	}
+
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
+	}
+
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
+
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
+		}
+		for j, expectedArtifact := range expectedApp.Artifacts {
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
+		}
+
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
+		}
+		for c, expectedChanges := range expectedApp.Changelog {
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
+		}
+	}
+
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
+}
+
+func TestSearchOnlyCritical(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /search endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/search", func(c *gin.Context) {
+		handler.GetAppByName(c)
+	})
+
+	// Create a POST request for the /search endpoint.
+	req, err := http.NewRequest("GET", "/search?app_name=testapp&critical=true", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Define the expected JSON response as a slice of AppInfo.
+	type AppInfo struct {
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
+	}
+
+	expected := []AppInfo{
+		{
+			AppName:   "testapp",
+			Version:   "0.0.4.137",
+			Channel:   "stable",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.4.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+		{
+			AppName:   "testapp",
+			Version:   "0.0.2.137",
+			Channel:   "nightly",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.2.137",
+					Changes: "### Changelog",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+	}
+
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
+	}
+
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
+
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
+		}
+		for j, expectedArtifact := range expectedApp.Artifacts {
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
+		}
+
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
+		}
+		for c, expectedChanges := range expectedApp.Changelog {
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
+		}
+	}
+
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
+}
+
+func TestSearchOnlyUniversalPlatform(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /search endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/search", func(c *gin.Context) {
+		handler.GetAppByName(c)
+	})
+
+	// Create a POST request for the /search endpoint.
+	req, err := http.NewRequest("GET", "/search?app_name=testapp&platform=universalPlatform", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Define the expected JSON response as a slice of AppInfo.
+	type AppInfo struct {
+		ID         string                              `json:"ID"`
+		AppID      string                              `json:"AppID"`
+		AppName    string                              `json:"AppName"`
+		Version    string                              `json:"Version"`
+		Channel    string                              `json:"Channel"`
+		Published  bool                                `json:"Published"`
+		Critical   bool                                `json:"Critical"`
+		Artifacts  []model.SpecificArtifactsWithoutIDs `json:"Artifacts" bson:"artifacts"`
+		Changelog  []model.Changelog                   `json:"Changelog" bson:"changelog"`
+		Updated_at string                              `json:"Updated_at"`
+	}
+	type AppResponse struct {
+		Items []AppInfo `json:"items"`
+		Total int       `json:"total"`
+		Page  int       `json:"page"`
+		Limit int       `json:"limit"`
+	}
+
+	expected := []AppInfo{
+		{
+			AppName:   "testapp",
+			Version:   "0.0.5.137",
+			Channel:   "stable",
+			Published: false,
+			Critical:  false,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.5.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+		{
+			AppName:   "testapp",
+			Version:   "0.0.4.137",
+			Channel:   "stable",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.4.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+		{
+			AppName:   "testapp",
+			Version:   "0.0.3.137",
+			Channel:   "nightly",
+			Published: false,
+			Critical:  false,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.3.137",
+					Changes: "",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+		{
+			AppName:   "testapp",
+			Version:   "0.0.2.137",
+			Channel:   "nightly",
+			Published: true,
+			Critical:  true,
+			Artifacts: []model.SpecificArtifactsWithoutIDs{
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".dmg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  ".pkg",
+				},
+				{
+					Platform: "universalPlatform",
+					Arch:     "universalArch",
+					Package:  "",
+				},
+			},
+			Changelog: []model.Changelog{
+				{
+					Version: "0.0.2.137",
+					Changes: "### Changelog",
+					Date:    time.Now().Format("2006-01-02"),
+				},
+			},
+		},
+	}
+
+	var actual AppResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare the relevant fields (AppName, Version, Channel, Changelog) for each item in the response.
+	if len(actual.Items) != len(expected) {
+		t.Fatalf("Expected %d apps but got %d", len(expected), len(actual.Items))
+	}
+
+	for i, expectedApp := range expected {
+		assert.Equal(t, expectedApp.AppName, actual.Items[i].AppName)
+		assert.Equal(t, expectedApp.Version, actual.Items[i].Version)
+		assert.Equal(t, expectedApp.Channel, actual.Items[i].Channel)
+		assert.Equal(t, expectedApp.Published, actual.Items[i].Published)
+
+		if len(expectedApp.Artifacts) != len(actual.Items[i].Artifacts) {
+			t.Fatalf("Expected %d artifacts for app %s with version %s but got %d", len(expectedApp.Artifacts), expectedApp.ID, expectedApp.Version, len(actual.Items[i].Artifacts))
+		}
+		for j, expectedArtifact := range expectedApp.Artifacts {
+			assert.Equal(t, expectedArtifact.Platform, actual.Items[i].Artifacts[j].Platform)
+			assert.Equal(t, expectedArtifact.Arch, actual.Items[i].Artifacts[j].Arch)
+			assert.Equal(t, expectedArtifact.Package, actual.Items[i].Artifacts[j].Package)
+		}
+
+		if len(expectedApp.Changelog) != len(actual.Items[i].Changelog) {
+			t.Fatalf("Expected %d changelog entries for app %s but got %d", len(expectedApp.Changelog), expectedApp.ID, len(actual.Items[i].Changelog))
+		}
+		for c, expectedChanges := range expectedApp.Changelog {
+			assert.Equal(t, expectedChanges.Version, actual.Items[i].Changelog[c].Version)
+			assert.Equal(t, expectedChanges.Changes, actual.Items[i].Changelog[c].Changes)
+			assert.Equal(t, expectedChanges.Date, actual.Items[i].Changelog[c].Date)
+		}
+	}
+
+	assert.Equal(t, 1, actual.Page)
+	assert.Equal(t, 9, actual.Limit)
+	assert.Equal(t, len(expected), actual.Total)
+}
+
 func TestFetchkLatestVersionOfApp(t *testing.T) {
 	router := gin.Default()
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
