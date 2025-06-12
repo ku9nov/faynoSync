@@ -20,18 +20,19 @@ type App struct {
 }
 
 type SpecificApp struct {
-	ID         primitive.ObjectID `bson:"_id"`
-	AppID      primitive.ObjectID `bson:"app_id"`
-	AppName    string             `bson:"app_name,omitempty" json:"AppName,omitempty"`
-	Version    string             `bson:"version"`
-	ChannelID  primitive.ObjectID `bson:"channel_id"`
-	Channel    string             `bson:"channel,omitempty" json:"channel,omitempty"`
-	Published  bool               `bson:"published"`
-	Critical   bool               `bson:"critical"`
-	Artifacts  []Artifact         `bson:"artifacts"`
-	Changelog  []Changelog        `bson:"changelog"`
-	Updated_at primitive.DateTime `bson:"updated_at"`
-	Owner      string             `bson:"owner"`
+	ID           primitive.ObjectID `bson:"_id"`
+	AppID        primitive.ObjectID `bson:"app_id"`
+	AppName      string             `bson:"app_name,omitempty" json:"AppName,omitempty"`
+	Version      string             `bson:"version"`
+	ChannelID    primitive.ObjectID `bson:"channel_id"`
+	Channel      string             `bson:"channel,omitempty" json:"channel,omitempty"`
+	Published    bool               `bson:"published"`
+	Critical     bool               `bson:"critical"`
+	Intermediate bool               `bson:"required_intermediate"`
+	Artifacts    []Artifact         `bson:"artifacts"`
+	Changelog    []Changelog        `bson:"changelog"`
+	Updated_at   primitive.DateTime `bson:"updated_at"`
+	Owner        string             `bson:"owner"`
 }
 
 type SpecificArtifactsWithoutIDs struct {
@@ -42,15 +43,16 @@ type SpecificArtifactsWithoutIDs struct {
 }
 
 type SpecificAppWithoutIDs struct {
-	ID        primitive.ObjectID            `bson:"_id,omitempty" json:"ID"`
-	AppName   string                        `bson:"app_name" json:"AppName"`
-	Version   string                        `bson:"version" json:"Version"`
-	Channel   string                        `bson:"channel" json:"Channel"`
-	Published bool                          `bson:"published" json:"Published"`
-	Critical  bool                          `bson:"critical" json:"Critical"`
-	Artifacts []SpecificArtifactsWithoutIDs `bson:"artifacts" json:"Artifacts"`
-	Changelog []Changelog                   `bson:"changelog" json:"Changelog"`
-	UpdatedAt primitive.DateTime            `bson:"updated_at" json:"Updated_at"`
+	ID           primitive.ObjectID            `bson:"_id,omitempty" json:"ID"`
+	AppName      string                        `bson:"app_name" json:"AppName"`
+	Version      string                        `bson:"version" json:"Version"`
+	Channel      string                        `bson:"channel" json:"Channel"`
+	Published    bool                          `bson:"published" json:"Published"`
+	Critical     bool                          `bson:"critical" json:"Critical"`
+	Intermediate bool                          `bson:"required_intermediate" json:"Intermediate"`
+	Artifacts    []SpecificArtifactsWithoutIDs `bson:"artifacts" json:"Artifacts"`
+	Changelog    []Changelog                   `bson:"changelog" json:"Changelog"`
+	UpdatedAt    primitive.DateTime            `bson:"updated_at" json:"Updated_at"`
 }
 
 type Channel struct {
@@ -93,6 +95,7 @@ type UpRequest struct {
 	Channel           string   `json:"channel"`
 	Publish           bool     `json:"publish"`
 	Critical          bool     `json:"critical"`
+	Intermediate      bool     `json:"intermediate"`
 	Platform          string   `json:"platform"`
 	Arch              string   `json:"arch"`
 	Changelog         string   `json:"changelog"`

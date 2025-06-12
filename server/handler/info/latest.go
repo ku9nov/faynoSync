@@ -96,6 +96,11 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	logrus.Debug("Check latest version response: ", checkResult)
 	response := gin.H{"update_available": true, "critical": checkResult.Critical}
 
+	// Add is_intermediate_required to response if it's true
+	if checkResult.IsRequiredIntermediate {
+		response["is_intermediate_required"] = true
+	}
+
 	// Add update URLs to the response
 	for _, artifact := range checkResult.Artifacts {
 		var key string

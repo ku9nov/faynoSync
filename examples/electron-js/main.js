@@ -1,7 +1,7 @@
 const { app, BrowserWindow, dialog, shell } = require('electron');
 const fetch = require('node-fetch');
 const os = require('os');
-const { version, app_name, channel } = require('./config.js');
+const { version, app_name, channel, owner } = require('./config.js');
 const fs = require('fs');
 
 function getLinuxDistributionFamily() {
@@ -62,7 +62,7 @@ function createChoiceWindow(updateOptions) {
 }
 
 function checkUpdates() {
-  let url = `http://localhost:9000/checkVersion?app_name=${app_name}&version=${version}&platform=${os.platform()}&arch=${os.arch()}`;
+  let url = `http://localhost:9000/checkVersion?app_name=${app_name}&version=${version}&platform=${os.platform()}&arch=${os.arch()}&owner=${owner}`;
 
   // Check if the 'channel' variable is set
   if (channel !== undefined) {

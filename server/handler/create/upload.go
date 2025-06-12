@@ -75,6 +75,11 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		return
 	}
 
+	// Add intermediate field to ctxQueryMap if it exists in the request
+	if intermediate := c.PostForm("intermediate"); intermediate != "" {
+		ctxQueryMap["intermediate"] = intermediate
+	}
+
 	form, err := c.MultipartForm()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{

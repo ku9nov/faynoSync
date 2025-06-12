@@ -401,6 +401,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		logrus.Debugf("Document does not exist, creating new one")
 		publishParam, publishExists := ctxQuery["publish"]
 		criticalParam, criticalExists := ctxQuery["critical"]
+		intermediateParam, intermediateExists := ctxQuery["intermediate"]
 
 		publish := false
 		if publishExists {
@@ -412,6 +413,12 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		if criticalExists {
 			critical = utils.GetBoolParam(criticalParam)
 			logrus.Debugf("Setting critical to: %t", critical)
+		}
+
+		requiredIntermediate := false
+		if intermediateExists {
+			requiredIntermediate = utils.GetBoolParam(intermediateParam)
+			logrus.Debugf("Setting required_intermediate to: %t", requiredIntermediate)
 		}
 
 		artifact := model.Artifact{
@@ -431,6 +438,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			{Key: "channel_id", Value: channelMeta.ID},
 			{Key: "published", Value: publish},
 			{Key: "critical", Value: critical},
+			{Key: "required_intermediate", Value: requiredIntermediate},
 			{Key: "artifacts", Value: []model.Artifact{artifact}},
 			{Key: "changelog", Value: []model.Changelog{changelog}},
 			{Key: "updated_at", Value: time.Now()},

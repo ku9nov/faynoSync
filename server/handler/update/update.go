@@ -127,6 +127,11 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// Add intermediate field to ctxQueryMap if it exists in the request
+	if intermediate := c.PostForm("intermediate"); intermediate != "" {
+		ctxQueryMap["intermediate"] = intermediate
+	}
+
 	// Get username from JWT token
 	owner, err := utils.GetUsernameFromContext(c)
 	if err != nil {
