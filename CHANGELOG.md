@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.4.2
+
+### Bug Fixes
+
+- Fixed an issue where the build name on S3 could be generated incorrectly.
+
+### Features
+
+- Updated the search app route; added sorting by channels, platforms, architectures, and published and critical status.
+
+- Added intermediate required builds. More details here: https://ku9nov.github.io/faynoSync-site/docs/intermediate_build
+
+### Maintenance
+
+- New functions are covered by tests.
+
+
 ## v1.4.1
 
 ### Important Notes

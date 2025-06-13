@@ -6530,6 +6530,379 @@ func TestDeleteTeamUser(t *testing.T) {
 	assert.Equal(t, expected, w.Body.String())
 }
 
+var uploadedAppIDsWithIntermediate []string
+
+func TestMultipleUploadWithIntermediate(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/upload", func(c *gin.Context) {
+		handler.UploadApp(c)
+	})
+
+	// Create a file to upload (you can replace this with a test file path).
+	filePaths := []string{"testapp.dmg", "testapp.pkg", "LICENSE"}
+	for _, filePath := range filePaths {
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+
+		combinations := []struct {
+			AppName      string
+			AppVersion   string
+			ChannelName  string
+			Published    bool
+			Critical     bool
+			Intermediate bool
+			Platform     string
+			Arch         string
+		}{
+			{"newApp", "0.0.6.135", "nightly", true, false, false, "secondPlatform", "secondArch"},
+			{"newApp", "0.0.7.137", "nightly", true, false, true, "secondPlatform", "secondArch"},
+			{"newApp", "0.0.8.136", "nightly", true, false, false, "secondPlatform", "secondArch"},
+			{"newApp", "0.0.9.137", "nightly", true, true, true, "secondPlatform", "secondArch"},
+			{"newApp", "0.0.10.138", "nightly", true, false, false, "secondPlatform", "secondArch"},
+		}
+
+		// Iterate through the combinations and upload the file for each combination.
+		for _, combo := range combinations {
+			w := httptest.NewRecorder()
+			// Reset the request body for each iteration.
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = io.Copy(part, file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dataPart, err := writer.CreateFormField("data")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "intermediate": %v, "platform": "%s", "arch": "%s"}`, combo.AppName, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Intermediate, combo.Platform, combo.Arch)
+			_, err = dataPart.Write([]byte(payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Close the writer to finalize the form
+			err = writer.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Create a POST request for the /upload endpoint with the current combination.
+			req, err := http.NewRequest("POST", "/upload", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Set the Content-Type header for multipart/form-data.
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+
+			// Set the Authorization header.
+			req.Header.Set("Authorization", "Bearer "+authToken)
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+
+			// Check the response status code.
+			assert.Equal(t, http.StatusOK, w.Code)
+			var response map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Println("Response: ", response)
+			id, idExists := response["uploadResult.Uploaded"]
+			assert.True(t, idExists)
+
+			// Check if the id already exists in the uploadedAppIDs array
+			exists := false
+			for _, val := range uploadedAppIDsWithIntermediate {
+				if val == id {
+					exists = true
+					break
+				}
+			}
+
+			// If id does not exist in the array, append it
+			if !exists {
+				fmt.Println("Adding ID: ", id)
+				uploadedAppIDsWithIntermediate = append(uploadedAppIDsWithIntermediate, id.(string))
+			}
+
+			assert.True(t, idExists)
+			assert.NotEmpty(t, id.(string))
+		}
+	}
+}
+
+func TestUpdateSpecificAppWithIntermediate(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	// Define the route for the update endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.POST("/apps/update", func(c *gin.Context) {
+		handler.UpdateSpecificApp(c)
+	})
+
+	// Create a file to update (you can replace this with a test file path).
+	filePaths := []string{"LICENSE", "LICENSE"}
+	for _, filePath := range filePaths {
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+
+		combinations := []struct {
+			ID           string
+			AppVersion   string
+			ChannelName  string
+			Published    bool
+			Critical     bool
+			Intermediate bool
+			Platform     string
+			Arch         string
+			Changelog    string
+		}{
+			{uploadedAppIDsWithIntermediate[0], "0.0.6.135", "nightly", true, false, true, "secondPlatform", "secondArch", "### Changelog"},
+		}
+
+		// Iterate through the combinations and update the file for each combination.
+		for _, combo := range combinations {
+			w := httptest.NewRecorder()
+			// Reset the request body for each iteration.
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = io.Copy(part, file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Create a POST request for the update endpoint with the current combination.
+			dataPart, err := writer.CreateFormField("data")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := fmt.Sprintf(`{"id": "%s", "app_name": "newApp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "intermediate": %v, "platform": "%s", "arch": "%s", "changelog": "%s"}`, combo.ID, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Intermediate, combo.Platform, combo.Arch, combo.Changelog)
+			_, err = dataPart.Write([]byte(payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Close the writer to finalize the form
+			err = writer.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// logrus.Infoln("Body: ", body)
+			req, err := http.NewRequest("POST", "/apps/update", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Set the Content-Type header for multipart/form-data.
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+
+			// Set the Authorization header.
+			req.Header.Set("Authorization", "Bearer "+authToken)
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+			// Check the response status code.
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			// Check the response status code.
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			expected := `{"updatedResult.Updated":true}`
+			assert.Equal(t, expected, w.Body.String())
+		}
+	}
+}
+
+func TestCheckVersionWithIntermediate(t *testing.T) {
+	router := gin.Default()
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/checkVersion", func(c *gin.Context) {
+		handler.FindLatestVersion(c)
+	})
+	// Define test scenarios.
+	testScenarios := []struct {
+		AppName      string
+		Version      string
+		ChannelName  string
+		ExpectedJSON map[string]interface{}
+		ExpectedCode int
+		Published    bool
+		Platform     string
+		Arch         string
+		TestName     string
+		Owner        string
+	}{
+		{
+			AppName:     "newApp",
+			Version:     "0.0.6.135",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				// "changelog":                "### Changelog\n",
+				"critical":                 false,
+				"is_intermediate_required": true,
+				"update_available":         true,
+				"update_url_dmg":           fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.7.137.dmg"),
+				"update_url_pkg":           fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.7.137.pkg"),
+				"update_url":               fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.7.137"),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "secondPlatform",
+			Arch:         "secondArch",
+			TestName:     "NightlyUpdateAvailable",
+			Owner:        "admin",
+		},
+		{
+			AppName:     "newApp",
+			Version:     "0.0.7.137",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"critical":                 true,
+				"is_intermediate_required": true,
+				"update_available":         true,
+				"update_url_dmg":           fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.9.137.dmg"),
+				"update_url_pkg":           fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.9.137.pkg"),
+				"update_url":               fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.9.137"),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "secondPlatform",
+			Arch:         "secondArch",
+			TestName:     "NightlyUpdateAvailable",
+			Owner:        "admin",
+		},
+		{
+			AppName:     "newApp",
+			Version:     "0.0.8.136",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"critical":                 true,
+				"is_intermediate_required": true,
+				"update_available":         true,
+				"update_url_dmg":           fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.9.137.dmg"),
+				"update_url_pkg":           fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.9.137.pkg"),
+				"update_url":               fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.9.137"),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "secondPlatform",
+			Arch:         "secondArch",
+			TestName:     "NightlyUpdateAvailable",
+			Owner:        "admin",
+		},
+		{
+			AppName:     "newApp",
+			Version:     "0.0.9.137",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"critical":         false,
+				"update_available": true,
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.10.138.dmg"),
+				"update_url_pkg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.10.138.pkg"),
+				"update_url":       fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.10.138"),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "secondPlatform",
+			Arch:         "secondArch",
+			TestName:     "StableUpdateAvailable",
+			Owner:        "admin",
+		},
+		{
+			AppName:     "newApp",
+			Version:     "0.0.10.138",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"update_available": false,
+				"update_url_dmg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.10.138.dmg"),
+				"update_url_pkg":   fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.10.138.pkg"),
+				"update_url":       fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "newApp-admin%2Fnightly%2FsecondPlatform%2FsecondArch%2FnewApp-0.0.10.138"),
+			},
+			ExpectedCode: http.StatusOK,
+			// Published:    false,
+			Platform: "secondPlatform",
+			Arch:     "secondArch",
+			TestName: "StableUpdateAvailable",
+			Owner:    "admin",
+		},
+	}
+
+	for _, scenario := range testScenarios {
+		t.Run(scenario.TestName, func(t *testing.T) {
+			w := httptest.NewRecorder()
+
+			// Create a GET request for checking the version.
+			req, err := http.NewRequest("GET", fmt.Sprintf("/checkVersion?app_name=%s&version=%s&channel=%s&platform=%s&arch=%s&owner=%s", scenario.AppName, scenario.Version, scenario.ChannelName, scenario.Platform, scenario.Arch, scenario.Owner), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+
+			// Check the response status code.
+			assert.Equal(t, scenario.ExpectedCode, w.Code)
+
+			var actual map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &actual)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Compare the response with the expected values.
+			assert.Equal(t, scenario.ExpectedJSON, actual)
+		})
+	}
+}
+
+func TestMultipleDeleteWithIntermediate(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	// Define the route for the /apps/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.DELETE("/apps/delete", func(c *gin.Context) {
+		handler.DeleteSpecificVersionOfApp(c)
+	})
+
+	// Iterate over the uploadedAppIDs and send a DELETE request for each ID.
+	for _, appID := range uploadedAppIDsWithIntermediate {
+		w := httptest.NewRecorder()
+
+		req, err := http.NewRequest("DELETE", "/apps/delete?id="+appID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Set the Authorization header.
+		req.Header.Set("Authorization", "Bearer "+authToken)
+		// Serve the request using the Gin router.
+		router.ServeHTTP(w, req)
+
+		// Check the response status code for each request.
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		expected := `{"deleteSpecificAppResult.DeletedCount":1}`
+		assert.Equal(t, expected, w.Body.String())
+	}
+}
+
 func TestUpdateChannel(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
