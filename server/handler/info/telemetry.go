@@ -1,10 +1,11 @@
 package info
 
 import (
-	"context"
+	_ "embed"
+	"encoding/json"
 	"faynoSync/server/utils"
-	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 )
+
+var telemetryScriptContent string
 
 type VersionUsage struct {
 	Version     string `json:"version"`
@@ -31,6 +34,14 @@ type ArchitectureUsage struct {
 type ChannelUsage struct {
 	Channel     string `json:"channel"`
 	ClientCount int64  `json:"client_count"`
+}
+
+type DailyStats struct {
+	Date                      string `json:"date"`
+	TotalRequests             int64  `json:"total_requests"`
+	UniqueClients             int64  `json:"unique_clients"`
+	ClientsUsingLatestVersion int64  `json:"clients_using_latest_version"`
+	ClientsOutdated           int64  `json:"clients_outdated"`
 }
 
 type TelemetrySummary struct {
@@ -56,6 +67,13 @@ type TelemetryResponse struct {
 	Platforms     []PlatformUsage     `json:"platforms"`
 	Architectures []ArchitectureUsage `json:"architectures"`
 	Channels      []ChannelUsage      `json:"channels"`
+	DailyStats    []DailyStats        `json:"daily_stats"`
+}
+
+var telemetryScript *redis.Script
+
+func init() {
+	telemetryScript = redis.NewScript(telemetryScriptContent)
 }
 
 // GetTelemetry handles requests for analytics data
@@ -86,7 +104,7 @@ func GetTelemetry(c *gin.Context, rdb *redis.Client) {
 		case "week":
 			startDate = endDate.AddDate(0, 0, -7)
 		case "month":
-			startDate = endDate.AddDate(0, -1, 0)
+			startDate = endDate.AddDate(0, 0, -30)
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid range parameter. Use 'week' or 'month'"})
 			return
@@ -96,6 +114,7 @@ func GetTelemetry(c *gin.Context, rdb *redis.Client) {
 		for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
 			dateRange = append(dateRange, d.Format("2006-01-02"))
 		}
+		logrus.Debugf("Generated date range for %s: %v", timeRange, dateRange)
 	} else if dateStr == "" {
 		// If no date or range specified, use today
 		dateStr = time.Now().UTC().Format("2006-01-02")
@@ -117,266 +136,251 @@ func GetTelemetry(c *gin.Context, rdb *redis.Client) {
 	filterArchitectures = cleanEmptyStrings(filterArchitectures)
 
 	ctx := c.Request.Context()
-	response := TelemetryResponse{
-		Date:      dateRange[0],
-		DateRange: dateRange,
-		Admin:     admin,
+
+	filterChannelsJSON, _ := json.Marshal(filterChannels)
+	filterPlatformsJSON, _ := json.Marshal(filterPlatforms)
+	filterArchitecturesJSON, _ := json.Marshal(filterArchitectures)
+	dateRangeJSON, _ := json.Marshal(dateRange)
+
+	logrus.Debugf("Sending date range to Lua script: %s", string(dateRangeJSON))
+
+	debugMode := logrus.GetLevel() == logrus.DebugLevel
+
+	var response TelemetryResponse
+	response.Date = dateRange[0]
+	response.DateRange = dateRange
+	response.Admin = admin
+	response.DailyStats = make([]DailyStats, 0)
+
+	if len(filterApps) > 0 {
+		// Process each app individually
+		for _, app := range filterApps {
+			logrus.Debugf("Processing app: %s", app)
+			result, err := telemetryScript.Run(ctx, rdb, nil,
+				admin,
+				string(dateRangeJSON),
+				app,
+				string(filterChannelsJSON),
+				string(filterPlatformsJSON),
+				string(filterArchitecturesJSON),
+				strconv.FormatBool(debugMode),
+			).Result()
+
+			if err != nil {
+				logrus.Errorf("Error executing Lua script for app %s: %v", app, err)
+				continue
+			}
+
+			var appResult map[string]interface{}
+			if err := json.Unmarshal([]byte(result.(string)), &appResult); err != nil {
+				logrus.Errorf("Error parsing Lua script result for app %s: %v", app, err)
+				continue
+			}
+
+			logrus.Debugf("Parsed result for app %s: %v", app, appResult)
+
+			mergeResults(&response, appResult)
+		}
+	} else {
+		// Process all apps at once
+		result, err := telemetryScript.Run(ctx, rdb, nil,
+			admin,
+			string(dateRangeJSON),
+			"*",
+			string(filterChannelsJSON),
+			string(filterPlatformsJSON),
+			string(filterArchitecturesJSON),
+			strconv.FormatBool(debugMode),
+		).Result()
+
+		if err != nil {
+			logrus.Errorf("Error executing Lua script: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch telemetry data"})
+			return
+		}
+
+		var resultMap map[string]interface{}
+		if err := json.Unmarshal([]byte(result.(string)), &resultMap); err != nil {
+			logrus.Errorf("Error parsing Lua script result: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse telemetry data"})
+			return
+		}
+
+		logrus.Debugf("Parsed result for all apps: %v", resultMap)
+
+		mergeResults(&response, resultMap)
 	}
 
-	// Get all keys for this admin
-	pattern := fmt.Sprintf("stats:%s:*", admin)
-	keys, err := rdb.Keys(ctx, pattern).Result()
-	if err != nil {
-		logrus.Errorf("Error getting keys: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch telemetry data"})
-		return
-	}
+	logrus.Debugf("Final response: %+v", response)
 
-	// Process each app's data
-	appStats := make(map[string]bool)
-	processedKeys := make(map[string]bool)
-	var totalRequests int64
-	var uniqueClients int64
-	var latestVersionClients int64
-	var outdatedClients int64
-
-	for _, key := range keys {
-		parts := strings.Split(key, ":")
-		if len(parts) < 3 {
-			continue
-		}
-		appName := parts[2]
-
-		// Skip if app filtering is enabled and this app is not in the filter
-		if len(filterApps) > 0 && !contains(filterApps, appName) {
-			continue
-		}
-
-		appStats[appName] = true
-
-		// Get app statistics for each date in the range
-		baseKey := fmt.Sprintf("stats:%s:%s", admin, appName)
-
-		for _, date := range dateRange {
-			// Get total requests
-			requestsKey := fmt.Sprintf("%s:requests:%s", baseKey, date)
-			if !processedKeys[requestsKey] {
-				if count, err := rdb.Get(ctx, requestsKey).Int64(); err == nil {
-					totalRequests += count
-					logrus.Debugf("App %s requests count for %s: %d, total: %d", appName, date, count, totalRequests)
-				}
-				processedKeys[requestsKey] = true
-			}
-
-			// Get unique clients count
-			clientsKey := fmt.Sprintf("%s:unique_clients:%s", baseKey, date)
-			if !processedKeys[clientsKey] {
-				if count, err := rdb.SCard(ctx, clientsKey).Result(); err == nil {
-					uniqueClients += count
-					logrus.Debugf("App %s unique clients count for %s: %d, total: %d", appName, date, count, uniqueClients)
-				}
-				processedKeys[clientsKey] = true
-			}
-
-			// Get clients using latest version
-			latestKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, date)
-			if !processedKeys[latestKey] {
-				if count, err := rdb.SCard(ctx, latestKey).Result(); err == nil {
-					latestVersionClients += count
-					logrus.Debugf("App %s latest version clients count for %s: %d, total: %d", appName, date, count, latestVersionClients)
-				}
-				processedKeys[latestKey] = true
-			}
-
-			// Get outdated clients
-			outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, date)
-			if !processedKeys[outdatedKey] {
-				if count, err := rdb.SCard(ctx, outdatedKey).Result(); err == nil {
-					outdatedClients += count
-					logrus.Debugf("App %s outdated clients count for %s: %d, total: %d", appName, date, count, outdatedClients)
-				}
-				processedKeys[outdatedKey] = true
-			}
-
-			// Aggregate other stats for this app
-			aggregateAppStats(ctx, rdb, admin, appName, date, &response, filterChannels, filterPlatforms, filterArchitectures, processedKeys)
-		}
-	}
-
-	// Set the aggregated summary
-	response.Summary.TotalRequests = totalRequests
-	response.Summary.UniqueClients = uniqueClients
-	response.Summary.ClientsUsingLatestVersion = latestVersionClients
-	response.Summary.ClientsOutdated = outdatedClients
-	response.Summary.TotalApps = len(appStats)
-
-	logrus.Debugf("Final summary: %+v", response.Summary)
 	c.JSON(http.StatusOK, response)
 }
 
-func aggregateAppStats(ctx context.Context, rdb *redis.Client, admin, appName, dateStr string, response *TelemetryResponse, filterChannels, filterPlatforms, filterArchitectures []string, processedKeys map[string]bool) {
-	baseKey := fmt.Sprintf("stats:%s:%s", admin, appName)
+// Helper function to merge results from multiple apps
+func mergeResults(response *TelemetryResponse, appResult map[string]interface{}) {
+	logrus.Debugf("Merging results for app: %v", appResult)
 
-	// Get known versions
-	knownVersionsKey := fmt.Sprintf("%s:known_versions", baseKey)
-	if count, err := rdb.SCard(ctx, knownVersionsKey).Result(); err == nil {
-		response.Versions.UsedVersionsCount = int(count)
-	}
-	knownVersions, err := rdb.SMembers(ctx, knownVersionsKey).Result()
-	if err == nil {
-		// Add new versions to the response
-		for _, version := range knownVersions {
-			if !contains(response.Versions.KnownVersions, version) {
-				response.Versions.KnownVersions = append(response.Versions.KnownVersions, version)
-			}
-		}
-	}
+	// Merge summary data
+	response.Summary.TotalRequests += int64(appResult["total_requests"].(float64))
+	response.Summary.UniqueClients += int64(appResult["unique_clients"].(float64))
+	response.Summary.ClientsUsingLatestVersion += int64(appResult["clients_using_latest_version"].(float64))
+	response.Summary.ClientsOutdated += int64(appResult["clients_outdated"].(float64))
+	response.Summary.TotalApps = int(appResult["total_active_apps"].(float64))
 
-	// Get version usage
-	for _, version := range response.Versions.KnownVersions {
-		versionKey := fmt.Sprintf("%s:version_usage:%s:%s", baseKey, dateStr, version)
-		if count, err := rdb.SCard(ctx, versionKey).Result(); err == nil {
-			// Update or add version usage
-			found := false
-			for i, usage := range response.Versions.Usage {
-				if usage.Version == version {
-					// Only update if this is the first time we're seeing this version for this app
-					if !processedKeys[versionKey] {
-						response.Versions.Usage[i].ClientCount += count
-						processedKeys[versionKey] = true
-					}
-					found = true
-					break
-				}
-			}
-			if !found {
-				response.Versions.Usage = append(response.Versions.Usage, VersionUsage{
-					Version:     version,
-					ClientCount: count,
-				})
-				processedKeys[versionKey] = true
-			}
-		}
-	}
+	// Merge daily stats
+	if dailyStats, ok := appResult["daily_stats"].([]interface{}); ok {
+		logrus.Debugf("Found daily stats in app result: %v", dailyStats)
 
-	// Get platform usage
-	platformPattern := fmt.Sprintf("%s:platforms:%s:*", baseKey, dateStr)
-	platformKeys, err := rdb.Keys(ctx, platformPattern).Result()
-	if err == nil {
-		for _, key := range platformKeys {
-			parts := strings.Split(key, ":")
-			if len(parts) < 5 {
-				continue
-			}
-			platform := parts[5]
+		for _, ds := range dailyStats {
+			if dailyStat, ok := ds.(map[string]interface{}); ok {
+				date := dailyStat["date"].(string)
+				logrus.Debugf("Processing daily stats for date: %s", date)
 
-			// Skip if platform filtering is enabled and this platform is not in the filter
-			if len(filterPlatforms) > 0 && !contains(filterPlatforms, platform) {
-				continue
-			}
-
-			if count, err := rdb.SCard(ctx, key).Result(); err == nil {
-				// Update or add platform usage
 				found := false
-				for i, usage := range response.Platforms {
-					if usage.Platform == platform {
-						// Only update if this is the first time we're seeing this platform for this app
-						if !processedKeys[key] {
-							response.Platforms[i].ClientCount += count
-							processedKeys[key] = true
-						}
+
+				// Try to find existing entry for this date
+				for i, existing := range response.DailyStats {
+					if existing.Date == date {
+						logrus.Debugf("Found existing entry for date %s, updating values", date)
+						response.DailyStats[i].TotalRequests += int64(dailyStat["total_requests"].(float64))
+						response.DailyStats[i].UniqueClients += int64(dailyStat["unique_clients"].(float64))
+						response.DailyStats[i].ClientsUsingLatestVersion += int64(dailyStat["clients_using_latest_version"].(float64))
+						response.DailyStats[i].ClientsOutdated += int64(dailyStat["clients_outdated"].(float64))
 						found = true
 						break
 					}
 				}
+
+				// If no existing entry found, create new one
 				if !found {
-					response.Platforms = append(response.Platforms, PlatformUsage{
-						Platform:    platform,
-						ClientCount: count,
+					logrus.Debugf("Creating new entry for date %s", date)
+					response.DailyStats = append(response.DailyStats, DailyStats{
+						Date:                      date,
+						TotalRequests:             int64(dailyStat["total_requests"].(float64)),
+						UniqueClients:             int64(dailyStat["unique_clients"].(float64)),
+						ClientsUsingLatestVersion: int64(dailyStat["clients_using_latest_version"].(float64)),
+						ClientsOutdated:           int64(dailyStat["clients_outdated"].(float64)),
 					})
-					processedKeys[key] = true
+				}
+			}
+		}
+	} else {
+		logrus.Warnf("No daily stats found in app result or invalid format")
+	}
+
+	// Merge versions data
+	versions := appResult["versions"].(map[string]interface{})
+	if knownVersions, ok := versions["known_versions"].([]interface{}); ok {
+		for _, v := range knownVersions {
+			if version, ok := v.(string); ok {
+				if !contains(response.Versions.KnownVersions, version) {
+					response.Versions.KnownVersions = append(response.Versions.KnownVersions, version)
 				}
 			}
 		}
 	}
 
-	// Get architecture usage
-	archPattern := fmt.Sprintf("%s:architectures:%s:*", baseKey, dateStr)
-	archKeys, err := rdb.Keys(ctx, archPattern).Result()
-	if err == nil {
-		for _, key := range archKeys {
-			parts := strings.Split(key, ":")
-			if len(parts) < 5 {
-				continue
-			}
-			arch := parts[5]
+	response.Versions.UsedVersionsCount = int(versions["used_versions_count"].(float64))
 
-			// Skip if architecture filtering is enabled and this architecture is not in the filter
-			if len(filterArchitectures) > 0 && !contains(filterArchitectures, arch) {
-				continue
-			}
-
-			if count, err := rdb.SCard(ctx, key).Result(); err == nil {
-				// Update or add architecture usage
-				found := false
-				for i, usage := range response.Architectures {
-					if usage.Arch == arch {
-						// Only update if this is the first time we're seeing this architecture for this app
-						if !processedKeys[key] {
-							response.Architectures[i].ClientCount += count
-							processedKeys[key] = true
+	// Merge version usage
+	if usage, ok := versions["usage"].([]interface{}); ok {
+		for _, v := range usage {
+			if usage, ok := v.(map[string]interface{}); ok {
+				if version, ok := usage["version"].(string); ok {
+					if count, ok := usage["client_count"].(float64); ok {
+						found := false
+						for i, existing := range response.Versions.Usage {
+							if existing.Version == version {
+								response.Versions.Usage[i].ClientCount += int64(count)
+								found = true
+								break
+							}
 						}
-						found = true
-						break
+						if !found {
+							response.Versions.Usage = append(response.Versions.Usage, VersionUsage{
+								Version:     version,
+								ClientCount: int64(count),
+							})
+						}
 					}
-				}
-				if !found {
-					response.Architectures = append(response.Architectures, ArchitectureUsage{
-						Arch:        arch,
-						ClientCount: count,
-					})
-					processedKeys[key] = true
 				}
 			}
 		}
 	}
 
-	// Get channel usage
-	channelPattern := fmt.Sprintf("%s:channels:%s:*", baseKey, dateStr)
-	channelKeys, err := rdb.Keys(ctx, channelPattern).Result()
-	if err == nil {
-		for _, key := range channelKeys {
-			parts := strings.Split(key, ":")
-			if len(parts) < 5 {
-				continue
-			}
-			channel := parts[5]
-
-			// Skip if channel filtering is enabled and this channel is not in the filter
-			if len(filterChannels) > 0 && !contains(filterChannels, channel) {
-				continue
-			}
-
-			if count, err := rdb.SCard(ctx, key).Result(); err == nil {
-				// Update or add channel usage
-				found := false
-				for i, usage := range response.Channels {
-					if usage.Channel == channel {
-						// Only update if this is the first time we're seeing this channel for this app
-						if !processedKeys[key] {
-							response.Channels[i].ClientCount += count
-							processedKeys[key] = true
+	// Merge platforms
+	if platforms, ok := appResult["platforms"].([]interface{}); ok {
+		for _, p := range platforms {
+			if platform, ok := p.(map[string]interface{}); ok {
+				if name, ok := platform["platform"].(string); ok {
+					if count, ok := platform["client_count"].(float64); ok {
+						found := false
+						for i, existing := range response.Platforms {
+							if existing.Platform == name {
+								response.Platforms[i].ClientCount += int64(count)
+								found = true
+								break
+							}
 						}
-						found = true
-						break
+						if !found {
+							response.Platforms = append(response.Platforms, PlatformUsage{
+								Platform:    name,
+								ClientCount: int64(count),
+							})
+						}
 					}
 				}
-				if !found {
-					response.Channels = append(response.Channels, ChannelUsage{
-						Channel:     channel,
-						ClientCount: count,
-					})
-					processedKeys[key] = true
+			}
+		}
+	}
+
+	// Merge architectures
+	if architectures, ok := appResult["architectures"].([]interface{}); ok {
+		for _, a := range architectures {
+			if arch, ok := a.(map[string]interface{}); ok {
+				if name, ok := arch["platform"].(string); ok {
+					if count, ok := arch["client_count"].(float64); ok {
+						found := false
+						for i, existing := range response.Architectures {
+							if existing.Arch == name {
+								response.Architectures[i].ClientCount += int64(count)
+								found = true
+								break
+							}
+						}
+						if !found {
+							response.Architectures = append(response.Architectures, ArchitectureUsage{
+								Arch:        name,
+								ClientCount: int64(count),
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Merge channels
+	if channels, ok := appResult["channels"].([]interface{}); ok {
+		for _, ch := range channels {
+			if channel, ok := ch.(map[string]interface{}); ok {
+				if name, ok := channel["platform"].(string); ok {
+					if count, ok := channel["client_count"].(float64); ok {
+						found := false
+						for i, existing := range response.Channels {
+							if existing.Channel == name {
+								response.Channels[i].ClientCount += int64(count)
+								found = true
+								break
+							}
+						}
+						if !found {
+							response.Channels = append(response.Channels, ChannelUsage{
+								Channel:     name,
+								ClientCount: int64(count),
+							})
+						}
+					}
 				}
 			}
 		}
