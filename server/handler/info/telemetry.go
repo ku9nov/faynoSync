@@ -49,6 +49,7 @@ type TelemetryVersions struct {
 
 type TelemetryResponse struct {
 	Date          string              `json:"date"`
+	DateRange     []string            `json:"date_range,omitempty"`
 	Admin         string              `json:"admin"`
 	Summary       TelemetrySummary    `json:"summary"`
 	Versions      TelemetryVersions   `json:"versions"`
@@ -71,10 +72,36 @@ func GetTelemetry(c *gin.Context, rdb *redis.Client) {
 		return
 	}
 
-	// Get date from query parameter or use today
+	// Get date range parameters
 	dateStr := c.Query("date")
-	if dateStr == "" {
+	timeRange := c.Query("range") // "week" or "month"
+
+	var dateRange []string
+	if timeRange != "" {
+		// Calculate date range based on the specified period
+		endDate := time.Now().UTC()
+		var startDate time.Time
+
+		switch timeRange {
+		case "week":
+			startDate = endDate.AddDate(0, 0, -7)
+		case "month":
+			startDate = endDate.AddDate(0, -1, 0)
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid range parameter. Use 'week' or 'month'"})
+			return
+		}
+
+		// Generate date range
+		for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+			dateRange = append(dateRange, d.Format("2006-01-02"))
+		}
+	} else if dateStr == "" {
+		// If no date or range specified, use today
 		dateStr = time.Now().UTC().Format("2006-01-02")
+		dateRange = []string{dateStr}
+	} else {
+		dateRange = []string{dateStr}
 	}
 
 	// Get filter parameters
@@ -91,8 +118,9 @@ func GetTelemetry(c *gin.Context, rdb *redis.Client) {
 
 	ctx := c.Request.Context()
 	response := TelemetryResponse{
-		Date:  dateStr,
-		Admin: admin,
+		Date:      dateRange[0],
+		DateRange: dateRange,
+		Admin:     admin,
 	}
 
 	// Get all keys for this admin
@@ -126,51 +154,53 @@ func GetTelemetry(c *gin.Context, rdb *redis.Client) {
 
 		appStats[appName] = true
 
-		// Get app statistics
+		// Get app statistics for each date in the range
 		baseKey := fmt.Sprintf("stats:%s:%s", admin, appName)
 
-		// Get total requests
-		requestsKey := fmt.Sprintf("%s:requests:%s", baseKey, dateStr)
-		if !processedKeys[requestsKey] {
-			if count, err := rdb.Get(ctx, requestsKey).Int64(); err == nil {
-				totalRequests += count
-				logrus.Debugf("App %s requests count: %d, total: %d", appName, count, totalRequests)
+		for _, date := range dateRange {
+			// Get total requests
+			requestsKey := fmt.Sprintf("%s:requests:%s", baseKey, date)
+			if !processedKeys[requestsKey] {
+				if count, err := rdb.Get(ctx, requestsKey).Int64(); err == nil {
+					totalRequests += count
+					logrus.Debugf("App %s requests count for %s: %d, total: %d", appName, date, count, totalRequests)
+				}
+				processedKeys[requestsKey] = true
 			}
-			processedKeys[requestsKey] = true
-		}
 
-		// Get unique clients count
-		clientsKey := fmt.Sprintf("%s:unique_clients:%s", baseKey, dateStr)
-		if !processedKeys[clientsKey] {
-			if count, err := rdb.SCard(ctx, clientsKey).Result(); err == nil {
-				uniqueClients += count
-				logrus.Debugf("App %s unique clients count: %d, total: %d", appName, count, uniqueClients)
+			// Get unique clients count
+			clientsKey := fmt.Sprintf("%s:unique_clients:%s", baseKey, date)
+			if !processedKeys[clientsKey] {
+				if count, err := rdb.SCard(ctx, clientsKey).Result(); err == nil {
+					uniqueClients += count
+					logrus.Debugf("App %s unique clients count for %s: %d, total: %d", appName, date, count, uniqueClients)
+				}
+				processedKeys[clientsKey] = true
 			}
-			processedKeys[clientsKey] = true
-		}
 
-		// Get clients using latest version
-		latestKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateStr)
-		if !processedKeys[latestKey] {
-			if count, err := rdb.SCard(ctx, latestKey).Result(); err == nil {
-				latestVersionClients += count
-				logrus.Debugf("App %s latest version clients count: %d, total: %d", appName, count, latestVersionClients)
+			// Get clients using latest version
+			latestKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, date)
+			if !processedKeys[latestKey] {
+				if count, err := rdb.SCard(ctx, latestKey).Result(); err == nil {
+					latestVersionClients += count
+					logrus.Debugf("App %s latest version clients count for %s: %d, total: %d", appName, date, count, latestVersionClients)
+				}
+				processedKeys[latestKey] = true
 			}
-			processedKeys[latestKey] = true
-		}
 
-		// Get outdated clients
-		outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateStr)
-		if !processedKeys[outdatedKey] {
-			if count, err := rdb.SCard(ctx, outdatedKey).Result(); err == nil {
-				outdatedClients += count
-				logrus.Debugf("App %s outdated clients count: %d, total: %d", appName, count, outdatedClients)
+			// Get outdated clients
+			outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, date)
+			if !processedKeys[outdatedKey] {
+				if count, err := rdb.SCard(ctx, outdatedKey).Result(); err == nil {
+					outdatedClients += count
+					logrus.Debugf("App %s outdated clients count for %s: %d, total: %d", appName, date, count, outdatedClients)
+				}
+				processedKeys[outdatedKey] = true
 			}
-			processedKeys[outdatedKey] = true
-		}
 
-		// Aggregate other stats for this app
-		aggregateAppStats(ctx, rdb, admin, appName, dateStr, &response, filterChannels, filterPlatforms, filterArchitectures, processedKeys)
+			// Aggregate other stats for this app
+			aggregateAppStats(ctx, rdb, admin, appName, date, &response, filterChannels, filterPlatforms, filterArchitectures, processedKeys)
+		}
 	}
 
 	// Set the aggregated summary
