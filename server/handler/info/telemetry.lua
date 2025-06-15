@@ -11,9 +11,9 @@
 local admin = ARGV[1]
 local date_range = cjson.decode(ARGV[2])
 local app_name = ARGV[3]
-local filter_channels = cjson.decode(ARGV[4])
-local filter_platforms = cjson.decode(ARGV[5])
-local filter_architectures = cjson.decode(ARGV[6])
+local filter_channels = cjson.decode(ARGV[4]) or {}
+local filter_platforms = cjson.decode(ARGV[5]) or {}
+local filter_architectures = cjson.decode(ARGV[6]) or {}
 local debug_mode = ARGV[7] == "true"
 
 -- Helper function for debug logging with TTL
@@ -160,6 +160,84 @@ result.versions.known_versions = all_known_versions
 -- Debug: Log collected known versions
 debug_log('debug:collected_known_versions', cjson.encode(result.versions.known_versions))
 
+-- Helper function to get filtered client IDs based on filters
+local function get_filtered_clients(admin, app, date, filter_channels, filter_platforms, filter_architectures)
+    local all_clients = {}
+    local filtered_clients = {}
+    
+    -- Get all clients for this app and date
+    local clients_key = "stats:" .. admin .. ":" .. app .. ":unique_clients:" .. date
+    local all_client_ids = redis.call('SMEMBERS', clients_key)
+    
+    -- Convert to table for faster lookup
+    for _, client_id in ipairs(all_client_ids) do
+        all_clients[client_id] = true
+    end
+    
+    -- If no filters are active, return all clients
+    if (not filter_channels or type(filter_channels) ~= "table" or next(filter_channels) == nil) and 
+       (not filter_platforms or type(filter_platforms) ~= "table" or next(filter_platforms) == nil) and 
+       (not filter_architectures or type(filter_architectures) ~= "table" or next(filter_architectures) == nil) then
+        return all_clients
+    end
+    
+    -- Check each client against filters
+    for client_id, _ in pairs(all_clients) do
+        local matches_filters = true
+        
+        -- Check channel filters
+        if filter_channels and type(filter_channels) == "table" and next(filter_channels) ~= nil then
+            local matches_channel = false
+            for _, channel in ipairs(filter_channels) do
+                local channel_key = "stats:" .. admin .. ":" .. app .. ":channels:" .. date .. ":" .. channel
+                if redis.call('SISMEMBER', channel_key, client_id) == 1 then
+                    matches_channel = true
+                    break
+                end
+            end
+            if not matches_channel then
+                matches_filters = false
+            end
+        end
+        
+        -- Check platform filters
+        if matches_filters and filter_platforms and type(filter_platforms) == "table" and next(filter_platforms) ~= nil then
+            local matches_platform = false
+            for _, platform in ipairs(filter_platforms) do
+                local platform_key = "stats:" .. admin .. ":" .. app .. ":platforms:" .. date .. ":" .. platform
+                if redis.call('SISMEMBER', platform_key, client_id) == 1 then
+                    matches_platform = true
+                    break
+                end
+            end
+            if not matches_platform then
+                matches_filters = false
+            end
+        end
+        
+        -- Check architecture filters
+        if matches_filters and filter_architectures and type(filter_architectures) == "table" and next(filter_architectures) ~= nil then
+            local matches_arch = false
+            for _, arch in ipairs(filter_architectures) do
+                local arch_key = "stats:" .. admin .. ":" .. app .. ":architectures:" .. date .. ":" .. arch
+                if redis.call('SISMEMBER', arch_key, client_id) == 1 then
+                    matches_arch = true
+                    break
+                end
+            end
+            if not matches_arch then
+                matches_filters = false
+            end
+        end
+        
+        if matches_filters then
+            filtered_clients[client_id] = true
+        end
+    end
+    
+    return filtered_clients
+end
+
 -- Process each app
 for _, app in ipairs(apps) do
     -- Debug: Log current app and date range
@@ -178,37 +256,54 @@ for _, app in ipairs(apps) do
             base_pattern = base_pattern
         }))
         
+        -- Get filtered clients for this date
+        local filtered_clients = get_filtered_clients(admin, app, date, filter_channels, filter_platforms, filter_architectures)
+        
         -- Get total requests
         local requests_key = base_pattern .. ":requests:" .. date
         local requests = tonumber(redis.call('GET', requests_key)) or 0
         result.total_requests = result.total_requests + requests
         
-        -- Get unique clients
-        local clients_key = base_pattern .. ":unique_clients:" .. date
-        local unique_count = redis.call('SCARD', clients_key)
-        result.unique_clients = result.unique_clients + unique_count
+        -- Count filtered unique clients
+        local filtered_unique_count = 0
+        for _ in pairs(filtered_clients) do
+            filtered_unique_count = filtered_unique_count + 1
+        end
+        result.unique_clients = result.unique_clients + filtered_unique_count
         
-        -- Get latest version clients
+        -- Count filtered latest version clients
         local latest_key = base_pattern .. ":clients_using_latest_version:" .. date
-        local latest_count = redis.call('SCARD', latest_key)
-        result.clients_using_latest_version = result.clients_using_latest_version + latest_count
+        local latest_clients = redis.call('SMEMBERS', latest_key)
+        local filtered_latest_count = 0
+        for _, client_id in ipairs(latest_clients) do
+            if filtered_clients[client_id] then
+                filtered_latest_count = filtered_latest_count + 1
+            end
+        end
+        result.clients_using_latest_version = result.clients_using_latest_version + filtered_latest_count
         
-        -- Get outdated clients
+        -- Count filtered outdated clients
         local outdated_key = base_pattern .. ":clients_outdated:" .. date
-        local outdated_count = redis.call('SCARD', outdated_key)
-        result.clients_outdated = result.clients_outdated + outdated_count
+        local outdated_clients = redis.call('SMEMBERS', outdated_key)
+        local filtered_outdated_count = 0
+        for _, client_id in ipairs(outdated_clients) do
+            if filtered_clients[client_id] then
+                filtered_outdated_count = filtered_outdated_count + 1
+            end
+        end
+        result.clients_outdated = result.clients_outdated + filtered_outdated_count
 
         -- Debug: Log daily stats before update
         debug_log('debug:daily_stats_before_' .. app .. '_' .. date, cjson.encode(result.daily_stats))
 
-        -- Update daily stats
+        -- Update daily stats with filtered counts
         local found_daily = false
         for _, daily in ipairs(result.daily_stats) do
             if daily.date == date then
                 daily.total_requests = daily.total_requests + requests
-                daily.unique_clients = daily.unique_clients + unique_count
-                daily.clients_using_latest_version = daily.clients_using_latest_version + latest_count
-                daily.clients_outdated = daily.clients_outdated + outdated_count
+                daily.unique_clients = daily.unique_clients + filtered_unique_count
+                daily.clients_using_latest_version = daily.clients_using_latest_version + filtered_latest_count
+                daily.clients_outdated = daily.clients_outdated + filtered_outdated_count
                 found_daily = true
                 break
             end
@@ -218,9 +313,9 @@ for _, app in ipairs(apps) do
             local new_daily = {
                 date = date,
                 total_requests = requests,
-                unique_clients = unique_count,
-                clients_using_latest_version = latest_count,
-                clients_outdated = outdated_count
+                unique_clients = filtered_unique_count,
+                clients_using_latest_version = filtered_latest_count,
+                clients_outdated = filtered_outdated_count
             }
             table.insert(result.daily_stats, new_daily)
             -- Debug: Log new daily stats entry
@@ -234,66 +329,90 @@ for _, app in ipairs(apps) do
         debug_log('debug:requests_' .. app .. '_' .. date, tostring(requests))
         
         -- Debug: Log unique clients for this date
-        debug_log('debug:unique_clients_' .. app .. '_' .. date, tostring(unique_count))
+        debug_log('debug:unique_clients_' .. app .. '_' .. date, tostring(filtered_unique_count))
         
         -- Debug: Log latest version clients for this date
-        debug_log('debug:latest_version_clients_' .. app .. '_' .. date, tostring(latest_count))
+        debug_log('debug:latest_version_clients_' .. app .. '_' .. date, tostring(filtered_latest_count))
         
         -- Debug: Log outdated clients for this date
-        debug_log('debug:outdated_clients_' .. app .. '_' .. date, tostring(outdated_count))
+        debug_log('debug:outdated_clients_' .. app .. '_' .. date, tostring(filtered_outdated_count))
         
-        -- Get version usage for all known versions
+        -- Get version usage for all known versions (filtered)
         for _, version in ipairs(result.versions.known_versions) do
             local version_key = base_pattern .. ":version_usage:" .. date .. ":" .. version
-            local version_count = redis.call('SCARD', version_key)
-            if version_count > 0 then
-                update_usage(result.versions.usage, version, version_count)
+            local version_clients = redis.call('SMEMBERS', version_key)
+            local filtered_version_count = 0
+            for _, client_id in ipairs(version_clients) do
+                if filtered_clients[client_id] then
+                    filtered_version_count = filtered_version_count + 1
+                end
+            end
+            if filtered_version_count > 0 then
+                update_usage(result.versions.usage, version, filtered_version_count)
                 -- Debug: Log version usage for this date
-                debug_log('debug:version_usage_' .. app .. '_' .. date .. '_' .. version, tostring(version_count))
+                debug_log('debug:version_usage_' .. app .. '_' .. date .. '_' .. version, tostring(filtered_version_count))
             end
         end
         
-        -- Get platform usage
+        -- Get platform usage (filtered)
         local platform_pattern = base_pattern .. ":platforms:" .. date .. ":*"
         local platform_keys = redis.call('KEYS', platform_pattern)
         for _, key in ipairs(platform_keys) do
             local platform = string.match(key, ":([^:]+)$")
             if in_array(filter_platforms, platform) then
-                local platform_count = redis.call('SCARD', key)
-                if platform_count > 0 then
-                    update_usage_array(result.platforms, platform, platform_count)
+                local platform_clients = redis.call('SMEMBERS', key)
+                local filtered_platform_count = 0
+                for _, client_id in ipairs(platform_clients) do
+                    if filtered_clients[client_id] then
+                        filtered_platform_count = filtered_platform_count + 1
+                    end
+                end
+                if filtered_platform_count > 0 then
+                    update_usage_array(result.platforms, platform, filtered_platform_count)
                     -- Debug: Log platform usage for this date
-                    debug_log('debug:platform_usage_' .. app .. '_' .. date .. '_' .. platform, tostring(platform_count))
+                    debug_log('debug:platform_usage_' .. app .. '_' .. date .. '_' .. platform, tostring(filtered_platform_count))
                 end
             end
         end
         
-        -- Get architecture usage
+        -- Get architecture usage (filtered)
         local arch_pattern = base_pattern .. ":architectures:" .. date .. ":*"
         local arch_keys = redis.call('KEYS', arch_pattern)
         for _, key in ipairs(arch_keys) do
             local arch = string.match(key, ":([^:]+)$")
             if in_array(filter_architectures, arch) then
-                local arch_count = redis.call('SCARD', key)
-                if arch_count > 0 then
-                    update_usage_array(result.architectures, arch, arch_count)
+                local arch_clients = redis.call('SMEMBERS', key)
+                local filtered_arch_count = 0
+                for _, client_id in ipairs(arch_clients) do
+                    if filtered_clients[client_id] then
+                        filtered_arch_count = filtered_arch_count + 1
+                    end
+                end
+                if filtered_arch_count > 0 then
+                    update_usage_array(result.architectures, arch, filtered_arch_count)
                     -- Debug: Log architecture usage for this date
-                    debug_log('debug:arch_usage_' .. app .. '_' .. date .. '_' .. arch, tostring(arch_count))
+                    debug_log('debug:arch_usage_' .. app .. '_' .. date .. '_' .. arch, tostring(filtered_arch_count))
                 end
             end
         end
         
-        -- Get channel usage
+        -- Get channel usage (filtered)
         local channel_pattern = base_pattern .. ":channels:" .. date .. ":*"
         local channel_keys = redis.call('KEYS', channel_pattern)
         for _, key in ipairs(channel_keys) do
             local channel = string.match(key, ":([^:]+)$")
             if in_array(filter_channels, channel) then
-                local channel_count = redis.call('SCARD', key)
-                if channel_count > 0 then
-                    update_usage_array(result.channels, channel, channel_count)
+                local channel_clients = redis.call('SMEMBERS', key)
+                local filtered_channel_count = 0
+                for _, client_id in ipairs(channel_clients) do
+                    if filtered_clients[client_id] then
+                        filtered_channel_count = filtered_channel_count + 1
+                    end
+                end
+                if filtered_channel_count > 0 then
+                    update_usage_array(result.channels, channel, filtered_channel_count)
                     -- Debug: Log channel usage for this date
-                    debug_log('debug:channel_usage_' .. app .. '_' .. date .. '_' .. channel, tostring(channel_count))
+                    debug_log('debug:channel_usage_' .. app .. '_' .. date .. '_' .. channel, tostring(filtered_channel_count))
                 end
             end
         end
