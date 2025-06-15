@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+//go:embed telemetry.lua
 var telemetryScriptContent string
 
 type VersionUsage struct {
