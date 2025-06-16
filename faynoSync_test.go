@@ -111,6 +111,15 @@ func setup() {
 }
 
 func teardown() {
+	if redisClient != nil {
+		err := redisClient.FlushDB(context.Background()).Err()
+		if err != nil {
+			logrus.Errorf("Failed to flush Redis DB: %v", err)
+		} else {
+			logrus.Infoln("Redis DB flushed successfully.")
+		}
+	}
+
 	adminsCollection := mongoDatabase.Collection("admins")
 	filter := bson.M{"username": bson.M{"$in": []string{"admin", "administrator"}}}
 
