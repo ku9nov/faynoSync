@@ -105,7 +105,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.POST("/admin/update", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.UpdateAdmin)
 
 	// Telemetry endpoint
-	router.GET("/telemetry", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.GetTelemetry)
+	router.GET("/telemetry", authMiddleware, handler.GetTelemetry)
 
 	// get the port from the configuration file
 	port := config.GetString("PORT")

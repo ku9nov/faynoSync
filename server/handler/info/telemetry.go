@@ -3,6 +3,7 @@ package info
 import (
 	_ "embed"
 	"encoding/json"
+	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"net/http"
 	"strconv"
@@ -12,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 //go:embed telemetry.lua
@@ -78,17 +81,31 @@ func init() {
 }
 
 // GetTelemetry handles requests for analytics data
-func GetTelemetry(c *gin.Context, rdb *redis.Client) {
+func GetTelemetry(c *gin.Context, rdb *redis.Client, db *mongo.Database) {
 	if rdb == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Redis is not available"})
 		return
 	}
 
 	// Get username from JWT token
-	admin, err := utils.GetUsernameFromContext(c)
+	username, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Check if the user is a team user
+	teamUsersCollection := db.Collection("team_users")
+	var teamUser model.TeamUser
+	err = teamUsersCollection.FindOne(c.Request.Context(), bson.M{"username": username}).Decode(&teamUser)
+
+	// If user is a team user, use their admin's username for statistics
+	admin := username
+	if err == nil {
+		logrus.Debugf("User %s is a team user with owner: %s", username, teamUser.Owner)
+		admin = teamUser.Owner
+	} else {
+		logrus.Debugf("User %s is not a team user", username)
 	}
 
 	// Get date range parameters

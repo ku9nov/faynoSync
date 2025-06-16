@@ -227,5 +227,5 @@ func (ch *appHandler) UpdateAdmin(c *gin.Context) {
 }
 
 func (ch *appHandler) GetTelemetry(c *gin.Context) {
-	info.GetTelemetry(c, ch.redisClient)
+	info.GetTelemetry(c, ch.redisClient, ch.database)
 }
