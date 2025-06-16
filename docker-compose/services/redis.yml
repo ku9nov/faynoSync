@@ -4,6 +4,9 @@ services:
   cache:
     image: redis:latest
     container_name: "faynoSync_redis"
+    networks:
+      faynosync_network:
+        ipv4_address: 172.25.0.7
     restart: always
     ports:
       - '6379:6379'
