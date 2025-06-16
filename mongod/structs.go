@@ -13,7 +13,7 @@ import (
 
 type AppRepository interface {
 	Get(ctx context.Context, limit int64, owner string) ([]*model.SpecificAppWithoutIDs, error)
-	GetAppByName(appName string, ctx context.Context, page, limit int64, owner string) (*model.PaginatedResponse, error)
+	GetAppByName(appName string, ctx context.Context, page, limit int64, owner string, filters map[string]interface{}) (*model.PaginatedResponse, error)
 	DeleteSpecificVersionOfApp(id primitive.ObjectID, owner string, ctx context.Context) ([]string, int64, string, error)
 	DeleteChannel(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context) (interface{}, error)
@@ -60,10 +60,11 @@ type Changelog struct {
 	Changes string
 }
 type CheckResult struct {
-	Found     bool
-	Critical  bool
-	Artifacts []Artifact
-	Changelog []Changelog
+	Found                  bool
+	Critical               bool
+	Artifacts              []Artifact
+	Changelog              []Changelog
+	IsRequiredIntermediate bool
 }
 
 func (c *appRepository) getBasePipeline() mongo.Pipeline {
@@ -102,15 +103,16 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 			"artifacts.arch":     "$arch_meta.arch_id",
 		}}},
 		bson.D{{Key: "$group", Value: bson.M{
-			"_id":        "$_id",
-			"app_name":   bson.M{"$first": "$app_meta.app_name"},
-			"channel":    bson.M{"$first": "$channel_meta.channel_name"},
-			"version":    bson.M{"$first": "$version"},
-			"published":  bson.M{"$first": "$published"},
-			"critical":   bson.M{"$first": "$critical"},
-			"artifacts":  bson.M{"$push": "$artifacts"},
-			"changelog":  bson.M{"$first": "$changelog"},
-			"updated_at": bson.M{"$first": "$updated_at"},
+			"_id":                   "$_id",
+			"app_name":              bson.M{"$first": "$app_meta.app_name"},
+			"channel":               bson.M{"$first": "$channel_meta.channel_name"},
+			"version":               bson.M{"$first": "$version"},
+			"published":             bson.M{"$first": "$published"},
+			"critical":              bson.M{"$first": "$critical"},
+			"required_intermediate": bson.M{"$first": "$required_intermediate"},
+			"artifacts":             bson.M{"$push": "$artifacts"},
+			"changelog":             bson.M{"$first": "$changelog"},
+			"updated_at":            bson.M{"$first": "$updated_at"},
 		}}},
 		bson.D{{Key: "$addFields", Value: bson.D{
 			{Key: "versions_arr", Value: bson.D{

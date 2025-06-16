@@ -51,6 +51,7 @@ type AppHandler interface {
 	DeleteTeamUser(*gin.Context)
 	Whoami(*gin.Context)
 	UpdateAdmin(*gin.Context)
+	GetTelemetry(*gin.Context)
 }
 
 type appHandler struct {
@@ -223,4 +224,8 @@ func (ch *appHandler) Whoami(c *gin.Context) {
 
 func (ch *appHandler) UpdateAdmin(c *gin.Context) {
 	update.UpdateAdmin(c, ch.database)
+}
+
+func (ch *appHandler) GetTelemetry(c *gin.Context) {
+	info.GetTelemetry(c, ch.redisClient, ch.database)
 }

@@ -25,11 +25,11 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	mongoDatabase := client.Database(configDB.Database)
 
-	// Check PERFORMANCE_MODE
+	// Initialize Redis client
 	var redisClient *redis.Client
 
-	if config.GetBool("PERFORMANCE_MODE") {
-		logrus.Infoln(("Perfomance mod is enabled. Connecting to Redis."))
+	if config.GetBool("PERFORMANCE_MODE") || config.GetBool("ENABLE_TELEMETRY") {
+		logrus.Infoln("Redis connection is required. Connecting to Redis.")
 		redisConfig := redisdb.RedisConfig{
 			Addr:     config.GetString("REDIS_HOST") + ":" + config.GetString("REDIS_PORT"),
 			Password: config.GetString("REDIS_PASSWORD"),
@@ -37,6 +37,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 		}
 		redisClient = redisdb.ConnectToRedis(redisConfig)
 	}
+
 	handler := handler.NewAppHandler(client, db, mongoDatabase, redisClient, config.GetBool("PERFORMANCE_MODE"))
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
 	os.Setenv("ENABLE_PRIVATE_APP_DOWNLOADING", config.GetString("ENABLE_PRIVATE_APP_DOWNLOADING"))
@@ -103,6 +104,9 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.DELETE("/user/delete", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.DeleteTeamUser)
 	router.POST("/admin/update", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.UpdateAdmin)
 
+	// Telemetry endpoint
+	router.GET("/telemetry", authMiddleware, telemetryMiddleware(config), handler.GetTelemetry)
+
 	// get the port from the configuration file
 	port := config.GetString("PORT")
 	if port == "" {
@@ -135,6 +139,19 @@ func corsMiddleware(allowedOrigins []string) gin.HandlerFunc {
 			return
 		}
 
+		c.Next()
+	}
+}
+
+func telemetryMiddleware(config *viper.Viper) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !config.GetBool("ENABLE_TELEMETRY") {
+			c.JSON(403, gin.H{
+				"error": "Telemetry is not enabled on this instance",
+			})
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

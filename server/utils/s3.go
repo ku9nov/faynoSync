@@ -81,9 +81,9 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	var extension string
 	// Extract base filename and extension
 	baseFileName := file.Filename
-	dotIndex := strings.Index(baseFileName, ".")
-	if dotIndex > -1 {
-		extension = baseFileName[dotIndex:]
+	lastDotIndex := strings.LastIndex(baseFileName, ".")
+	if lastDotIndex > -1 {
+		extension = baseFileName[lastDotIndex:]
 	}
 	// Generate new file name
 	var newFileName string

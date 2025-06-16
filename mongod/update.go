@@ -357,6 +357,12 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 			logrus.Debugf("Setting critical to: %t", critical)
 		}
 
+		if intermediateParam, intermediateExists := ctxQuery["intermediate"]; intermediateExists {
+			requiredIntermediate := utils.GetBoolParam(intermediateParam)
+			updateFields = append(updateFields, bson.E{Key: "required_intermediate", Value: requiredIntermediate})
+			logrus.Debugf("Setting required_intermediate to: %t", requiredIntermediate)
+		}
+
 		if appLink != "" {
 			duplicateFound := false
 			for _, artifact := range appData.Artifacts {

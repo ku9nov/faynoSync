@@ -5,6 +5,7 @@ import (
 	"errors"
 	"faynoSync/server/model"
 	"fmt"
+	"sort"
 
 	"github.com/hashicorp/go-version"
 	"github.com/sirupsen/logrus"
@@ -34,7 +35,7 @@ func (c *appRepository) Get(ctx context.Context, limit int64, owner string) ([]*
 	return c.processApps(cur, ctx)
 }
 
-func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64, owner string) (*model.PaginatedResponse, error) {
+func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64, owner string, filters map[string]interface{}) (*model.PaginatedResponse, error) {
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	metaFilter := bson.D{
 		{Key: "app_name", Value: appName},
@@ -90,11 +91,64 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 		pipelineOwner = teamUser.Owner
 	}
 
+	// Build the match stage with filters
+	matchStage := bson.M{
+		"app_id": appMeta.ID,
+		"owner":  pipelineOwner,
+	}
+
+	// Add filters to match stage if they exist
+	for key, value := range filters {
+		switch key {
+		case "channel":
+			// For channel, we need to get the channel_id from apps_meta
+			var channelMeta struct {
+				ID primitive.ObjectID `bson:"_id"`
+			}
+			err := metaCollection.FindOne(ctx, bson.M{
+				"channel_name": value,
+				"owner":        pipelineOwner,
+			}).Decode(&channelMeta)
+			if err != nil {
+				return nil, fmt.Errorf("channel not found in apps_meta collection")
+			}
+			matchStage["channel_id"] = channelMeta.ID
+		case "published", "critical":
+			matchStage[key] = value
+		case "platform", "arch":
+			// For platform and arch, we need to get the ObjectID first
+			var meta struct {
+				ID primitive.ObjectID `bson:"_id"`
+			}
+			metaKey := "platform_name"
+			if key == "arch" {
+				metaKey = "arch_id"
+			}
+			err := metaCollection.FindOne(ctx, bson.M{
+				metaKey: value,
+				"owner": pipelineOwner,
+			}).Decode(&meta)
+			if err != nil {
+				return nil, fmt.Errorf("%s not found in apps_meta collection", key)
+			}
+
+			// Add the filter to the artifacts array
+			if matchStage["artifacts"] == nil {
+				matchStage["artifacts"] = bson.M{
+					"$elemMatch": bson.M{
+						key: meta.ID,
+					},
+				}
+			} else {
+				// If we already have an $elemMatch, add to it
+				elemMatch := matchStage["artifacts"].(bson.M)["$elemMatch"].(bson.M)
+				elemMatch[key] = meta.ID
+			}
+		}
+	}
+
 	countPipeline := mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.M{
-			"app_id": appMeta.ID,
-			"owner":  pipelineOwner,
-		}}},
+		bson.D{{Key: "$match", Value: matchStage}},
 		bson.D{{Key: "$count", Value: "total"}},
 	}
 	countCursor, err := collection.Aggregate(ctx, countPipeline)
@@ -117,10 +171,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 
 	basePipeline := c.getBasePipeline()
 	pipeline := mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.M{
-			"app_id": appMeta.ID,
-			"owner":  pipelineOwner,
-		}}},
+		bson.D{{Key: "$match", Value: matchStage}},
 	}
 	pipeline = append(pipeline, basePipeline...)
 	pipeline = append(pipeline,
@@ -134,7 +185,6 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 		return nil, err
 	}
 	defer cur.Close(ctx)
-
 	items, err := c.processApps(cur, ctx)
 	if err != nil {
 		logrus.Errorf("Error processing apps: %v", err)
@@ -147,6 +197,58 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 		Page:  page,
 		Limit: limit,
 	}, nil
+}
+
+func (c *appRepository) CheckRequiredMigrationStep(ctx context.Context, collection *mongo.Collection, appID primitive.ObjectID, currentVersion, latestVersion string, channelID, platformID, archID primitive.ObjectID) (string, error) {
+	logrus.Debugf("Checking required migration step for app_id: %s, current_version: %s, latest_version: %s", appID, currentVersion, latestVersion)
+	filter := bson.D{
+		{Key: "app_id", Value: appID},
+		{Key: "required_intermediate", Value: true},
+		{Key: "published", Value: true},
+		{Key: "channel_id", Value: channelID},
+		{Key: "artifacts", Value: bson.D{
+			{Key: "$elemMatch", Value: bson.D{
+				{Key: "platform", Value: platformID},
+				{Key: "arch", Value: archID},
+			}},
+		}},
+	}
+
+	cursor, err := collection.Find(ctx, filter)
+	if err != nil {
+		return "", err
+	}
+	defer cursor.Close(ctx)
+
+	var requiredSteps []string
+	latestVer := version.Must(version.NewVersion(latestVersion))
+	currentVer := version.Must(version.NewVersion(currentVersion))
+
+	for cursor.Next(ctx) {
+		var v struct {
+			Version string `bson:"version"`
+		}
+		if err := cursor.Decode(&v); err != nil {
+			continue
+		}
+		stepVer := version.Must(version.NewVersion(v.Version))
+
+		if stepVer.GreaterThan(currentVer) && !stepVer.GreaterThan(latestVer) {
+			requiredSteps = append(requiredSteps, v.Version)
+		}
+	}
+
+	if len(requiredSteps) > 0 {
+		// Sort versions to get the first required intermediate version
+		sort.Slice(requiredSteps, func(i, j int) bool {
+			vi := version.Must(version.NewVersion(requiredSteps[i]))
+			vj := version.Must(version.NewVersion(requiredSteps[j]))
+			return vi.LessThan(vj)
+		})
+		return requiredSteps[0], nil
+	}
+
+	return "", nil
 }
 
 func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName, platformName, archName string, ctx context.Context, owner string) (CheckResult, error) {
@@ -239,10 +341,54 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 		if err != nil {
 			return CheckResult{Found: false, Artifacts: []Artifact{}}, err
 		}
-		var artifacts []Artifact
 
+		// Check for required migration steps
+		requiredIntermediate, err := c.CheckRequiredMigrationStep(ctx, collection, appMeta.ID, currentVersion, latestApp.Version, channelMeta.ID, platformMeta.ID, archMeta.ID)
+		if err != nil {
+			logrus.Errorf("Error checking required migration steps: %v", err)
+		}
+
+		var artifacts []Artifact
+		var changelog []Changelog
+		logrus.Debugf("Required intermediate: %v", requiredIntermediate)
+		// If there's a required intermediate, get its details
+		if requiredIntermediate != "" {
+			// Find the required intermediate version details
+			var requiredApp model.SpecificApp
+			err := collection.FindOne(ctx, bson.M{
+				"app_id":    appMeta.ID,
+				"version":   requiredIntermediate,
+				"published": true,
+			}).Decode(&requiredApp)
+
+			if err == nil {
+				// Convert requiredApp.Changelog to []Changelog
+				changelog = make([]Changelog, len(requiredApp.Changelog))
+				for i, entry := range requiredApp.Changelog {
+					changelog[i] = Changelog{
+						Changes: entry.Changes,
+					}
+				}
+				// Get artifacts for required version
+				for _, artifact := range requiredApp.Artifacts {
+					artifacts = append(artifacts, Artifact{
+						Link:    artifact.Link,
+						Package: artifact.Package,
+					})
+				}
+				return CheckResult{
+					Found:                  true,
+					Artifacts:              artifacts,
+					Changelog:              changelog,
+					Critical:               requiredApp.Critical,
+					IsRequiredIntermediate: true,
+				}, nil
+			}
+		}
+
+		// If no required step or error getting required step details, proceed with normal flow
 		// Convert latestApp.Changelog to []Changelog
-		changelog := make([]Changelog, len(latestApp.Changelog))
+		changelog = make([]Changelog, len(latestApp.Changelog))
 		for i, entry := range latestApp.Changelog {
 			changelog[i] = Changelog{
 				Changes: entry.Changes,
@@ -266,7 +412,6 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	} else {
 		return CheckResult{Found: false, Artifacts: []Artifact{}}, fmt.Errorf("no matching documents found for app_name: %s", appName)
 	}
-
 }
 
 func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx context.Context, owner string) ([]*model.SpecificAppWithoutIDs, error) {
@@ -351,17 +496,17 @@ func (c *appRepository) processApps(cur *mongo.Cursor, ctx context.Context) ([]*
 			return nil, err
 		}
 		app := &model.SpecificAppWithoutIDs{
-			ID:        tempApp.ID,
-			AppName:   tempApp.AppName,
-			Version:   tempApp.Version,
-			Channel:   tempApp.Channel,
-			Published: tempApp.Published,
-			Critical:  tempApp.Critical,
-			Artifacts: tempApp.Artifacts,
-			Changelog: tempApp.Changelog,
-			UpdatedAt: tempApp.UpdatedAt,
+			ID:           tempApp.ID,
+			AppName:      tempApp.AppName,
+			Version:      tempApp.Version,
+			Channel:      tempApp.Channel,
+			Published:    tempApp.Published,
+			Critical:     tempApp.Critical,
+			Intermediate: tempApp.Intermediate,
+			Artifacts:    tempApp.Artifacts,
+			Changelog:    tempApp.Changelog,
+			UpdatedAt:    tempApp.UpdatedAt,
 		}
-
 		apps = append(apps, app)
 	}
 	return apps, nil

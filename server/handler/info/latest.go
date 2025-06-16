@@ -68,6 +68,12 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// Log stats for the request
+	deviceID := c.GetHeader("X-Device-ID")
+	logrus.Debugf("X-Device-ID: %s", deviceID)
+	// Update stats with actual update status
+	logStatsToRedis(ctx, rdb, validatedParams, checkResult.Found, deviceID)
+
 	if !checkResult.Found {
 		if len(checkResult.Artifacts) == 0 {
 			c.JSON(http.StatusOK, gin.H{"update_available": false, "error": "Not found"})
@@ -90,11 +96,15 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			c.JSON(http.StatusOK, response)
 		}
-
 		return
 	}
 	logrus.Debug("Check latest version response: ", checkResult)
 	response := gin.H{"update_available": true, "critical": checkResult.Critical}
+
+	// Add is_intermediate_required to response if it's true
+	if checkResult.IsRequiredIntermediate {
+		response["is_intermediate_required"] = true
+	}
 
 	// Add update URLs to the response
 	for _, artifact := range checkResult.Artifacts {
@@ -241,4 +251,109 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		jsonResponse, _ := json.Marshal(downloadUrls)
 		rdb.Set(ctx, cacheKey, jsonResponse, 0)
 	}
+}
+
+// trackClientTelemetry handles analytics collection for version check requests using Redis Sets
+func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, deviceID string) {
+	if rdb == nil || deviceID == "" {
+		logrus.Debug("Redis client is nil or deviceID is empty, skipping analytics collection")
+		return
+	}
+
+	now := time.Now().UTC()
+	dateStr := now.Format("2006-01-02")
+
+	owner := params["owner"].(string)
+	appName := params["app_name"].(string)
+	version := params["version"].(string)
+	platform := params["platform"].(string)
+	arch := params["arch"].(string)
+	channel := params["channel"].(string)
+
+	logrus.Debugf("Collecting analytics for app: %s, owner: %s, date: %s", appName, owner, dateStr)
+
+	baseKey := fmt.Sprintf("stats:%s:%s", owner, appName)
+
+	requestsKey := fmt.Sprintf("%s:requests:%s", baseKey, dateStr)
+	rdb.Incr(ctx, requestsKey)
+	rdb.Expire(ctx, requestsKey, time.Hour*24*30)
+
+	clientsKey := fmt.Sprintf("%s:unique_clients:%s", baseKey, dateStr)
+	rdb.SAdd(ctx, clientsKey, deviceID)
+	rdb.Expire(ctx, clientsKey, time.Hour*24*30)
+
+	if channel != "" {
+		channelKey := fmt.Sprintf("%s:channels:%s:%s", baseKey, dateStr, channel)
+		rdb.SAdd(ctx, channelKey, deviceID)
+		rdb.Expire(ctx, channelKey, time.Hour*24*30)
+	}
+
+	if platform != "" {
+		platformKey := fmt.Sprintf("%s:platforms:%s:%s", baseKey, dateStr, platform)
+		rdb.SAdd(ctx, platformKey, deviceID)
+		rdb.Expire(ctx, platformKey, time.Hour*24*30)
+	}
+
+	if arch != "" {
+		archKey := fmt.Sprintf("%s:architectures:%s:%s", baseKey, dateStr, arch)
+		rdb.SAdd(ctx, archKey, deviceID)
+		rdb.Expire(ctx, archKey, time.Hour*24*30)
+	}
+
+	if version != "" {
+		// Get known versions for this app
+		knownVersionsKey := fmt.Sprintf("%s:known_versions", baseKey)
+
+		// Add current version to known versions set
+		rdb.SAdd(ctx, knownVersionsKey, version)
+		rdb.Expire(ctx, knownVersionsKey, time.Hour*24*30)
+
+		// Get all known versions
+		knownVersions, err := rdb.SMembers(ctx, knownVersionsKey).Result()
+		if err != nil {
+			logrus.Errorf("Error getting known versions: %v", err)
+			return
+		}
+
+		// Remove device from all version sets for this day
+		for _, knownVersion := range knownVersions {
+			if knownVersion != version {
+				oldVersionKey := fmt.Sprintf("%s:version_usage:%s:%s", baseKey, dateStr, knownVersion)
+				rdb.SRem(ctx, oldVersionKey, deviceID)
+				rdb.Expire(ctx, oldVersionKey, time.Hour*24*30)
+			}
+		}
+
+		// Add device to current version set
+		versionKey := fmt.Sprintf("%s:version_usage:%s:%s", baseKey, dateStr, version)
+		rdb.SAdd(ctx, versionKey, deviceID)
+		rdb.Expire(ctx, versionKey, time.Hour*24*30)
+
+		// Track if client is using latest version
+		if hasUpdate {
+			// Remove from latest version set if present
+			latestVersionKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateStr)
+			rdb.SRem(ctx, latestVersionKey, deviceID)
+			rdb.Expire(ctx, latestVersionKey, time.Hour*24*30)
+
+			// Add to outdated set
+			outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateStr)
+			rdb.SAdd(ctx, outdatedKey, deviceID)
+			rdb.Expire(ctx, outdatedKey, time.Hour*24*30)
+		} else {
+			// Remove from outdated set if present
+			outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateStr)
+			rdb.SRem(ctx, outdatedKey, deviceID)
+			rdb.Expire(ctx, outdatedKey, time.Hour*24*30)
+
+			// Add to latest version set
+			latestVersionKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateStr)
+			rdb.SAdd(ctx, latestVersionKey, deviceID)
+			rdb.Expire(ctx, latestVersionKey, time.Hour*24*30)
+		}
+	}
+}
+
+func logStatsToRedis(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, deviceID string) {
+	trackClientTelemetry(ctx, rdb, params, hasUpdate, deviceID)
 }
