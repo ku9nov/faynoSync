@@ -129,129 +129,137 @@ To successfully run the tests and have them pass, you need to populate the .env 
 
 The tests verify the implemented API using a test database and an existing S3 bucket.
 
-**List of Tests**
+<details>
+<summary><strong>List of Tests</strong></summary>
 
-    - TestHealthCheck
-    - TestLogin
-    - TestFailedLogin (expected result from API "401")
-    - TestListApps
-    - TestListAppsWithInvalidToken (expected result from API "401")
-    - TestAppCreate
-    - TestSecondaryAppCreate (expected result from API "failed")
-    - TestUploadApp
-    - TestUploadDuplicateApp (expected result from API "failed")
-    - TestDeleteApp
-    - TestChannelCreateNightly
-    - TestChannelCreateStable
-    - TestUploadAppWithoutChannel (expected result from API "failed")
-    - TestMultipleUploadWithChannels
-    - TestSearchApp
-    - TestCheckVersionLatestVersion
-    - TestFetchkLatestVersionOfApp
-    - TestMultipleDelete
-    - TestDeleteNightlyChannel
-    - TestDeleteStableChannel
-    - TestPlatformCreate
-    - TestUploadAppWithoutPlatform
-    - TestArchCreate
-    - TestUploadAppWithoutArch
-    - TestDeletePlatform
-    - TestDeleteArch
-    - TestListArchs
-    - TestListPlatforms
-    - TestListChannels
-    - TestListArchsWhenExist
-    - TestListPlatformsWhenExist
-    - TestListChannelsWhenExist
-    - TestSignUp
-    - TestFailedSignUp (expected result from API "401")
-    - TestUpdateSpecificApp
-    - TestListAppsWhenExist
-    - TestDeleteAppMeta
-    - TestUpdateChannel
-    - TestUpdateApp
-    - TestUpdatePlatform
-    - TestUpdateArch
-    - TestFailedUpdatePlatform (expected result from API "400")
-    - TestChannelCreateWithWrongName (expected result from API "400")
-    - TestCreateSecondPlatform
-    - TestCreateSecondArch
-    - TestMultipleUploadWithSameExtension
-    - TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs
-    - TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchs
-    - TestDeleteSecondPlatform
-    - TestDeleteSecondArch
-    - TestCreatePublicApp
-    - TestDeletePublicAppMeta
-    - TestUpdateSpecificAppWithSecondUser (expected result from API "500")
-    - TestListAppsWithSecondUser
-    - TestListChannelsWithSecondUser
-    - TestListPlatformsWithSecondUser
-    - TestListArchsWithSecondUser
-    - TestUpdateAppWithSecondUser (expected result from API "500")
-    - TestUpdateChannelWithSecondUser (expected result from API "500")
-    - TestUpdatePlatformWithSecondUser (expected result from API "500")
-    - TestUpdateArchWithSecondUser (expected result from API "500")
-    - TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchsWithSecondUser (expected result from API "500")
-    - TestDeleteNightlyChannelWithSecondUser (expected result from API "500")
-    - TestDeletePlatformWithSecondUser (expected result from API "500")
-    - TestDeleteArchWithSecondUser (expected result from API "500")
-    - TestDeleteAppMetaWithSecondUser (expected result from API "500")
-    - TestCreateTeamUser
-    - TestTeamUserLogin
-    - TestFailedUploadAppUsingTeamUser (expected result from API "403")
-    - TestFailedUpdateAppUsingTeamUser (expected result from API "403")
-    - TestFailedUpdateChannelUsingTeamUser (expected result from API "403")
-    - TestFailedUpdatePlatformUsingTeamUser (expected result from API "403")
-    - TestFailedUpdateArchUsingTeamUser (expected result from API "403")
-    - TestListAppsUsingTeamUserBeforeCreate
-    - TestListChannelsUsingTeamUserBeforeCreate
-    - TestListPlatformsUsingTeamUserBeforeCreate
-    - TestListArchsUsingTeamUserBeforeCreate
-    - TestAppCreateTeamUser
-    - TestListAppsUsingTeamUser
-    - TestFailedDeleteTeamUserApp (expected result from API "403")
-    - TestChannelCreateTeamUser
-    - TestListChannelsUsingTeamUser
-    - TestFailedDeleteTeamUserChannel (expected result from API "403")
-    - TestPlatformCreateTeamUser
-    - TestListPlatformsUsingTeamUser
-    - TestFailedDeleteTeamUserPlatform (expected result from API "403")
-    - TestArchCreateTeamUser
-    - TestListArchsUsingTeamUser
-    - TestFailedDeleteTeamUserArch (expected result from API "403")
-    - TestFailedUpdateTeamUser (expected result from API "403")
-    - TestUpdateTeamUser
-    - TestUpdateAppUsingTeamUser
-    - TestUpdateChannelUsingTeamUser
-    - TestUpdatePlatformUsingTeamUser
-    - TestUpdateArchUsingTeamUser
-    - TestFailedAppCreateTeamUser (expected result from API "403")
-    - TestDeleteTeamUserApp 
-    - TestDeleteTeamUserChannel 
-    - TestDeleteTeamUserPlatform
-    - TestDeleteTeamUserArch
-    - TestListTeamUsers
-    - TestDeleteTeamUser
-    - TestWhoAmIAdmin
-    - TestWhoAmITeamUser
-    - TestFailedUpdateAdminUser
-    - TestUpdateAdminUser
-    - TestFailedLoginWithOldPassword
-    - TestSuccessfulLoginWithNewPassword
-    - TestFailedUpdateAdminUserUsingTeamUser
-    - TestFilterSearchWithChannel
-    - TestFilterSearchWithChannelAndPublished
-    - TestFilterSearchWithChannelAndPublishedAndCritical
-    - TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatform
-    - TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatformAndArch
-    - TestSearchOnlyPublished
-    - TestSearchOnlyCritical
-    - TestSearchOnlyUniversalPlatform
-    - TestMultipleUploadWithIntermediate
-    - TestUpdateSpecificAppWithIntermediate
-    - TestCheckVersionWithIntermediate
-    - TestMultipleDeleteWithIntermediate
+<br>
+
+<ul>
+  <li>TestHealthCheck</li>
+  <li>TestLogin</li>
+  <li>TestFailedLogin (expected result from API "401")</li>
+  <li>TestListApps</li>
+  <li>TestListAppsWithInvalidToken (expected result from API "401")</li>
+  <li>TestAppCreate</li>
+  <li>TestSecondaryAppCreate (expected result from API "failed")</li>
+  <li>TestUploadApp</li>
+  <li>TestUploadDuplicateApp (expected result from API "failed")</li>
+  <li>TestDeleteApp</li>
+  <li>TestChannelCreateNightly</li>
+  <li>TestChannelCreateStable</li>
+  <li>TestUploadAppWithoutChannel (expected result from API "failed")</li>
+  <li>TestMultipleUploadWithChannels</li>
+  <li>TestSearchApp</li>
+  <li>TestCheckVersionLatestVersion</li>
+  <li>TestFetchkLatestVersionOfApp</li>
+  <li>TestMultipleDelete</li>
+  <li>TestDeleteNightlyChannel</li>
+  <li>TestDeleteStableChannel</li>
+  <li>TestPlatformCreate</li>
+  <li>TestUploadAppWithoutPlatform</li>
+  <li>TestArchCreate</li>
+  <li>TestUploadAppWithoutArch</li>
+  <li>TestDeletePlatform</li>
+  <li>TestDeleteArch</li>
+  <li>TestListArchs</li>
+  <li>TestListPlatforms</li>
+  <li>TestListChannels</li>
+  <li>TestListArchsWhenExist</li>
+  <li>TestListPlatformsWhenExist</li>
+  <li>TestListChannelsWhenExist</li>
+  <li>TestSignUp</li>
+  <li>TestFailedSignUp (expected result from API "401")</li>
+  <li>TestUpdateSpecificApp</li>
+  <li>TestListAppsWhenExist</li>
+  <li>TestDeleteAppMeta</li>
+  <li>TestUpdateChannel</li>
+  <li>TestUpdateApp</li>
+  <li>TestUpdatePlatform</li>
+  <li>TestUpdateArch</li>
+  <li>TestFailedUpdatePlatform (expected result from API "400")</li>
+  <li>TestChannelCreateWithWrongName (expected result from API "400")</li>
+  <li>TestCreateSecondPlatform</li>
+  <li>TestCreateSecondArch</li>
+  <li>TestMultipleUploadWithSameExtension</li>
+  <li>TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs</li>
+  <li>TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchs</li>
+  <li>TestDeleteSecondPlatform</li>
+  <li>TestDeleteSecondArch</li>
+  <li>TestCreatePublicApp</li>
+  <li>TestDeletePublicAppMeta</li>
+  <li>TestUpdateSpecificAppWithSecondUser (expected result from API "500")</li>
+  <li>TestListAppsWithSecondUser</li>
+  <li>TestListChannelsWithSecondUser</li>
+  <li>TestListPlatformsWithSecondUser</li>
+  <li>TestListArchsWithSecondUser</li>
+  <li>TestUpdateAppWithSecondUser (expected result from API "500")</li>
+  <li>TestUpdateChannelWithSecondUser (expected result from API "500")</li>
+  <li>TestUpdatePlatformWithSecondUser (expected result from API "500")</li>
+  <li>TestUpdateArchWithSecondUser (expected result from API "500")</li>
+  <li>TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchsWithSecondUser (expected result from API "500")</li>
+  <li>TestDeleteNightlyChannelWithSecondUser (expected result from API "500")</li>
+  <li>TestDeletePlatformWithSecondUser (expected result from API "500")</li>
+  <li>TestDeleteArchWithSecondUser (expected result from API "500")</li>
+  <li>TestDeleteAppMetaWithSecondUser (expected result from API "500")</li>
+  <li>TestCreateTeamUser</li>
+  <li>TestTeamUserLogin</li>
+  <li>TestFailedUploadAppUsingTeamUser (expected result from API "403")</li>
+  <li>TestFailedUpdateAppUsingTeamUser (expected result from API "403")</li>
+  <li>TestFailedUpdateChannelUsingTeamUser (expected result from API "403")</li>
+  <li>TestFailedUpdatePlatformUsingTeamUser (expected result from API "403")</li>
+  <li>TestFailedUpdateArchUsingTeamUser (expected result from API "403")</li>
+  <li>TestListAppsUsingTeamUserBeforeCreate</li>
+  <li>TestListChannelsUsingTeamUserBeforeCreate</li>
+  <li>TestListPlatformsUsingTeamUserBeforeCreate</li>
+  <li>TestListArchsUsingTeamUserBeforeCreate</li>
+  <li>TestAppCreateTeamUser</li>
+  <li>TestListAppsUsingTeamUser</li>
+  <li>TestFailedDeleteTeamUserApp (expected result from API "403")</li>
+  <li>TestChannelCreateTeamUser</li>
+  <li>TestListChannelsUsingTeamUser</li>
+  <li>TestFailedDeleteTeamUserChannel (expected result from API "403")</li>
+  <li>TestPlatformCreateTeamUser</li>
+  <li>TestListPlatformsUsingTeamUser</li>
+  <li>TestFailedDeleteTeamUserPlatform (expected result from API "403")</li>
+  <li>TestArchCreateTeamUser</li>
+  <li>TestListArchsUsingTeamUser</li>
+  <li>TestFailedDeleteTeamUserArch (expected result from API "403")</li>
+  <li>TestFailedUpdateTeamUser (expected result from API "403")</li>
+  <li>TestUpdateTeamUser</li>
+  <li>TestUpdateAppUsingTeamUser</li>
+  <li>TestUpdateChannelUsingTeamUser</li>
+  <li>TestUpdatePlatformUsingTeamUser</li>
+  <li>TestUpdateArchUsingTeamUser</li>
+  <li>TestFailedAppCreateTeamUser (expected result from API "403")</li>
+  <li>TestDeleteTeamUserApp</li>
+  <li>TestDeleteTeamUserChannel</li>
+  <li>TestDeleteTeamUserPlatform</li>
+  <li>TestDeleteTeamUserArch</li>
+  <li>TestListTeamUsers</li>
+  <li>TestDeleteTeamUser</li>
+  <li>TestWhoAmIAdmin</li>
+  <li>TestWhoAmITeamUser</li>
+  <li>TestFailedUpdateAdminUser</li>
+  <li>TestUpdateAdminUser</li>
+  <li>TestFailedLoginWithOldPassword</li>
+  <li>TestSuccessfulLoginWithNewPassword</li>
+  <li>TestFailedUpdateAdminUserUsingTeamUser</li>
+  <li>TestFilterSearchWithChannel</li>
+  <li>TestFilterSearchWithChannelAndPublished</li>
+  <li>TestFilterSearchWithChannelAndPublishedAndCritical</li>
+  <li>TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatform</li>
+  <li>TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatformAndArch</li>
+  <li>TestSearchOnlyPublished</li>
+  <li>TestSearchOnlyCritical</li>
+  <li>TestSearchOnlyUniversalPlatform</li>
+  <li>TestMultipleUploadWithIntermediate</li>
+  <li>TestUpdateSpecificAppWithIntermediate</li>
+  <li>TestCheckVersionWithIntermediate</li>
+  <li>TestMultipleDeleteWithIntermediate</li>
+  <li>TestTelemetryWithVariousParams</li>
+</ul>
+</details>
+
     
 ## Create new migrations
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).

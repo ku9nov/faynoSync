@@ -160,10 +160,6 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 	cacheKey := CreateCacheKey(params)
 	logrus.Debugf("Generated cache key: %s", cacheKey)
 
-	// Log stats for the request
-	deviceID := c.GetHeader("X-Device-ID")
-	logStatsToRedis(ctx, rdb, params, false, deviceID)
-
 	if performanceMode && rdb != nil {
 		cachedResponse, err := rdb.Get(ctx, cacheKey).Result()
 		if err == nil {

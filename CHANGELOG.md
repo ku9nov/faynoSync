@@ -12,6 +12,8 @@
 
 - Added intermediate required builds. More details here: https://ku9nov.github.io/faynoSync-site/docs/intermediate_build
 
+- Added telemetry. More details here: https://ku9nov.github.io/faynoSync-site/docs/telemetry
+
 ### Maintenance
 
 - New functions are covered by tests.

@@ -126,6 +126,18 @@ func teardown() {
 	removeFile("testapp.pkg")
 }
 
+func generateDateRangeAndStats(startDate time.Time, days int) ([]interface{}, []interface{}) {
+	var dateRange []interface{}
+	var dailyStats []interface{}
+
+	for i := 0; i < days; i++ {
+		d := startDate.AddDate(0, 0, i).Format("2006-01-02")
+		dateRange = append(dateRange, d)
+		dailyStats = append(dailyStats, d)
+	}
+	return dateRange, dailyStats
+}
+
 func TestHealthCheck(t *testing.T) {
 
 	router := gin.Default()
@@ -3780,6 +3792,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 		Arch         string
 		TestName     string
 		Owner        string
+		DeviceID     string
 	}{
 		{
 			AppName:     "testapp",
@@ -3795,6 +3808,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			Arch:         "secondArch",
 			TestName:     "NightlyUpdateAvailable",
 			Owner:        "admin",
+			DeviceID:     "device-001",
 		},
 		{
 			AppName:     "testapp",
@@ -3810,6 +3824,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			Arch:         "universalArch",
 			TestName:     "NightlyUpdateAvailable",
 			Owner:        "admin",
+			DeviceID:     "device-002",
 		},
 		{
 			AppName:     "testapp",
@@ -3823,6 +3838,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			Arch:         "secondArch",
 			TestName:     "NightlyUpdateAvailable",
 			Owner:        "admin",
+			DeviceID:     "device-003",
 		},
 		{
 			AppName:     "testapp",
@@ -3838,6 +3854,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			Arch:         "universalArch",
 			TestName:     "StableUpdateAvailable",
 			Owner:        "admin",
+			DeviceID:     "device-004",
 		},
 		{
 			AppName:     "testapp",
@@ -3854,6 +3871,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			Arch:     "universalArch",
 			TestName: "StableUpdateAvailable",
 			Owner:    "admin",
+			DeviceID: "device-005",
 		},
 	}
 
@@ -3866,7 +3884,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-
+			req.Header.Set("X-Device-ID", scenario.DeviceID)
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
 
@@ -3881,6 +3899,277 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
+		})
+	}
+}
+
+func TestTelemetryWithVariousParams(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	router.GET("/telemetry", func(c *gin.Context) {
+		handler.GetTelemetry(c)
+	})
+	startDate, _ := time.Parse("2006-01-02", "2025-06-09")
+	dateRange, dailyStats := generateDateRangeAndStats(startDate, 8)
+	scenarios := []struct {
+		Name         string
+		QueryParams  string
+		ExpectedCode int
+		ExpectedJSON map[string]interface{}
+	}{
+		{
+			Name:         "Nightly universalPlatform + secondArch",
+			QueryParams:  "range=week&apps=testapp&channels=nightly&platforms=universalPlatform&architectures=secondArch",
+			ExpectedCode: http.StatusOK,
+			ExpectedJSON: map[string]interface{}{
+				"date":       startDate.Format("2006-01-02"),
+				"date_range": dateRange,
+				"admin":      "admin",
+				"summary": map[string]interface{}{
+					"total_requests":               float64(4),
+					"unique_clients":               float64(1),
+					"clients_using_latest_version": float64(0),
+					"clients_outdated":             float64(1),
+					"total_active_apps":            float64(1),
+				},
+				"versions": map[string]interface{}{
+					"used_versions_count": float64(1),
+					"known_versions": []interface{}{
+						"0.0.1.138", "0.0.3.138",
+					},
+					"usage": []interface{}{
+						map[string]interface{}{
+							"version":      "0.0.1.138",
+							"client_count": float64(1),
+						},
+					},
+				},
+				"platforms": []interface{}{
+					map[string]interface{}{
+						"platform":     "universalPlatform",
+						"client_count": float64(1),
+					},
+				},
+				"architectures": []interface{}{
+					map[string]interface{}{
+						"arch":         "secondArch",
+						"client_count": float64(1),
+					},
+				},
+				"channels": []interface{}{
+					map[string]interface{}{
+						"channel":      "nightly",
+						"client_count": float64(1),
+					},
+				},
+				"daily_stats": []interface{}{
+					map[string]interface{}{"date": dailyStats[0], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[1], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[2], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[3], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(4), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+				},
+			},
+		},
+
+		{
+			Name:         "Nightly universalPlatform + universalArch",
+			QueryParams:  "range=week&apps=testapp&channels=nightly&platforms=universalPlatform&architectures=universalArch",
+			ExpectedCode: http.StatusOK,
+			ExpectedJSON: map[string]interface{}{
+				"date":       startDate.Format("2006-01-02"),
+				"date_range": dateRange,
+				"admin":      "admin",
+				"summary": map[string]interface{}{
+					"total_requests":               float64(4),
+					"unique_clients":               float64(1),
+					"clients_using_latest_version": float64(0),
+					"clients_outdated":             float64(1),
+					"total_active_apps":            float64(1),
+				},
+				"versions": map[string]interface{}{
+					"used_versions_count": float64(1),
+					"known_versions": []interface{}{
+						"0.0.1.138", "0.0.3.138",
+					},
+					"usage": []interface{}{
+						map[string]interface{}{
+							"version":      "0.0.1.138",
+							"client_count": float64(1),
+						},
+					},
+				},
+				"platforms": []interface{}{
+					map[string]interface{}{
+						"platform":     "universalPlatform",
+						"client_count": float64(1),
+					},
+				},
+				"architectures": []interface{}{
+					map[string]interface{}{
+						"arch":         "universalArch",
+						"client_count": float64(1),
+					},
+				},
+				"channels": []interface{}{
+					map[string]interface{}{
+						"channel":      "nightly",
+						"client_count": float64(1),
+					},
+				},
+				"daily_stats": []interface{}{
+					map[string]interface{}{"date": dailyStats[0], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[1], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[2], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[3], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(4), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+				},
+			},
+		},
+		{
+			Name:         "Stable secondPlatform + universalArch",
+			QueryParams:  "range=week&apps=testapp&channels=stable&platforms=secondPlatform&architectures=universalArch",
+			ExpectedCode: http.StatusOK,
+			ExpectedJSON: map[string]interface{}{
+				"date":       startDate.Format("2006-01-02"),
+				"date_range": dateRange,
+				"admin":      "admin",
+				"summary": map[string]interface{}{
+					"total_requests":               float64(4),
+					"unique_clients":               float64(1),
+					"clients_using_latest_version": float64(0),
+					"clients_outdated":             float64(1),
+					"total_active_apps":            float64(1),
+				},
+				"versions": map[string]interface{}{
+					"used_versions_count": float64(1),
+					"known_versions": []interface{}{
+						"0.0.1.138", "0.0.3.138",
+					},
+					"usage": []interface{}{
+						map[string]interface{}{
+							"version":      "0.0.3.138",
+							"client_count": float64(1),
+						},
+					},
+				},
+				"platforms": []interface{}{
+					map[string]interface{}{
+						"platform":     "secondPlatform",
+						"client_count": float64(1),
+					},
+				},
+				"architectures": []interface{}{
+					map[string]interface{}{
+						"arch":         "universalArch",
+						"client_count": float64(1),
+					},
+				},
+				"channels": []interface{}{
+					map[string]interface{}{
+						"channel":      "stable",
+						"client_count": float64(1),
+					},
+				},
+				"daily_stats": []interface{}{
+					map[string]interface{}{"date": dailyStats[0], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[1], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[2], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[3], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(4), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+				},
+			},
+		},
+		{
+			Name:         "Newer version — stable universal",
+			QueryParams:  "range=week&apps=testapp&channels=stable&platforms=universalPlatform&architectures=universalArch",
+			ExpectedCode: http.StatusOK,
+			ExpectedJSON: map[string]interface{}{
+				"date":       startDate.Format("2006-01-02"),
+				"date_range": dateRange,
+				"admin":      "admin",
+				"summary": map[string]interface{}{
+					"total_requests":               float64(4),
+					"unique_clients":               float64(1),
+					"clients_using_latest_version": float64(0),
+					"clients_outdated":             float64(1),
+					"total_active_apps":            float64(1),
+				},
+				"versions": map[string]interface{}{
+					"used_versions_count": float64(1),
+					"known_versions": []interface{}{
+						"0.0.1.138", "0.0.3.138",
+					},
+					"usage": []interface{}{
+						map[string]interface{}{
+							"version":      "0.0.3.138",
+							"client_count": float64(1),
+						},
+					},
+				},
+				"platforms": []interface{}{
+					map[string]interface{}{
+						"platform":     "universalPlatform",
+						"client_count": float64(1),
+					},
+				},
+				"architectures": []interface{}{
+					map[string]interface{}{
+						"arch":         "universalArch",
+						"client_count": float64(1),
+					},
+				},
+				"channels": []interface{}{
+					map[string]interface{}{
+						"channel":      "stable",
+						"client_count": float64(1),
+					},
+				},
+				"daily_stats": []interface{}{
+					map[string]interface{}{"date": dailyStats[0], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[1], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[2], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[3], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(4), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+				},
+			},
+		},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.Name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "/telemetry?"+s.QueryParams, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			req.Header.Set("Authorization", "Bearer "+authToken)
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, s.ExpectedCode, w.Code)
+
+			var actual map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &actual)
+			if err != nil {
+				t.Fatalf("failed to parse response JSON: %v\nBody: %s", err, w.Body.String())
+			}
+
+			assert.Equal(t, s.ExpectedJSON, actual)
 		})
 	}
 }

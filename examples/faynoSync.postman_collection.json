@@ -1207,6 +1207,39 @@
 				}
 			},
 			"response": []
+		},
+		{
+			"name": "Telemetry",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{faynoSyncToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/telemetry?range=week",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"telemetry"
+					],
+					"query": [
+						{
+							"key": "range",
+							"value": "week"
+						}
+					]
+				}
+			},
+			"response": []
 		}
 	],
 	"auth": {

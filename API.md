@@ -1398,3 +1398,104 @@ curl -X POST \
     "message": "Admin updated successfully"
 }
 ```
+
+### Get Telemetry
+
+Retrieve telemetry data for your applications.
+
+`GET /telemetry`
+
+###### Headers
+**Authorization**: Authorization header with jwt token.
+
+###### Query Parameters
+**date**: Specific date in YYYY-MM-DD format (optional)
+**range**: Time range - "week" or "month" (optional)
+**apps**: Comma-separated list of app names to filter (optional)
+**channels**: Comma-separated list of channels to filter (optional)
+**platforms**: Comma-separated list of platforms to filter (optional)
+**architectures**: Comma-separated list of architectures to filter (optional)
+
+###### Request:
+```
+curl -X GET \
+  'http://localhost:9000/telemetry?range=week&apps=myapp&channels=stable,beta&platforms=darwin,windows&architectures=x64,arm64' \
+  -H 'Authorization: Bearer {{token}}'
+```
+
+###### Response:
+```json
+{
+  "date": "2024-03-20",
+  "admin": "admin_name",
+  "summary": {
+    "total_requests": 1500,
+    "unique_clients": 750,
+    "clients_using_latest_version": 600,
+    "clients_outdated": 150,
+    "total_active_apps": 3
+  },
+  "versions": {
+    "known_versions": ["1.0.0", "1.1.0", "1.2.0"],
+    "usage": [
+      {
+        "version": "1.2.0",
+        "client_count": 600
+      },
+      {
+        "version": "1.1.0",
+        "client_count": 100
+      },
+      {
+        "version": "1.0.0",
+        "client_count": 50
+      }
+    ]
+  },
+  "platforms": [
+    {
+      "platform": "darwin",
+      "client_count": 400
+    },
+    {
+      "platform": "windows",
+      "client_count": 350
+    }
+  ],
+  "architectures": [
+    {
+      "arch": "x64",
+      "client_count": 700
+    },
+    {
+      "arch": "arm64",
+      "client_count": 50
+    }
+  ],
+  "channels": [
+    {
+      "channel": "stable",
+      "client_count": 600
+    },
+    {
+      "channel": "beta",
+      "client_count": 150
+    }
+  ],
+  "daily_stats": [
+    {
+      "date": "2024-03-20",
+      "total_requests": 1500,
+      "unique_clients": 750,
+      "clients_using_latest_version": 600,
+      "clients_outdated": 150
+    }
+  ]
+}
+```
+
+###### Notes:
+- Team users can access their administrator's telemetry data
+- Data is retained for 30 days
+- Statistics are only collected when `X-Device-ID` header is provided in `/checkVersion` requests
+- Team users have limited filtering capabilities based on their resource access rights

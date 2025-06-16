@@ -105,7 +105,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.POST("/admin/update", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.UpdateAdmin)
 
 	// Telemetry endpoint
-	router.GET("/telemetry", authMiddleware, handler.GetTelemetry)
+	router.GET("/telemetry", authMiddleware, telemetryMiddleware(config), handler.GetTelemetry)
 
 	// get the port from the configuration file
 	port := config.GetString("PORT")
@@ -139,6 +139,19 @@ func corsMiddleware(allowedOrigins []string) gin.HandlerFunc {
 			return
 		}
 
+		c.Next()
+	}
+}
+
+func telemetryMiddleware(config *viper.Viper) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !config.GetBool("ENABLE_TELEMETRY") {
+			c.JSON(403, gin.H{
+				"error": "Telemetry is not enabled on this instance",
+			})
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }
