@@ -1,4 +1,6 @@
 # FaynoSync
+![a-github-banner-for-faynosync-featuring](https://github.com/user-attachments/assets/219a2028-3cd2-4a8e-9e55-16b1c40c55ca)
+
 
 <div align="center">
   
@@ -60,6 +62,7 @@ REDIS_PORT (The port for the Redis server, default: `6379`)
 REDIS_PASSWORD (Password for Redis, leave empty if not set)
 REDIS_DB (The Redis database number to use, default: `0`)
 ENABLE_PRIVATE_APP_DOWNLOADING=false (if enabled, then apps located in private S3 can be downloaded using the public API; if disabled, then download links require authentication)
+ENABLE_TELEMETRY (Set to `true` to enable telemetry)
 ```
 
 You can set these environment variables in a `.env` file in the root directory of the application. You can use the `.env.local` file, which contains all filled variables.
