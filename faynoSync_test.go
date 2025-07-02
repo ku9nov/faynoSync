@@ -3920,7 +3920,8 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 	router.GET("/telemetry", func(c *gin.Context) {
 		handler.GetTelemetry(c)
 	})
-	startDate, _ := time.Parse("2006-01-02", "2025-06-09")
+	endDate := time.Now().UTC().Truncate(24 * time.Hour)
+	startDate := endDate.AddDate(0, 0, -7)
 	dateRange, dailyStats := generateDateRangeAndStats(startDate, 8)
 	scenarios := []struct {
 		Name         string
