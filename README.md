@@ -15,6 +15,19 @@ This application is a simple API server for automatically updating client applic
 
 The API server is designed for straightforward and intuitive application management. It supports updating client applications both in the background and on-demand, depending on how it's implemented in the client application. This provides flexibility in choosing the update method that best suits your needs.
 
+## Supported Technologies
+
+| Category | Technology | Description |
+|----------|------------|-------------|
+| **API Framework** | Go (Golang) | Main application server built with Go |
+| **Database** | MongoDB | Primary database for storing application metadata, users, and configurations |
+| **Cache & Performance** | Redis | Used for performance mode and statistics caching |
+| **Storage** | S3-Compatible | Supports multiple cloud storage providers: |
+| | AWS S3 | Amazon Web Services Simple Storage Service |
+| | MinIO | Self-hosted S3-compatible object storage |
+| | Google Cloud Storage | Google Cloud Platform storage service |
+| | DigitalOcean Spaces | DigitalOcean's S3-compatible object storage |
+
 ## Documentation
 The documentation is available in this repository [faynoSync-site](https://github.com/ku9nov/faynoSync-site) and at this link [faynoSync Documentation](https://ku9nov.github.io/faynoSync-site/docs/intro).
 
@@ -43,7 +56,7 @@ git clone https://github.com/ku9nov/faynoSync.git
 ## Configuration
 To configure the `faynoSync`, you will need to set the following environment variables:
 ```
-STORAGE_DRIVER (`minio` or `aws`)
+STORAGE_DRIVER (`minio`, `aws`, `gcp` or `digitalocean`)
 S3_ACCESS_KEY (Your AWS or Minio access key ID.)
 S3_SECRET_KEY (Your AWS or Minio secret access key.)
 S3_REGION (The AWS region in which your S3 bucket is located. For Minio this value should be empty.)

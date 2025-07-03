@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.4.3
+
+### Features
+
+- **Storage Polymorphism**: Implemented polymorphic storage architecture for S3-compatible services
+  - Added `StorageClient` interface for unified storage operations
+  - Created factory pattern for dynamic storage client creation
+  - Introduced base S3 client for common S3-compatible functionality
+
+- **Cloud Provider Support**: Added support for multiple cloud storage providers
+  - **DigitalOcean Spaces**: Full S3-compatible storage support with presigned URLs
+  - **Google Cloud Storage**: Native GCS integration with service account authentication
+
+- **Enhanced URL Parsing**: Improved URL parsing for different storage providers
+  - Support for DigitalOcean Spaces URL format: `bucket-name.region.digitaloceanspaces.com/object-key`
+  - Support for Google Cloud Storage URL format: `storage.googleapis.com/bucket-name/object-key`
+  - Enhanced AWS S3 URL parsing for both virtual-hosted and legacy formats
+  - Maintained MinIO URL parsing compatibility
+
+### Configuration
+
+- Added new environment variables for cloud storage configuration:
+  - `STORAGE_DRIVER`: Support extended to include `digitalocean`, and `gcp`.
+  - `GCS_CREDENTIALS_FILE`: Path to Google Cloud service account credentials
+  - `GCS_SERVICE_ACCOUNT_EMAIL`: GCS service account email for presigned URLs
+  - `GCS_PRIVATE_KEY`: GCS private key for presigned URL generation
+
+### Maintenance
+
+- Updated Go dependencies to latest versions
+- Enhanced error handling and logging across storage operations
+- Improved code organization with dedicated storage package structure
+
 ## v1.4.2
 
 ### Bug Fixes
