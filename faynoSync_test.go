@@ -90,7 +90,7 @@ func setup() {
 		"rollback":  false,
 	}
 	s3Endpoint = viper.GetString("S3_ENDPOINT")
-	s3Bucket = viper.GetString("S3_BUCKET_NAME_PUBLIC")
+	s3Bucket = viper.GetString("S3_BUCKET_NAME")
 	apiUrl = viper.GetString("API_URL")
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
 	appDB = mongod.NewAppRepository(&configDB, client)

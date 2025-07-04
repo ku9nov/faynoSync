@@ -47,6 +47,6 @@ func (a *AWSS3Client) UploadPublicObject(ctx context.Context, bucketName, object
 		return "", &StorageError{Message: "failed to upload public object to AWS S3", Err: err}
 	}
 
-	publicURL := fmt.Sprintf("%s/%s", a.env.GetString("S3_ENDPOINT_PUBLIC"), objectKey)
+	publicURL := fmt.Sprintf("%s/%s", a.env.GetString("S3_ENDPOINT"), objectKey)
 	return publicURL, nil
 }

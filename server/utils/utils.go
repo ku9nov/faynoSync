@@ -265,8 +265,8 @@ func ExtractS3Key(link string, checkAppVisibility bool, env *viper.Viper) (strin
 		logrus.Debugf("Public bucket - URL without scheme: %s", linkWithoutScheme)
 
 		// Get the public bucket endpoint and name
-		publicEndpoint := env.GetString("S3_ENDPOINT_PUBLIC")
-		publicBucket := env.GetString("S3_BUCKET_NAME_PUBLIC")
+		publicEndpoint := env.GetString("S3_ENDPOINT")
+		publicBucket := env.GetString("S3_BUCKET_NAME")
 
 		var err error
 		subLink, err = parsePublicURL(linkWithoutScheme, publicEndpoint, publicBucket)

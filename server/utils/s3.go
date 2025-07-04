@@ -93,12 +93,12 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	}
 	defer fileReader.Close()
 
-	logrus.Debugf("Uploading file: bucket=%s, key=%s, type=%s",
-		env.GetString("S3_BUCKET_NAME_PUBLIC"), s3Key, ctxQuery["type"])
+	logrus.Debugf("Uploading file: key=%s, type=%s",
+		s3Key, ctxQuery["type"])
 
 	var bucketName string
 	if ctxQuery["type"] == "logo" || checkAppVisibility == false {
-		bucketName = env.GetString("S3_BUCKET_NAME_PUBLIC")
+		bucketName = env.GetString("S3_BUCKET_NAME")
 		logrus.Debugf("Uploading logo to public bucket: %s", bucketName)
 		publicLink, err := storageClient.UploadPublicObject(c.Request.Context(), bucketName, s3Key, fileReader)
 		if err != nil {
@@ -110,7 +110,7 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 		link = publicLink
 	} else {
 		// Use private bucket for regular uploads
-		bucketName = env.GetString("S3_BUCKET_NAME")
+		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
 		logrus.Debugf("Uploading to private bucket: %s", bucketName)
 		err = storageClient.UploadObject(c.Request.Context(), bucketName, s3Key, fileReader)
 		if err != nil {
@@ -146,10 +146,10 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bo
 
 	var bucketName string
 	if private {
-		bucketName = env.GetString("S3_BUCKET_NAME")
+		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
 		logrus.Debugf("Using private bucket: %s", bucketName)
 	} else {
-		bucketName = env.GetString("S3_BUCKET_NAME_PUBLIC")
+		bucketName = env.GetString("S3_BUCKET_NAME")
 		logrus.Debugf("Using public bucket: %s", bucketName)
 	}
 
@@ -175,7 +175,7 @@ func GeneratePresignedURL(c *gin.Context, objectKey string, expiration time.Dura
 	}
 
 	// Generate presigned URL
-	url, err := storageClient.GeneratePresignedURL(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), objectKey, expiration)
+	url, err := storageClient.GeneratePresignedURL(c.Request.Context(), env.GetString("S3_BUCKET_NAME_PRIVATE"), objectKey, expiration)
 	if err != nil {
 		return "", err
 	}
