@@ -21,6 +21,13 @@
 
 ### Configuration
 
+- **Environment Variable Renaming**: Improved environment variable naming for better clarity and organization
+  - Renamed `S3_BUCKET_NAME` to `S3_BUCKET_NAME_PRIVATE` for private bucket configuration
+  - Renamed `S3_BUCKET_NAME_PUBLIC` to `S3_BUCKET_NAME` for public bucket configuration
+  - Renamed `S3_ENDPOINT` to `S3_ENDPOINT_PRIVATE` for private bucket endpoint
+  - Renamed `S3_ENDPOINT_PUBLIC` to `S3_ENDPOINT` for public bucket endpoint
+  - Updated all configuration files and documentation to reflect the new naming convention
+
 - Added new environment variables for cloud storage configuration:
   - `STORAGE_DRIVER`: Support extended to include `digitalocean`, and `gcp`.
   - `GCS_CREDENTIALS_FILE`: Path to Google Cloud service account credentials
