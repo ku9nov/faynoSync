@@ -90,7 +90,7 @@ func setup() {
 		"rollback":  false,
 	}
 	s3Endpoint = viper.GetString("S3_ENDPOINT")
-	s3Bucket = viper.GetString("S3_BUCKET_NAME_PUBLIC")
+	s3Bucket = viper.GetString("S3_BUCKET_NAME")
 	apiUrl = viper.GetString("API_URL")
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
 	appDB = mongod.NewAppRepository(&configDB, client)
@@ -3920,7 +3920,8 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 	router.GET("/telemetry", func(c *gin.Context) {
 		handler.GetTelemetry(c)
 	})
-	startDate, _ := time.Parse("2006-01-02", "2025-06-09")
+	endDate := time.Now().UTC().Truncate(24 * time.Hour)
+	startDate := endDate.AddDate(0, 0, -7)
 	dateRange, dailyStats := generateDateRangeAndStats(startDate, 8)
 	scenarios := []struct {
 		Name         string

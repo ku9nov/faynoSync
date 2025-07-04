@@ -2,59 +2,22 @@ package utils
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
-	"github.com/minio/minio-go/v7"
-	minioCredentials "github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
-func createStorageClient() interface{} {
-	env := viper.GetViper()
-
-	storageDriver := env.GetString("STORAGE_DRIVER")
-
-	switch storageDriver {
-	case "minio":
-		// Set up Minio client
-		minioClient, err := minio.New(env.GetString("S3_ENDPOINT"), &minio.Options{
-			Creds:  minioCredentials.NewStaticV4(env.GetString("S3_ACCESS_KEY"), env.GetString("S3_SECRET_KEY"), ""),
-			Secure: env.GetBool("MINIO_SECURE"),
-		})
-		if err != nil {
-			logrus.Errorf("error setting up Minio client: %v", err)
-			return nil
-		}
-		return minioClient
-
-	case "aws":
-		// Set up AWS S3 client
-		creds := credentials.NewStaticCredentialsProvider(env.GetString("S3_ACCESS_KEY"), env.GetString("S3_SECRET_KEY"), "")
-		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(creds), config.WithRegion(env.GetString("S3_REGION")))
-		if err != nil {
-			logrus.Errorf("error setting up AWS S3 client: %v", err)
-			return nil
-		}
-		return s3.NewFromConfig(cfg)
-
-	default:
-		logrus.Errorf("unknown storage driver: %s", storageDriver)
-		return nil
-	}
+// getStorageClient creates and returns a storage client using the factory pattern
+func getStorageClient(env *viper.Viper) (StorageClient, error) {
+	factory := NewStorageFactory(env)
+	return factory.CreateStorageClient()
 }
 
 func UploadLogo(appName string, owner string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper) (string, error) {
@@ -70,12 +33,12 @@ func UploadLogo(appName string, owner string, file *multipart.FileHeader, c *gin
 }
 
 func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper, checkAppVisibility bool) (string, string, error) {
-	// // Create an S3 client using another func
-	storageClient := createStorageClient()
 
-	if storageClient == nil {
+	storageClient, err := getStorageClient(env)
+	if err != nil {
+		logrus.Errorf("failed to create storage client: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
-		return "", "", errors.New("failed to create storage client")
+		return "", "", err
 	}
 
 	var extension string
@@ -115,8 +78,8 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 		}
 
 		s3PathSegments = append(s3PathSegments, newFileName)
-
 	}
+
 	encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
 	link = fmt.Sprintf("%s/download?key=%s", env.GetString("API_URL"), encodedPath)
 	s3Key = strings.Join(s3PathSegments, "/")
@@ -126,54 +89,51 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open file for reading"})
+		return "", "", err
+	}
+	defer fileReader.Close()
+
+	logrus.Debugf("Uploading file: key=%s, type=%s",
+		s3Key, ctxQuery["type"])
+
+	var bucketName string
+	if ctxQuery["type"] == "logo" || checkAppVisibility == false {
+		bucketName = env.GetString("S3_BUCKET_NAME")
+		logrus.Debugf("Uploading logo to public bucket: %s", bucketName)
+		publicLink, err := storageClient.UploadPublicObject(c.Request.Context(), bucketName, s3Key, fileReader)
+		if err != nil {
+			logrus.Errorf("Failed to upload logo to storage: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to storage"})
+			return "", "", err
+		}
+		logrus.Debugf("Logo uploaded successfully, public link: %s", publicLink)
+		link = publicLink
+	} else {
+		// Use private bucket for regular uploads
+		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
+		logrus.Debugf("Uploading to private bucket: %s", bucketName)
+		err = storageClient.UploadObject(c.Request.Context(), bucketName, s3Key, fileReader)
+		if err != nil {
+			logrus.Errorf("Failed to upload to private storage: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to storage"})
+			return "", "", err
+		}
+		logrus.Debugf("File uploaded successfully to private bucket")
 	}
 
-	// Upload file to S3
-	switch client := storageClient.(type) {
-	case *minio.Client:
-		if ctxQuery["type"] == "logo" || checkAppVisibility == false {
-			var uploadInfo minio.UploadInfo
-			// Use public bucket for logo uploads
-			uploadInfo, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME_PUBLIC"), s3Key, fileReader, -1, minio.PutObjectOptions{})
-			link = uploadInfo.Location
-		} else {
-			_, err = client.PutObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), s3Key, fileReader, -1, minio.PutObjectOptions{})
-		}
-	case *s3.Client:
-		if ctxQuery["type"] == "logo" || checkAppVisibility == false {
-			link = fmt.Sprintf("%s/%s", env.GetString("S3_ENDPOINT_PUBLIC"), encodedPath)
-			_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
-				Bucket: aws.String(env.GetString("S3_BUCKET_NAME_PUBLIC")),
-				Key:    aws.String(s3Key),
-				Body:   fileReader,
-			})
-		} else {
-			_, err = client.PutObject(c.Request.Context(), &s3.PutObjectInput{
-				Bucket: aws.String(env.GetString("S3_BUCKET_NAME")),
-				Key:    aws.String(s3Key),
-				Body:   fileReader,
-			})
-		}
-	default:
-		logrus.Errorf("unknown storage client type")
-		return "", "", errors.New("unknown storage client type")
-	}
-	if err != nil {
-		logrus.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})
-
-	}
-	return link, extension, err
+	return link, extension, nil
 }
 
 func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bool) {
+	logrus.Debugf("DeleteFromS3 called with objectKey: %s, private: %v", objectKey, private)
 
-	storageClient := createStorageClient()
-
-	if storageClient == nil {
+	storageClient, err := getStorageClient(env)
+	if err != nil {
+		logrus.Errorf("failed to create storage client: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
+		return
 	}
-	var err error
+
 	objectKey = strings.TrimPrefix(objectKey, "/")
 	decodedKey, err := url.QueryUnescape(objectKey)
 	if err != nil {
@@ -181,88 +141,44 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bo
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode object key"})
 		return
 	}
-	logrus.Debugln("decodedKey in delete from s3: ", decodedKey)
+
+	logrus.Debugf("decodedKey in delete from s3: %s", decodedKey)
+
 	var bucketName string
 	if private {
-		bucketName = env.GetString("S3_BUCKET_NAME")
+		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
+		logrus.Debugf("Using private bucket: %s", bucketName)
 	} else {
-		bucketName = env.GetString("S3_BUCKET_NAME_PUBLIC")
-	}
-	// Delete object from bucket
-	switch client := storageClient.(type) {
-	case *minio.Client:
-		opts := minio.RemoveObjectOptions{
-			GovernanceBypass: true,
-			VersionID:        "",
-		}
-		err = client.RemoveObject(context.Background(), bucketName, decodedKey, opts)
-		if err != nil {
-			logrus.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from Minio"})
-		}
-
-	case *s3.Client:
-		_, err = client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
-			Bucket: aws.String(bucketName),
-			Key:    aws.String(decodedKey),
-		})
-		if err != nil {
-			logrus.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from S3"})
-		}
-	default:
-		logrus.Errorf("unknown storage client type")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "unknown storage client type"})
+		bucketName = env.GetString("S3_BUCKET_NAME")
+		logrus.Debugf("Using public bucket: %s", bucketName)
 	}
 
-	logrus.Infof("Object '%s' deleted from bucket '%s'\n", objectKey, bucketName)
+	logrus.Debugf("Attempting to delete object '%s' from bucket '%s'", decodedKey, bucketName)
+	err = storageClient.DeleteObject(context.Background(), bucketName, decodedKey)
+	if err != nil {
+		logrus.Errorf("Failed to delete object '%s' from bucket '%s': %v", decodedKey, bucketName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from storage"})
+		return
+	}
+
+	logrus.Infof("Object '%s' deleted from bucket '%s'", decodedKey, bucketName)
 }
 
 func GeneratePresignedURL(c *gin.Context, objectKey string, expiration time.Duration) (string, error) {
 	env := viper.GetViper()
-	storageClient := createStorageClient()
 
-	if storageClient == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
-	}
-	switch client := storageClient.(type) {
-	case *minio.Client:
-		urlStr, err := client.PresignedGetObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), objectKey, expiration, nil)
-		if err != nil {
-			return "", err
-		}
-		return urlStr.String(), nil
-	case *s3.Client:
-		presignClient := s3.NewPresignClient(storageClient.(*s3.Client))
-		presigner := Presigner{PresignClient: presignClient}
-
-		req, err := presigner.GetObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), objectKey, int64(expiration.Seconds()))
-		if err != nil {
-			return "", err
-		}
-		return req.URL, nil
-	default:
-		logrus.Errorf("unknown storage client type")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "unknown storage client type"})
-		return "", errors.New("unknown storage client type")
-	}
-}
-
-// Presigner encapsulates the Amazon Simple Storage Service (Amazon S3) presign actions
-type Presigner struct {
-	PresignClient *s3.PresignClient
-}
-
-// GetObject makes a presigned request that can be used to get an object from a bucket
-func (presigner Presigner) GetObject(ctx context.Context, bucketName string, objectKey string, lifetimeSecs int64) (*v4.PresignedHTTPRequest, error) {
-	request, err := presigner.PresignClient.PresignGetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(objectKey),
-	}, func(opts *s3.PresignOptions) {
-		opts.Expires = time.Duration(lifetimeSecs * int64(time.Second))
-	})
+	storageClient, err := getStorageClient(env)
 	if err != nil {
-		log.Printf("Couldn't get a presigned request to get %v:%v. Here's why: %v\n", bucketName, objectKey, err)
+		logrus.Errorf("failed to create storage client: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
+		return "", err
 	}
-	return request, err
+
+	// Generate presigned URL
+	url, err := storageClient.GeneratePresignedURL(c.Request.Context(), env.GetString("S3_BUCKET_NAME_PRIVATE"), objectKey, expiration)
+	if err != nil {
+		return "", err
+	}
+
+	return url, nil
 }

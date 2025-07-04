@@ -159,56 +159,122 @@ func ExtractChangelog(results []interface{}) []string {
 	return changelog
 }
 
+func parsePublicURL(linkWithoutScheme string, publicEndpoint, publicBucket string) (string, error) {
+	publicEndpointWithoutScheme := strings.TrimPrefix(strings.TrimPrefix(publicEndpoint, "http://"), "https://")
+
+	logrus.Debugf("Parsing URL: %s", linkWithoutScheme)
+	logrus.Debugf("Public endpoint: %s", publicEndpoint)
+	logrus.Debugf("Public bucket: %s", publicBucket)
+
+	// 1. DigitalOcean Spaces: bucket-name.region.digitaloceanspaces.com/object-key
+	if strings.Contains(linkWithoutScheme, ".digitaloceanspaces.com/") {
+		logrus.Debugf("Detected DigitalOcean Spaces format")
+		parts := strings.Split(linkWithoutScheme, ".digitaloceanspaces.com/")
+		if len(parts) > 1 {
+			key := parts[1]
+			logrus.Debugf("Extracted DigitalOcean key: %s", key)
+			return key, nil
+		}
+		return "", fmt.Errorf("invalid DigitalOcean Spaces URL format")
+	}
+
+	// 2. Google Cloud Storage: storage.googleapis.com/bucket-name/object-key
+	if strings.Contains(linkWithoutScheme, "storage.googleapis.com/") {
+		logrus.Debugf("Detected Google Cloud Storage format")
+		parts := strings.Split(linkWithoutScheme, "storage.googleapis.com/")
+		if len(parts) > 1 {
+			// Remove bucket name from the path
+			pathParts := strings.SplitN(parts[1], "/", 2)
+			if len(pathParts) > 1 {
+				key := pathParts[1]
+				logrus.Debugf("Extracted GCS key: %s", key)
+				return key, nil
+			}
+		}
+		return "", fmt.Errorf("invalid Google Cloud Storage URL format")
+	}
+
+	// 3. AWS S3 virtual-hosted style: bucket-name.s3.region.amazonaws.com/object-key
+	// Check this BEFORE legacy format to avoid conflicts
+	if strings.Contains(linkWithoutScheme, ".s3.") && strings.Contains(linkWithoutScheme, ".amazonaws.com/") {
+		logrus.Debugf("Detected AWS S3 format (virtual-hosted)")
+		// For virtual-hosted style, extract everything after .amazonaws.com/
+		parts := strings.Split(linkWithoutScheme, ".amazonaws.com/")
+		if len(parts) > 1 {
+			key := parts[1]
+			logrus.Debugf("Extracted AWS S3 key (virtual-hosted): %s", key)
+			return key, nil
+		}
+		return "", fmt.Errorf("invalid AWS S3 virtual-hosted URL format")
+	}
+
+	// 4. AWS S3 legacy format: s3.amazonaws.com/bucket-name/object-key
+	if strings.Contains(linkWithoutScheme, "s3.amazonaws.com/") {
+		logrus.Debugf("Detected AWS S3 format (legacy)")
+		parts := strings.Split(linkWithoutScheme, "s3.amazonaws.com/")
+		if len(parts) > 1 {
+			// Remove bucket name from the path
+			pathParts := strings.SplitN(parts[1], "/", 2)
+			if len(pathParts) > 1 {
+				key := pathParts[1]
+				logrus.Debugf("Extracted AWS S3 key: %s", key)
+				return key, nil
+			}
+		}
+		return "", fmt.Errorf("invalid AWS S3 URL format")
+	}
+
+	// 5. MinIO: endpoint/bucket-name/object-key
+	bucketPath := fmt.Sprintf("%s/%s/", publicEndpointWithoutScheme, publicBucket)
+	logrus.Debugf("Looking for MinIO pattern: %s", bucketPath)
+
+	if strings.Contains(linkWithoutScheme, bucketPath) {
+		logrus.Debugf("Detected MinIO format")
+		parts := strings.Split(linkWithoutScheme, bucketPath)
+		if len(parts) > 1 {
+			key := parts[1]
+			logrus.Debugf("Extracted MinIO key: %s", key)
+			return key, nil
+		}
+		return "", fmt.Errorf("invalid MinIO URL format")
+	}
+
+	logrus.Debugf("Using generic fallback format")
+	key := strings.TrimPrefix(linkWithoutScheme, fmt.Sprintf("%s/", publicEndpointWithoutScheme))
+	logrus.Debugf("Extracted generic key: %s", key)
+	return key, nil
+}
+
 // extractS3Key extracts the S3 key from either a private or public URL
 func ExtractS3Key(link string, checkAppVisibility bool, env *viper.Viper) (string, error) {
-	logrus.Debugf("Processing URL: %s", link)
-	logrus.Debugf("Is private bucket: %v", checkAppVisibility)
+	logrus.Debugf("ExtractS3Key called with URL: %s, checkAppVisibility: %v", link, checkAppVisibility)
 
 	var subLink string
 
 	if checkAppVisibility {
 		// Handle private bucket URLs (through our API)
-		subLink = strings.TrimPrefix(link, fmt.Sprintf("%s/download?key=", env.GetString("API_URL")))
-		logrus.Debugf("Private bucket key: %s", subLink)
+		apiURL := env.GetString("API_URL")
+		prefix := fmt.Sprintf("%s/download?key=", apiURL)
+		logrus.Debugf("Private bucket - API URL: %s, prefix: %s", apiURL, prefix)
+
+		subLink = strings.TrimPrefix(link, prefix)
+		logrus.Debugf("Private bucket key (before decoding): %s", subLink)
 	} else {
 		// Handle public bucket URLs
 		linkWithoutScheme := strings.TrimPrefix(strings.TrimPrefix(link, "http://"), "https://")
-		logrus.Debugf("URL without scheme: %s", linkWithoutScheme)
+		logrus.Debugf("Public bucket - URL without scheme: %s", linkWithoutScheme)
 
 		// Get the public bucket endpoint and name
-		publicEndpoint := env.GetString("S3_ENDPOINT_PUBLIC")
-		publicBucket := env.GetString("S3_BUCKET_NAME_PUBLIC")
+		publicEndpoint := env.GetString("S3_ENDPOINT")
+		publicBucket := env.GetString("S3_BUCKET_NAME")
 
-		// Remove scheme from public endpoint for comparison
-		publicEndpointWithoutScheme := strings.TrimPrefix(strings.TrimPrefix(publicEndpoint, "http://"), "https://")
-
-		logrus.Debugf("Public endpoint: %s", publicEndpoint)
-		logrus.Debugf("Public endpoint without scheme: %s", publicEndpointWithoutScheme)
-		logrus.Debugf("Public bucket: %s", publicBucket)
-
-		// Handle Minio format
-		bucketPath := fmt.Sprintf("%s/%s/", publicEndpointWithoutScheme, publicBucket)
-		logrus.Debugf("Looking for bucket path: %s", bucketPath)
-
-		if strings.Contains(linkWithoutScheme, bucketPath) {
-			logrus.Debugf("Found Minio format")
-			// For Minio, we need to extract everything after the bucket name
-			parts := strings.Split(linkWithoutScheme, bucketPath)
-			logrus.Debugf("Split parts: %v", parts)
-
-			if len(parts) > 1 {
-				subLink = parts[1]
-				logrus.Debugf("Extracted Minio key: %s", subLink)
-			} else {
-				logrus.Errorf("Invalid Minio URL format - no parts after bucket path")
-				return "", fmt.Errorf("invalid Minio URL format")
-			}
-		} else {
-			logrus.Debugf("Using default format")
-			// Handle default format
-			subLink = strings.TrimPrefix(linkWithoutScheme, fmt.Sprintf("%s/", publicEndpointWithoutScheme))
-			logrus.Debugf("Extracted default key: %s", subLink)
+		var err error
+		subLink, err = parsePublicURL(linkWithoutScheme, publicEndpoint, publicBucket)
+		if err != nil {
+			logrus.Errorf("Failed to parse public URL: %v", err)
+			return "", err
 		}
+		logrus.Debugf("Public bucket key (before decoding): %s", subLink)
 	}
 
 	// URL decode the key to handle special characters

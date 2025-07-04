@@ -96,11 +96,12 @@ func ValidateParams(c *gin.Context, database *mongo.Database) (map[string]interf
 	var ctxQueryMap map[string]interface{}
 	var err error
 
-	if c.Request.Method == http.MethodPost {
+	switch c.Request.Method {
+	case http.MethodPost:
 		ctxQueryMap, err = extractParamsFromPost(c)
-	} else if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
+	case http.MethodGet, http.MethodDelete:
 		ctxQueryMap, err = extractParamsFromGetOrDelete(c)
-	} else {
+	default:
 		return nil, errors.New("unsupported request method")
 	}
 
