@@ -20,7 +20,7 @@ This configuration provides:
 
 2. Enable the site:
    ```bash
-   sudo ln -s /etc/nginx/sites-available/faynosync /etc/nginx/sites-enabled/
+   sudo ln -s /etc/nginx/sites-available/faynosync.conf /etc/nginx/sites-enabled/
    ```
 
 3. Test the configuration:
