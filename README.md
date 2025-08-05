@@ -15,9 +15,15 @@
 
 ## 📖 Overview
 
-This application is a simple API server for automatically updating client applications. It allows you to upload your application to S3 and set the version number. The client application can then check the version number against the auto updater service API. If the service has a newer version, it will return a link to the updated service, and the client application will show an alert.
+faynoSync is a self-hosted, open-source API server for managing and updating cross-platform desktop applications (Windows, macOS, Linux).
+It enables automatic and on-demand updates for client software, making it easy to deliver new versions to users through a customizable update workflow.
 
-The API server is designed for straightforward and intuitive application management. It supports updating client applications both in the background and on-demand, depending on how it's implemented in the client application. This provides flexibility in choosing the update method that best suits your needs.
+The server allows developers to upload application builds to S3, set version metadata, and expose a simple REST API for clients to check for updates.
+When a client queries the API, it receives version information and a download URL if an update is available.
+
+faynoSync supports both background updates and manual update prompts, depending on how the client integrates with the API. This gives developers full control over how and when updates are delivered to end-users.
+
+It’s ideal for managing updates in Electron apps, native desktop applications, or any cross-platform software where you want full control over versioning, distribution, and update channels (e.g. stable, beta, nightly).
 
 ---
 
