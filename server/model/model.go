@@ -146,3 +146,32 @@ type Permissions struct {
 		Allowed []string `bson:"allowed,omitempty"` // List of arch IDs this user can access
 	} `bson:"archs"`
 }
+
+// Create request structures
+type CreateChannelRequest struct {
+	ChannelName string `json:"channel" binding:"required"`
+}
+
+type CreatePlatformRequest struct {
+	PlatformName string `json:"platform" binding:"required"`
+}
+
+type CreateArchRequest struct {
+	ArchID string `json:"arch" binding:"required"`
+}
+
+// Update request structures
+type UpdateChannelRequest struct {
+	ID          string `json:"id" binding:"required"`
+	ChannelName string `json:"channel" binding:"required"`
+}
+
+type UpdatePlatformRequest struct {
+	ID           string `json:"id" binding:"required"`
+	PlatformName string `json:"platform" binding:"required"`
+}
+
+type UpdateArchRequest struct {
+	ID     string `json:"id" binding:"required"`
+	ArchID string `json:"arch" binding:"required"`
+}

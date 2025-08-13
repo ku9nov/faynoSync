@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.4
+
+### Features
+
+- Change request types for channels, platforms, and architectures from form-data to application/json 
+
 ## v1.4.3
 
 ### Features

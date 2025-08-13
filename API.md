@@ -99,15 +99,17 @@ Create deployment channel.
 
 ###### Headers
 **Authorization**: Authorization header with jwt token.
+**Content-Type**: application/json
 
-###### Body form data
+###### Body
 **channel**: Name of the channel.
 
 ###### Request:
 ```
 curl --location 'http://localhost:9000/channel/create' \
 --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
---form 'data="{\"channel\":\"nightly\"}"'
+--header 'Content-Type: application/json' \
+--data '{"channel":"nightly"}'
 ```
 
 ###### Response:
@@ -128,15 +130,17 @@ Create deployment platform.
 
 ###### Headers
 **Authorization**: Authorization header with jwt token.
+**Content-Type**: application/json
 
-###### Body form data
+###### Body
 **platform**: Name of the platform.
 
 ###### Request:
 ```
 curl --location 'http://localhost:9000/platform/create' \
 --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
---form 'data="{\"platform\":\"linux\"}"'
+--header 'Content-Type: application/json' \
+--data '{"platform":"linux"}'
 ```
 
 ###### Response:
@@ -157,15 +161,17 @@ Create deployment architecture.
 
 ###### Headers
 **Authorization**: Authorization header with jwt token.
+**Content-Type**: application/json
 
-###### Body form data
+###### Body
 **arch**: Arch of the app.
 
 ###### Request:
 ```
 curl --location 'http://localhost:9000/arch/create' \
 --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
---form 'data="{\"arch\":\"amd64\"}"'
+--header 'Content-Type: application/json' \
+--data '{"arch":"amd64"}'
 ```
 
 ###### Response:
@@ -897,8 +903,9 @@ Update existing channel.
 
 ###### Headers
 **Authorization**: Authorization header with jwt token.
+**Content-Type**: application/json
 
-###### Body form-data
+###### Body
 
 **id**: ID of the channel which you want to change.
 
@@ -908,7 +915,8 @@ Update existing channel.
 ```
 curl --location 'http://localhost:9000/channel/update' \
 -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
---form 'data="{\"id\":\"66ae13fe4b663c058367f893\", \"channel\":\"new_name\"}"'
+--header 'Content-Type: application/json' \
+--data '{"id":"66ae13fe4b663c058367f893", "channel":"newname"}'
 ```
 ###### Response:
 
@@ -968,8 +976,9 @@ Update existing platform.
 
 ###### Headers
 **Authorization**: Authorization header with jwt token.
+**Content-Type**: application/json
 
-###### Body form-data
+###### Body
 
 **id**: ID of the platform which you want to change.
 
@@ -979,7 +988,8 @@ Update existing platform.
 ```
 curl --location 'http://localhost:9000/platform/update' \
 -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
---form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"platform\":\"new_name\"}"'
+--header 'Content-Type: application/json' \
+--data '{"id":"66ae13fe5b663c058367f893", "platform":"newname"}'
 ```
 ###### Response:
 
@@ -999,8 +1009,9 @@ Update existing arch.
 
 ###### Headers
 **Authorization**: Authorization header with jwt token.
+**Content-Type**: application/json
 
-###### Body form-data
+###### Body
 
 **id**: ID of the arch which you want to change.
 
@@ -1010,7 +1021,8 @@ Update existing arch.
 ```
 curl --location 'http://localhost:9000/arch/update' \
 -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
---form 'data="{\"id\":\"66ae13fe5b663c058367f893\", \"arch\":\"new_name\"}"'
+--header 'Content-Type: application/json' \
+--data '{"id":"66ae13fe5b663c058367f893", "arch":"newname"}'
 ```
 ###### Response:
 

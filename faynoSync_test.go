@@ -913,26 +913,10 @@ func TestChannelCreateNightly(t *testing.T) {
 		handler.CreateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"channel": "nightly"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"channel": "nightly"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/channel/create", body)
@@ -941,8 +925,8 @@ func TestChannelCreateNightly(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -978,26 +962,11 @@ func TestChannelCreateWithWrongName(t *testing.T) {
 		handler.CreateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	payload := `{
+		"channel": "nightly *"
+	}`
 
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"channel": "nightly *"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/channel/create", body)
@@ -1006,8 +975,8 @@ func TestChannelCreateWithWrongName(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -1031,26 +1000,11 @@ func TestSecondaryChannelCreateNightly(t *testing.T) {
 		handler.CreateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	payload := `{
+		"channel": "nightly"
+	}`
 
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"channel": "nightly"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/channel/create", body)
@@ -1059,8 +1013,8 @@ func TestSecondaryChannelCreateNightly(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -1085,26 +1039,10 @@ func TestChannelCreateStable(t *testing.T) {
 		handler.CreateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"channel": "stable"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"channel": "stable"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/channel/create", body)
@@ -1113,8 +1051,8 @@ func TestChannelCreateStable(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -1251,26 +1189,10 @@ func TestPlatformCreate(t *testing.T) {
 		handler.CreatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"platform": "universalPlatform"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"platform": "universalPlatform"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /platform/create endpoint
 	req, err := http.NewRequest("POST", "/platform/create", body)
@@ -1279,8 +1201,8 @@ func TestPlatformCreate(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -1312,26 +1234,11 @@ func TestSecondaryPlatformCreate(t *testing.T) {
 		handler.CreatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	payload := `{
+		"platform": "universalPlatform"
+	}`
 
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"platform": "universalPlatform"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /platform/create endpoint
 	req, err := http.NewRequest("POST", "/platform/create", body)
@@ -1340,8 +1247,8 @@ func TestSecondaryPlatformCreate(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -1367,26 +1274,10 @@ func TestCreateSecondPlatform(t *testing.T) {
 		handler.CreatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"platform": "secondPlatform"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"platform": "secondPlatform"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /platform/create endpoint
 	req, err := http.NewRequest("POST", "/platform/create", body)
@@ -1395,8 +1286,8 @@ func TestCreateSecondPlatform(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -1531,26 +1422,10 @@ func TestArchCreate(t *testing.T) {
 		handler.CreateArch(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"arch": "universalArch"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"arch": "universalArch"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/arch/create", body)
@@ -1559,8 +1434,8 @@ func TestArchCreate(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -1593,26 +1468,11 @@ func TestSecondaryArchCreate(t *testing.T) {
 		handler.CreateArch(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	payload := `{
+		"arch": "universalArch"
+	}`
 
-	// Add a field for the arch to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"arch": "universalArch"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/arch/create", body)
@@ -1621,8 +1481,8 @@ func TestSecondaryArchCreate(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -1648,26 +1508,11 @@ func TestCreateSecondArch(t *testing.T) {
 		handler.CreateArch(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	payload := `{
+		"arch": "secondArch"
+	}`
 
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"arch": "secondArch"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/arch/create", body)
@@ -1676,8 +1521,8 @@ func TestCreateSecondArch(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -4377,26 +4222,11 @@ func TestUpdateChannelWithSecondUser(t *testing.T) {
 		handler.UpdateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "channel":"unstable"}`, idStableChannel)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{
+		"id": "%s",
+		"channel": "unstable"
+	}`, idStableChannel)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/update endpoint
 	req, err := http.NewRequest("POST", "/channel/update", body)
@@ -4405,8 +4235,8 @@ func TestUpdateChannelWithSecondUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -4439,26 +4269,11 @@ func TestUpdatePlatformWithSecondUser(t *testing.T) {
 		handler.UpdatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "platform":"newPlatform"}`, platformId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{
+		"id": "%s",
+		"platform": "newPlatform"
+	}`, platformId)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /platform/update endpoint
 	req, err := http.NewRequest("POST", "/platform/update", body)
@@ -4467,8 +4282,8 @@ func TestUpdatePlatformWithSecondUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -4501,26 +4316,11 @@ func TestUpdateArchWithSecondUser(t *testing.T) {
 		handler.UpdateArch(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "arch":"newArch"}`, archId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{
+		"id": "%s",
+		"arch": "newArch"
+	}`, archId)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /arch/update endpoint
 	req, err := http.NewRequest("POST", "/arch/update", body)
@@ -4529,8 +4329,8 @@ func TestUpdateArchWithSecondUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -5009,32 +4809,17 @@ func TestFailedUpdateChannelUsingTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /channel/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/channel/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceChannels, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "channel":"newChannel"}`, idStableChannel)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"channel":"newChannel"
+	}`, idStableChannel)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/update endpoint
 	req, err := http.NewRequest("POST", "/channel/update", body)
@@ -5043,8 +4828,8 @@ func TestFailedUpdateChannelUsingTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -5063,32 +4848,17 @@ func TestFailedUpdatePlatformUsingTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /platform/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/platform/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourcePlatforms, mongoDatabase), func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "platform":"newPlatform"}`, platformId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"platform":"newPlatform"
+	}`, platformId)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /platform/update endpoint
 	req, err := http.NewRequest("POST", "/platform/update", body)
@@ -5097,8 +4867,8 @@ func TestFailedUpdatePlatformUsingTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -5117,32 +4887,18 @@ func TestFailedUpdateArchUsingTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /arch/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/arch/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceArchs, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"arch":"newArch"
+	}`, archId)
 
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "arch":"newArch"}`, archId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /arch/update endpoint
 	req, err := http.NewRequest("POST", "/arch/update", body)
@@ -5151,8 +4907,8 @@ func TestFailedUpdateArchUsingTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -5497,6 +5253,8 @@ func TestListAppsUsingTeamUser(t *testing.T) {
 
 	// Compare the relevant fields (ChannelName) for each item in the response.
 	for i, expectedApp := range expected {
+		logrus.Infoln("expectedApp.AppName", expectedApp.AppName)
+		logrus.Infoln("actual.Apps[i].AppName", actual.Apps[i].AppName)
 		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
 		assert.Equal(t, expectedApp.Owner, actual.Apps[i].Owner)
 	}
@@ -5546,26 +5304,10 @@ func TestChannelCreateTeamUser(t *testing.T) {
 		handler.CreateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"channel": "teamchannel"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"channel": "teamchannel"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/channel/create", body)
@@ -5574,8 +5316,8 @@ func TestChannelCreateTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -5702,26 +5444,10 @@ func TestPlatformCreateTeamUser(t *testing.T) {
 		handler.CreatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"platform": "teamplatform"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"platform": "teamplatform"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/platform/create", body)
@@ -5730,8 +5456,8 @@ func TestPlatformCreateTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -5858,26 +5584,10 @@ func TestArchCreateTeamUser(t *testing.T) {
 		handler.CreateArch(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"arch": "teamarch"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"arch": "teamarch"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/create endpoint
 	req, err := http.NewRequest("POST", "/arch/create", body)
@@ -5886,8 +5596,8 @@ func TestArchCreateTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -6365,32 +6075,16 @@ func TestUpdateChannelUsingTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /channel/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/channel/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceChannels, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "channel":"newChannel"}`, idStableChannel)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{"id": "%s", 
+		"channel":"newChannel"
+	}`, idStableChannel)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/update endpoint
 	req, err := http.NewRequest("POST", "/channel/update", body)
@@ -6399,8 +6093,8 @@ func TestUpdateChannelUsingTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -6429,32 +6123,16 @@ func TestUpdatePlatformUsingTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /platform/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/platform/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourcePlatforms, mongoDatabase), func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "platform":"newPlatform"}`, platformId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{"id": "%s", 
+		"platform":"newPlatform"
+	}`, platformId)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /platform/update endpoint
 	req, err := http.NewRequest("POST", "/platform/update", body)
@@ -6463,8 +6141,8 @@ func TestUpdatePlatformUsingTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -6493,32 +6171,17 @@ func TestUpdateArchUsingTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /arch/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/arch/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceArchs, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "arch":"newArch"}`, archId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"arch":"newArch"
+	}`, archId)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /arch/update endpoint
 	req, err := http.NewRequest("POST", "/arch/update", body)
@@ -6527,8 +6190,8 @@ func TestUpdateArchUsingTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -6563,26 +6226,10 @@ func TestFailedAppCreateTeamUser(t *testing.T) {
 		handler.CreateApp(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := `{"app": "teamapp2"}`
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := `{
+		"app_name": "teamapp2"
+	}`
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /app/create endpoint
 	req, err := http.NewRequest("POST", "/app/create", body)
@@ -6591,8 +6238,8 @@ func TestFailedAppCreateTeamUser(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+teamUserToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -6741,7 +6388,7 @@ func TestFailedUpdateAdminUserUsingTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /admin/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/admin/update", func(c *gin.Context) {
 		handler.UpdateAdmin(c)
@@ -7214,26 +6861,12 @@ func TestUpdateChannel(t *testing.T) {
 		handler.UpdateChannel(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"channel":"unstable"
+	}`, idStableChannel)
 
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "channel":"unstable"}`, idStableChannel)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /channel/update endpoint
 	req, err := http.NewRequest("POST", "/channel/update", body)
@@ -7242,8 +6875,8 @@ func TestUpdateChannel(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -7421,26 +7054,11 @@ func TestUpdatePlatform(t *testing.T) {
 		handler.UpdatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "platform":"newPlatform"}`, platformId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"platform":"newPlatform"
+	}`, platformId)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /platform/update endpoint
 	req, err := http.NewRequest("POST", "/platform/update", body)
@@ -7449,8 +7067,8 @@ func TestUpdatePlatform(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -7485,27 +7103,12 @@ func TestFailedUpdatePlatform(t *testing.T) {
 		handler.UpdatePlatform(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"platform":"new * Platform"
+	}`, platformId)
 
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "platform":"new * Platform"}`, platformId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	body := bytes.NewReader([]byte(payload))
 	// Create a POST request to the /platform/update endpoint
 	req, err := http.NewRequest("POST", "/platform/update", body)
 	if err != nil {
@@ -7513,8 +7116,8 @@ func TestFailedUpdatePlatform(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -7648,26 +7251,11 @@ func TestUpdateArch(t *testing.T) {
 		handler.UpdateArch(c)
 	})
 
-	// Create multipart/form-data request body
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Add a field for the channel to the form
-	dataPart, err := writer.CreateFormField("data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"id": "%s", "arch":"newArch"}`, archId)
-	_, err = dataPart.Write([]byte(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close the writer to finalize the form data
-	err = writer.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"arch":"newArch"
+	}`, archId)
+	body := bytes.NewReader([]byte(payload))
 
 	// Create a POST request to the /arch/update endpoint
 	req, err := http.NewRequest("POST", "/arch/update", body)
@@ -7676,8 +7264,8 @@ func TestUpdateArch(t *testing.T) {
 	}
 	// Set the Authorization header.
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	// Set the Content-Type header for multipart/form-data
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
 
 	// Serve the request using the Gin router
 	router.ServeHTTP(w, req)
@@ -7959,7 +7547,7 @@ func TestFailedUpdateAdminUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /admin/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/admin/update", func(c *gin.Context) {
 		handler.UpdateAdmin(c)
@@ -8003,7 +7591,7 @@ func TestUpdateAdminUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	// Define the handler for the /app/update route
+	// Define the handler for the /admin/update route
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
 	router.POST("/admin/update", func(c *gin.Context) {
 		handler.UpdateAdmin(c)

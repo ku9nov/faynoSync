@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	db "faynoSync/mongod"
+	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"net/http"
 	"time"
@@ -27,40 +28,63 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		return
 	}
 
-	jsonData := c.PostForm("data")
-	if jsonData == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No JSON data provided"})
-		return
-	}
-
-	var params map[string]string
-	if err := json.Unmarshal([]byte(jsonData), &params); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
-		return
-	}
-
-	paramName := itemType
-	paramValue, exists := params[paramName]
-	if !exists || paramValue == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": paramName + " is required"})
-		return
-	}
-	if err := utils.ValidateItemName(itemType, paramValue); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	var result interface{}
 	var err error
 
 	switch itemType {
 	case "channel":
-		result, err = repository.CreateChannel(paramValue, owner.(string), ctx)
+		var req model.CreateChannelRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		if err := utils.ValidateItemName(itemType, req.ChannelName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err = repository.CreateChannel(req.ChannelName, owner.(string), ctx)
 	case "platform":
-		result, err = repository.CreatePlatform(paramValue, owner.(string), ctx)
+		var req model.CreatePlatformRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		if err := utils.ValidateItemName(itemType, req.PlatformName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err = repository.CreatePlatform(req.PlatformName, owner.(string), ctx)
 	case "arch":
-		result, err = repository.CreateArch(paramValue, owner.(string), ctx)
+		var req model.CreateArchRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		if err := utils.ValidateItemName(itemType, req.ArchID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		result, err = repository.CreateArch(req.ArchID, owner.(string), ctx)
 	case "app":
 		var logoLink string
+		jsonData := c.PostForm("data")
+		if jsonData == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No JSON data provided"})
+			return
+		}
+
+		var params map[string]string
+		if err := json.Unmarshal([]byte(jsonData), &params); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
+			return
+		}
+
+		paramName := itemType
+		paramValue, exists := params[paramName]
+		if !exists || paramValue == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": paramName + " is required"})
+			return
+		}
 		form, _ := c.MultipartForm()
 		if form != nil {
 			files := form.File["file"]
