@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	db "faynoSync/mongod"
 	"faynoSync/server/handler/create"
+	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"net/http"
 	"time"
@@ -30,49 +31,87 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		return
 	}
 
-	jsonData := c.PostForm("data")
-	if jsonData == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No JSON data provided"})
-		return
-	}
-
-	var params map[string]string
-	if err := json.Unmarshal([]byte(jsonData), &params); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
-		return
-	}
-
-	id, idExists := params["id"]
-	if !idExists || id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
-		return
-	}
-
-	paramName := itemType
-	paramValue, exists := params[paramName]
-	if !exists || paramValue == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": paramName + " is required"})
-		return
-	}
-	if err := utils.ValidateItemName(itemType, paramValue); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	var result interface{}
-
-	objectID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
-		return
-	}
+	var resultError error
 	switch itemType {
 	case "channel":
-		result, err = repository.UpdateChannel(objectID, paramValue, owner, ctx)
+		var req model.UpdateChannelRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		if err := utils.ValidateItemName(itemType, req.ChannelName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		objectID, err := primitive.ObjectIDFromHex(req.ID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
+			return
+		}
+		result, resultError = repository.UpdateChannel(objectID, req.ChannelName, owner, ctx)
 	case "platform":
-		result, err = repository.UpdatePlatform(objectID, paramValue, owner, ctx)
+		var req model.UpdatePlatformRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		if err := utils.ValidateItemName(itemType, req.PlatformName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		objectID, err := primitive.ObjectIDFromHex(req.ID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
+			return
+		}
+		result, resultError = repository.UpdatePlatform(objectID, req.PlatformName, owner, ctx)
 	case "arch":
-		result, err = repository.UpdateArch(objectID, paramValue, owner, ctx)
+		var req model.UpdateArchRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		if err := utils.ValidateItemName(itemType, req.ArchID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		objectID, err := primitive.ObjectIDFromHex(req.ID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
+			return
+		}
+		result, resultError = repository.UpdateArch(objectID, req.ArchID, owner, ctx)
 	case "app":
+		jsonData := c.PostForm("data")
+		if jsonData == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No JSON data provided"})
+			return
+		}
+
+		var params map[string]string
+		if err := json.Unmarshal([]byte(jsonData), &params); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
+			return
+		}
+
+		id, idExists := params["id"]
+		if !idExists || id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+			return
+		}
+
+		paramName := itemType
+		paramValue, exists := params[paramName]
+		if !exists || paramValue == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": paramName + " is required"})
+			return
+		}
+		objectID, err := primitive.ObjectIDFromHex(id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
+			return
+		}
 		var logoLink string
 		form, _ := c.MultipartForm()
 		if form != nil {
@@ -88,14 +127,13 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			}
 		}
 		description := params["description"]
-		result, err = repository.UpdateApp(objectID, paramValue, logoLink, description, owner, ctx)
+		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, description, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
 	}
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if resultError != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": resultError.Error()})
 		return
 	}
 	var tag language.Tag

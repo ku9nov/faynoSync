@@ -1,6 +1,6 @@
 # FaynoSync
-![a-github-banner-for-faynosync-featuring](https://github.com/user-attachments/assets/219a2028-3cd2-4a8e-9e55-16b1c40c55ca)
 
+![a-github-banner-for-faynosync-featuring](https://github.com/user-attachments/assets/219a2028-3cd2-4a8e-9e55-16b1c40c55ca)
 
 <div align="center">
   
@@ -11,11 +11,23 @@
 
 </div>
 
-This application is a simple API server for automatically updating client applications. It allows you to upload your application to S3 and set the version number. The client application can then check the version number against the auto updater service API. If the service has a newer version, it will return a link to the updated service, and the client application will show an alert.
+---
 
-The API server is designed for straightforward and intuitive application management. It supports updating client applications both in the background and on-demand, depending on how it's implemented in the client application. This provides flexibility in choosing the update method that best suits your needs.
+## 📖 Overview
 
-## Supported Technologies
+faynoSync is a self-hosted, open-source API server for managing and updating cross-platform desktop applications (Windows, macOS, Linux).
+It enables automatic and on-demand updates for client software, making it easy to deliver new versions to users through a customizable update workflow.
+
+The server allows developers to upload application builds to S3, set version metadata, and expose a simple REST API for clients to check for updates.
+When a client queries the API, it receives version information and a download URL if an update is available.
+
+faynoSync supports both background updates and manual update prompts, depending on how the client integrates with the API. This gives developers full control over how and when updates are delivered to end-users.
+
+It’s ideal for managing updates in Electron apps, native desktop applications, or any cross-platform software where you want full control over versioning, distribution, and update channels (e.g. stable, beta, nightly).
+
+---
+
+## 🛠️ Supported Technologies
 
 | Category | Technology | Description |
 |----------|------------|-------------|
@@ -28,34 +40,57 @@ The API server is designed for straightforward and intuitive application managem
 | | Google Cloud Storage | Google Cloud Platform storage service |
 | | DigitalOcean Spaces | DigitalOcean's S3-compatible object storage |
 
-## Documentation
-The documentation is available in this repository [faynoSync-site](https://github.com/ku9nov/faynoSync-site) and at this link [faynoSync Documentation](https://ku9nov.github.io/faynoSync-site/docs/intro).
+---
 
-## Frontend
-The repository with the available frontend is available in this repository [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard).
+### 📖 Documentation Links
+- **Repository**: [faynoSync-site](https://github.com/ku9nov/faynoSync-site) - Source code for documentation
+- **Live Documentation**: [faynoSync Documentation](https://ku9nov.github.io/faynoSync-site/docs/intro) - Online documentation
 
-###  Client Application Examples
+---
+
+### 🖥️ Frontend Links
+- **Dashboard Repository**: [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) - Web-based management interface
+
+---
+
+## 📱 Client Application Examples
 
 You can find examples of client applications [here](https://github.com/ku9nov/faynoSync/tree/main/examples).
 
-### API usage template
+### 🔗 Example Links
+- **Examples Directory**: [Client Application Examples](https://github.com/ku9nov/faynoSync/tree/main/examples) - Various client implementations
 
-You can find the Postman template [here](https://github.com/ku9nov/faynoSync/blob/main/examples/faynoSync.postman_collection.json), or you can check available API requests [here](https://github.com/ku9nov/faynoSync/blob/main/API.md).
+### 📋 API Usage Template
 
+- **Postman Collection**: [faynoSync.postman_collection.json](https://github.com/ku9nov/faynoSync/blob/main/examples/faynoSync.postman_collection.json) - Ready-to-use API requests
+- **API Documentation**: [API.md](https://github.com/ku9nov/faynoSync/blob/main/API.md) - Complete API reference
 
-## Installation
+---
+
+## 🚀 Installation
 
 To use this application, you will need to have Golang installed on your machine. You can install it from the official [website](https://golang.org/doc/install).
 
-Once you have installed Golang, clone this repository to your local machine:
+### 📥 Installation Steps
 
-```
+1. **Install Go**: Download and install from [golang.org](https://golang.org/doc/install)
+
+2. **Clone Repository**: Once you have installed Golang, clone this repository to your local machine:
+
+```bash
 git clone https://github.com/ku9nov/faynoSync.git
 ```
 
-## Configuration
+---
+
+## ⚙️ Configuration
+
 To configure the `faynoSync`, you will need to set the following environment variables:
-```
+
+### 🔧 Required Environment Variables
+
+```bash
+# Storage Configuration
 STORAGE_DRIVER (`minio`, `aws`, `gcp` or `digitalocean`)
 S3_ACCESS_KEY (Your AWS or Minio access key ID.)
 S3_SECRET_KEY (Your AWS or Minio secret access key.)
@@ -64,61 +99,103 @@ S3_BUCKET_NAME_PRIVATE (The name of your private S3 bucket.)
 S3_ENDPOINT_PRIVATE (s3 endpoint, check documentation of your cloud provider)
 S3_BUCKET_NAME (The name of your public S3 bucket. Artifacts will be uploaded here by default.)
 S3_ENDPOINT (The public bucket endpoint for S3. Check the documentation of your cloud provider. Artifacts will be uploaded here by default.)
-ALLOWED_CORS ( urls to allow CORS configuration)
+
+# Server Configuration
+ALLOWED_CORS (urls to allow CORS configuration)
 PORT (The port on which the auto updater service will listen. Default: 9000)
+
+# Database Configuration
 MONGODB_URL=mongodb://root:MheCk6sSKB1m4xKNw5I@127.0.0.1/cb_faynosync_db?authSource=admin (see docker-compose file)
+
+# Security Configuration
 API_KEY (generated by 'openssl rand -base64 16') Used for SignUp
 API_URL=(public URL to this API)
+
+# Performance Configuration
 PERFORMANCE_MODE (Set to `true` to enable performance mode)
+
+# Redis Configuration
 REDIS_HOST (The hostname for the Redis server, default: `localhost`)
 REDIS_PORT (The port for the Redis server, default: `6379`)
 REDIS_PASSWORD (Password for Redis, leave empty if not set)
 REDIS_DB (The Redis database number to use, default: `0`)
+
+# Feature Flags
 ENABLE_PRIVATE_APP_DOWNLOADING=false (if enabled, then apps located in private S3 can be downloaded using the public API; if disabled, then download links require authentication)
 ENABLE_TELEMETRY (Set to `true` to enable telemetry)
 ```
 
+### 📝 Environment File Setup
+
 You can set these environment variables in a `.env` file in the root directory of the application. You can use the `.env.local` file, which contains all filled variables.
 
-### Docker configuration
+---
+
+## 🐳 Docker Configuration
+
 To build and run the API with all dependencies, you can use the following command:
-```
+
+```bash
 docker-compose up --build
 ```
+
+### 🧪 Running Tests
+
 You can now run tests using this command (please wait until the `s3-service` successfully creates the bucket):
-```
+
+```bash
 docker exec -it faynoSync_backend "/usr/bin/faynoSync_tests"
 ```
+
+### 🔧 Development Setup
+
 If you only want to run dependency services (for local development without Docker), use this command:
-```
+
+```bash
 docker-compose -f docker-compose.yaml -f docker-compose.development.yaml up
 ```
-## Usage
+
+---
+
+## 💻 Usage
+
 To use the auto updater service, follow these steps:
-1. Build the application:
-```
+
+### 🔨 Build the Application
+
+```bash
 go build -o faynoSync faynoSync.go
 ```
 
-2. Start the auto updater service with migrations:
-```
+### 🚀 Start the Service
+
+1. **Start with Migrations**:
+```bash
 ./faynoSync --migration
 ```
-Note: To rollback your migrations run:
-```
+
+2. **Rollback Migrations** (if needed):
+```bash
 ./faynoSync --migration --rollback
 ```
 
+### 📤 Upload Your Application
+
 3. Upload your application to S3 and set the version number in [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) or using API.
 
+### 🔍 Check for Updates
+
 4. In your client application, make a GET request to the auto updater service API, passing the current version number as a query parameter:
+
 ```
 http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin
 ```
 
+### 📋 API Response
+
 The auto updater service will return a JSON response with the following structure:
 
-```
+```json
 {
     "update_available": false,
     "update_url_deb": "http://localhost:9000/download?key=secondapp/myapp-0.0.1.deb",
@@ -126,31 +203,41 @@ The auto updater service will return a JSON response with the following structur
 }
 ```
 
-If an update is available, the update_available field will be true, and the update_url field will contain a link to the updated application.
+If an update is available, the `update_available` field will be `true`, and the `update_url` field will contain a link to the updated application.
+
+### 🔔 User Notification
 
 5. In your client application, show an alert to the user indicating that an update is available and provide a link to download the updated application.
 
-## Testing
-Run e2e tests:
-```
+---
+
+## 🧪 Testing
+
+### 🚀 Run End-to-End Tests
+
+```bash
 go test
 ```
-Build test binary file:
-```
+
+### 🔨 Build Test Binary
+
+```bash
 go test -c -o faynoSync_tests
 ```
+
+### 📋 Test Requirements
+
 **Test Descriptions**
 
-To successfully run the tests and have them pass, you need to populate the .env file.
+To successfully run the tests and have them pass, you need to populate the `.env` file.
 
 The tests verify the implemented API using a test database and an existing S3 bucket.
 
 <details>
-<summary><strong>List of Tests</strong></summary>
+<summary><strong>📋 Complete List of Tests</strong></summary>
 
 <br>
 
-<ul>
   <li>TestHealthCheck</li>
   <li>TestLogin</li>
   <li>TestFailedLogin (expected result from API "401")</li>
@@ -273,16 +360,34 @@ The tests verify the implemented API using a test database and an existing S3 bu
   <li>TestCheckVersionWithIntermediate</li>
   <li>TestMultipleDeleteWithIntermediate</li>
   <li>TestTelemetryWithVariousParams</li>
-</ul>
+
 </details>
 
-    
-## Create new migrations
+---
+
+## 🔄 Database Migrations
+
+### 📦 Install Migration Tool
+
 Install migrate tool [here](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md).
-```
+
+### 🆕 Create New Migrations
+
+```bash
 cd mongod/migrations
 migrate create -ext json name_of_migration
 ```
+
 Then run the migrations again.
-## License
-This application is licensed under the Apache license. See the LICENSE file for more details
+
+### 🔗 Migration Tool Link
+- **Migration Tool**: [golang-migrate](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md) - Database migration utility
+
+---
+
+## 📄 License
+
+This application is licensed under the Apache license. See the LICENSE file for more details.
+
+### 🔗 License Link
+- **License File**: [LICENSE](LICENSE) - Apache License 2.0

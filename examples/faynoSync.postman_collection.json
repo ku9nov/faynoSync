@@ -479,14 +479,13 @@
 				"method": "POST",
 				"header": [],
 				"body": {
-					"mode": "formdata",
-					"formdata": [
-						{
-							"key": "data",
-							"value": "{\"id\":\"\", \"channel\":\"new_name\"}",
-							"type": "text"
+					"mode": "raw",
+					"raw": "{\n    \"id\":\"\", \n    \"channel\":\"newname\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
 						}
-					]
+					}
 				},
 				"url": {
 					"raw": "{{URL}}/channel/update",
@@ -517,14 +516,13 @@
 				"method": "POST",
 				"header": [],
 				"body": {
-					"mode": "formdata",
-					"formdata": [
-						{
-							"key": "data",
-							"value": "{\"id\":\"\", \"arch\":\"new_name\"}",
-							"type": "text"
+					"mode": "raw",
+					"raw": "{\n    \"id\":\"\", \n    \"arch\":\"newname\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
 						}
-					]
+					}
 				},
 				"url": {
 					"raw": "{{URL}}/arch/update",
@@ -555,14 +553,13 @@
 				"method": "POST",
 				"header": [],
 				"body": {
-					"mode": "formdata",
-					"formdata": [
-						{
-							"key": "data",
-							"value": "{\"id\":\"\", \"platform\":\"new_name\"}",
-							"type": "text"
+					"mode": "raw",
+					"raw": "{\n    \"id\":\"\", \n    \"platform\":\"newname\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
 						}
-					]
+					}
 				},
 				"url": {
 					"raw": "{{URL}}/platform/update",
@@ -597,7 +594,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"id\":\"\", \"app\":\"new_name\"}",
+							"value": "{\"id\":\"\", \"app\":\"newname\"}",
 							"type": "text"
 						}
 					]
@@ -631,14 +628,13 @@
 				"method": "POST",
 				"header": [],
 				"body": {
-					"mode": "formdata",
-					"formdata": [
-						{
-							"key": "data",
-							"value": "{\"channel\":\"{{channel}}\"}",
-							"type": "text"
+					"mode": "raw",
+					"raw": "{\n    \"channel\": \"{{channel}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
 						}
-					]
+					}
 				},
 				"url": {
 					"raw": "{{URL}}/channel/create",
@@ -669,14 +665,13 @@
 				"method": "POST",
 				"header": [],
 				"body": {
-					"mode": "formdata",
-					"formdata": [
-						{
-							"key": "data",
-							"value": "{\"platform\":\"{{platform}}\"}",
-							"type": "text"
+					"mode": "raw",
+					"raw": "{\n    \"platform\": \"{{platform}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
 						}
-					]
+					}
 				},
 				"url": {
 					"raw": "{{URL}}/platform/create",
@@ -707,14 +702,13 @@
 				"method": "POST",
 				"header": [],
 				"body": {
-					"mode": "formdata",
-					"formdata": [
-						{
-							"key": "data",
-							"value": "{\"arch\":\"{{arch}}\"}",
-							"type": "text"
+					"mode": "raw",
+					"raw": "{\n    \"arch\": \"{{arch}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
 						}
-					]
+					}
 				},
 				"url": {
 					"raw": "{{URL}}/arch/create",
@@ -749,7 +743,7 @@
 					"formdata": [
 						{
 							"key": "data",
-							"value": "{\"app\":\"{{app_name}}\"}",
+							"value": "{\"app\":\"{{app_name}}\", \"description\": \"description of app\"}",
 							"type": "text"
 						}
 					]
