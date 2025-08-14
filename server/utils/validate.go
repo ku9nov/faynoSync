@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -54,6 +55,7 @@ func ValidateParamsLatest(c *gin.Context, database *mongo.Database) (map[string]
 		"platform": c.Query("platform"),
 		"arch":     c.Query("arch"),
 		"owner":    c.Query("owner"),
+		"updater":  c.Query("updater"),
 	}
 
 	if !IsValidAppName(ctxQueryMap["app_name"].(string)) {
@@ -79,11 +81,13 @@ func ValidateParamsLatest(c *gin.Context, database *mongo.Database) (map[string]
 		return nil, errChannels
 	}
 
-	updatedPlatform, errPlatforms := CheckPlatformsLatest(ctxQueryMap["platform"].(string), database, c)
+	updatedPlatform, updatedUpdater, errPlatforms := CheckPlatformsLatest(ctxQueryMap["platform"].(string), ctxQueryMap["updater"].(string), database, c)
 	if errPlatforms != nil {
 		return nil, errPlatforms
 	}
+	logrus.Debugf("updatedPlatform: %s, updatedUpdater: %s", updatedPlatform, updatedUpdater)
 	ctxQueryMap["platform"] = updatedPlatform
+	ctxQueryMap["updater"] = updatedUpdater
 	updatedArch, errArchs := CheckArchsLatest(ctxQueryMap["arch"].(string), database, c)
 	if errArchs != nil {
 		return nil, errArchs

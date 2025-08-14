@@ -4271,7 +4271,10 @@ func TestUpdatePlatformWithSecondUser(t *testing.T) {
 
 	payload := fmt.Sprintf(`{
 		"id": "%s",
-		"platform": "newPlatform"
+		"platform": "newPlatform",
+		"updaters": [
+			{ "type": "manual", "default": true }
+		]
 	}`, platformId)
 	body := bytes.NewReader([]byte(payload))
 
@@ -6130,7 +6133,10 @@ func TestUpdatePlatformUsingTeamUser(t *testing.T) {
 	})
 
 	payload := fmt.Sprintf(`{"id": "%s", 
-		"platform":"newPlatform"
+		"platform":"newPlatform",
+		"updaters": [
+			{ "type": "manual", "default": true }
+		]
 	}`, platformId)
 	body := bytes.NewReader([]byte(payload))
 
@@ -7056,7 +7062,10 @@ func TestUpdatePlatform(t *testing.T) {
 
 	payload := fmt.Sprintf(`{
 		"id": "%s", 
-		"platform":"newPlatform"
+		"platform":"newPlatform",
+		"updaters": [
+			{ "type": "manual", "default": true }
+		]
 	}`, platformId)
 	body := bytes.NewReader([]byte(payload))
 
@@ -7105,7 +7114,10 @@ func TestFailedUpdatePlatform(t *testing.T) {
 
 	payload := fmt.Sprintf(`{
 		"id": "%s", 
-		"platform":"new * Platform"
+		"platform":"new * Platform",
+		"updaters": [
+			{ "type": "manual", "default": true }
+		]
 	}`, platformId)
 
 	body := bytes.NewReader([]byte(payload))

@@ -7,6 +7,7 @@ import (
 	"faynoSync/server/handler/create"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters"
 	"net/http"
 	"time"
 
@@ -60,12 +61,17 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		// Validate updaters
+		if err := updaters.ValidateUpdaters(req.Updaters); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		objectID, err := primitive.ObjectIDFromHex(req.ID)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
 			return
 		}
-		result, resultError = repository.UpdatePlatform(objectID, req.PlatformName, owner, ctx)
+		result, resultError = repository.UpdatePlatform(objectID, req.PlatformName, req.Updaters, owner, ctx)
 	case "arch":
 		var req model.UpdateArchRequest
 		if err := c.ShouldBindJSON(&req); err != nil {

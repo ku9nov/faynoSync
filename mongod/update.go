@@ -176,9 +176,21 @@ func (c *appRepository) UpdateChannel(id primitive.ObjectID, channelName string,
 }
 
 // UpdatePlatform updates an existing platform document
-func (c *appRepository) UpdatePlatform(id primitive.ObjectID, platformName string, owner string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) UpdatePlatform(id primitive.ObjectID, platformName string, updaters []model.Updater, owner string, ctx context.Context) (interface{}, error) {
+	// Convert updaters to BSON format
+	updatersBSON := make([]bson.M, len(updaters))
+	for i, updater := range updaters {
+		updatersBSON[i] = bson.M{
+			"type":    updater.Type,
+			"default": updater.Default,
+		}
+	}
+
 	filter := bson.D{{Key: "_id", Value: id}}
-	update := bson.D{{Key: "$set", Value: bson.D{{Key: "platform_name", Value: platformName}}}}
+	update := bson.D{{Key: "$set", Value: bson.D{
+		{Key: "platform_name", Value: platformName},
+		{Key: "updaters", Value: updatersBSON},
+	}}}
 	return c.UpdateDocument("apps_meta", filter, update, "platform_name_sort_by_asc_updated", "platform", owner, ctx)
 }
 

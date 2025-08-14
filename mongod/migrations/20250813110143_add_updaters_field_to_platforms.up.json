@@ -1,0 +1,10 @@
+[{
+    "update": "apps_meta",
+    "updates": [
+        {
+            "q": { "platform_name": { "$exists": true }, "updaters": { "$exists": false } },
+            "u": { "$set": { "updaters": [{ "type": "manual", "default": true }] } },
+            "multi": true
+        }
+    ]
+}] 

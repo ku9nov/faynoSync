@@ -3,6 +3,7 @@ package utils
 import (
 	"errors"
 	"net/http/httputil"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -137,34 +138,97 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 	return nil
 }
 
-func CheckPlatformsLatest(input string, db *mongo.Database, ctx *gin.Context) (string, error) {
+func CheckPlatformsLatest(input string, updater string, db *mongo.Database, ctx *gin.Context) (string, string, error) {
 	if input == "" {
 		filter := bson.M{"platform_name": bson.M{"$exists": true}}
 		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 
 		if count > 0 {
-			return "", nil
+			return "", "", nil
 		}
 
-		return "", nil
+		return "", "", nil
 	} else {
 		// Check if the platform exists in the database
 		cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input})
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		defer cursor.Close(ctx)
 
 		// Check if any documents were returned
 		if !cursor.Next(ctx) {
 			input = ""
-		}
+		} else {
 
+			cursor.Close(ctx)
+			cursor, err = db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input})
+			if err != nil {
+				return "", "", err
+			}
+			defer cursor.Close(ctx)
+
+			// Handle updater logic
+			if updater == "" {
+				// If updater is empty, return default updater
+				for cursor.Next(ctx) {
+					var document bson.M
+					if err := cursor.Decode(&document); err != nil {
+						continue
+					}
+					if updaters, ok := document["updaters"].(bson.A); ok {
+						for _, u := range updaters {
+							if updaterObj, ok := u.(bson.M); ok {
+								if isDefault, ok := updaterObj["default"].(bool); ok && isDefault {
+									if _, ok := updaterObj["type"].(string); ok {
+										return input, updaterObj["type"].(string), nil
+									}
+								}
+							}
+						}
+					}
+				}
+				return input, "", nil
+			} else {
+				// If updater is specified, check if it exists
+				foundUpdater := ""
+				for cursor.Next(ctx) {
+					var document bson.M
+					if err := cursor.Decode(&document); err != nil {
+						continue
+					}
+					if updaters, ok := document["updaters"].(bson.A); ok {
+						for _, u := range updaters {
+							if updaterObj, ok := u.(bson.M); ok {
+								if updaterType, ok := updaterObj["type"].(string); ok {
+
+									if updaterType == updater {
+										foundUpdater = updaterType
+										break
+									}
+									// Check for prefix match (e.g., "squirrel" matches "squirrel_darwin")
+									if strings.HasPrefix(updaterType, updater+"_") {
+										foundUpdater = updaterType
+										break
+									}
+								}
+							}
+						}
+					}
+				}
+
+				if foundUpdater != "" {
+					return input, foundUpdater, nil
+				} else {
+					return input, "updater not supported", nil
+				}
+			}
+		}
 	}
-	return input, nil
+	return input, "", nil
 }
 
 func CheckPrivate(input string, db *mongo.Database, ctx *gin.Context) (bool, error) {
