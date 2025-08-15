@@ -8,8 +8,8 @@ import (
 
 // StorageClient defines the interface for storage operations
 type StorageClient interface {
-	UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) error
-	UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) (string, error)
+	UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error
+	UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error)
 	DeleteObject(ctx context.Context, bucketName, objectKey string) error
 	GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error)
 }

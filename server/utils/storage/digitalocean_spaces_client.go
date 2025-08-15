@@ -36,12 +36,16 @@ func NewDigitalOceanSpacesClient(env *viper.Viper) (*DigitalOceanSpacesClient, e
 	}, nil
 }
 
-func (d *DigitalOceanSpacesClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) error {
-	_, err := d.client.PutObject(ctx, &s3.PutObjectInput{
+func (d *DigitalOceanSpacesClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	input := &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 		Body:   fileReader,
-	})
+	}
+	if contentType != "" {
+		input.ContentType = aws.String(contentType)
+	}
+	_, err := d.client.PutObject(ctx, input)
 	if err != nil {
 		return &StorageError{Message: "failed to upload object to DigitalOcean Spaces", Err: err}
 	}
@@ -49,13 +53,17 @@ func (d *DigitalOceanSpacesClient) UploadObject(ctx context.Context, bucketName,
 }
 
 // UploadPublicObject uploads a file to DigitalOcean Spaces public bucket and returns the public URL
-func (d *DigitalOceanSpacesClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) (string, error) {
-	_, err := d.client.PutObject(ctx, &s3.PutObjectInput{
+func (d *DigitalOceanSpacesClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	input := &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 		Body:   fileReader,
 		ACL:    types.ObjectCannedACLPublicRead, // Set ACL to make the object publicly readable
-	})
+	}
+	if contentType != "" {
+		input.ContentType = aws.String(contentType)
+	}
+	_, err := d.client.PutObject(ctx, input)
 	if err != nil {
 		return "", &StorageError{Message: "failed to upload public object to DigitalOcean Spaces", Err: err}
 	}

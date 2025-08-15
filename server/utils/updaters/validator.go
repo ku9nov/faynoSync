@@ -11,9 +11,7 @@ var ValidUpdaterTypes = []string{
 	"squirrel_darwin",
 	"squirrel_windows",
 	"sparkle",
-	"electron-builder_linux",
-	"electron-builder_windows",
-	"electron-builder_darwin",
+	"electron-builder",
 }
 
 // ValidateUpdater validates a single updater

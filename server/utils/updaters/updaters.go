@@ -1,6 +1,8 @@
 package updaters
 
 import (
+	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -42,20 +44,93 @@ func BuildResponse(response gin.H, found bool, updaterType string) (gin.H, int) 
 		// Test stub for sparkle
 		return gin.H{"status": "test_stub", "updater": "sparkle"}, 200
 
-	case "electron-builder_linux":
-		// Test stub for electron-builder_linux
-		return gin.H{"status": "test_stub", "updater": "electron-builder_linux"}, 200
-
-	case "electron-builder_windows":
-		// Test stub for electron-builder_windows
-		return gin.H{"status": "test_stub", "updater": "electron-builder_windows"}, 200
-
-	case "electron-builder_darwin":
-		// Test stub for electron-builder_darwin
-		return gin.H{"status": "test_stub", "updater": "electron-builder_darwin"}, 200
+	case "electron-builder":
+		if !found {
+			return gin.H{"status": "no_content"}, 204
+		}
+		logrus.Debugf("Response for electron-builder: %v", response)
+		// For electron-builder, redirect to update_url_yml
+		ymlFound := false
+		ymlURL := ""
+		for key, value := range response {
+			if key == "update_url_yml" {
+				logrus.Debugf("Found update_url_yml: %s", value)
+				ymlURL = value.(string)
+				ymlFound = true
+				break
+			}
+		}
+		if !ymlFound {
+			// Return 204 No Content if update_url_yml is not found
+			return gin.H{"status": "no_content"}, 204
+		}
+		// Return redirect response with yml URL
+		return gin.H{"status": "redirect", "url": ymlURL}, 302
 
 	default:
 		// Default to standard response
+		logrus.Debugf("Default response: %v", response)
 		return response, 200
+	}
+}
+
+// BuildS3Key builds S3 key based on updater type
+func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName string, oldFileName string, updaterType string) (string, string) {
+	logrus.Debugf("Building S3 key for updater type: %s", updaterType)
+
+	switch updaterType {
+
+	case "squirrel_windows":
+		// Squirrel Windows specific S3 key structure
+		logrus.Debugf("Squirrel Windows specific S3 key structure")
+		fallthrough
+	case "sparkle":
+		// Sparkle specific S3 key structure
+		logrus.Debugf("Sparkle specific S3 key structure")
+		fallthrough
+	case "electron-builder":
+		// Electron Builder specific S3 key structure
+		logrus.Debugf("Electron Builder specific S3 key structure")
+		s3PathSegments := []string{fmt.Sprintf("electron-builder/%s-%s", ctxQuery["app_name"].(string), owner)}
+		s3PathSegments = append(s3PathSegments, ctxQuery["version"].(string))
+		if ctxQuery["channel"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["channel"].(string))
+		}
+		if ctxQuery["platform"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["platform"].(string))
+		}
+		if ctxQuery["arch"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["arch"].(string))
+		}
+		s3PathSegments = append(s3PathSegments, oldFileName)
+
+		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
+		s3Key := strings.Join(s3PathSegments, "/")
+		return link, s3Key
+
+	default:
+		// Default S3 key structure (original logic from s3.go)
+		logrus.Debugf("Default S3 key structure")
+		s3PathSegments := []string{fmt.Sprintf("%s-%s", ctxQuery["app_name"].(string), owner)}
+		if ctxQuery["channel"].(string) == "" && ctxQuery["platform"].(string) == "" && ctxQuery["arch"].(string) == "" {
+			s3PathSegments = append(s3PathSegments, newFileName)
+		} else {
+			if ctxQuery["channel"].(string) != "" {
+				s3PathSegments = append(s3PathSegments, ctxQuery["channel"].(string))
+			}
+			if ctxQuery["platform"].(string) != "" {
+				s3PathSegments = append(s3PathSegments, ctxQuery["platform"].(string))
+			}
+			if ctxQuery["arch"].(string) != "" {
+				s3PathSegments = append(s3PathSegments, ctxQuery["arch"].(string))
+			}
+			s3PathSegments = append(s3PathSegments, newFileName)
+		}
+
+		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
+		s3Key := strings.Join(s3PathSegments, "/")
+		return link, s3Key
 	}
 }

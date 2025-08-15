@@ -135,12 +135,23 @@ Create deployment platform.
 ###### Body
 **platform**: Name of the platform.
 
+**updaters**: Array of updater configurations for the platform. Each updater defines how applications will be updated on this platform.
+
+**Structure:**
+- `type` (string, required): Type of updater. Valid values:
+  - `"manual"` - Manual update process, requires user to download and install updates manually
+  - `"squirrel_darwin"` - Squirrel updater for macOS applications
+  - `"squirrel_windows"` - Squirrel updater for Windows applications  
+  - `"sparkle"` - Sparkle framework updater for macOS applications
+  - `"electron-builder"` - Electron Builder updater for Electron applications
+- `default` (boolean, required): Whether this updater is the default one. Exactly one updater must be set as default.
+
 ###### Request:
 ```
 curl --location 'http://localhost:9000/platform/create' \
 --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q' \
 --header 'Content-Type: application/json' \
---data '{"platform":"linux"}'
+--data '{"platform":"linux", "updaters": [{"type": "manual", "default": true}]}'
 ```
 
 ###### Response:
@@ -457,6 +468,8 @@ Optional with `channel`, `publish`, `platform`, `arch` and `changelog`:
 **arch**: Current arch of the app.
 
 **changelog**: Changelog is a log of changes on current version. 
+
+**updater**: Set the `updater` type when uploading a version. Possible value: `electron-builder`. All other update types no longer require this parameter during upload.
 
 ###### Request:
 ```
@@ -984,12 +997,23 @@ Update existing platform.
 
 **platform**: New platform name.
 
+**updaters**: Array of updater configurations for the platform. Each updater defines how applications will be updated on this platform.
+
+**Structure:**
+- `type` (string, required): Type of updater. Valid values:
+  - `"manual"` - Manual update process, requires user to download and install updates manually
+  - `"squirrel_darwin"` - Squirrel updater for macOS applications
+  - `"squirrel_windows"` - Squirrel updater for Windows applications  
+  - `"sparkle"` - Sparkle framework updater for macOS applications
+  - `"electron-builder"` - Electron Builder updater for Electron applications
+- `default` (boolean, required): Whether this updater is the default one. Exactly one updater must be set as default.
+
 ###### Request:
 ```
 curl --location 'http://localhost:9000/platform/update' \
 -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjY3NDQ4NDMsInVzZXJuYW1lIjoiYWRtaW4ifQ.eYkCNem24-6rpw8aXo6NIcN6xtU9rqq2_2YYz1nS82Q" \
 --header 'Content-Type: application/json' \
---data '{"id":"66ae13fe5b663c058367f893", "platform":"newname"}'
+--data '{"id":"66ae13fe5b663c058367f893", "platform":"newname", "updaters": [{ "type": "manual", "default": true }]}'
 ```
 ###### Response:
 

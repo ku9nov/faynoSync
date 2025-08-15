@@ -2,6 +2,8 @@ package updaters
 
 import (
 	"fmt"
+	"mime/multipart"
+	"strings"
 )
 
 // ElectronBuilderUpdater represents the Electron Builder updater configuration
@@ -11,7 +13,7 @@ type ElectronBuilderUpdater struct {
 
 // ValidateElectronBuilderUpdater validates electron-builder updater configuration
 func ValidateElectronBuilderUpdater(updaterType string) error {
-	validTypes := []string{"electron-builder_linux", "electron-builder_windows", "electron-builder_darwin"}
+	validTypes := []string{"electron-builder"}
 
 	for _, validType := range validTypes {
 		if updaterType == validType {
@@ -31,4 +33,26 @@ func GetElectronBuilderUpdaterConfig(updaterType string) (*ElectronBuilderUpdate
 	return &ElectronBuilderUpdater{
 		Type: updaterType,
 	}, nil
+}
+
+// ValidateElectronBuilderFiles validates that electron-builder updater has required YML files
+func ValidateElectronBuilderFiles(files []*multipart.FileHeader) error {
+	hasYML := false
+	hasYAML := false
+
+	for _, file := range files {
+		filename := strings.ToLower(file.Filename)
+		if strings.HasSuffix(filename, ".yml") {
+			hasYML = true
+		}
+		if strings.HasSuffix(filename, ".yaml") {
+			hasYAML = true
+		}
+	}
+
+	if !hasYML && !hasYAML {
+		return fmt.Errorf("electron-builder updater requires a YML/YAML file for update functionality. Please include a .yml or .yaml file in your upload")
+	}
+
+	return nil
 }

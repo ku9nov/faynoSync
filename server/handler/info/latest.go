@@ -140,6 +140,14 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		cacheResponse(ctx, rdb, cacheKey, response)
 	}
 	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
+
+	if httpStatus == 302 {
+		if redirectURL, exists := response["url"]; exists {
+			c.Redirect(http.StatusFound, redirectURL.(string))
+			return
+		}
+	}
+
 	c.JSON(httpStatus, response)
 }
 

@@ -5,8 +5,10 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -89,6 +91,17 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	}
 
 	files := form.File["file"] // Assuming the field name is "file" not "files"
+
+	// Validate electron-builder updater requirements
+	if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
+		updaterStr := updater.(string)
+		if strings.HasPrefix(updaterStr, "electron-builder") {
+			if err := updaters.ValidateElectronBuilderFiles(files); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
+	}
 	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
 	if err != nil {
 		logrus.Error(err)

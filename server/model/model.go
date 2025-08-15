@@ -101,6 +101,7 @@ type UpRequest struct {
 	Arch              string   `json:"arch"`
 	Changelog         string   `json:"changelog"`
 	ArtifactsToDelete []string `json:"artifacts_to_delete"`
+	Updater           string   `json:"updater"`
 }
 
 type PaginatedResponse struct {
