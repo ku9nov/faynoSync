@@ -193,6 +193,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	delete(ctxQueryMap, "id")
 
 	form, _ := c.MultipartForm()
+
 	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
 	if err != nil {
 		logrus.Error(err)
@@ -204,7 +205,14 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	var result bool
 	if form != nil {
 		files := form.File["file"] // Assuming the field name is "file" not "files"
-
+		// Validate updater requirements
+		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
+			updaterStr := updater.(string)
+			if err := updaters.ValidateFiles(files, updaterStr); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
 		for _, file := range files {
 			link, ext, err := utils.UploadToS3(ctxQueryMap, owner, file, c, viper.GetViper(), checkAppVisibility)
 			if err != nil {

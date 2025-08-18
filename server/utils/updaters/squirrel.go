@@ -2,10 +2,37 @@ package updaters
 
 import (
 	"fmt"
+	"mime/multipart"
+	"strings"
 )
 
 type SquirrelUpdater struct {
 	Type string `json:"type"`
+}
+
+type SquirrelWindowsFileValidator struct {
+	updaterType string
+}
+
+func (v *SquirrelWindowsFileValidator) Validate(files []*multipart.FileHeader) error {
+	hasRelease := false
+
+	for _, file := range files {
+		filename := strings.ToLower(file.Filename)
+		if filename == "releases" {
+			hasRelease = true
+		}
+	}
+
+	if !hasRelease {
+		return fmt.Errorf("squirrel windows updater requires a RELEASES file for update functionality. Please include a RELEASES file in your upload")
+	}
+
+	return nil
+}
+
+func (v *SquirrelWindowsFileValidator) GetUpdaterType() string {
+	return v.updaterType
 }
 
 func ValidateSquirrelUpdater(updaterType string) error {
@@ -28,4 +55,9 @@ func GetSquirrelUpdaterConfig(updaterType string) (*SquirrelUpdater, error) {
 	return &SquirrelUpdater{
 		Type: updaterType,
 	}, nil
+}
+
+func ValidateSquirrelWindowsFiles(files []*multipart.FileHeader) error {
+	validator := &SquirrelWindowsFileValidator{updaterType: "squirrel_windows"}
+	return validator.Validate(files)
 }

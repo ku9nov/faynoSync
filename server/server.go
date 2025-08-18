@@ -51,6 +51,9 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	router.Use(corsMiddleware(allowedOrigins))
 
+	// Add squirrel_windows updater compatibility
+	router.GET("/update/:owner/:app/:channel/:platform/:arch/:version/RELEASES", handler.SquirrelReleases)
+
 	router.GET("/checkVersion", handler.FindLatestVersion)
 	router.GET("/apps/latest", handler.FetchLatestVersionOfApp)
 	router.POST("/signup", handler.SignUp)

@@ -37,8 +37,19 @@ func BuildResponse(response gin.H, found bool, updaterType string) (gin.H, int) 
 		return squirrelResponse, 200
 
 	case "squirrel_windows":
-		// Test stub for squirrel_windows
-		return gin.H{"status": "test_stub", "updater": "squirrel_windows"}, 200
+		logrus.Debugf("Response for squirrel_windows: %v", response)
+		// For squirrel_windows, redirect to update_url
+		releaseURL := ""
+		for key, value := range response {
+			if key == "update_url" {
+				logrus.Debugf("Found update_url: %s", value)
+				releaseURL = value.(string)
+				break
+			}
+		}
+		logrus.Debugf("Return http redirect to Release URL: %s", releaseURL)
+		// Return redirect response with RELEASES URL
+		return gin.H{"status": "redirect", "url": releaseURL}, 302
 
 	case "sparkle":
 		// Test stub for sparkle
@@ -83,7 +94,23 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 	case "squirrel_windows":
 		// Squirrel Windows specific S3 key structure
 		logrus.Debugf("Squirrel Windows specific S3 key structure")
-		fallthrough
+		s3PathSegments := []string{fmt.Sprintf("squirrel_windows/%s-%s", ctxQuery["app_name"].(string), owner)}
+		s3PathSegments = append(s3PathSegments, ctxQuery["version"].(string))
+		if ctxQuery["channel"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["channel"].(string))
+		}
+		if ctxQuery["platform"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["platform"].(string))
+		}
+		if ctxQuery["arch"].(string) != "" {
+			s3PathSegments = append(s3PathSegments, ctxQuery["arch"].(string))
+		}
+		s3PathSegments = append(s3PathSegments, oldFileName)
+
+		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
+		s3Key := strings.Join(s3PathSegments, "/")
+		return link, s3Key
 	case "sparkle":
 		// Sparkle specific S3 key structure
 		logrus.Debugf("Sparkle specific S3 key structure")

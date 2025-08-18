@@ -11,6 +11,35 @@ type ElectronBuilderUpdater struct {
 	Type string `json:"type"`
 }
 
+type ElectronBuilderFileValidator struct {
+	updaterType string
+}
+
+func (v *ElectronBuilderFileValidator) Validate(files []*multipart.FileHeader) error {
+	hasYML := false
+	hasYAML := false
+
+	for _, file := range files {
+		filename := strings.ToLower(file.Filename)
+		if strings.HasSuffix(filename, ".yml") {
+			hasYML = true
+		}
+		if strings.HasSuffix(filename, ".yaml") {
+			hasYAML = true
+		}
+	}
+
+	if !hasYML && !hasYAML {
+		return fmt.Errorf("electron-builder updater requires a YML/YAML file for update functionality. Please include a .yml or .yaml file in your upload")
+	}
+
+	return nil
+}
+
+func (v *ElectronBuilderFileValidator) GetUpdaterType() string {
+	return v.updaterType
+}
+
 // ValidateElectronBuilderUpdater validates electron-builder updater configuration
 func ValidateElectronBuilderUpdater(updaterType string) error {
 	validTypes := []string{"electron-builder"}
@@ -35,24 +64,7 @@ func GetElectronBuilderUpdaterConfig(updaterType string) (*ElectronBuilderUpdate
 	}, nil
 }
 
-// ValidateElectronBuilderFiles validates that electron-builder updater has required YML files
 func ValidateElectronBuilderFiles(files []*multipart.FileHeader) error {
-	hasYML := false
-	hasYAML := false
-
-	for _, file := range files {
-		filename := strings.ToLower(file.Filename)
-		if strings.HasSuffix(filename, ".yml") {
-			hasYML = true
-		}
-		if strings.HasSuffix(filename, ".yaml") {
-			hasYAML = true
-		}
-	}
-
-	if !hasYML && !hasYAML {
-		return fmt.Errorf("electron-builder updater requires a YML/YAML file for update functionality. Please include a .yml or .yaml file in your upload")
-	}
-
-	return nil
+	validator := &ElectronBuilderFileValidator{updaterType: "electron-builder"}
+	return validator.Validate(files)
 }

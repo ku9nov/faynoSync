@@ -3,7 +3,14 @@ package updaters
 import (
 	"faynoSync/server/model"
 	"fmt"
+	"mime/multipart"
+	"strings"
 )
+
+type FileValidator interface {
+	Validate(files []*multipart.FileHeader) error
+	GetUpdaterType() string
+}
 
 // ValidUpdaterTypes contains all valid updater types
 var ValidUpdaterTypes = []string{
@@ -65,4 +72,40 @@ func ValidateUpdaters(updaters []model.Updater) error {
 	}
 
 	return nil
+}
+
+func CreateFileValidator(updaterType string) (FileValidator, error) {
+	switch {
+	case strings.HasPrefix(updaterType, "electron-builder"):
+		return &ElectronBuilderFileValidator{updaterType: updaterType}, nil
+	case strings.HasPrefix(updaterType, "squirrel_windows"):
+		return &SquirrelWindowsFileValidator{updaterType: updaterType}, nil
+	default:
+		return &NoOpFileValidator{updaterType: updaterType}, nil
+	}
+}
+
+func ValidateFiles(files []*multipart.FileHeader, updaterType string) error {
+	if updaterType == "" {
+		return nil
+	}
+
+	validator, err := CreateFileValidator(updaterType)
+	if err != nil {
+		return err
+	}
+
+	return validator.Validate(files)
+}
+
+type NoOpFileValidator struct {
+	updaterType string
+}
+
+func (v *NoOpFileValidator) Validate(files []*multipart.FileHeader) error {
+	return nil
+}
+
+func (v *NoOpFileValidator) GetUpdaterType() string {
+	return v.updaterType
 }
