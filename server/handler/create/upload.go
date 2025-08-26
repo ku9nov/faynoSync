@@ -5,6 +5,7 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters"
 	"fmt"
 	"net/http"
 	"time"
@@ -89,6 +90,15 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	}
 
 	files := form.File["file"] // Assuming the field name is "file" not "files"
+
+	// Validate updater requirements
+	if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
+		updaterStr := updater.(string)
+		if err := updaters.ValidateFiles(files, updaterStr); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
 	if err != nil {
 		logrus.Error(err)

@@ -7,6 +7,7 @@ import (
 	"faynoSync/server/handler/create"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters"
 	"net/http"
 	"time"
 
@@ -60,12 +61,17 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		// Validate updaters
+		if err := updaters.ValidateUpdaters(req.Updaters); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		objectID, err := primitive.ObjectIDFromHex(req.ID)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
 			return
 		}
-		result, resultError = repository.UpdatePlatform(objectID, req.PlatformName, owner, ctx)
+		result, resultError = repository.UpdatePlatform(objectID, req.PlatformName, req.Updaters, owner, ctx)
 	case "arch":
 		var req model.UpdateArchRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -187,6 +193,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	delete(ctxQueryMap, "id")
 
 	form, _ := c.MultipartForm()
+
 	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
 	if err != nil {
 		logrus.Error(err)
@@ -198,7 +205,14 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	var result bool
 	if form != nil {
 		files := form.File["file"] // Assuming the field name is "file" not "files"
-
+		// Validate updater requirements
+		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
+			updaterStr := updater.(string)
+			if err := updaters.ValidateFiles(files, updaterStr); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
 		for _, file := range files {
 			link, ext, err := utils.UploadToS3(ctxQueryMap, owner, file, c, viper.GetViper(), checkAppVisibility)
 			if err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters"
 	"fmt"
 	"net/http"
 	"strings"
@@ -36,6 +37,7 @@ func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, resp
 }
 
 func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
+	var httpStatus int
 	validatedParams, err := utils.ValidateParamsLatest(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -94,7 +96,16 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			if performanceMode && rdb != nil {
 				cacheResponse(ctx, rdb, cacheKey, response)
 			}
-			c.JSON(http.StatusOK, response)
+			response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
+
+			if httpStatus == 302 {
+				if redirectURL, exists := response["url"]; exists {
+					c.Redirect(http.StatusFound, redirectURL.(string))
+					return
+				}
+			}
+
+			c.JSON(httpStatus, response)
 		}
 		return
 	}
@@ -136,7 +147,16 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	if performanceMode && rdb != nil {
 		cacheResponse(ctx, rdb, cacheKey, response)
 	}
-	c.JSON(http.StatusOK, response)
+	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
+
+	if httpStatus == 302 {
+		if redirectURL, exists := response["url"]; exists {
+			c.Redirect(http.StatusFound, redirectURL.(string))
+			return
+		}
+	}
+
+	c.JSON(httpStatus, response)
 }
 
 func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *redis.Client, performanceMode bool) {
@@ -256,7 +276,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 // trackClientTelemetry handles analytics collection for version check requests using Redis Sets
 func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, deviceID string) {
 	if rdb == nil || deviceID == "" {
-		logrus.Debug("Redis client is nil or deviceID is empty, skipping analytics collection")
+		logrus.Debug("Redis client is not set or deviceID is empty, skipping analytics collection")
 		return
 	}
 

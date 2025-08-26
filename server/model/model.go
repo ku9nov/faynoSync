@@ -65,6 +65,7 @@ type Channel struct {
 type Platform struct {
 	ID           primitive.ObjectID `bson:"_id"`
 	PlatformName string             `bson:"platform_name"`
+	Updaters     []Updater          `bson:"updaters"`
 	Owner        string             `bson:"owner"`
 	Updated_at   primitive.DateTime `bson:"updated_at"`
 }
@@ -100,6 +101,7 @@ type UpRequest struct {
 	Arch              string   `json:"arch"`
 	Changelog         string   `json:"changelog"`
 	ArtifactsToDelete []string `json:"artifacts_to_delete"`
+	Updater           string   `json:"updater"`
 }
 
 type PaginatedResponse struct {
@@ -147,13 +149,19 @@ type Permissions struct {
 	} `bson:"archs"`
 }
 
+type Updater struct {
+	Type    string `bson:"type" json:"type"`
+	Default bool   `bson:"default" json:"default"`
+}
+
 // Create request structures
 type CreateChannelRequest struct {
 	ChannelName string `json:"channel" binding:"required"`
 }
 
 type CreatePlatformRequest struct {
-	PlatformName string `json:"platform" binding:"required"`
+	PlatformName string    `json:"platform" binding:"required"`
+	Updaters     []Updater `json:"updaters,omitempty"`
 }
 
 type CreateArchRequest struct {
@@ -167,8 +175,9 @@ type UpdateChannelRequest struct {
 }
 
 type UpdatePlatformRequest struct {
-	ID           string `json:"id" binding:"required"`
-	PlatformName string `json:"platform" binding:"required"`
+	ID           string    `json:"id" binding:"required"`
+	PlatformName string    `json:"platform" binding:"required"`
+	Updaters     []Updater `json:"updaters" binding:"required"`
 }
 
 type UpdateArchRequest struct {

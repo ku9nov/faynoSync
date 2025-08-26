@@ -156,8 +156,27 @@ func (c *appRepository) CreateChannel(channelName string, owner string, ctx cont
 }
 
 // CreatePlatform creates a new platform document
-func (c *appRepository) CreatePlatform(platformName string, owner string, ctx context.Context) (interface{}, error) {
-	document := bson.D{{Key: "platform_name", Value: platformName}}
+func (c *appRepository) CreatePlatform(platformName string, updaters []model.Updater, owner string, ctx context.Context) (interface{}, error) {
+	// If no updaters provided, use default manual updater
+	if len(updaters) == 0 {
+		updaters = []model.Updater{
+			{Type: "manual", Default: true},
+		}
+	}
+
+	// Convert updaters to BSON format
+	updatersBSON := make([]bson.M, len(updaters))
+	for i, updater := range updaters {
+		updatersBSON[i] = bson.M{
+			"type":    updater.Type,
+			"default": updater.Default,
+		}
+	}
+
+	document := bson.D{
+		{Key: "platform_name", Value: platformName},
+		{Key: "updaters", Value: updatersBSON},
+	}
 
 	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
 		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "platform", ctx)

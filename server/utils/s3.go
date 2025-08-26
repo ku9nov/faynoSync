@@ -9,10 +9,26 @@ import (
 	"strings"
 	"time"
 
+	"faynoSync/server/utils/updaters"
+
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
+
+func getContentType(fileName string) string {
+	fileName = strings.ToLower(fileName)
+
+	if fileName == "releases" {
+		return "text/plain"
+	}
+
+	if strings.HasSuffix(fileName, ".yaml") || strings.HasSuffix(fileName, ".yml") {
+		return "text/yaml"
+	}
+
+	return ""
+}
 
 // getStorageClient creates and returns a storage client using the factory pattern
 func getStorageClient(env *viper.Viper) (StorageClient, error) {
@@ -58,31 +74,18 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 
 	var link string
 	var s3Key string
-	s3PathSegments := []string{fmt.Sprintf("%s-%s", ctxQuery["app_name"].(string), owner)}
-	if ctxQuery["channel"].(string) == "" && ctxQuery["platform"].(string) == "" && ctxQuery["arch"].(string) == "" {
 
-		s3PathSegments = append(s3PathSegments, newFileName)
+	// Add API_URL to ctxQuery for BuildS3Key function
+	ctxQuery["api_url"] = env.GetString("API_URL")
 
-	} else {
-
-		if ctxQuery["channel"].(string) != "" {
-			s3PathSegments = append(s3PathSegments, ctxQuery["channel"].(string))
-		}
-
-		if ctxQuery["platform"].(string) != "" {
-			s3PathSegments = append(s3PathSegments, ctxQuery["platform"].(string))
-		}
-
-		if ctxQuery["arch"].(string) != "" {
-			s3PathSegments = append(s3PathSegments, ctxQuery["arch"].(string))
-		}
-
-		s3PathSegments = append(s3PathSegments, newFileName)
+	// Get updater type from context or use default
+	updaterType := "default"
+	if updaterTypeVal, exists := ctxQuery["updater"]; exists {
+		updaterType = updaterTypeVal.(string)
 	}
 
-	encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
-	link = fmt.Sprintf("%s/download?key=%s", env.GetString("API_URL"), encodedPath)
-	s3Key = strings.Join(s3PathSegments, "/")
+	// Build S3 key using updaters package
+	link, s3Key = updaters.BuildS3Key(ctxQuery, owner, newFileName, file.Filename, updaterType)
 
 	// Open the file for reading
 	fileReader, err := file.Open()
@@ -96,11 +99,15 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	logrus.Debugf("Uploading file: key=%s, type=%s",
 		s3Key, ctxQuery["type"])
 
+	// Determine ContentType based on file name
+	contentType := getContentType(file.Filename)
+	logrus.Debugf("Determined ContentType: %s for file: %s", contentType, file.Filename)
+
 	var bucketName string
 	if ctxQuery["type"] == "logo" || checkAppVisibility == false {
 		bucketName = env.GetString("S3_BUCKET_NAME")
 		logrus.Debugf("Uploading logo to public bucket: %s", bucketName)
-		publicLink, err := storageClient.UploadPublicObject(c.Request.Context(), bucketName, s3Key, fileReader)
+		publicLink, err := storageClient.UploadPublicObject(c.Request.Context(), bucketName, s3Key, fileReader, contentType)
 		if err != nil {
 			logrus.Errorf("Failed to upload logo to storage: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to storage"})
@@ -112,7 +119,7 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 		// Use private bucket for regular uploads
 		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
 		logrus.Debugf("Uploading to private bucket: %s", bucketName)
-		err = storageClient.UploadObject(c.Request.Context(), bucketName, s3Key, fileReader)
+		err = storageClient.UploadObject(c.Request.Context(), bucketName, s3Key, fileReader, contentType)
 		if err != nil {
 			logrus.Errorf("Failed to upload to private storage: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to storage"})

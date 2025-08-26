@@ -369,12 +369,14 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 						Changes: entry.Changes,
 					}
 				}
-				// Get artifacts for required version
+				// Get artifacts for required version, filtered by platform and arch
 				for _, artifact := range requiredApp.Artifacts {
-					artifacts = append(artifacts, Artifact{
-						Link:    artifact.Link,
-						Package: artifact.Package,
-					})
+					if artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID {
+						artifacts = append(artifacts, Artifact{
+							Link:    artifact.Link,
+							Package: artifact.Package,
+						})
+					}
 				}
 				return CheckResult{
 					Found:                  true,
@@ -394,13 +396,17 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 				Changes: entry.Changes,
 			}
 		}
-		// Iterate through all elements in latestApp.Artifacts and append both link and package type
+		// Filter artifacts by platform and arch, then iterate through filtered artifacts
+		var filteredArtifacts []Artifact
 		for _, artifact := range latestApp.Artifacts {
-			artifacts = append(artifacts, Artifact{
-				Link:    artifact.Link,
-				Package: artifact.Package,
-			})
+			if artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID {
+				filteredArtifacts = append(filteredArtifacts, Artifact{
+					Link:    artifact.Link,
+					Package: artifact.Package,
+				})
+			}
 		}
+		artifacts = filteredArtifacts
 		if requestedVersion.Equal(latestAppVersion) {
 			return CheckResult{Found: false, Artifacts: artifacts}, nil
 		} else if requestedVersion.GreaterThan(latestAppVersion) {

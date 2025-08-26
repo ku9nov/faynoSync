@@ -52,6 +52,7 @@ type AppHandler interface {
 	Whoami(*gin.Context)
 	UpdateAdmin(*gin.Context)
 	GetTelemetry(*gin.Context)
+	SquirrelReleases(*gin.Context)
 }
 
 type appHandler struct {
@@ -228,4 +229,26 @@ func (ch *appHandler) UpdateAdmin(c *gin.Context) {
 
 func (ch *appHandler) GetTelemetry(c *gin.Context) {
 	info.GetTelemetry(c, ch.redisClient, ch.database)
+}
+
+func (ch *appHandler) SquirrelReleases(c *gin.Context) {
+	owner := c.Param("owner")
+	app := c.Param("app")
+	channel := c.Param("channel")
+	platform := c.Param("platform")
+	arch := c.Param("arch")
+	version := c.Param("version")
+
+	q := c.Request.URL.Query()
+	q.Set("owner", owner)
+	q.Set("app_name", app)
+	q.Set("channel", channel)
+	q.Set("platform", platform)
+	q.Set("arch", arch)
+	q.Set("version", version)
+	q.Set("updater", "squirrel_windows")
+
+	c.Request.URL.RawQuery = q.Encode()
+
+	info.FindLatestVersion(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
 }

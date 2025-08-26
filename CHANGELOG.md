@@ -6,6 +6,10 @@
 
 - Change request types for channels, platforms, and architectures from form-data to application/json 
 
+- Add `electron-builder` and `squirrel_darwin` updaters.
+
+- Add `squirrel_windows` updater.
+
 ## v1.4.3
 
 ### Features

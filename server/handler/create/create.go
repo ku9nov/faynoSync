@@ -6,6 +6,7 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters"
 	"net/http"
 	"time"
 
@@ -53,7 +54,14 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		result, err = repository.CreatePlatform(req.PlatformName, owner.(string), ctx)
+		// Validate updaters if provided
+		if len(req.Updaters) > 0 {
+			if err := updaters.ValidateUpdaters(req.Updaters); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
+		result, err = repository.CreatePlatform(req.PlatformName, req.Updaters, owner.(string), ctx)
 	case "arch":
 		var req model.CreateArchRequest
 		if err := c.ShouldBindJSON(&req); err != nil {

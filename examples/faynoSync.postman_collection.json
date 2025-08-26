@@ -290,6 +290,33 @@
 			"response": []
 		},
 		{
+			"name": "Check latest version (squirrel windows)",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/update/{{username}}/{{app_name}}/{{channel}}/{{platform}}/{{arch}}/{{version}}/RELEASES",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"update",
+						"{{username}}",
+						"{{app_name}}",
+						"{{channel}}",
+						"{{platform}}",
+						"{{arch}}",
+						"{{version}}",
+						"RELEASES"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Login",
 			"event": [
 				{
@@ -666,7 +693,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"platform\": \"{{platform}}\"\n}",
+					"raw": "{\n    \"platform\": \"{{platform}}\",\n    \"updaters\": [\n        { \"type\": \"squirrel_windows\" },\n        { \"type\": \"manual\", \"default\": true },\n        { \"type\": \"squirrel_darwin\" },\n        { \"type\": \"sparkle\" }\n    ]\n}",
 					"options": {
 						"raw": {
 							"language": "json"

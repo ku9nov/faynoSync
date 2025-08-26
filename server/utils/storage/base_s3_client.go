@@ -80,12 +80,16 @@ func NewBaseS3Client(env *viper.Viper, providerName string, s3Config S3Config) (
 }
 
 // UploadObject uploads a file to S3-compatible storage
-func (b *BaseS3Client) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) error {
-	_, err := b.client.PutObject(ctx, &s3.PutObjectInput{
+func (b *BaseS3Client) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	input := &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 		Body:   fileReader,
-	})
+	}
+	if contentType != "" {
+		input.ContentType = aws.String(contentType)
+	}
+	_, err := b.client.PutObject(ctx, input)
 	if err != nil {
 		return &StorageError{Message: fmt.Sprintf("failed to upload object to %s", b.providerName), Err: err}
 	}
