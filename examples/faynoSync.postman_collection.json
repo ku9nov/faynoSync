@@ -290,6 +290,33 @@
 			"response": []
 		},
 		{
+			"name": "Check latest version (squirrel windows)",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/update/{{username}}/{{app_name}}/{{channel}}/{{platform}}/{{arch}}/{{version}}/RELEASES",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"update",
+						"{{username}}",
+						"{{app_name}}",
+						"{{channel}}",
+						"{{platform}}",
+						"{{arch}}",
+						"{{version}}",
+						"RELEASES"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Login",
 			"event": [
 				{
