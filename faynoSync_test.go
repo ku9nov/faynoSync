@@ -53,6 +53,27 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func checkFileContent(t *testing.T, url string) string {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Log the content of the file
+	logrus.Infof("Content of %s:\n%s", url, string(body))
+	return string(body)
+}
+
 func copyFile(src, dst string) {
 	input, err := os.ReadFile(src)
 	if err != nil {
@@ -63,6 +84,14 @@ func copyFile(src, dst string) {
 	err = os.WriteFile(dst, input, 0644)
 	if err != nil {
 		logrus.Errorf("Failed to copy the file: %v", err)
+		return
+	}
+}
+
+func generateFile(filename, content string) {
+	err := os.WriteFile(filename, []byte(content), 0644)
+	if err != nil {
+		logrus.Errorf("Failed to generate the file %s: %v", filename, err)
 		return
 	}
 }
@@ -95,7 +124,7 @@ func setup() {
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
-	if viper.GetBool("PERFORMANCE_MODE") {
+	if viper.GetBool("ENABLE_TELEMETRY") {
 		redisConfig := redisdb.RedisConfig{
 			Addr:     viper.GetString("REDIS_HOST") + ":" + viper.GetString("REDIS_PORT"),
 			Password: viper.GetString("REDIS_PASSWORD"),
@@ -107,6 +136,11 @@ func setup() {
 	apiKey = viper.GetString("API_KEY")
 	copyFile("LICENSE", "testapp.dmg")
 	copyFile("LICENSE", "testapp.pkg")
+	generateFile("RELEASES", "RELEASES FILE FOR WINDOWS sqirrel")
+	generateFile("latest.yml", "latest file for windows electron-builder")
+	generateFile("latest-mac.yml", "latest file for macos electron builder")
+	copyFile("LICENSE", "test.zip")
+	copyFile("LICENSE", "test.exe")
 
 }
 
@@ -133,6 +167,11 @@ func teardown() {
 	logrus.Infoln("MongoDB is disconnected.")
 	removeFile("testapp.dmg")
 	removeFile("testapp.pkg")
+	removeFile("RELEASES")
+	removeFile("latest.yml")
+	removeFile("latest-mac.yml")
+	removeFile("test.zip")
+	removeFile("test.exe")
 }
 
 func generateDateRangeAndStats(startDate time.Time, days int) ([]interface{}, []interface{}) {
@@ -152,7 +191,7 @@ func TestHealthCheck(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/health", func(c *gin.Context) {
 		handler.HealthCheck(c)
 	})
@@ -174,7 +213,7 @@ func TestFailedSignUp(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/signup", func(c *gin.Context) {
 		handler.SignUp(c)
 	})
@@ -208,7 +247,7 @@ func TestSignUp(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/signup", func(c *gin.Context) {
 		handler.SignUp(c)
 	})
@@ -243,7 +282,7 @@ func TestSignUpSecondUser(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/signup", func(c *gin.Context) {
 		handler.SignUp(c)
 	})
@@ -279,7 +318,7 @@ func TestFailedLogin(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})
@@ -317,7 +356,7 @@ func TestLogin(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})
@@ -361,7 +400,7 @@ func TestLoginSecondUser(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})
@@ -405,7 +444,7 @@ func TestListApps(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /app/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -433,7 +472,7 @@ func TestListAppsWithInvalidToken(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -509,7 +548,7 @@ func TestAppCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
@@ -575,7 +614,7 @@ func TestCreatePublicApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/create", func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
@@ -634,6 +673,74 @@ func TestCreatePublicApp(t *testing.T) {
 	assert.NotEmpty(t, idTestappApp)
 }
 
+var idTestappAppWithUpdaters string
+
+func TestCreateAppWithUpdaters(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /app/create route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/app/create", func(c *gin.Context) {
+		handler.CreateApp(c)
+	})
+
+	// Create multipart/form-data request body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add a field for the channel to the form
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"app": "updaters"}`
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writer to finalize the form data
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a POST request to the /app/create endpoint
+	req, err := http.NewRequest("POST", "/app/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Content-Type header for multipart/form-data
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "createAppResult.Created" key in the response
+	id, idExists := response["createAppResult.Created"]
+	assert.True(t, idExists)
+	idTestappAppWithUpdaters = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, idTestappAppWithUpdaters)
+}
+
 func TestSecondaryAppCreate(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -641,7 +748,7 @@ func TestSecondaryAppCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/create", func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
@@ -697,7 +804,7 @@ func TestUpload(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -776,7 +883,7 @@ func TestUploadDuplicateApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -845,7 +952,7 @@ func TestDeleteApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /apps/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/apps/delete", func(c *gin.Context) {
 		handler.DeleteSpecificVersionOfApp(c)
 	})
@@ -875,7 +982,7 @@ func TestListChannels(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
@@ -908,7 +1015,7 @@ func TestChannelCreateNightly(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
@@ -957,7 +1064,7 @@ func TestChannelCreateWithWrongName(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
@@ -995,7 +1102,7 @@ func TestSecondaryChannelCreateNightly(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
@@ -1034,7 +1141,7 @@ func TestChannelCreateStable(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/create", func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
@@ -1084,7 +1191,7 @@ func TestUploadAppWithoutChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -1153,7 +1260,7 @@ func TestListPlatforms(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /platform/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
@@ -1184,7 +1291,7 @@ func TestPlatformCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/create", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
@@ -1224,12 +1331,322 @@ func TestPlatformCreate(t *testing.T) {
 	assert.True(t, idExists)
 	assert.NotEmpty(t, platformId)
 }
+
+var platformIdWindows string
+
+func TestPlatformCreateWindows(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/platform/create", func(c *gin.Context) {
+		handler.CreatePlatform(c)
+	})
+
+	payload := `{
+		"platform": "windows"
+	}`
+	body := bytes.NewReader([]byte(payload))
+
+	// Create a POST request to the /platform/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, idExists := response["createPlatformResult.Created"]
+	assert.True(t, idExists)
+	platformIdWindows = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, platformIdWindows)
+}
+
+func TestUpdatePlatformWindows(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /platform/update route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/platform/update", func(c *gin.Context) {
+		handler.UpdatePlatform(c)
+	})
+
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"platform":"windows",
+		"updaters": [
+			{ "type": "manual", "default": false },
+			{ "type": "squirrel_windows", "default": true },
+			{ "type": "electron-builder", "default": false }
+		]
+	}`, platformIdWindows)
+	body := bytes.NewReader([]byte(payload))
+
+	// Create a POST request to the /platform/update endpoint
+	req, err := http.NewRequest("POST", "/platform/update", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "updateChannelResult.Updated" key in the response
+	updated, exists := response["updatePlatformResult.Updated"]
+	assert.True(t, exists)
+	assert.True(t, updated.(bool))
+}
+
+var platformIdMacos string
+
+func TestPlatformCreateMacos(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/platform/create", func(c *gin.Context) {
+		handler.CreatePlatform(c)
+	})
+
+	payload := `{
+		"platform": "macos"
+	}`
+	body := bytes.NewReader([]byte(payload))
+
+	// Create a POST request to the /platform/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, idExists := response["createPlatformResult.Created"]
+	assert.True(t, idExists)
+	platformIdMacos = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, platformIdMacos)
+}
+
+func TestUpdatePlatformMacos(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /platform/update route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/platform/update", func(c *gin.Context) {
+		handler.UpdatePlatform(c)
+	})
+
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"platform":"macos",
+		"updaters": [
+			{ "type": "manual", "default": false },
+			{ "type": "squirrel_darwin", "default": true },
+			{ "type": "electron-builder", "default": false }
+		]
+	}`, platformIdMacos)
+	body := bytes.NewReader([]byte(payload))
+
+	// Create a POST request to the /platform/update endpoint
+	req, err := http.NewRequest("POST", "/platform/update", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "updateChannelResult.Updated" key in the response
+	updated, exists := response["updatePlatformResult.Updated"]
+	assert.True(t, exists)
+	assert.True(t, updated.(bool))
+}
+
+var platformIdMacosSquirrel string
+
+func TestPlatformCreateMacosSquirrel(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/platform/create", func(c *gin.Context) {
+		handler.CreatePlatform(c)
+	})
+
+	payload := `{
+		"platform": "macosSquirrel"
+	}`
+	body := bytes.NewReader([]byte(payload))
+
+	// Create a POST request to the /platform/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, idExists := response["createPlatformResult.Created"]
+	assert.True(t, idExists)
+	platformIdMacosSquirrel = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, platformIdMacosSquirrel)
+}
+
+func TestUpdatePlatformMacosSquirrel(t *testing.T) {
+	// Initialize Gin router and recorder for the test
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the handler for the /platform/update route
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/platform/update", func(c *gin.Context) {
+		handler.UpdatePlatform(c)
+	})
+
+	payload := fmt.Sprintf(`{
+		"id": "%s", 
+		"platform":"macosSquirrel",
+		"updaters": [
+			{ "type": "manual", "default": false },
+			{ "type": "squirrel_darwin", "default": true },
+			{ "type": "electron-builder", "default": false }
+		]
+	}`, platformIdMacosSquirrel)
+	body := bytes.NewReader([]byte(payload))
+
+	// Create a POST request to the /platform/update endpoint
+	req, err := http.NewRequest("POST", "/platform/update", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check for the presence of the "updateChannelResult.Updated" key in the response
+	updated, exists := response["updatePlatformResult.Updated"]
+	assert.True(t, exists)
+	assert.True(t, updated.(bool))
+}
+
 func TestSecondaryPlatformCreate(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/create", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
@@ -1269,7 +1686,7 @@ func TestCreateSecondPlatform(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/create", func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
@@ -1317,7 +1734,7 @@ func TestUploadAppWithoutPlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -1386,7 +1803,7 @@ func TestListArchs(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /arch/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
@@ -1417,7 +1834,7 @@ func TestArchCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/arch/create", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
@@ -1463,7 +1880,7 @@ func TestSecondaryArchCreate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/arch/create", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
@@ -1503,7 +1920,7 @@ func TestCreateSecondArch(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/arch/create", func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
@@ -1553,7 +1970,7 @@ func TestUploadAppWithoutArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -1623,7 +2040,7 @@ func TestMultipleUpload(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -1727,12 +2144,482 @@ func TestMultipleUpload(t *testing.T) {
 	}
 }
 
+var uploadedAppIDsWithUpdaters []string
+
+func TestMultipleUploadWithUpdaters(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	// Define the route for the upload endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/upload", func(c *gin.Context) {
+		handler.UploadApp(c)
+	})
+
+	combinations := []struct {
+		AppName     string
+		AppVersion  string
+		ChannelName string
+		Published   bool
+		Critical    bool
+		Platform    string
+		Arch        string
+		Updater     string
+		FileName    string
+	}{
+		{"updaters", "0.0.1.137", "nightly", false, false, "macosSquirrel", "universalArch", "squirrel_darwin", "testapp.dmg"},
+		{"updaters", "0.0.2.137", "nightly", true, false, "macosSquirrel", "universalArch", "squirrel_darwin", "test.zip"},
+		{"updaters", "0.0.3.137", "nightly", false, false, "macos", "universalArch", "electron-builder", "testapp.dmg"},
+		{"updaters", "0.0.4.137", "nightly", true, false, "macos", "universalArch", "electron-builder", "latest-mac.yml"},
+		{"updaters", "0.0.5.137", "stable", false, true, "windows", "universalArch", "squirrel_windows", "test.exe"},
+		{"updaters", "0.0.6.137", "stable", true, false, "windows", "universalArch", "squirrel_windows", "RELEASES"},
+		{"updaters", "0.0.7.137", "stable", false, false, "windows", "universalArch", "electron-builder", "test.exe"},
+		{"updaters", "0.0.8.137", "stable", true, false, "windows", "universalArch", "electron-builder", "latest.yml"},
+	}
+
+	// Iterate through the combinations and upload the file for each combination.
+	for _, combo := range combinations {
+		logrus.Infoln("Uploading this combo:", combo)
+		filePath := combo.FileName
+		file, err := os.Open(filePath)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		defer file.Close()
+		w := httptest.NewRecorder()
+		// Reset the request body for each iteration.
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = io.Copy(part, file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dataPart, err := writer.CreateFormField("data")
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s", "updater": "%s"}`, combo.AppName, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch, combo.Updater)
+		_, err = dataPart.Write([]byte(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Close the writer to finalize the form
+		err = writer.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Create a POST request for the /upload endpoint with the current combination.
+		req, err := http.NewRequest("POST", "/upload", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Set the Content-Type header for multipart/form-data.
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		// Set the Authorization header.
+		req.Header.Set("Authorization", "Bearer "+authToken)
+		// Serve the request using the Gin router.
+		router.ServeHTTP(w, req)
+
+		// Check if this combination should expect an error
+		shouldExpectError := (combo.AppVersion == "0.0.1.137" && combo.FileName == "testapp.dmg") ||
+			(combo.AppVersion == "0.0.3.137" && combo.FileName == "testapp.dmg") ||
+			(combo.AppVersion == "0.0.5.137" && combo.FileName == "test.exe") ||
+			(combo.AppVersion == "0.0.7.137" && combo.FileName == "test.exe")
+
+		if shouldExpectError {
+			// Expect 400 status code for error cases
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			var response map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Check that there's an error message in the response
+			errorMsg, hasError := response["error"]
+			assert.True(t, hasError, "Expected error message in response")
+			assert.NotEmpty(t, errorMsg, "Error message should not be empty")
+
+			// Check specific error messages based on updater type
+			var expectedErrorMsg string
+			switch combo.Updater {
+			case "squirrel_windows":
+				expectedErrorMsg = "squirrel windows updater requires a RELEASES file for update functionality. Please include a RELEASES file in your upload"
+			case "electron-builder":
+				expectedErrorMsg = "electron-builder updater requires a YML/YAML file for update functionality. Please include a .yml or .yaml file in your upload"
+			case "squirrel_darwin":
+				expectedErrorMsg = "squirrel darwin updater requires a ZIP archive for update functionality. Please include a ZIP file in your upload"
+			}
+
+			if expectedErrorMsg != "" {
+				assert.Equal(t, expectedErrorMsg, errorMsg, "Expected specific error message for %s updater", combo.Updater)
+			}
+		} else {
+			// Check the response status code for successful cases
+			assert.Equal(t, http.StatusOK, w.Code)
+			var response map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &response)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			id, idExists := response["uploadResult.Uploaded"]
+			assert.True(t, idExists)
+
+			// Check if the id already exists in the uploadedAppIDsWithUpdaters array
+			exists := false
+			for _, val := range uploadedAppIDsWithUpdaters {
+				if val == id {
+					exists = true
+					break
+				}
+			}
+
+			// If id does not exist in the array, append it
+			if !exists {
+				uploadedAppIDsWithUpdaters = append(uploadedAppIDsWithUpdaters, id.(string))
+			}
+
+			assert.True(t, idExists)
+			assert.NotEmpty(t, id.(string))
+		}
+	}
+
+}
+
+func TestCheckVersionWithUpdaters(t *testing.T) {
+	router := gin.Default()
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/checkVersion", func(c *gin.Context) {
+		handler.FindLatestVersion(c)
+	})
+	// Define test scenarios.
+	testScenarios := []struct {
+		AppName      string
+		Version      string
+		ChannelName  string
+		ExpectedJSON map[string]interface{}
+		ExpectedCode int
+		Published    bool
+		Platform     string
+		Arch         string
+		TestName     string
+		Owner        string
+		Updater      string
+		ExpectedBody string
+	}{
+		{
+			AppName:      "updaters",
+			Version:      "0.0.2.137",
+			ChannelName:  "nightly",
+			ExpectedJSON: map[string]interface{}{"status": "no_content"},
+			ExpectedCode: http.StatusNoContent,
+			Platform:     "macosSquirrel",
+			Arch:         "universalArch",
+			TestName:     "SquirrelDarwinUpdateNotAvailable",
+			Owner:        "admin",
+			Updater:      "squirrel_darwin",
+		},
+		{
+			AppName:     "updaters",
+			Version:     "0.0.1.135",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"critical":         false,
+				"update_available": true,
+				"url":              "http://localhost:9010/cb-faynosync-s3-public/updaters-admin/nightly/macosSquirrel/universalArch/updaters-0.0.2.137.zip",
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "macosSquirrel",
+			Arch:         "universalArch",
+			TestName:     "SquirrelDarwinUpdateAvailable",
+			Owner:        "admin",
+			Updater:      "squirrel_darwin",
+		},
+		{
+			AppName:      "updaters",
+			Version:      "0.0.4.137",
+			ChannelName:  "nightly",
+			ExpectedJSON: map[string]interface{}{"status": "no_content"},
+			ExpectedCode: http.StatusNoContent,
+			// Published:    false,
+			Platform: "macos",
+			Arch:     "universalArch",
+			TestName: "ElectronBuilderMacosUpdateNotAvailable",
+			Owner:    "admin",
+			Updater:  "electron-builder",
+		},
+		{
+			AppName:     "updaters",
+			Version:     "0.0.1.133",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"critical":         false,
+				"update_available": true,
+				"update_url_yml":   "http://localhost:9010/cb-faynosync-s3-public/electron-builder/updaters-admin/0.0.4.137/nightly/macos/universalArch/latest-mac.yml",
+			},
+			ExpectedCode: http.StatusFound,
+			// Published:    false,
+			Platform:     "macos",
+			Arch:         "universalArch",
+			TestName:     "ElectronBuilderMacosUpdateAvailable",
+			Owner:        "admin",
+			Updater:      "electron-builder",
+			ExpectedBody: "latest file for macos electron builder",
+		},
+		{
+			AppName:      "updaters",
+			Version:      "0.0.8.137",
+			ChannelName:  "stable",
+			ExpectedJSON: map[string]interface{}{"status": "no_content"},
+			ExpectedCode: http.StatusNoContent,
+			// Published:    false,
+			Platform: "windows",
+			Arch:     "universalArch",
+			TestName: "ElectronBuilderWindowsUpdateNotAvailable",
+			Owner:    "admin",
+			Updater:  "electron-builder",
+		},
+		{
+			AppName:     "updaters",
+			Version:     "0.0.1.131",
+			ChannelName: "stable",
+			ExpectedJSON: map[string]interface{}{
+				"status": "redirect",
+				"url":    "http://localhost:9010/cb-faynosync-s3-public/electron-builder/updaters-admin/0.0.8.137/stable/windows/universalArch/latest.yml",
+			},
+			ExpectedCode: http.StatusFound,
+			// Published:    false,
+			Platform:     "windows",
+			Arch:         "universalArch",
+			TestName:     "ElectronBuilderWindowsUpdateAvailable",
+			Owner:        "admin",
+			Updater:      "electron-builder",
+			ExpectedBody: "latest file for windows electron-builder",
+		},
+	}
+
+	for _, scenario := range testScenarios {
+		t.Run(scenario.TestName, func(t *testing.T) {
+			w := httptest.NewRecorder()
+
+			// Create a GET request for checking the version.
+			req, err := http.NewRequest("GET", fmt.Sprintf("/checkVersion?app_name=%s&version=%s&channel=%s&platform=%s&arch=%s&owner=%s&updater=%s", scenario.AppName, scenario.Version, scenario.ChannelName, scenario.Platform, scenario.Arch, scenario.Owner, scenario.Updater), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+
+			// Check the response status code.
+			assert.Equal(t, scenario.ExpectedCode, w.Code)
+			fmt.Println("Code: , Response: ", w.Code, w.Body.String())
+
+			switch scenario.ExpectedCode {
+			case http.StatusNoContent:
+				// For 204, we expect either empty body or {"status": "no_content"}
+				if len(w.Body.Bytes()) == 0 {
+					// Empty body is fine for 204
+					return
+				}
+				fmt.Println("Content: ", w.Body.String())
+				// If there's content, it should be {"status": "no_content"}
+				var actual map[string]interface{}
+				err = json.Unmarshal(w.Body.Bytes(), &actual)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expectedNoContent := map[string]interface{}{"status": "no_content"}
+				assert.Equal(t, expectedNoContent, actual)
+			case http.StatusFound:
+				// For 302 Found (redirect), check the Location header and HTML body
+				locationHeader := w.Header().Get("Location")
+				logrus.Infof("Location Header: %s", locationHeader)
+				if locationHeader != "" {
+					// If Location header is set, that's the redirect URL
+					var expectedURL string
+					if url, exists := scenario.ExpectedJSON["url"]; exists {
+						expectedURL = url.(string)
+					} else if updateURL, exists := scenario.ExpectedJSON["update_url_yml"]; exists {
+						expectedURL = updateURL.(string)
+					} else {
+						t.Fatal("Neither 'url' nor 'update_url_yml' found in ExpectedJSON")
+					}
+					assert.Equal(t, expectedURL, locationHeader)
+					body := checkFileContent(t, locationHeader)
+					logrus.Infof("asserting that body: %s, contains: %s", body, scenario.ExpectedBody)
+					assert.Contains(t, body, scenario.ExpectedBody)
+				} else {
+					// If no Location header, check HTML body for redirect link
+					body := w.Body.String()
+					expectedURL := scenario.ExpectedJSON["url"].(string)
+					// Check if the expected URL is present in the HTML body
+					assert.Contains(t, body, expectedURL)
+				}
+			default:
+				// For other status codes, parse and compare JSON
+				var actual map[string]interface{}
+				logrus.Infoln("Body: ", w.Body.String())
+				err = json.Unmarshal(w.Body.Bytes(), &actual)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				// Compare the response with the expected values.
+				assert.Equal(t, scenario.ExpectedJSON, actual)
+			}
+		})
+	}
+}
+
+// func TestSquirrelReleases(t *testing.T) {
+// 	router := gin.Default()
+// 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+// 	router.GET("/update/:owner/:app/:channel/:platform/:arch/:version/RELEASES", func(c *gin.Context) {
+// 		handler.SquirrelReleases(c)
+// 	})
+
+// 	// Define test scenarios for SquirrelReleases handler
+// 	testScenarios := []struct {
+// 		Owner        string
+// 		AppName      string
+// 		ChannelName  string
+// 		Platform     string
+// 		Arch         string
+// 		Version      string
+// 		ExpectedCode int
+// 		TestName     string
+// 		ExpectedBody string
+// 	}{
+// 		{
+// 			Owner:        "admin",
+// 			AppName:      "updaters",
+// 			ChannelName:  "stable",
+// 			Platform:     "windows",
+// 			Arch:         "universalArch",
+// 			Version:      "0.0.1.137",
+// 			ExpectedCode: http.StatusFound, // 302 redirect
+// 			TestName:     "SquirrelReleasesUpdateAvailable",
+// 			ExpectedBody: "RELEASES FILE FOR WINDOWS sqirrel",
+// 		},
+// 		{
+// 			Owner:        "admin",
+// 			AppName:      "updaters",
+// 			ChannelName:  "stable",
+// 			Platform:     "windows",
+// 			Arch:         "universalArch",
+// 			Version:      "0.0.6.137",
+// 			ExpectedCode: http.StatusFound, // 302 redirect
+// 			TestName:     "SquirrelReleasesUpdateNotAvailable",
+// 			ExpectedBody: "RELEASES FILE FOR WINDOWS sqirrel",
+// 		},
+// 		// {
+// 		// 	Owner:        "admin",
+// 		// 	AppName:      "nonexistent",
+// 		// 	ChannelName:  "stable",
+// 		// 	Platform:     "windows",
+// 		// 	Arch:         "universalArch",
+// 		// 	Version:      "0.0.1.137",
+// 		// 	ExpectedCode: http.StatusBadRequest, // Should return error for non-existent app
+// 		// 	TestName:     "SquirrelReleasesNonExistentApp",
+// 		// },
+// 	}
+
+// 	// Run test scenarios
+// 	for _, scenario := range testScenarios {
+// 		t.Run(scenario.TestName, func(t *testing.T) {
+// 			// Create URL with parameters
+// 			url := fmt.Sprintf("/update/%s/%s/%s/%s/%s/%s/RELEASES",
+// 				scenario.Owner,
+// 				scenario.AppName,
+// 				scenario.ChannelName,
+// 				scenario.Platform,
+// 				scenario.Arch,
+// 				scenario.Version,
+// 			)
+
+// 			// Create request with proper host information
+// 			req, err := http.NewRequest("GET", url, nil)
+// 			if err != nil {
+// 				t.Fatal(err)
+// 			}
+
+// 			// Create response recorder
+// 			w := httptest.NewRecorder()
+
+// 			// Serve the request
+// 			router.ServeHTTP(w, req)
+
+// 			// Log full response for debugging
+// 			logrus.Infof("=== Test: %s ===", scenario.TestName)
+// 			logrus.Infof("Status Code: %d", w.Code)
+// 			logrus.Infof("Headers: %v", w.Header())
+// 			logrus.Infof("Body: %s", w.Body.String())
+// 			logrus.Infof("==================")
+
+// 			// Check status code
+// 			assert.Equal(t, scenario.ExpectedCode, w.Code, "Expected status code %d, got %d", scenario.ExpectedCode, w.Code)
+// 			// For 302 Found (redirect), check the Location header and HTML body
+// 			locationHeader := w.Header().Get("Location")
+// 			logrus.Infof("Location Header: %s", locationHeader)
+// 			if locationHeader != "" {
+// 				// If Location header is set, that's the redirect URL
+// 				// var expectedURL string
+// 				// if url, exists := scenario.ExpectedJSON["url"]; exists {
+// 				// 	expectedURL = url.(string)
+// 				// } else if updateURL, exists := scenario.ExpectedJSON["update_url_yml"]; exists {
+// 				// 	expectedURL = updateURL.(string)
+// 				// } else {
+// 				// 	t.Fatal("Neither 'url' nor 'update_url_yml' found in ExpectedJSON")
+// 				// }
+// 				// assert.Equal(t, expectedURL, locationHeader)
+// 				body := checkFileContent(t, locationHeader)
+// 				logrus.Infof("asserting that body: %s, contains: %s", body, scenario.ExpectedBody)
+// 				assert.Contains(t, body, scenario.ExpectedBody)
+// 			} else {
+// 				// If no Location header, check HTML body for redirect link
+// 				body := w.Body.String()
+// 				logrus.Infof("Body in squirrel win releases: %s", body)
+// 				// expectedURL := scenario.ExpectedJSON["url"].(string)
+// 				// Check if the expected URL is present in the HTML body
+// 				// assert.Contains(t, body, expectedURL)
+// 			}
+// 			// // For 302 redirects, check if Location header is present
+// 			// if scenario.ExpectedCode == http.StatusFound {
+// 			// 	locationHeader := w.Header().Get("Location")
+// 			// 	assert.NotEmpty(t, locationHeader, "Location header should be present for 302 redirect")
+
+// 			// 	// Log the redirect URL for debugging
+// 			// 	logrus.Infof("Redirect URL for %s: %s", scenario.TestName, locationHeader)
+// 			// }
+
+// 			// // For error cases, check if error message is present
+// 			// if scenario.ExpectedCode == http.StatusBadRequest {
+// 			// 	var response map[string]interface{}
+// 			// 	err := json.Unmarshal(w.Body.Bytes(), &response)
+// 			// 	assert.NoError(t, err, "Should be able to parse error response as JSON")
+// 			// 	assert.Contains(t, response, "error", "Error response should contain 'error' field")
+// 			// }
+// 		})
+// 	}
+// }
+
 func TestUpdateSpecificAppWithSecondUser(t *testing.T) {
 
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 	// Define the route for the update endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/apps/update", func(c *gin.Context) {
 		handler.UpdateSpecificApp(c)
 	})
@@ -1816,7 +2703,7 @@ func TestUpdateSpecificApp(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 	// Define the route for the update endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/apps/update", func(c *gin.Context) {
 		handler.UpdateSpecificApp(c)
 	})
@@ -1905,7 +2792,7 @@ func TestSearch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -2118,7 +3005,7 @@ func TestFilterSearchWithChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -2269,7 +3156,7 @@ func TestFilterSearchWithChannelAndPublished(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -2389,7 +3276,7 @@ func TestFilterSearchWithChannelAndPublishedAndCritical(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -2509,7 +3396,7 @@ func TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatform(t *testing.T)
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -2629,7 +3516,7 @@ func TestFilterSearchWithChannelAndPublishedAndCriticalAndPlatformAndArch(t *tes
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -2750,7 +3637,7 @@ func TestSearchOnlyPublished(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -2901,7 +3788,7 @@ func TestSearchOnlyCritical(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -3052,7 +3939,7 @@ func TestSearchOnlyUniversalPlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /search endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/search", func(c *gin.Context) {
 		handler.GetAppByName(c)
 	})
@@ -3260,7 +4147,7 @@ func TestSearchOnlyUniversalPlatform(t *testing.T) {
 
 func TestFetchkLatestVersionOfApp(t *testing.T) {
 	router := gin.Default()
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/apps/latest", func(c *gin.Context) {
 		handler.FetchLatestVersionOfApp(c)
 	})
@@ -3358,7 +4245,7 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 }
 func TestCheckVersion(t *testing.T) {
 	router := gin.Default()
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
@@ -3488,13 +4375,46 @@ func TestMultipleDelete(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the /apps/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/apps/delete", func(c *gin.Context) {
 		handler.DeleteSpecificVersionOfApp(c)
 	})
 
 	// Iterate over the uploadedAppIDs and send a DELETE request for each ID.
 	for _, appID := range uploadedAppIDs {
+		w := httptest.NewRecorder()
+
+		req, err := http.NewRequest("DELETE", "/apps/delete?id="+appID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Set the Authorization header.
+		req.Header.Set("Authorization", "Bearer "+authToken)
+		// Serve the request using the Gin router.
+		router.ServeHTTP(w, req)
+
+		// Check the response status code for each request.
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		expected := `{"deleteSpecificAppResult.DeletedCount":1}`
+		assert.Equal(t, expected, w.Body.String())
+	}
+}
+
+func TestMultipleDeleteWithUpdaters(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	// Define the route for the /apps/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/apps/delete", func(c *gin.Context) {
+		handler.DeleteSpecificVersionOfApp(c)
+	})
+
+	// Iterate over the uploadedAppIDs and send a DELETE request for each ID.
+	for _, appID := range uploadedAppIDsWithUpdaters {
 		w := httptest.NewRecorder()
 
 		req, err := http.NewRequest("DELETE", "/apps/delete?id="+appID, nil)
@@ -3523,7 +4443,7 @@ func TestMultipleUploadWithSameExtension(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -3630,7 +4550,7 @@ func TestMultipleUploadWithSameExtension(t *testing.T) {
 
 func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.T) {
 	router := gin.Default()
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
@@ -3761,7 +4681,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/telemetry", func(c *gin.Context) {
 		handler.GetTelemetry(c)
 	})
@@ -4036,7 +4956,7 @@ func TestListAppsWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /app/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -4065,7 +4985,7 @@ func TestListChannelsWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
@@ -4095,7 +5015,7 @@ func TestListPlatformsWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /platform/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
@@ -4125,7 +5045,7 @@ func TestListArchsWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /arch/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
@@ -4155,7 +5075,7 @@ func TestUpdateAppWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/update", func(c *gin.Context) {
 		handler.UpdateApp(c)
 	})
@@ -4217,7 +5137,7 @@ func TestUpdateChannelWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/update", func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
@@ -4264,7 +5184,7 @@ func TestUpdatePlatformWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /platform/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/update", func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
@@ -4314,7 +5234,7 @@ func TestUpdateArchWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /arch/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/arch/update", func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
@@ -4360,7 +5280,7 @@ func TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchsWithSecond
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the /apps/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/apps/delete", func(c *gin.Context) {
 		handler.DeleteSpecificVersionOfApp(c)
 	})
@@ -4394,7 +5314,7 @@ func TestDeleteNightlyChannelWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/channel/delete", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
@@ -4424,7 +5344,7 @@ func TestDeletePlatformWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /platform/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/platform/delete", func(c *gin.Context) {
 		handler.DeletePlatform(c)
 	})
@@ -4454,7 +5374,7 @@ func TestDeleteArchWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /arch/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/arch/delete", func(c *gin.Context) {
 		handler.DeleteArch(c)
 	})
@@ -4484,7 +5404,7 @@ func TestDeleteAppMetaWithSecondUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /app/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/app/delete", func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})
@@ -4512,7 +5432,7 @@ func TestMultipleDeleteWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testin
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the /apps/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/apps/delete", func(c *gin.Context) {
 		handler.DeleteSpecificVersionOfApp(c)
 	})
@@ -4544,7 +5464,7 @@ func TestCreateTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/user/create", utils.AuthMiddleware(), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
 		handler.CreateTeamUser(c)
 	})
@@ -4634,7 +5554,7 @@ func TestTeamUserLogin(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})
@@ -4681,7 +5601,7 @@ func TestFailedUploadAppUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -4759,7 +5679,7 @@ func TestFailedUpdateAppUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateApp(c)
 	})
@@ -4813,7 +5733,7 @@ func TestFailedUpdateChannelUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceChannels, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
@@ -4852,7 +5772,7 @@ func TestFailedUpdatePlatformUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /platform/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourcePlatforms, mongoDatabase), func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
@@ -4891,7 +5811,7 @@ func TestFailedUpdateArchUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /arch/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/arch/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceArchs, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
@@ -4930,7 +5850,7 @@ func TestListAppsUsingTeamUserBeforeCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /app/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -4982,7 +5902,7 @@ func TestListChannelsUsingTeamUserBeforeCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
@@ -5036,7 +5956,7 @@ func TestListPlatformsUsingTeamUserBeforeCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /platform/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
@@ -5089,7 +6009,7 @@ func TestListArchsUsingTeamUserBeforeCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /arch/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
@@ -5144,7 +6064,7 @@ func TestAppCreateTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
@@ -5210,7 +6130,7 @@ func TestListAppsUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -5270,7 +6190,7 @@ func TestFailedDeleteTeamUserApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/app/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})
@@ -5302,7 +6222,7 @@ func TestChannelCreateTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceChannels, mongoDatabase), func(c *gin.Context) {
 		handler.CreateChannel(c)
 	})
@@ -5352,7 +6272,7 @@ func TestListChannelsUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
@@ -5410,7 +6330,7 @@ func TestFailedDeleteTeamUserChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/channel/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceChannels, mongoDatabase), func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
@@ -5442,7 +6362,7 @@ func TestPlatformCreateTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourcePlatforms, mongoDatabase), func(c *gin.Context) {
 		handler.CreatePlatform(c)
 	})
@@ -5492,7 +6412,7 @@ func TestListPlatformsUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
@@ -5550,7 +6470,7 @@ func TestFailedDeleteTeamUserPlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/platform/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourcePlatforms, mongoDatabase), func(c *gin.Context) {
 		handler.DeletePlatform(c)
 	})
@@ -5582,7 +6502,7 @@ func TestArchCreateTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/arch/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceArchs, mongoDatabase), func(c *gin.Context) {
 		handler.CreateArch(c)
 	})
@@ -5632,7 +6552,7 @@ func TestListArchsUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
@@ -5690,7 +6610,7 @@ func TestFailedDeleteTeamUserArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/arch/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceArchs, mongoDatabase), func(c *gin.Context) {
 		handler.DeleteArch(c)
 	})
@@ -5718,7 +6638,7 @@ func TestFailedUpdateTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/user/update", utils.AuthMiddleware(), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
 		handler.UpdateTeamUser(c)
 	})
@@ -5807,7 +6727,7 @@ func TestListTeamUsers(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/users/list", utils.AuthMiddleware(), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
 		handler.ListTeamUsers(c)
 	})
@@ -5846,7 +6766,7 @@ func TestWhoAmIAdmin(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/whoami", utils.AuthMiddleware(), func(c *gin.Context) {
 		handler.Whoami(c)
 	})
@@ -5885,7 +6805,7 @@ func TestWhoAmITeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/whoami", utils.AuthMiddleware(), func(c *gin.Context) {
 		handler.Whoami(c)
 	})
@@ -5924,7 +6844,7 @@ func TestUpdateTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/user/update", utils.AuthMiddleware(), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
 		handler.UpdateTeamUser(c)
 	})
@@ -6015,7 +6935,7 @@ func TestUpdateAppUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateApp(c)
 	})
@@ -6079,7 +6999,7 @@ func TestUpdateChannelUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceChannels, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
@@ -6127,7 +7047,7 @@ func TestUpdatePlatformUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /platform/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourcePlatforms, mongoDatabase), func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
@@ -6178,7 +7098,7 @@ func TestUpdateArchUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /arch/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/arch/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceArchs, mongoDatabase), func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
@@ -6227,7 +7147,7 @@ func TestFailedAppCreateTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/create route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
 		handler.CreateApp(c)
 	})
@@ -6276,7 +7196,7 @@ func TestDeleteTeamUserApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/app/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})
@@ -6305,7 +7225,7 @@ func TestDeleteTeamUserChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/channel/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceChannels, mongoDatabase), func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
@@ -6335,7 +7255,7 @@ func TestDeleteTeamUserPlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/platform/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourcePlatforms, mongoDatabase), func(c *gin.Context) {
 		handler.DeletePlatform(c)
 	})
@@ -6365,7 +7285,7 @@ func TestDeleteTeamUserArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/arch/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceArchs, mongoDatabase), func(c *gin.Context) {
 		handler.DeleteArch(c)
 	})
@@ -6395,7 +7315,7 @@ func TestFailedUpdateAdminUserUsingTeamUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /admin/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/admin/update", func(c *gin.Context) {
 		handler.UpdateAdmin(c)
 	})
@@ -6438,7 +7358,7 @@ func TestDeleteTeamUser(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/user/delete", utils.AuthMiddleware(), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
 		handler.DeleteTeamUser(c)
 	})
@@ -6490,7 +7410,7 @@ func TestMultipleUploadWithIntermediate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the upload endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/upload", func(c *gin.Context) {
 		handler.UploadApp(c)
 	})
@@ -6601,7 +7521,7 @@ func TestUpdateSpecificAppWithIntermediate(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 	// Define the route for the update endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/apps/update", func(c *gin.Context) {
 		handler.UpdateSpecificApp(c)
 	})
@@ -6686,7 +7606,7 @@ func TestUpdateSpecificAppWithIntermediate(t *testing.T) {
 
 func TestCheckVersionWithIntermediate(t *testing.T) {
 	router := gin.Default()
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
@@ -6828,7 +7748,7 @@ func TestMultipleDeleteWithIntermediate(t *testing.T) {
 	router.Use(utils.AuthMiddleware())
 
 	// Define the route for the /apps/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/apps/delete", func(c *gin.Context) {
 		handler.DeleteSpecificVersionOfApp(c)
 	})
@@ -6862,7 +7782,7 @@ func TestUpdateChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /channel/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/channel/update", func(c *gin.Context) {
 		handler.UpdateChannel(c)
 	})
@@ -6911,7 +7831,7 @@ func TestListChannelsWhenExist(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/channel/list", func(c *gin.Context) {
 		handler.ListChannels(c)
 	})
@@ -6965,7 +7885,7 @@ func TestDeleteNightlyChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/channel/delete", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
@@ -6995,7 +7915,7 @@ func TestDeleteStableChannel(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /channel/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/channel/delete", func(c *gin.Context) {
 		handler.DeleteChannel(c)
 	})
@@ -7025,7 +7945,7 @@ func TestDeleteSecondPlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /platform/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/platform/delete", func(c *gin.Context) {
 		handler.DeletePlatform(c)
 	})
@@ -7055,7 +7975,7 @@ func TestUpdatePlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /platform/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/update", func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
@@ -7107,7 +8027,7 @@ func TestFailedUpdatePlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /platform/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/platform/update", func(c *gin.Context) {
 		handler.UpdatePlatform(c)
 	})
@@ -7142,6 +8062,96 @@ func TestFailedUpdatePlatform(t *testing.T) {
 	assert.Equal(t, expectedErrorMessage, w.Body.String())
 }
 
+func TestDeletePlatformWindows(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /platform/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/platform/delete", func(c *gin.Context) {
+		handler.DeletePlatform(c)
+	})
+
+	// Create a DELETE request for the /platform/delete endpoint.
+	req, err := http.NewRequest("DELETE", "/platform/delete?id="+platformIdWindows, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deletePlatformResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestDeletePlatformMacos(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /platform/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/platform/delete", func(c *gin.Context) {
+		handler.DeletePlatform(c)
+	})
+
+	// Create a DELETE request for the /platform/delete endpoint.
+	req, err := http.NewRequest("DELETE", "/platform/delete?id="+platformIdMacos, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deletePlatformResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestDeletePlatformMacosSquirrel(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /platform/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/platform/delete", func(c *gin.Context) {
+		handler.DeletePlatform(c)
+	})
+
+	// Create a DELETE request for the /platform/delete endpoint.
+	req, err := http.NewRequest("DELETE", "/platform/delete?id="+platformIdMacosSquirrel, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deletePlatformResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
 func TestListPlatformsWhenExist(t *testing.T) {
 
 	router := gin.Default()
@@ -7149,7 +8159,7 @@ func TestListPlatformsWhenExist(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /platform/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/platform/list", func(c *gin.Context) {
 		handler.ListPlatforms(c)
 	})
@@ -7200,7 +8210,7 @@ func TestDeletePlatform(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /platform/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/platform/delete", func(c *gin.Context) {
 		handler.DeletePlatform(c)
 	})
@@ -7229,7 +8239,7 @@ func TestDeleteSecondArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /arch/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/arch/delete", func(c *gin.Context) {
 		handler.DeleteArch(c)
 	})
@@ -7258,7 +8268,7 @@ func TestUpdateArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /arch/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/arch/update", func(c *gin.Context) {
 		handler.UpdateArch(c)
 	})
@@ -7306,7 +8316,7 @@ func TestListArchsWhenExist(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /arch/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/arch/list", func(c *gin.Context) {
 		handler.ListArchs(c)
 	})
@@ -7357,7 +8367,7 @@ func TestDeleteArch(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /arch/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/arch/delete", func(c *gin.Context) {
 		handler.DeleteArch(c)
 	})
@@ -7386,7 +8396,7 @@ func TestUpdateApp(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /app/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/update", func(c *gin.Context) {
 		handler.UpdateApp(c)
 	})
@@ -7449,7 +8459,7 @@ func TestListAppsWhenExist(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /app/list endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.GET("/app/list", func(c *gin.Context) {
 		handler.ListApps(c)
 	})
@@ -7500,13 +8510,43 @@ func TestDeleteAppMeta(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /app/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/app/delete", func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})
 
 	// Create a DELETE request for the /app/delete endpoint.
 	req, err := http.NewRequest("DELETE", "/app/delete?id="+idTestappApp, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deleteAppResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestDeleteAppMetaUpdaters(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /app/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/app/delete", func(c *gin.Context) {
+		handler.DeleteApp(c)
+	})
+
+	// Create a DELETE request for the /app/delete endpoint.
+	req, err := http.NewRequest("DELETE", "/app/delete?id="+idTestappAppWithUpdaters, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -7530,7 +8570,7 @@ func TestDeletePublicAppMeta(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the route for the /app/delete endpoint.
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.DELETE("/app/delete", func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})
@@ -7560,7 +8600,7 @@ func TestFailedUpdateAdminUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /admin/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/admin/update", func(c *gin.Context) {
 		handler.UpdateAdmin(c)
 	})
@@ -7604,7 +8644,7 @@ func TestUpdateAdminUser(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Define the handler for the /admin/update route
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/admin/update", func(c *gin.Context) {
 		handler.UpdateAdmin(c)
 	})
@@ -7646,7 +8686,7 @@ func TestFailedLoginWithOldPassword(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})
@@ -7682,7 +8722,7 @@ func TestSuccessfulLoginWithNewPassword(t *testing.T) {
 	router := gin.Default()
 	w := httptest.NewRecorder()
 
-	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, true)
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})

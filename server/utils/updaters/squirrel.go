@@ -35,6 +35,31 @@ func (v *SquirrelWindowsFileValidator) GetUpdaterType() string {
 	return v.updaterType
 }
 
+type SquirrelDarwinFileValidator struct {
+	updaterType string
+}
+
+func (v *SquirrelDarwinFileValidator) Validate(files []*multipart.FileHeader) error {
+	hasZip := false
+
+	for _, file := range files {
+		filename := strings.ToLower(file.Filename)
+		if strings.HasSuffix(filename, ".zip") {
+			hasZip = true
+		}
+	}
+
+	if !hasZip {
+		return fmt.Errorf("squirrel darwin updater requires a ZIP archive for update functionality. Please include a ZIP file in your upload")
+	}
+
+	return nil
+}
+
+func (v *SquirrelDarwinFileValidator) GetUpdaterType() string {
+	return v.updaterType
+}
+
 func ValidateSquirrelUpdater(updaterType string) error {
 	validTypes := []string{"squirrel_darwin", "squirrel_windows"}
 
@@ -59,5 +84,10 @@ func GetSquirrelUpdaterConfig(updaterType string) (*SquirrelUpdater, error) {
 
 func ValidateSquirrelWindowsFiles(files []*multipart.FileHeader) error {
 	validator := &SquirrelWindowsFileValidator{updaterType: "squirrel_windows"}
+	return validator.Validate(files)
+}
+
+func ValidateSquirrelDarwinFiles(files []*multipart.FileHeader) error {
+	validator := &SquirrelDarwinFileValidator{updaterType: "squirrel_darwin"}
 	return validator.Validate(files)
 }

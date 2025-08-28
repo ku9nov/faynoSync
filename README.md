@@ -360,6 +360,20 @@ The tests verify the implemented API using a test database and an existing S3 bu
   <li>TestCheckVersionWithIntermediate</li>
   <li>TestMultipleDeleteWithIntermediate</li>
   <li>TestTelemetryWithVariousParams</li>
+  <li>TestCreateAppWithUpdaters</li>
+  <li>TestPlatformCreateWindows</li>
+  <li>TestUpdatePlatformWindows</li>
+  <li>TestPlatformCreateMacos</li>
+  <li>TestUpdatePlatformMacos</li>
+  <li>TestPlatformCreateMacosSquirrel</li>
+  <li>TestUpdatePlatformMacosSquirrel</li>
+  <li>TestMultipleUploadWithUpdaters</li>
+  <li>TestCheckVersionWithUpdaters</li>
+  <li>TestSquirrelReleases (Not implemented yet)</li>
+  <li>TestDeletePlatformWindows</li>
+  <li>TestDeletePlatformMacos</li>
+  <li>TestDeletePlatformMacosSquirrel</li>
+  <li>TestDeleteAppMetaUpdaters</li>
 
 </details>
 

@@ -80,6 +80,8 @@ func CreateFileValidator(updaterType string) (FileValidator, error) {
 		return &ElectronBuilderFileValidator{updaterType: updaterType}, nil
 	case strings.HasPrefix(updaterType, "squirrel_windows"):
 		return &SquirrelWindowsFileValidator{updaterType: updaterType}, nil
+	case strings.HasPrefix(updaterType, "squirrel_darwin"):
+		return &SquirrelDarwinFileValidator{updaterType: updaterType}, nil
 	default:
 		return &NoOpFileValidator{updaterType: updaterType}, nil
 	}
