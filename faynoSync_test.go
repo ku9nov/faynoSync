@@ -2336,7 +2336,7 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			ExpectedJSON: map[string]interface{}{
 				"critical":         false,
 				"update_available": true,
-				"url":              "http://localhost:9010/cb-faynosync-s3-public/updaters-admin/nightly/macosSquirrel/universalArch/updaters-0.0.2.137.zip",
+				"url":              fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "updaters-admin/nightly/macosSquirrel/universalArch/updaters-0.0.2.137.zip"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "macosSquirrel",
@@ -2365,7 +2365,7 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			ExpectedJSON: map[string]interface{}{
 				"critical":         false,
 				"update_available": true,
-				"update_url_yml":   "http://localhost:9010/cb-faynosync-s3-public/electron-builder/updaters-admin/0.0.4.137/nightly/macos/universalArch/latest-mac.yml",
+				"update_url_yml":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "electron-builder/updaters-admin/0.0.4.137/nightly/macos/universalArch/latest-mac.yml"),
 			},
 			ExpectedCode: http.StatusFound,
 			// Published:    false,
@@ -2395,7 +2395,7 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
 				"status": "redirect",
-				"url":    "http://localhost:9010/cb-faynosync-s3-public/electron-builder/updaters-admin/0.0.8.137/stable/windows/universalArch/latest.yml",
+				"url":    fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "electron-builder/updaters-admin/0.0.8.137/stable/windows/universalArch/latest.yml"),
 			},
 			ExpectedCode: http.StatusFound,
 			// Published:    false,
