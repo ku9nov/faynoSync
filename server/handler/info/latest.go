@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,18 +17,38 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func CreateCacheKey(params map[string]interface{}) string {
-	return fmt.Sprintf("app_name=%s&version=%s&channel=%s&platform=%s&arch=%s",
-		params["app_name"], params["version"], params["channel"], params["platform"], params["arch"])
+type CachedResponse struct {
+	Response   interface{} `json:"response"`
+	HTTPStatus int         `json:"http_status"`
 }
 
-func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, response gin.H) {
-	cachedData, err := json.Marshal(response)
+func CreateCacheKey(params map[string]interface{}) string {
+	baseKey := fmt.Sprintf("app_name=%s&version=%s&channel=%s&platform=%s&arch=%s",
+		params["app_name"], params["version"], params["channel"], params["platform"], params["arch"])
+
+	if updater, exists := params["updater"]; exists && updater != "" {
+		baseKey += fmt.Sprintf("&updater=%s", updater)
+	}
+
+	if pkg, exists := params["package"]; exists && pkg != "" {
+		baseKey += fmt.Sprintf("&package=%s", pkg)
+	}
+
+	return baseKey
+}
+
+func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, response interface{}, httpStatus int) {
+	cachedData := CachedResponse{
+		Response:   response,
+		HTTPStatus: httpStatus,
+	}
+
+	jsonData, err := json.Marshal(cachedData)
 	if err != nil {
-		logrus.Error("Error marshalling response:", err)
+		logrus.Error("Error marshalling cached response:", err)
 		return
 	}
-	err = rdb.Set(ctx, cacheKey, cachedData, time.Hour*24).Err()
+	err = rdb.Set(ctx, cacheKey, jsonData, time.Hour*24).Err()
 	if err != nil {
 		logrus.Error("Error setting data to Redis:", err)
 	} else {
@@ -36,6 +57,7 @@ func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, resp
 }
 
 func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
+	var httpStatus int
 	validatedParams, err := utils.ValidateParamsLatest(c, db)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -52,10 +74,21 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		cachedResponse, err := rdb.Get(ctx, cacheKey).Result()
 		if err == nil {
 			// If cache exists, return the cached response
-			var cachedData map[string]interface{}
+			var cachedData CachedResponse
 			if json.Unmarshal([]byte(cachedResponse), &cachedData) == nil {
 				logrus.Debugln("Return cached data: ", cachedData)
-				c.JSON(http.StatusOK, cachedData)
+
+				// Handle redirect for cached response
+				if cachedData.HTTPStatus == 302 {
+					if responseMap, ok := cachedData.Response.(map[string]interface{}); ok {
+						if redirectURL, exists := responseMap["url"]; exists {
+							c.Redirect(http.StatusFound, redirectURL.(string))
+							return
+						}
+					}
+				}
+
+				c.JSON(cachedData.HTTPStatus, cachedData.Response)
 				return
 			}
 		}
@@ -91,10 +124,18 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 					response[key] = artifact.Link
 				}
 			}
+			response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
 			if performanceMode && rdb != nil {
-				cacheResponse(ctx, rdb, cacheKey, response)
+				cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
 			}
-			c.JSON(http.StatusOK, response)
+
+			if httpStatus == 302 {
+				if redirectURL, exists := response["url"]; exists {
+					c.Redirect(http.StatusFound, redirectURL.(string))
+					return
+				}
+			}
+			c.JSON(httpStatus, response)
 		}
 		return
 	}
@@ -133,10 +174,18 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			response["changelog"] = changelogBuilder.String()
 		}
 	}
+	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
 	if performanceMode && rdb != nil {
-		cacheResponse(ctx, rdb, cacheKey, response)
+		cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
 	}
-	c.JSON(http.StatusOK, response)
+	if httpStatus == 302 {
+		if redirectURL, exists := response["url"]; exists {
+			c.Redirect(http.StatusFound, redirectURL.(string))
+			return
+		}
+	}
+
+	c.JSON(httpStatus, response)
 }
 
 func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *redis.Client, performanceMode bool) {
@@ -163,10 +212,21 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 	if performanceMode && rdb != nil {
 		cachedResponse, err := rdb.Get(ctx, cacheKey).Result()
 		if err == nil {
-			var cachedData map[string]interface{}
+			var cachedData CachedResponse
 			if json.Unmarshal([]byte(cachedResponse), &cachedData) == nil {
 				logrus.Debugln("Returning cached data: ", cachedData)
-				c.JSON(http.StatusOK, cachedData)
+
+				// Handle redirect for cached response
+				if cachedData.HTTPStatus == 302 {
+					if responseMap, ok := cachedData.Response.(map[string]interface{}); ok {
+						if redirectURL, exists := responseMap["url"]; exists {
+							c.Redirect(http.StatusFound, redirectURL.(string))
+							return
+						}
+					}
+				}
+
+				c.JSON(cachedData.HTTPStatus, cachedData.Response)
 				return
 			}
 		}
@@ -248,15 +308,14 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 	c.JSON(http.StatusOK, downloadUrls)
 
 	if performanceMode && rdb != nil {
-		jsonResponse, _ := json.Marshal(downloadUrls)
-		rdb.Set(ctx, cacheKey, jsonResponse, 0)
+		cacheResponse(ctx, rdb, cacheKey, downloadUrls, http.StatusOK)
 	}
 }
 
 // trackClientTelemetry handles analytics collection for version check requests using Redis Sets
 func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, deviceID string) {
 	if rdb == nil || deviceID == "" {
-		logrus.Debug("Redis client is nil or deviceID is empty, skipping analytics collection")
+		logrus.Debug("Redis client is not set or deviceID is empty, skipping analytics collection")
 		return
 	}
 

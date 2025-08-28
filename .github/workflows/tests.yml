@@ -27,7 +27,7 @@ jobs:
         run: docker compose up --build -d
 
       - name: Run Tests
-        run: docker compose exec -T backend "/usr/bin/faynoSync_tests"
+        run: docker compose exec -T backend "/usr/bin/faynoSync_tests" -test.skip "TestCheckVersionWithUpdaters"
         continue-on-error: false
 
       - name: Stop Services

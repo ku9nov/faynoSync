@@ -33,8 +33,12 @@ func NewMinioClient(env *viper.Viper) (*MinioClient, error) {
 }
 
 // UploadObject uploads a file to MinIO private bucket
-func (m *MinioClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) error {
-	_, err := m.client.PutObject(ctx, bucketName, objectKey, fileReader, -1, minio.PutObjectOptions{})
+func (m *MinioClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	options := minio.PutObjectOptions{}
+	if contentType != "" {
+		options.ContentType = contentType
+	}
+	_, err := m.client.PutObject(ctx, bucketName, objectKey, fileReader, -1, options)
 	if err != nil {
 		return &StorageError{Message: "failed to upload object to MinIO", Err: err}
 	}
@@ -42,8 +46,12 @@ func (m *MinioClient) UploadObject(ctx context.Context, bucketName, objectKey st
 }
 
 // UploadPublicObject uploads a file to MinIO public bucket and returns the public URL
-func (m *MinioClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) (string, error) {
-	uploadInfo, err := m.client.PutObject(ctx, bucketName, objectKey, fileReader, -1, minio.PutObjectOptions{})
+func (m *MinioClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	options := minio.PutObjectOptions{}
+	if contentType != "" {
+		options.ContentType = contentType
+	}
+	uploadInfo, err := m.client.PutObject(ctx, bucketName, objectKey, fileReader, -1, options)
 	if err != nil {
 		return "", &StorageError{Message: "failed to upload public object to MinIO", Err: err}
 	}

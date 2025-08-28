@@ -23,7 +23,7 @@ type AppRepository interface {
 	FetchAppByID(appID primitive.ObjectID, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
 	CreateChannel(channelName string, owner string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context, owner string) ([]*model.Channel, error)
-	CreatePlatform(platformName string, owner string, ctx context.Context) (interface{}, error)
+	CreatePlatform(platformName string, updaters []model.Updater, owner string, ctx context.Context) (interface{}, error)
 	ListPlatforms(ctx context.Context, owner string) ([]*model.Platform, error)
 	DeletePlatform(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
 	CreateArch(archName string, owner string, ctx context.Context) (interface{}, error)
@@ -34,7 +34,7 @@ type AppRepository interface {
 	DeleteApp(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
 	UpdateApp(id primitive.ObjectID, appName string, logo string, description string, owner string, ctx context.Context) (interface{}, error)
 	UpdateChannel(id primitive.ObjectID, paramValue string, owner string, ctx context.Context) (interface{}, error)
-	UpdatePlatform(id primitive.ObjectID, paramValue string, owner string, ctx context.Context) (interface{}, error)
+	UpdatePlatform(id primitive.ObjectID, platformName string, updaters []model.Updater, owner string, ctx context.Context) (interface{}, error)
 	UpdateArch(id primitive.ObjectID, paramValue string, owner string, ctx context.Context) (interface{}, error)
 	DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context, owner string) ([]string, bool, error)
 }

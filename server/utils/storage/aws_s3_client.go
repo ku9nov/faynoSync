@@ -35,14 +35,17 @@ func NewAWSS3Client(env *viper.Viper) (*AWSS3Client, error) {
 	}, nil
 }
 
-// UploadPublicObject uploads a file to AWS S3 public bucket and returns the public URL
-func (a *AWSS3Client) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) (string, error) {
-	_, err := a.client.PutObject(ctx, &s3.PutObjectInput{
+func (a *AWSS3Client) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	input := &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 		Body:   fileReader,
 		ACL:    types.ObjectCannedACLPublicRead,
-	})
+	}
+	if contentType != "" {
+		input.ContentType = aws.String(contentType)
+	}
+	_, err := a.client.PutObject(ctx, input)
 	if err != nil {
 		return "", &StorageError{Message: "failed to upload public object to AWS S3", Err: err}
 	}

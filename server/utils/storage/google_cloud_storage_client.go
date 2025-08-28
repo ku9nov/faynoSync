@@ -43,7 +43,7 @@ func NewGoogleCloudStorageClient(env *viper.Viper) (*GoogleCloudStorageClient, e
 	return &GoogleCloudStorageClient{client: client, env: env}, nil
 }
 
-func (g *GoogleCloudStorageClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) error {
+func (g *GoogleCloudStorageClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
 	logrus.Debugf("GCS: Uploading object to bucket: %s, key: %s\n", bucketName, objectKey)
 
 	// Check if bucket exists
@@ -57,6 +57,12 @@ func (g *GoogleCloudStorageClient) UploadObject(ctx context.Context, bucketName,
 	logrus.Debugf("GCS: Bucket %s exists and is accessible\n", bucketName)
 
 	w := bucket.Object(objectKey).NewWriter(ctx)
+
+	// Set ContentType if provided
+	if contentType != "" {
+		w.ContentType = contentType
+		logrus.Debugf("GCS: Setting ContentType to: %s\n", contentType)
+	}
 
 	bytesWritten, err := io.Copy(w, fileReader)
 	if err != nil {
@@ -76,7 +82,7 @@ func (g *GoogleCloudStorageClient) UploadObject(ctx context.Context, bucketName,
 	return nil
 }
 
-func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File) (string, error) {
+func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 
 	logrus.Debugf("GCS: Uploading public object to bucket: %s, key: %s\n", bucketName, objectKey)
 
@@ -91,6 +97,12 @@ func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucke
 	logrus.Debugf("GCS: Bucket uniform access enabled: %v\n", attrs.UniformBucketLevelAccess.Enabled)
 
 	w := bucket.Object(objectKey).NewWriter(ctx)
+
+	// Set ContentType if provided
+	if contentType != "" {
+		w.ContentType = contentType
+		logrus.Debugf("GCS: Setting ContentType to: %s\n", contentType)
+	}
 
 	// Don't set PredefinedACL if uniform bucket-level access is enabled
 	if !attrs.UniformBucketLevelAccess.Enabled {
