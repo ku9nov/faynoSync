@@ -410,7 +410,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 		if requestedVersion.Equal(latestAppVersion) {
 			return CheckResult{Found: false, Artifacts: artifacts}, nil
 		} else if requestedVersion.GreaterThan(latestAppVersion) {
-			return CheckResult{Found: false, Artifacts: []Artifact{}}, fmt.Errorf("requested version %s is newer than the latest version available", requestedVersion)
+			return CheckResult{Found: false, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, PossibleRollback: true}, nil
 		} else {
 			return CheckResult{Found: true, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical}, nil
 		}

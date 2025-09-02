@@ -65,6 +65,7 @@ type CheckResult struct {
 	Artifacts              []Artifact
 	Changelog              []Changelog
 	IsRequiredIntermediate bool
+	PossibleRollback       bool
 }
 
 func (c *appRepository) getBasePipeline() mongo.Pipeline {
