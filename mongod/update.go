@@ -387,10 +387,11 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 
 			if !duplicateFound {
 				newArtifact := model.Artifact{
-					Link:     appLink,
-					Platform: platformMeta.ID,
-					Arch:     archMeta.ID,
-					Package:  extension,
+					Link:      appLink,
+					Platform:  platformMeta.ID,
+					Arch:      archMeta.ID,
+					Package:   extension,
+					Signature: ctxQuery["signature"].(string),
 				}
 				appData.Artifacts = append(appData.Artifacts, newArtifact)
 				updateFields = append(updateFields, bson.E{Key: "artifacts", Value: appData.Artifacts})

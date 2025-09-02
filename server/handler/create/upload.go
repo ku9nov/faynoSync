@@ -94,7 +94,15 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	// Validate updater requirements
 	if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
 		updaterStr := updater.(string)
+
+		// Validate files for updaters that require specific file types
 		if err := updaters.ValidateFiles(files, updaterStr); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Validate parameters for updaters that require specific parameters
+		if err := updaters.ValidateParams(ctxQueryMap, updaterStr); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}

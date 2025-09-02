@@ -3,10 +3,11 @@ package model
 import "go.mongodb.org/mongo-driver/bson/primitive"
 
 type Artifact struct {
-	Link     string             `bson:"link"`
-	Platform primitive.ObjectID `bson:"platform"`
-	Arch     primitive.ObjectID `bson:"arch"`
-	Package  string             `bson:"package"`
+	Link      string             `bson:"link"`
+	Platform  primitive.ObjectID `bson:"platform"`
+	Arch      primitive.ObjectID `bson:"arch"`
+	Package   string             `bson:"package"`
+	Signature string             `bson:"signature"`
 }
 
 type App struct {
@@ -102,6 +103,7 @@ type UpRequest struct {
 	Changelog         string   `json:"changelog"`
 	ArtifactsToDelete []string `json:"artifacts_to_delete"`
 	Updater           string   `json:"updater"`
+	Signature         string   `json:"signature"`
 }
 
 type PaginatedResponse struct {

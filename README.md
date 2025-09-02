@@ -374,6 +374,8 @@ The tests verify the implemented API using a test database and an existing S3 bu
   <li>TestDeletePlatformMacos</li>
   <li>TestDeletePlatformMacosSquirrel</li>
   <li>TestDeleteAppMetaUpdaters</li>
+  <li>TestPlatformCreateMacosTauri</li>
+  <li>TestDeletePlatformMacosTauri</li>
 
 </details>
 

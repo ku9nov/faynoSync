@@ -56,6 +56,52 @@ func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, resp
 	}
 }
 
+// BuildChangelogResponse builds changelog string from changelog entries
+func BuildChangelogResponse(changelog []db.Changelog) string {
+	if len(changelog) == 0 {
+		return ""
+	}
+
+	var changelogBuilder strings.Builder
+	for _, changelog := range changelog {
+		if changelog.Changes != "" {
+			changelogBuilder.WriteString(changelog.Changes)
+			changelogBuilder.WriteString("\n")
+		}
+	}
+
+	// Only return if there was any changelog to include
+	if changelogBuilder.Len() > 0 {
+		return changelogBuilder.String()
+	}
+
+	return ""
+}
+
+// BuildArtifactUrls builds artifact URLs map from artifacts slice
+func BuildArtifactUrls(artifacts []db.Artifact, platform, arch string) map[string]string {
+	logrus.Debugf("Artifacts in BuildArtifactUrls: %v", artifacts)
+	urls := make(map[string]string)
+
+	for _, artifact := range artifacts {
+		var key string
+		if artifact.Package == "" {
+			key = "update_url"
+		} else if artifact.Package != "" && artifact.Link != "" {
+			key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+		}
+
+		if artifact.Link != "" && strings.Contains(artifact.Link, platform) && strings.Contains(artifact.Link, arch) {
+			urls[key] = artifact.Link
+			if artifact.Signature != "" {
+				urls["signature"] = artifact.Signature
+			}
+		}
+	}
+
+	return urls
+}
+
 func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
 	var httpStatus int
 	validatedParams, err := utils.ValidateParamsLatest(c, db)
@@ -97,7 +143,8 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	// Request on repository
 	checkResult, err := repository.CheckLatestVersion(validatedParams["app_name"].(string), validatedParams["version"].(string), validatedParams["channel"].(string), validatedParams["platform"].(string), validatedParams["arch"].(string), ctx, validatedParams["owner"].(string))
 	if err != nil {
-		logrus.Error(err)
+		logrus.Debugf("CheckResult: %+v", checkResult)
+		logrus.Error("Error in CheckLatestVersion: ", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -111,20 +158,18 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		if len(checkResult.Artifacts) == 0 {
 			c.JSON(http.StatusOK, gin.H{"update_available": false, "error": "Not found"})
 		} else {
-			logrus.Infoln(checkResult)
-			response := gin.H{"update_available": false}
-			for _, artifact := range checkResult.Artifacts {
-				var key string
-				if artifact.Package == "" {
-					key = "update_url"
-				} else if artifact.Package != "" && artifact.Link != "" {
-					key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
-				}
-				if artifact.Link != "" && strings.Contains(artifact.Link, validatedParams["platform"].(string)) && strings.Contains(artifact.Link, validatedParams["arch"].(string)) {
-					response[key] = artifact.Link
-				}
+			logrus.Infoln("checkResult in FindLatestVersion: ", checkResult)
+			response := gin.H{"update_available": false, "critical": checkResult.Critical, "possible_rollback": checkResult.PossibleRollback}
+			// Add artifact URLs to response
+			artifactUrls := BuildArtifactUrls(checkResult.Artifacts, validatedParams["platform"].(string), validatedParams["arch"].(string))
+			for key, url := range artifactUrls {
+				response[key] = url
 			}
-			response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
+
+			if changelog := BuildChangelogResponse(checkResult.Changelog); changelog != "" {
+				response["changelog"] = changelog
+			}
+			response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
 			if performanceMode && rdb != nil {
 				cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
 			}
@@ -148,33 +193,16 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	}
 
 	// Add update URLs to the response
-	for _, artifact := range checkResult.Artifacts {
-		var key string
-		if artifact.Package == "" {
-			key = "update_url"
-		} else if artifact.Package != "" && artifact.Link != "" {
-			key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
-		}
-		if artifact.Link != "" && strings.Contains(artifact.Link, validatedParams["platform"].(string)) && strings.Contains(artifact.Link, validatedParams["arch"].(string)) {
-			logrus.Debugf("Adding link for key %s: %s", key, artifact.Link)
-			response[key] = artifact.Link
-		}
+	artifactUrls := BuildArtifactUrls(checkResult.Artifacts, validatedParams["platform"].(string), validatedParams["arch"].(string))
+	for key, url := range artifactUrls {
+		logrus.Debugf("Adding link for key %s: %s", key, url)
+		response[key] = url
 	}
 	// Add changelog to the response last
-	if len(checkResult.Changelog) > 0 {
-		var changelogBuilder strings.Builder
-		for _, changelog := range checkResult.Changelog {
-			if changelog.Changes != "" {
-				changelogBuilder.WriteString(changelog.Changes)
-				changelogBuilder.WriteString("\n")
-			}
-		}
-		// Only add to response if there was any changelog to include
-		if changelogBuilder.Len() > 0 {
-			response["changelog"] = changelogBuilder.String()
-		}
+	if changelog := BuildChangelogResponse(checkResult.Changelog); changelog != "" {
+		response["changelog"] = changelog
 	}
-	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
+	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
 	if performanceMode && rdb != nil {
 		cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
 	}

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.5
+
+### Features
+
+- Changed `checkLatest` response: when the client app is newer than the published version, now returns a `possible_rollback` field with a URL to roll back.
+
+- Add `tauri` updater.
+
 ## v1.4.4
 
 ### Features

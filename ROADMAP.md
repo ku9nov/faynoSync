@@ -16,7 +16,7 @@
 - ~~**Squirrel**~~
 - ~~**Electron Builder**~~
 - **Sparkle** 
-- **Tauri** 
+- ~~**Tauri**~~
 - **[go-update](https://github.com/inconshreveable/go-update)**
 - **[self_update](https://github.com/jaemk/self_update)** 
 - **[go-tuf](https://github.com/theupdateframework/go-tuf)**
