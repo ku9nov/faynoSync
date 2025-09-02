@@ -10,12 +10,12 @@ import (
 )
 
 // BuildResponse builds response based on updater type
-func BuildResponse(response gin.H, found bool, updaterType string) (gin.H, int) {
+func BuildResponse(response gin.H, found bool, possibleRollback bool, latestVersion string, updaterType string) (gin.H, int) {
 	logrus.Debugf("New version found: %v, Updater type: %s, Building response: %v", found, updaterType, response)
 
 	switch updaterType {
 	case "squirrel_darwin":
-		if !found {
+		if !found && !possibleRollback {
 			// Return 204 No Content for squirrel_darwin when no update found
 			return gin.H{"status": "no_content"}, 204
 		}
@@ -56,7 +56,7 @@ func BuildResponse(response gin.H, found bool, updaterType string) (gin.H, int) 
 		return gin.H{"status": "test_stub", "updater": "sparkle"}, 200
 
 	case "electron-builder":
-		if !found {
+		if !found && !possibleRollback {
 			return gin.H{"status": "no_content"}, 204
 		}
 		logrus.Debugf("Response for electron-builder: %v", response)
@@ -77,6 +77,30 @@ func BuildResponse(response gin.H, found bool, updaterType string) (gin.H, int) 
 		}
 		// Return redirect response with yml URL
 		return gin.H{"status": "redirect", "url": ymlURL}, 302
+
+	case "tauri":
+		if !found && !possibleRollback {
+			return gin.H{"status": "no_content"}, 204
+		}
+		logrus.Debugf("Response for tauri: %v", response)
+		logrus.Debugf("Latest version: %s", latestVersion)
+
+		// For tauri, build specific response format
+		tauriResponse := gin.H{}
+		tauriResponse["version"] = latestVersion
+		// Map response fields to tauri format
+		for key, value := range response {
+			switch {
+			case key == "changelog":
+				tauriResponse["notes"] = value
+			case strings.HasPrefix(key, "update_url"):
+				tauriResponse["url"] = value
+			case key == "signature":
+				tauriResponse["signature"] = value
+			}
+		}
+
+		return tauriResponse, 200
 
 	default:
 		// Default to standard response

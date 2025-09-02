@@ -12,6 +12,11 @@ type FileValidator interface {
 	GetUpdaterType() string
 }
 
+type ParamValidator interface {
+	ValidateParams(params map[string]interface{}) error
+	GetUpdaterType() string
+}
+
 // ValidUpdaterTypes contains all valid updater types
 var ValidUpdaterTypes = []string{
 	"manual",
@@ -19,6 +24,7 @@ var ValidUpdaterTypes = []string{
 	"squirrel_windows",
 	"sparkle",
 	"electron-builder",
+	"tauri",
 }
 
 // ValidateUpdater validates a single updater
@@ -87,6 +93,15 @@ func CreateFileValidator(updaterType string) (FileValidator, error) {
 	}
 }
 
+func CreateParamValidator(updaterType string) (ParamValidator, error) {
+	switch {
+	case strings.HasPrefix(updaterType, "tauri"):
+		return &TauriParamValidator{updaterType: updaterType}, nil
+	default:
+		return &NoOpParamValidator{updaterType: updaterType}, nil
+	}
+}
+
 func ValidateFiles(files []*multipart.FileHeader, updaterType string) error {
 	if updaterType == "" {
 		return nil
@@ -98,6 +113,19 @@ func ValidateFiles(files []*multipart.FileHeader, updaterType string) error {
 	}
 
 	return validator.Validate(files)
+}
+
+func ValidateParams(params map[string]interface{}, updaterType string) error {
+	if updaterType == "" {
+		return nil
+	}
+
+	validator, err := CreateParamValidator(updaterType)
+	if err != nil {
+		return err
+	}
+
+	return validator.ValidateParams(params)
 }
 
 type NoOpFileValidator struct {

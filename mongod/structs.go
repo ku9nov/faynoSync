@@ -53,8 +53,9 @@ func NewAppRepository(config *connstring.ConnString, client *mongo.Client) AppRe
 }
 
 type Artifact struct {
-	Link    string
-	Package string
+	Link      string
+	Package   string
+	Signature string
 }
 type Changelog struct {
 	Changes string
@@ -66,6 +67,8 @@ type CheckResult struct {
 	Changelog              []Changelog
 	IsRequiredIntermediate bool
 	PossibleRollback       bool
+	LatestVersion          string
+	Signature              string
 }
 
 func (c *appRepository) getBasePipeline() mongo.Pipeline {

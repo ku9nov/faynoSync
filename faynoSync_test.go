@@ -1484,6 +1484,59 @@ func TestPlatformCreateMacos(t *testing.T) {
 	assert.NotEmpty(t, platformIdMacos)
 }
 
+var platformIdMacosTauri string
+
+func TestPlatformCreateMacosTauri(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/platform/create", func(c *gin.Context) {
+		handler.CreatePlatform(c)
+	})
+
+	payload := `{
+		"platform": "macosTauri",
+		"updaters": [
+			{ "type": "manual", "default": false },
+			{ "type": "tauri", "default": true }
+		]
+	}`
+	body := bytes.NewReader([]byte(payload))
+
+	// Create a POST request to the /platform/create endpoint
+	req, err := http.NewRequest("POST", "/platform/create", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Set the Content-Type header for JSON
+	req.Header.Set("Content-Type", "application/json")
+
+	// Serve the request using the Gin router
+	router.ServeHTTP(w, req)
+	logrus.Infoln("Response Body:", w.Body.String())
+	// Check the response status code (expecting 200 OK)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d; got %d", http.StatusOK, w.Code)
+	}
+
+	// Parse the JSON response
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, idExists := response["createPlatformResult.Created"]
+	assert.True(t, idExists)
+	platformIdMacosTauri = id.(string)
+	assert.True(t, idExists)
+	assert.NotEmpty(t, platformIdMacosTauri)
+}
+
 func TestUpdatePlatformMacos(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -1502,7 +1555,8 @@ func TestUpdatePlatformMacos(t *testing.T) {
 		"updaters": [
 			{ "type": "manual", "default": false },
 			{ "type": "squirrel_darwin", "default": true },
-			{ "type": "electron-builder", "default": false }
+			{ "type": "electron-builder", "default": false },
+			{ "type": "tauri", "default": false }
 		]
 	}`, platformIdMacos)
 	body := bytes.NewReader([]byte(payload))
@@ -2167,15 +2221,18 @@ func TestMultipleUploadWithUpdaters(t *testing.T) {
 		Arch        string
 		Updater     string
 		FileName    string
+		Signature   string
 	}{
-		{"updaters", "0.0.1.137", "nightly", false, false, "macosSquirrel", "universalArch", "squirrel_darwin", "testapp.dmg"},
-		{"updaters", "0.0.2.137", "nightly", true, false, "macosSquirrel", "universalArch", "squirrel_darwin", "test.zip"},
-		{"updaters", "0.0.3.137", "nightly", false, false, "macos", "universalArch", "electron-builder", "testapp.dmg"},
-		{"updaters", "0.0.4.137", "nightly", true, false, "macos", "universalArch", "electron-builder", "latest-mac.yml"},
-		{"updaters", "0.0.5.137", "stable", false, true, "windows", "universalArch", "squirrel_windows", "test.exe"},
-		{"updaters", "0.0.6.137", "stable", true, false, "windows", "universalArch", "squirrel_windows", "RELEASES"},
-		{"updaters", "0.0.7.137", "stable", false, false, "windows", "universalArch", "electron-builder", "test.exe"},
-		{"updaters", "0.0.8.137", "stable", true, false, "windows", "universalArch", "electron-builder", "latest.yml"},
+		{"updaters", "0.0.1.137", "nightly", false, false, "macosSquirrel", "universalArch", "squirrel_darwin", "testapp.dmg", ""},
+		{"updaters", "0.0.2.137", "nightly", true, false, "macosSquirrel", "universalArch", "squirrel_darwin", "test.zip", ""},
+		{"updaters", "0.0.1.137", "nightly", false, false, "macosTauri", "universalArch", "tauri", "test.zip", ""},
+		{"updaters", "0.0.2.137", "nightly", true, false, "macosTauri", "universalArch", "tauri", "test.zip", "dW50cnVzdGVkU2lnbmF0dXJlVGhhdExvb2tzTGlrZUFsb25nU3RyaW5n=="},
+		{"updaters", "0.0.3.137", "nightly", false, false, "macos", "universalArch", "electron-builder", "testapp.dmg", ""},
+		{"updaters", "0.0.4.137", "nightly", true, false, "macos", "universalArch", "electron-builder", "latest-mac.yml", ""},
+		{"updaters", "0.0.5.137", "stable", false, true, "windows", "universalArch", "squirrel_windows", "test.exe", ""},
+		{"updaters", "0.0.6.137", "stable", true, false, "windows", "universalArch", "squirrel_windows", "RELEASES", ""},
+		{"updaters", "0.0.7.137", "stable", false, false, "windows", "universalArch", "electron-builder", "test.exe", ""},
+		{"updaters", "0.0.8.137", "stable", true, false, "windows", "universalArch", "electron-builder", "latest.yml", ""},
 	}
 
 	// Iterate through the combinations and upload the file for each combination.
@@ -2205,7 +2262,8 @@ func TestMultipleUploadWithUpdaters(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s", "updater": "%s"}`, combo.AppName, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch, combo.Updater)
+		payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s", "updater": "%s", "signature": "%s"}`, combo.AppName, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch, combo.Updater, combo.Signature)
+		logrus.Infoln("Payload: ", payload)
 		_, err = dataPart.Write([]byte(payload))
 		if err != nil {
 			t.Fatal(err)
@@ -2234,7 +2292,8 @@ func TestMultipleUploadWithUpdaters(t *testing.T) {
 		shouldExpectError := (combo.AppVersion == "0.0.1.137" && combo.FileName == "testapp.dmg") ||
 			(combo.AppVersion == "0.0.3.137" && combo.FileName == "testapp.dmg") ||
 			(combo.AppVersion == "0.0.5.137" && combo.FileName == "test.exe") ||
-			(combo.AppVersion == "0.0.7.137" && combo.FileName == "test.exe")
+			(combo.AppVersion == "0.0.7.137" && combo.FileName == "test.exe") ||
+			(combo.AppVersion == "0.0.1.137" && combo.FileName == "test.zip")
 
 		if shouldExpectError {
 			// Expect 400 status code for error cases
@@ -2258,6 +2317,8 @@ func TestMultipleUploadWithUpdaters(t *testing.T) {
 				expectedErrorMsg = "electron-builder updater requires a YML/YAML file for update functionality. Please include a .yml or .yaml file in your upload"
 			case "squirrel_darwin":
 				expectedErrorMsg = "squirrel darwin updater requires a ZIP archive for update functionality. Please include a ZIP file in your upload"
+			case "tauri":
+				expectedErrorMsg = "tauri updater requires a signature parameter for update functionality. Please include a signature in your request"
 			}
 
 			if expectedErrorMsg != "" {
@@ -2344,6 +2405,34 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			TestName:     "SquirrelDarwinUpdateAvailable",
 			Owner:        "admin",
 			Updater:      "squirrel_darwin",
+		},
+		{
+			AppName:      "updaters",
+			Version:      "0.0.2.137",
+			ChannelName:  "nightly",
+			ExpectedJSON: map[string]interface{}{"status": "no_content"},
+			ExpectedCode: http.StatusNoContent,
+			Platform:     "macosTauri",
+			Arch:         "universalArch",
+			TestName:     "TauriUpdateNotAvailable",
+			Owner:        "admin",
+			Updater:      "tauri",
+		},
+		{
+			AppName:     "updaters",
+			Version:     "0.0.1.135",
+			ChannelName: "nightly",
+			ExpectedJSON: map[string]interface{}{
+				"signature": "dW50cnVzdGVkU2lnbmF0dXJlVGhhdExvb2tzTGlrZUFsb25nU3RyaW5n==",
+				"version":   "0.0.2.137",
+				"url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "updaters-admin/nightly/macosTauri/universalArch/updaters-0.0.2.137.zip"),
+			},
+			ExpectedCode: http.StatusOK,
+			Platform:     "macosTauri",
+			Arch:         "universalArch",
+			TestName:     "TauriUpdateAvailable",
+			Owner:        "admin",
+			Updater:      "tauri",
 		},
 		{
 			AppName:      "updaters",
@@ -8127,6 +8216,36 @@ func TestDeletePlatformMacos(t *testing.T) {
 
 	// Create a DELETE request for the /platform/delete endpoint.
 	req, err := http.NewRequest("DELETE", "/platform/delete?id="+platformIdMacos, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deletePlatformResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestDeletePlatformMacosTauri(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /platform/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/platform/delete", func(c *gin.Context) {
+		handler.DeletePlatform(c)
+	})
+
+	// Create a DELETE request for the /platform/delete endpoint.
+	req, err := http.NewRequest("DELETE", "/platform/delete?id="+platformIdMacosTauri, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -397,10 +397,11 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 
 		appData.Artifacts = append(appData.Artifacts, model.Artifact{
-			Link:     appLink,
-			Platform: platformMeta.ID,
-			Arch:     archMeta.ID,
-			Package:  extension,
+			Link:      appLink,
+			Platform:  platformMeta.ID,
+			Arch:      archMeta.ID,
+			Package:   extension,
+			Signature: ctxQuery["signature"].(string),
 		})
 		logrus.Debugf("Adding new artifact to existing document")
 		_, err = collection.UpdateOne(
@@ -441,10 +442,11 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 
 		artifact := model.Artifact{
-			Link:     appLink,
-			Platform: platformMeta.ID,
-			Arch:     archMeta.ID,
-			Package:  extension,
+			Link:      appLink,
+			Platform:  platformMeta.ID,
+			Arch:      archMeta.ID,
+			Package:   extension,
+			Signature: ctxQuery["signature"].(string),
 		}
 		changelog := model.Changelog{
 			Version: ctxQuery["version"].(string),

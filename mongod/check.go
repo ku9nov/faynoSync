@@ -373,8 +373,9 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 				for _, artifact := range requiredApp.Artifacts {
 					if artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID {
 						artifacts = append(artifacts, Artifact{
-							Link:    artifact.Link,
-							Package: artifact.Package,
+							Link:      artifact.Link,
+							Package:   artifact.Package,
+							Signature: artifact.Signature,
 						})
 					}
 				}
@@ -401,18 +402,19 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 		for _, artifact := range latestApp.Artifacts {
 			if artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID {
 				filteredArtifacts = append(filteredArtifacts, Artifact{
-					Link:    artifact.Link,
-					Package: artifact.Package,
+					Link:      artifact.Link,
+					Package:   artifact.Package,
+					Signature: artifact.Signature,
 				})
 			}
 		}
 		artifacts = filteredArtifacts
 		if requestedVersion.Equal(latestAppVersion) {
-			return CheckResult{Found: false, Artifacts: artifacts}, nil
+			return CheckResult{Found: false, Artifacts: artifacts, LatestVersion: latestApp.Version}, nil
 		} else if requestedVersion.GreaterThan(latestAppVersion) {
-			return CheckResult{Found: false, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, PossibleRollback: true}, nil
+			return CheckResult{Found: false, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, PossibleRollback: true, LatestVersion: latestApp.Version}, nil
 		} else {
-			return CheckResult{Found: true, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical}, nil
+			return CheckResult{Found: true, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, LatestVersion: latestApp.Version}, nil
 		}
 
 	} else {

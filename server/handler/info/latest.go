@@ -80,6 +80,7 @@ func BuildChangelogResponse(changelog []db.Changelog) string {
 
 // BuildArtifactUrls builds artifact URLs map from artifacts slice
 func BuildArtifactUrls(artifacts []db.Artifact, platform, arch string) map[string]string {
+	logrus.Debugf("Artifacts in BuildArtifactUrls: %v", artifacts)
 	urls := make(map[string]string)
 
 	for _, artifact := range artifacts {
@@ -92,6 +93,9 @@ func BuildArtifactUrls(artifacts []db.Artifact, platform, arch string) map[strin
 
 		if artifact.Link != "" && strings.Contains(artifact.Link, platform) && strings.Contains(artifact.Link, arch) {
 			urls[key] = artifact.Link
+			if artifact.Signature != "" {
+				urls["signature"] = artifact.Signature
+			}
 		}
 	}
 
@@ -165,7 +169,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			if changelog := BuildChangelogResponse(checkResult.Changelog); changelog != "" {
 				response["changelog"] = changelog
 			}
-			response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
+			response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
 			if performanceMode && rdb != nil {
 				cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
 			}
@@ -198,7 +202,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	if changelog := BuildChangelogResponse(checkResult.Changelog); changelog != "" {
 		response["changelog"] = changelog
 	}
-	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, validatedParams["updater"].(string))
+	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
 	if performanceMode && rdb != nil {
 		cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
 	}
