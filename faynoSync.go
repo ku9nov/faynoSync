@@ -44,8 +44,11 @@ func main() {
 	viper.AddConfigPath(".")
 	// Read in the configuration file
 	if err := viper.ReadInConfig(); err != nil {
-		panic(err)
+		logrus.Infoln(".env file not found, using system variables")
 	}
+
+	// Enable automatic environment variable reading
+	viper.AutomaticEnv()
 
 	flagMap := map[string]interface{}{
 		"migration": migration,
