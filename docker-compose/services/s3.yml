@@ -39,7 +39,7 @@ services:
       /usr/bin/mc alias set faynoSync http://s3:9000 MdnaDEXKy9nOc4beIvNcgy BjjctVsoSg4FKkT81VKt18;
       /usr/bin/mc mb faynoSync/cb-faynosync-s3-private;
       /usr/bin/mc mb faynoSync/cb-faynosync-s3-public;
-      /usr/bin/mc policy set public faynoSync/cb-faynosync-s3-public;
+      /usr/bin/mc anonymous set download faynoSync/cb-faynosync-s3-public;
       "
     env_file:
       - ../envs/backend.env

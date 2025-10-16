@@ -136,7 +136,7 @@ You can set these environment variables in a `.env` file in the root directory o
 To build and run the API with all dependencies, you can use the following command:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 ### 🧪 Running Tests
@@ -152,7 +152,7 @@ docker exec -it faynoSync_backend "/usr/bin/faynoSync_tests"
 If you only want to run dependency services (for local development without Docker), use this command:
 
 ```bash
-docker-compose -f docker-compose.yaml -f docker-compose.development.yaml up
+docker compose -f docker-compose.yaml -f docker-compose.development.yaml up
 ```
 
 ---

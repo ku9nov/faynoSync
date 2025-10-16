@@ -17,6 +17,8 @@
 .env
 .env.aws
 .env.minio
+.env.faynosync
+docker-compose.full.yaml
 
 *.pyc
 */*/node_modules
