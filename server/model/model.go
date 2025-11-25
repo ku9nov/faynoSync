@@ -15,6 +15,7 @@ type App struct {
 	AppName     string             `bson:"app_name"`
 	Logo        string             `bson:"logo"`
 	Private     bool               `bson:"private"`
+	Tuf         bool               `bson:"tuf"`
 	Description string             `bson:"description"`
 	Owner       string             `bson:"owner"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`

@@ -202,7 +202,7 @@ func (c *appRepository) UpdateArch(id primitive.ObjectID, archID string, owner s
 }
 
 // UpdateApp updates an existing app_name document
-func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo string, description string, owner string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo string, tuf bool, description string, owner string, ctx context.Context) (interface{}, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	updateFields := bson.D{{Key: "app_name", Value: appName}}
 	if logo != "" {
@@ -211,6 +211,7 @@ func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo st
 	if description != "" {
 		updateFields = append(updateFields, bson.E{Key: "description", Value: description})
 	}
+	updateFields = append(updateFields, bson.E{Key: "tuf", Value: tuf})
 	update := bson.D{{Key: "$set", Value: updateFields}}
 	return c.UpdateDocument("apps_meta", filter, update, "app_name_sort_by_asc_updated", "app", owner, ctx)
 }

@@ -110,6 +110,10 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	// Telemetry endpoint
 	router.GET("/telemetry", authMiddleware, telemetryMiddleware(config), handler.GetTelemetry)
 
+	// if config.GetBool("ENABLE_TUF") {
+	// 	bootstrap.SetupRoutes(router)
+	// }
+
 	// get the port from the configuration file
 	port := config.GetString("PORT")
 	if port == "" {
