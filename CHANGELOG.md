@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.6
+
+### Security Fixes
+
+- Fix: golang.org/x/crypto/ssh allows an attacker to cause unbounded memory consumption
+- Fix: golang.org/x/crypto/ssh/agent vulnerable to panic if message is malformed due to out of bounds read
+- Upgraded golang.org/x/crypto to version 0.45.0
+
 ## v1.4.5
 
 ### Features
