@@ -27,7 +27,7 @@ import (
 )
 
 // Generates root keys for the repository
-func generateRootKeys(c *gin.Context, database *mongo.Database) {
+func GenerateRootKeys(c *gin.Context, database *mongo.Database) {
 
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {

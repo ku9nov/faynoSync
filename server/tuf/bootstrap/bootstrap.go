@@ -17,24 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDatabase *mongo.Database, redisClient *redis.Client) {
-	adminMiddleware := utils.AdminOnlyMiddleware(mongoDatabase)
-
-	router.GET("/tuf/v1/bootstrap", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		getBootstrapStatus(c, redisClient)
-	})
-	router.POST("/tuf/v1/bootstrap", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		postBootstrap(c, redisClient, mongoDatabase)
-	})
-	router.GET("/tuf/v1/bootstrap/locks", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		getBootstrapLocks(c, redisClient)
-	})
-	router.POST("/tuf/v1/bootstrap/generate", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		generateRootKeys(c, mongoDatabase)
-	})
-}
-
-func getBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
+func GetBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
 
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -99,7 +82,7 @@ func getBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
 }
 
 // Seems like only for testing purposes (?)
-func getBootstrapLocks(c *gin.Context, redisClient *redis.Client) {
+func GetBootstrapLocks(c *gin.Context, redisClient *redis.Client) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		logrus.Errorf("Failed to get admin name from context: %v", err)
@@ -183,7 +166,7 @@ func getBootstrapLocks(c *gin.Context, redisClient *redis.Client) {
 	})
 }
 
-func postBootstrap(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
+func PostBootstrap(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		logrus.Errorf("Failed to get admin name from context: %v", err)
