@@ -399,13 +399,34 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			}
 		}
 
-		appData.Artifacts = append(appData.Artifacts, model.Artifact{
+		var hashes map[string]string
+		var length int64
+		if hashesVal, exists := ctxQuery["hashes"]; exists {
+			if hashesMap, ok := hashesVal.(map[string]string); ok {
+				hashes = hashesMap
+			}
+		}
+		if lengthVal, exists := ctxQuery["length"]; exists {
+			if lengthInt, ok := lengthVal.(int64); ok {
+				length = lengthInt
+			}
+		}
+
+		newArtifact := model.Artifact{
 			Link:      appLink,
 			Platform:  platformMeta.ID,
 			Arch:      archMeta.ID,
 			Package:   extension,
 			Signature: ctxQuery["signature"].(string),
-		})
+		}
+		if hashes != nil {
+			newArtifact.Hashes = hashes
+		}
+		if length > 0 {
+			newArtifact.Length = length
+		}
+
+		appData.Artifacts = append(appData.Artifacts, newArtifact)
 		logrus.Debugf("Adding new artifact to existing document")
 		_, err = collection.UpdateOne(
 			ctx,
@@ -444,12 +465,31 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			logrus.Debugf("Setting required_intermediate to: %t", requiredIntermediate)
 		}
 
+		var hashes map[string]string
+		var length int64
+		if hashesVal, exists := ctxQuery["hashes"]; exists {
+			if hashesMap, ok := hashesVal.(map[string]string); ok {
+				hashes = hashesMap
+			}
+		}
+		if lengthVal, exists := ctxQuery["length"]; exists {
+			if lengthInt, ok := lengthVal.(int64); ok {
+				length = lengthInt
+			}
+		}
+
 		artifact := model.Artifact{
 			Link:      appLink,
 			Platform:  platformMeta.ID,
 			Arch:      archMeta.ID,
 			Package:   extension,
 			Signature: ctxQuery["signature"].(string),
+		}
+		if hashes != nil {
+			artifact.Hashes = hashes
+		}
+		if length > 0 {
+			artifact.Length = length
 		}
 		changelog := model.Changelog{
 			Version: ctxQuery["version"].(string),

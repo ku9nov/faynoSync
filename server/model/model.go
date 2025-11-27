@@ -8,6 +8,8 @@ type Artifact struct {
 	Arch      primitive.ObjectID `bson:"arch"`
 	Package   string             `bson:"package"`
 	Signature string             `bson:"signature"`
+	Hashes    map[string]string  `bson:"hashes,omitempty"`
+	Length    int64              `bson:"length,omitempty"`
 }
 
 type App struct {
