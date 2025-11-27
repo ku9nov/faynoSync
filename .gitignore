@@ -30,3 +30,5 @@ faynoSync
 faynoSync_tests
 
 .DS_Store
+
+tmp*

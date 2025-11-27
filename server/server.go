@@ -4,6 +4,7 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/redisdb"
 	"faynoSync/server/handler"
+	"faynoSync/server/tuf/bootstrap"
 	"faynoSync/server/utils"
 	"os"
 	"strings"
@@ -110,9 +111,9 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	// Telemetry endpoint
 	router.GET("/telemetry", authMiddleware, telemetryMiddleware(config), handler.GetTelemetry)
 
-	// if config.GetBool("ENABLE_TUF") {
-	// 	bootstrap.SetupRoutes(router)
-	// }
+	if config.GetBool("TUF_ENABLED") {
+		bootstrap.SetupRoutes(router, authMiddleware, mongoDatabase, redisClient)
+	}
 
 	// get the port from the configuration file
 	port := config.GetString("PORT")
