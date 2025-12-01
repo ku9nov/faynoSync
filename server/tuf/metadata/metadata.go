@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/signing"
@@ -150,6 +151,13 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 			bitLength++
 		}
 
+		// Get the online key from root metadata to add to delegations.keys
+		onlineKey, exists := rootMetadata.Signed.Keys[onlineKeyID]
+		if !exists {
+			logrus.Errorf("Online key %s not found in root metadata", onlineKeyID)
+			return
+		}
+
 		// Create succinct roles for bins
 		succinctRoles := &metadata.SuccinctRoles{
 			KeyIDs:     []string{onlineKeyID},
@@ -158,7 +166,42 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 			NamePrefix: "bin-",
 		}
 
+		// Convert root metadata key to go-tuf metadata key format
+		// For succinct roles, we need to add the key to delegations.keys
+		// so the client can verify bin metadata signatures
+		// The key is stored as hex string in root metadata, we need to decode it
+		var delegationKey *metadata.Key
+		if onlineKey.KeyType == "ed25519" {
+			// Decode hex string to bytes
+			publicKeyBytes, err := hex.DecodeString(onlineKey.KeyVal.Public)
+			if err != nil {
+				logrus.Errorf("Failed to decode public key hex string: %v", err)
+				return
+			}
+			// Convert bytes to ed25519.PublicKey
+			if len(publicKeyBytes) != ed25519.PublicKeySize {
+				logrus.Errorf("Invalid public key length: expected %d, got %d", ed25519.PublicKeySize, len(publicKeyBytes))
+				return
+			}
+			var publicKey ed25519.PublicKey = publicKeyBytes
+			// Create metadata.Key from public key
+			delegationKey, err = metadata.KeyFromPublicKey(publicKey)
+			if err != nil {
+				logrus.Errorf("Failed to create metadata key from public key: %v", err)
+				return
+			}
+		} else {
+			logrus.Errorf("Unsupported key type for delegations: %s", onlineKey.KeyType)
+			return
+		}
+
+		// Create delegations with both succinct roles and keys
+		// Keys are needed for client to verify bin metadata signatures
+		delegationKeys := make(map[string]*metadata.Key)
+		delegationKeys[onlineKeyID] = delegationKey
+
 		targets.Signed.Delegations = &metadata.Delegations{
+			Keys:          delegationKeys,
 			SuccinctRoles: succinctRoles,
 		}
 

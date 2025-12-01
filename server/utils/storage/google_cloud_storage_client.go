@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"os"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -158,4 +159,51 @@ func (g *GoogleCloudStorageClient) GeneratePresignedURL(ctx context.Context, buc
 		return "", &StorageError{Message: "failed to generate presigned URL for GCS", Err: err}
 	}
 	return url, nil
+}
+
+// DownloadObject downloads a file from GCS to a local file path
+func (g *GoogleCloudStorageClient) DownloadObject(ctx context.Context, bucketName, objectKey string, filePath string) error {
+	bucket := g.client.Bucket(bucketName)
+	obj := bucket.Object(objectKey)
+	reader, err := obj.NewReader(ctx)
+	if err != nil {
+		return &StorageError{Message: "failed to get object from GCS", Err: err}
+	}
+	defer reader.Close()
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return &StorageError{Message: fmt.Sprintf("failed to create file %s", filePath), Err: err}
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, reader)
+	if err != nil {
+		return &StorageError{Message: fmt.Sprintf("failed to write to file %s", filePath), Err: err}
+	}
+
+	return nil
+}
+
+// ListObjects lists objects in GCS with the given prefix
+func (g *GoogleCloudStorageClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	bucket := g.client.Bucket(bucketName)
+	query := &storage.Query{
+		Prefix: prefix,
+	}
+
+	var objectKeys []string
+	it := bucket.Objects(ctx, query)
+	for {
+		attrs, err := it.Next()
+		if err == storage.ErrObjectNotExist || err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, &StorageError{Message: "failed to list objects from GCS", Err: err}
+		}
+		objectKeys = append(objectKeys, attrs.Name)
+	}
+
+	return objectKeys, nil
 }

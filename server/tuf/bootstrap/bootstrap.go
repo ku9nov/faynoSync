@@ -4,6 +4,7 @@ import (
 	"context"
 	"faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/models"
+	"faynoSync/server/tuf/tasks"
 	"faynoSync/server/utils"
 	"fmt"
 	"net/http"
@@ -311,6 +312,12 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client, mongoDatabase *mon
 	taskID := uuid.New().String()
 	logrus.Debugf("Generated task_id: %s", taskID)
 
+	// Initialize task status as PENDING
+	taskName := tasks.TaskNameBootstrap
+	tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStatePending, &tasks.TaskResult{
+		Task: &taskName,
+	})
+
 	logrus.Debug("Calling pre_lock_bootstrap")
 	preLockBootstrap(redisClient, taskID, adminName)
 
@@ -357,16 +364,44 @@ func preLockBootstrap(redisClient *redis.Client, taskID string, adminName string
 func bootstrap(ctx context.Context, redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, payload *models.BootstrapPayload) {
 	logrus.Debugf("Starting bootstrap function for admin: %s, task_id: %s", adminName, taskID)
 
+	// Update task state to STARTED
+	tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateStarted)
+
+	// Update task state to RUNNING
+	tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateRunning)
+
 	logrus.Debug("Saving bootstrap settings")
 	saveSettings(redisClient, taskID, adminName, payload)
 
 	logrus.Debug("Finalizing bootstrap")
-	bootstrapFinalize(redisClient, mongoDatabase, taskID, adminName, payload)
+	success := bootstrapFinalize(redisClient, mongoDatabase, taskID, adminName, payload)
 
-	logrus.Debugf("Bootstrap function completed successfully for admin: %s, task_id: %s", adminName, taskID)
+	if success {
+		// Update task state to SUCCESS
+		taskName := tasks.TaskNameBootstrap
+		successStatus := true
+		message := "Bootstrap completed successfully"
+		tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateSuccess, &tasks.TaskResult{
+			Task:    &taskName,
+			Status:  &successStatus,
+			Message: &message,
+		})
+		logrus.Debugf("Bootstrap function completed successfully for admin: %s, task_id: %s", adminName, taskID)
+	} else {
+		// Update task state to FAILURE
+		taskName := tasks.TaskNameBootstrap
+		successStatus := false
+		errorMsg := "Bootstrap failed"
+		tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &successStatus,
+			Error:  &errorMsg,
+		})
+		logrus.Errorf("Bootstrap function failed for admin: %s, task_id: %s", adminName, taskID)
+	}
 }
 
-func bootstrapFinalize(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, payload *models.BootstrapPayload) {
+func bootstrapFinalize(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, payload *models.BootstrapPayload) bool {
 	logrus.Debugf("Starting bootstrap finalization for admin: %s", adminName)
 
 	logrus.Debug("Calling bootstrap_online_roles")
@@ -394,6 +429,7 @@ func bootstrapFinalize(redisClient *redis.Client, mongoDatabase *mongo.Database,
 		bootstrapKey := "BOOTSTRAP_" + adminName
 		if err := redisClient.Set(ctx, bootstrapKey, taskID, 0).Err(); err != nil {
 			logrus.Errorf("Failed to set final BOOTSTRAP state for admin %s: %v", adminName, err)
+			return false
 		} else {
 			logrus.Debugf("Successfully set final BOOTSTRAP state for admin %s: %s", adminName, taskID)
 		}
@@ -402,4 +438,5 @@ func bootstrapFinalize(redisClient *redis.Client, mongoDatabase *mongo.Database,
 	}
 
 	logrus.Debug("Bootstrap finalization completed")
+	return true
 }
