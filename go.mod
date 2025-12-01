@@ -8,7 +8,9 @@ require (
 	cloud.google.com/go/storage v1.55.0
 	github.com/aws/aws-sdk-go-v2 v1.27.2
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.18
+	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-version v1.6.0
+	github.com/sigstore/sigstore v1.9.5
 	github.com/spf13/viper v1.14.0
 	github.com/theupdateframework/go-tuf/v2 v2.3.0
 	google.golang.org/api v0.239.0
@@ -58,7 +60,6 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-containerregistry v0.20.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.2 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
@@ -76,7 +77,6 @@ require (
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.9.1 // indirect
 	github.com/sigstore/protobuf-specs v0.4.1 // indirect
-	github.com/sigstore/sigstore v1.9.5 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.5.0 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
