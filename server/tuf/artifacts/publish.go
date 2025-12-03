@@ -2,8 +2,10 @@ package artifacts
 
 import (
 	"context"
+	"time"
 
 	"faynoSync/server/model"
+	"faynoSync/server/tuf/tasks"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
@@ -41,6 +43,19 @@ func PublishTUFArtifacts(
 		logrus.Debugf("Adding artifacts to TUF: %v", tufArtifact)
 		if err := AddArtifacts(ctx, redisClient, mongoDatabase, owner, appName, []Artifact{*tufArtifact}, publish, taskID); err != nil {
 			logrus.Errorf("Failed to add artifacts to TUF: %v", err)
+			errorMsg := err.Error()
+			taskName := tasks.TaskNameAddArtifacts
+			result := &tasks.TaskResult{
+				Message: func() *string { s := "Adding artifact(s) Failed"; return &s }(),
+				Error:   &errorMsg,
+				Status:  func() *bool { b := false; return &b }(),
+				Task:    &taskName,
+			}
+			now := time.Now()
+			result.LastUpdate = &now
+			if err := tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, result); err != nil {
+				logrus.Errorf("Failed to save error task status: %v", err)
+			}
 		}
 	}()
 }
