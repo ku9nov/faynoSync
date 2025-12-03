@@ -435,7 +435,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			publish = utils.GetBoolParam(publishParam)
 			logrus.Debugf("Setting published to: %t", publish)
 			if publish && redisClient != nil && mongoDatabase != nil && owner != "" && appMeta.Tuf {
-				artifacts.PublishTUFArtifacts(newArtifact, checkAppVisibility, env, redisClient, mongoDatabase, owner, appMeta.AppName, publish)
+				artifacts.PublishTUFArtifacts(newArtifact, checkAppVisibility, env, redisClient, mongoDatabase, owner, appMeta.AppName, appMeta.ID, ctxQuery["version"].(string), publish)
 			}
 		}
 		appData.Artifacts = append(appData.Artifacts, newArtifact)
@@ -503,7 +503,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			publish = utils.GetBoolParam(publishParam)
 			logrus.Debugf("Setting published to: %t", publish)
 			if publish && redisClient != nil && mongoDatabase != nil && owner != "" && appMeta.Tuf {
-				artifacts.PublishTUFArtifacts(artifact, checkAppVisibility, env, redisClient, mongoDatabase, owner, appMeta.AppName, publish)
+				artifacts.PublishTUFArtifacts(artifact, checkAppVisibility, env, redisClient, mongoDatabase, owner, appMeta.AppName, appMeta.ID, ctxQuery["version"].(string), publish)
 			}
 		}
 

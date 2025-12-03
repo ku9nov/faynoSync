@@ -10,6 +10,8 @@ type Artifact struct {
 	Signature string             `bson:"signature"`
 	Hashes    map[string]string  `bson:"hashes,omitempty"`
 	Length    int64              `bson:"length,omitempty"`
+	TufSigned bool               `bson:"tuf_signed,omitempty"`
+	TufTaskID *string            `bson:"tuf_task_id,omitempty"`
 }
 
 type App struct {
