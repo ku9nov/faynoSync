@@ -42,10 +42,12 @@ type SpecificApp struct {
 }
 
 type SpecificArtifactsWithoutIDs struct {
-	Link     string `bson:"link" json:"link"`
-	Platform string `bson:"platform" json:"platform"`
-	Arch     string `bson:"arch" json:"arch"`
-	Package  string `bson:"package" json:"package"`
+	Link      string  `bson:"link" json:"link"`
+	Platform  string  `bson:"platform" json:"platform"`
+	Arch      string  `bson:"arch" json:"arch"`
+	Package   string  `bson:"package" json:"package"`
+	TufTaskID *string `bson:"tuf_task_id,omitempty"`
+	TufSigned bool    `bson:"tuf_signed,omitempty"`
 }
 
 type SpecificAppWithoutIDs struct {
