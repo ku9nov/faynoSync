@@ -24,8 +24,8 @@ import (
 )
 
 // bootstrapOnlineRoles creates online roles (targets, snapshot, timestamp) and delegations
-func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, payload *models.BootstrapPayload) {
-	logrus.Debug("Starting bootstrap online roles creation")
+func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, appName string, payload *models.BootstrapPayload) {
+	logrus.Debugf("Starting bootstrap online roles creation for admin: %s, app: %s", adminName, appName)
 
 	// Create temporary directory for storing metadata
 	cwd, err := os.Getwd()
@@ -85,9 +85,10 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	}
 
 	ctx := context.Background()
-	targetsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TARGETS_EXPIRATION_"+adminName, payload.Settings.Roles.Targets.Expiration)
-	snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+adminName, payload.Settings.Roles.Snapshot.Expiration)
-	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+adminName, payload.Settings.Roles.Timestamp.Expiration)
+	keySuffix := adminName + "_" + appName
+	targetsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TARGETS_EXPIRATION_"+keySuffix, payload.Settings.Roles.Targets.Expiration)
+	snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, payload.Settings.Roles.Snapshot.Expiration)
+	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, payload.Settings.Roles.Timestamp.Expiration)
 
 	var onlineKeyID string
 	if timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]; ok && len(timestampRole.KeyIDs) > 0 {
@@ -139,105 +140,103 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	// Add targets to snapshot meta
 	snapshot.Signed.Meta["targets.json"] = metadata.MetaFile(int64(targets.Signed.Version))
 
-	// Handle bins delegations if present
-	if payload.Settings.Roles.Bins != nil {
-		logrus.Debug("Creating bins delegations")
-		numberOfBins := payload.Settings.Roles.Bins.NumberOfDelegatedBins
-		binsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "BINS_EXPIRATION_"+adminName, payload.Settings.Roles.Bins.Expiration)
+	if payload.Settings.Roles.Delegations != nil {
+		logrus.Debug("Creating custom delegations")
+		customDelegations := payload.Settings.Roles.Delegations
 
-		// Calculate bit length for succinct roles
-		bitLength := 0
-		for i := numberOfBins; i > 1; i /= 2 {
-			bitLength++
-		}
-
-		// Get the online key from root metadata to add to delegations.keys
-		onlineKey, exists := rootMetadata.Signed.Keys[onlineKeyID]
-		if !exists {
-			logrus.Errorf("Online key %s not found in root metadata", onlineKeyID)
-			return
-		}
-
-		// Create succinct roles for bins
-		succinctRoles := &metadata.SuccinctRoles{
-			KeyIDs:     []string{onlineKeyID},
-			Threshold:  1,
-			BitLength:  bitLength,
-			NamePrefix: "bin-",
-		}
-
-		// Convert root metadata key to go-tuf metadata key format
-		// For succinct roles, we need to add the key to delegations.keys
-		// so the client can verify bin metadata signatures
-		// The key is stored as hex string in root metadata, we need to decode it
-		var delegationKey *metadata.Key
-		if onlineKey.KeyType == "ed25519" {
-			// Decode hex string to bytes
-			publicKeyBytes, err := hex.DecodeString(onlineKey.KeyVal.Public)
-			if err != nil {
-				logrus.Errorf("Failed to decode public key hex string: %v", err)
-				return
-			}
-			// Convert bytes to ed25519.PublicKey
-			if len(publicKeyBytes) != ed25519.PublicKeySize {
-				logrus.Errorf("Invalid public key length: expected %d, got %d", ed25519.PublicKeySize, len(publicKeyBytes))
-				return
-			}
-			var publicKey ed25519.PublicKey = publicKeyBytes
-			// Create metadata.Key from public key
-			delegationKey, err = metadata.KeyFromPublicKey(publicKey)
-			if err != nil {
-				logrus.Errorf("Failed to create metadata key from public key: %v", err)
-				return
-			}
-		} else {
-			logrus.Errorf("Unsupported key type for delegations: %s", onlineKey.KeyType)
-			return
-		}
-
-		// Create delegations with both succinct roles and keys
-		// Keys are needed for client to verify bin metadata signatures
 		delegationKeys := make(map[string]*metadata.Key)
-		delegationKeys[onlineKeyID] = delegationKey
+		for keyID, tufKey := range customDelegations.Keys {
+			var delegationKey *metadata.Key
+
+			if tufKey.KeyType == "ed25519" {
+				publicKeyBytes, err := hex.DecodeString(tufKey.KeyVal.Public)
+				if err != nil {
+					logrus.Errorf("Failed to decode public key hex string for key %s: %v", keyID, err)
+					continue
+				}
+				if len(publicKeyBytes) != ed25519.PublicKeySize {
+					logrus.Errorf("Invalid public key length for key %s: expected %d, got %d", keyID, ed25519.PublicKeySize, len(publicKeyBytes))
+					continue
+				}
+				var publicKey ed25519.PublicKey = publicKeyBytes
+				delegationKey, err = metadata.KeyFromPublicKey(publicKey)
+				if err != nil {
+					logrus.Errorf("Failed to create metadata key from public key for key %s: %v", keyID, err)
+					continue
+				}
+			} else {
+				logrus.Errorf("Unsupported key type for delegations: %s", tufKey.KeyType)
+				continue
+			}
+
+			delegationKeys[keyID] = delegationKey
+			logrus.Debugf("Added delegation key: %s", keyID)
+		}
+
+		delegatedRoles := make([]metadata.DelegatedRole, 0, len(customDelegations.Roles))
+		for _, tufRole := range customDelegations.Roles {
+			roleExpiration := 90
+
+			// add role-specific expiration logic here?
+
+			delegatedRole := metadata.DelegatedRole{
+				Name:        tufRole.Name,
+				Terminating: tufRole.Terminating,
+				KeyIDs:      tufRole.KeyIDs,
+				Threshold:   tufRole.Threshold,
+				Paths:       tufRole.Paths,
+			}
+
+			delegatedRoles = append(delegatedRoles, delegatedRole)
+			logrus.Debugf("Added delegated role: %s with paths: %v", tufRole.Name, tufRole.Paths)
+
+			// Save role expiration to Redis (using default for now, can be extended)
+			expirationKey := fmt.Sprintf("%s_EXPIRATION_%s_%s", tufRole.Name, adminName, appName)
+			if err := redisClient.Set(ctx, expirationKey, roleExpiration, 0).Err(); err != nil {
+				logrus.Warnf("Failed to save expiration for role %s: %v", tufRole.Name, err)
+			}
+		}
 
 		targets.Signed.Delegations = &metadata.Delegations{
-			Keys:          delegationKeys,
-			SuccinctRoles: succinctRoles,
+			Keys:  delegationKeys,
+			Roles: delegatedRoles,
 		}
 
-		// Update targets in repository with delegations
 		repo.SetTargets("targets", targets)
 
-		// Create bin metadata files
-		for i := 0; i < numberOfBins; i++ {
-			binName := fmt.Sprintf("bin-%d", i)
-			binTargets := metadata.Targets(tuf_utils.HelperExpireIn(binsExpiration))
-			binTargets.Signed.Version = 1
+		// Create metadata files for each delegated role
+		for i := range delegatedRoles {
+			roleName := delegatedRoles[i].Name
+			roleTargets := metadata.Targets(tuf_utils.HelperExpireIn(90)) // Default expiration, can be customized
+			roleTargets.Signed.Version = 1
 
-			repo.SetTargets(binName, binTargets)
+			repo.SetTargets(roleName, roleTargets)
 
-			snapshot.Signed.Meta[fmt.Sprintf("%s.json", binName)] = metadata.MetaFile(1)
+			// Add role to snapshot meta
+			snapshot.Signed.Meta[fmt.Sprintf("%s.json", roleName)] = metadata.MetaFile(1)
 
 			if signer != nil {
-				if _, err := repo.Targets(binName).Sign(signer); err != nil {
-					logrus.Errorf("Failed to sign bin metadata %s: %v", binName, err)
+				if _, err := repo.Targets(roleName).Sign(signer); err != nil {
+					logrus.Errorf("Failed to sign delegated role metadata %s: %v", roleName, err)
 				} else {
-					logrus.Debugf("Successfully signed bin metadata: %s", binName)
+					logrus.Debugf("Successfully signed delegated role metadata: %s", roleName)
 				}
 			}
 
-			filename := fmt.Sprintf("1.%s.json", binName)
-			binPath := filepath.Join(tmpDir, filename)
-			if err := repo.Targets(binName).ToFile(binPath, true); err != nil {
-				logrus.Errorf("Failed to persist bin metadata %s: %v", binName, err)
+			filename := fmt.Sprintf("1.%s.json", roleName)
+			rolePath := filepath.Join(tmpDir, filename)
+			if err := repo.Targets(roleName).ToFile(rolePath, true); err != nil {
+				logrus.Errorf("Failed to persist delegated role metadata %s: %v", roleName, err)
 				continue
 			}
-			logrus.Debugf("Successfully persisted bin metadata: %s", filename)
+			logrus.Debugf("Successfully persisted delegated role metadata: %s", filename)
 
-			if err := tuf_storage.UploadMetadataToS3(ctx, adminName, filename, binPath); err != nil {
-				logrus.Errorf("Failed to upload bin metadata %s to S3: %v", binName, err)
+			if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, filename, rolePath); err != nil {
+				logrus.Errorf("Failed to upload delegated role metadata %s to S3: %v", roleName, err)
 			}
 		}
+
+		logrus.Debug("Custom delegations created successfully")
 	}
 
 	if signer != nil {
@@ -269,7 +268,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	}
 	logrus.Debugf("Successfully persisted root metadata: 1.root.json")
 
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, "1.root.json", rootPath); err != nil {
+	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "1.root.json", rootPath); err != nil {
 		logrus.Errorf("Failed to upload root metadata to S3: %v", err)
 	}
 
@@ -281,7 +280,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	}
 	logrus.Debugf("Successfully persisted targets metadata: %s", targetsFilename)
 
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, targetsFilename, targetsPath); err != nil {
+	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, targetsFilename, targetsPath); err != nil {
 		logrus.Errorf("Failed to upload targets metadata to S3: %v", err)
 	}
 
@@ -293,7 +292,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	}
 	logrus.Debugf("Successfully persisted snapshot metadata: %s", snapshotFilename)
 
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, snapshotFilename, snapshotPath); err != nil {
+	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
 		logrus.Errorf("Failed to upload snapshot metadata to S3: %v", err)
 	}
 
@@ -304,7 +303,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	}
 	logrus.Debugf("Successfully persisted timestamp metadata: timestamp.json")
 
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, "timestamp.json", timestampPath); err != nil {
+	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
 		logrus.Errorf("Failed to upload timestamp metadata to S3: %v", err)
 	}
 

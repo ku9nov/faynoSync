@@ -8,6 +8,7 @@ import (
 
 // BootstrapPayload represents the bootstrap payload structure
 type BootstrapPayload struct {
+	AppName  string                  `json:"appName" binding:"required"`
 	Settings Settings                `json:"settings"`
 	Metadata map[string]RootMetadata `json:"metadata"`
 	Timeout  *int                    `json:"timeout,omitempty"`
@@ -18,11 +19,12 @@ type Settings struct {
 }
 
 type RolesData struct {
-	Root      RoleExpiration `json:"root"`
-	Timestamp RoleExpiration `json:"timestamp"`
-	Snapshot  RoleExpiration `json:"snapshot"`
-	Targets   RoleExpiration `json:"targets"`
-	Bins      *BinsRole      `json:"bins,omitempty"`
+	Root        RoleExpiration  `json:"root"`
+	Timestamp   RoleExpiration  `json:"timestamp"`
+	Snapshot    RoleExpiration  `json:"snapshot"`
+	Targets     RoleExpiration  `json:"targets"`
+	Bins        *BinsRole       `json:"bins,omitempty"`
+	Delegations *TUFDelegations `json:"delegations,omitempty"`
 }
 
 type RoleExpiration struct {
@@ -73,10 +75,38 @@ type Role struct {
 type TUFPrivateKey struct {
 	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 	AdminName  string             `bson:"admin_name" json:"admin_name"`
-	RoleName   string             `bson:"role_name" json:"role_name"` // "root", "targets", "snapshot", "timestamp"
-	KeyID      string             `bson:"key_id" json:"key_id"`       // Public key ID
-	PrivateKey string             `bson:"private_key" json:"-"`       // Base64 encoded private key (not returned in JSON)
-	KeyType    string             `bson:"key_type" json:"key_type"`   // "ed25519", "rsa", "ecdsa"
+	AppName    string             `bson:"app_name,omitempty" json:"app_name,omitempty"` // Optional app name for app-specific keys
+	RoleName   string             `bson:"role_name" json:"role_name"`                   // "root", "targets", "snapshot", "timestamp"
+	KeyID      string             `bson:"key_id" json:"key_id"`                         // Public key ID
+	PrivateKey string             `bson:"private_key" json:"-"`                         // Base64 encoded private key (not returned in JSON)
+	KeyType    string             `bson:"key_type" json:"key_type"`                     // "ed25519", "rsa", "ecdsa"
 	CreatedAt  time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt  time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+// TUFDelegations represents custom target delegations
+type TUFDelegations struct {
+	Keys  map[string]TUFKey  `json:"keys"`
+	Roles []TUFDelegatedRole `json:"roles"`
+}
+
+// TUFKey represents a public key for delegations
+type TUFKey struct {
+	KeyType string    `json:"keytype"`
+	Scheme  string    `json:"scheme"`
+	KeyVal  TUFKeyVal `json:"keyval"`
+}
+
+// TUFKeyVal represents key value (public key)
+type TUFKeyVal struct {
+	Public string `json:"public"`
+}
+
+// TUFDelegatedRole represents a custom delegated role
+type TUFDelegatedRole struct {
+	Name        string   `json:"name"`
+	Terminating bool     `json:"terminating"`
+	KeyIDs      []string `json:"keyids"`
+	Threshold   int      `json:"threshold"`
+	Paths       []string `json:"paths"`
 }

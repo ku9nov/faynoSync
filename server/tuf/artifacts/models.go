@@ -14,6 +14,7 @@ type Artifact struct {
 }
 
 type AddArtifactsPayload struct {
+	AppName           string     `json:"appName" binding:"required"`
 	Artifacts         []Artifact `json:"artifacts"`
 	AddTaskIDToCustom *bool      `json:"add_task_id_to_custom,omitempty"`
 	PublishArtifacts  *bool      `json:"publish_artifacts,omitempty"`

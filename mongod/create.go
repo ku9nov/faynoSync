@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"faynoSync/server/model"
+	"faynoSync/server/tuf/artifacts"
 	"faynoSync/server/utils"
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -265,14 +268,15 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 	return nil
 }
 
-func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context, redisClient *redis.Client, env *viper.Viper, checkAppVisibility bool) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
+	mongoDatabase := c.client.Database(c.config.Database)
 	var uploadResult interface{}
 	var err error
 
-	logrus.Debugf("Upload called with owner: %s, app_name: %s, version: %s",
-		owner, ctxQuery["app_name"].(string), ctxQuery["version"].(string))
+	logrus.Debugf("Upload called with owner: %s, app_name: %s, version: %s, visibility: %t",
+		owner, ctxQuery["app_name"].(string), ctxQuery["version"].(string), checkAppVisibility)
 
 	// Check if the user is a team user
 	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
@@ -425,7 +429,15 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		if length > 0 {
 			newArtifact.Length = length
 		}
-
+		publishParam, publishExists := ctxQuery["publish"]
+		publish := false
+		if publishExists {
+			publish = utils.GetBoolParam(publishParam)
+			logrus.Debugf("Setting published to: %t", publish)
+			if publish && redisClient != nil && mongoDatabase != nil && owner != "" && appMeta.Tuf {
+				artifacts.PublishTUFArtifacts(newArtifact, checkAppVisibility, env, redisClient, mongoDatabase, owner, appMeta.AppName, publish)
+			}
+		}
 		appData.Artifacts = append(appData.Artifacts, newArtifact)
 		logrus.Debugf("Adding new artifact to existing document")
 		_, err = collection.UpdateOne(
@@ -446,12 +458,6 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		publishParam, publishExists := ctxQuery["publish"]
 		criticalParam, criticalExists := ctxQuery["critical"]
 		intermediateParam, intermediateExists := ctxQuery["intermediate"]
-
-		publish := false
-		if publishExists {
-			publish = utils.GetBoolParam(publishParam)
-			logrus.Debugf("Setting published to: %t", publish)
-		}
 
 		critical := false
 		if criticalExists {
@@ -491,6 +497,16 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		if length > 0 {
 			artifact.Length = length
 		}
+
+		publish := false
+		if publishExists {
+			publish = utils.GetBoolParam(publishParam)
+			logrus.Debugf("Setting published to: %t", publish)
+			if publish && redisClient != nil && mongoDatabase != nil && owner != "" && appMeta.Tuf {
+				artifacts.PublishTUFArtifacts(artifact, checkAppVisibility, env, redisClient, mongoDatabase, owner, appMeta.AppName, publish)
+			}
+		}
+
 		changelog := model.Changelog{
 			Version: ctxQuery["version"].(string),
 			Changes: ctxQuery["changelog"].(string),

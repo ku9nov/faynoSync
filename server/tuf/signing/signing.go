@@ -13,13 +13,24 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func SavePrivateKeysToMongoDB(database *mongo.Database, adminName string, keys map[string]ed25519.PrivateKey, publicKeyIDs map[string]string, ctx context.Context) error {
+func SavePrivateKeysToMongoDB(database *mongo.Database, adminName string, appName string, keys map[string]ed25519.PrivateKey, publicKeyIDs map[string]string, ctx context.Context) error {
 	collection := database.Collection("tuf_private_keys")
 	now := time.Now()
 
-	_, err := collection.DeleteMany(ctx, bson.M{"admin_name": adminName})
+	// Delete existing keys for this admin and app combination
+	deleteFilter := bson.M{"admin_name": adminName}
+	if appName != "" {
+		deleteFilter["app_name"] = appName
+	} else {
+		// If appName is empty, delete keys where app_name is empty or doesn't exist
+		deleteFilter["$or"] = []bson.M{
+			{"app_name": ""},
+			{"app_name": bson.M{"$exists": false}},
+		}
+	}
+	_, err := collection.DeleteMany(ctx, deleteFilter)
 	if err != nil {
-		logrus.Warnf("Failed to delete existing keys for admin %s: %v", adminName, err)
+		logrus.Warnf("Failed to delete existing keys for admin %s, app %s: %v", adminName, appName, err)
 	}
 
 	for roleName, privateKey := range keys {
@@ -34,6 +45,7 @@ func SavePrivateKeysToMongoDB(database *mongo.Database, adminName string, keys m
 
 		keyDoc := models.TUFPrivateKey{
 			AdminName:  adminName,
+			AppName:    appName,
 			RoleName:   roleName,
 			KeyID:      keyID,
 			PrivateKey: privateKeyBase64,
@@ -44,10 +56,10 @@ func SavePrivateKeysToMongoDB(database *mongo.Database, adminName string, keys m
 
 		_, err := collection.InsertOne(ctx, keyDoc)
 		if err != nil {
-			logrus.Errorf("Failed to save private key for role %s, admin %s: %v", roleName, adminName, err)
+			logrus.Errorf("Failed to save private key for role %s, admin %s, app %s: %v", roleName, adminName, appName, err)
 			return fmt.Errorf("failed to save private key for role %s: %w", roleName, err)
 		}
-		logrus.Debugf("Successfully saved private key for role %s, admin %s, key_id: %s", roleName, adminName, keyID)
+		logrus.Debugf("Successfully saved private key for role %s, admin %s, app %s, key_id: %s", roleName, adminName, appName, keyID)
 	}
 
 	return nil

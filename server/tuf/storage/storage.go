@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func UploadMetadataToS3(ctx context.Context, adminName string, filename string, filePath string) error {
+func UploadMetadataToS3(ctx context.Context, adminName string, appName string, filename string, filePath string) error {
 	env := viper.GetViper()
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
@@ -20,7 +20,7 @@ func UploadMetadataToS3(ctx context.Context, adminName string, filename string, 
 		return fmt.Errorf("failed to create storage client: %w", err)
 	}
 
-	s3Key := fmt.Sprintf("tuf_metadata/%s/%s", adminName, filename)
+	s3Key := fmt.Sprintf("tuf_metadata/%s/%s/%s", adminName, appName, filename)
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -64,7 +64,7 @@ func (f *fileWrapper) Close() error {
 	return f.file.Close()
 }
 
-func DownloadMetadataFromS3(ctx context.Context, adminName string, filename string, filePath string) error {
+func DownloadMetadataFromS3(ctx context.Context, adminName string, appName string, filename string, filePath string) error {
 	env := viper.GetViper()
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
@@ -72,7 +72,7 @@ func DownloadMetadataFromS3(ctx context.Context, adminName string, filename stri
 		return fmt.Errorf("failed to create storage client: %w", err)
 	}
 
-	s3Key := fmt.Sprintf("tuf_metadata/%s/%s", adminName, filename)
+	s3Key := fmt.Sprintf("tuf_metadata/%s/%s/%s", adminName, appName, filename)
 	bucketName := env.GetString("S3_BUCKET_NAME")
 	if bucketName == "" {
 		return fmt.Errorf("S3_BUCKET_NAME is not configured")
@@ -86,7 +86,7 @@ func DownloadMetadataFromS3(ctx context.Context, adminName string, filename stri
 	return nil
 }
 
-func ListMetadataFromS3(ctx context.Context, adminName string, prefix string) ([]string, error) {
+func ListMetadataFromS3(ctx context.Context, adminName string, appName string, prefix string) ([]string, error) {
 	env := viper.GetViper()
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
@@ -94,7 +94,7 @@ func ListMetadataFromS3(ctx context.Context, adminName string, prefix string) ([
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
 	}
 
-	s3Prefix := fmt.Sprintf("tuf_metadata/%s/%s", adminName, prefix)
+	s3Prefix := fmt.Sprintf("tuf_metadata/%s/%s/%s", adminName, appName, prefix)
 	bucketName := env.GetString("S3_BUCKET_NAME")
 	if bucketName == "" {
 		return nil, fmt.Errorf("S3_BUCKET_NAME is not configured")
@@ -105,7 +105,7 @@ func ListMetadataFromS3(ctx context.Context, adminName string, prefix string) ([
 		return nil, fmt.Errorf("failed to list objects from S3: %w", err)
 	}
 
-	metadataPrefix := fmt.Sprintf("tuf_metadata/%s/", adminName)
+	metadataPrefix := fmt.Sprintf("tuf_metadata/%s/%s/", adminName, appName)
 	var filenames []string
 	for _, obj := range objects {
 		if len(obj) > len(metadataPrefix) {
@@ -116,12 +116,12 @@ func ListMetadataFromS3(ctx context.Context, adminName string, prefix string) ([
 	return filenames, nil
 }
 
-func FindLatestMetadataVersion(ctx context.Context, adminName string, roleName string) (int, string, error) {
+func FindLatestMetadataVersion(ctx context.Context, adminName string, appName string, roleName string) (int, string, error) {
 	if roleName == "timestamp" {
 		return 0, "timestamp.json", nil
 	}
 
-	filenames, err := ListMetadataFromS3(ctx, adminName, "")
+	filenames, err := ListMetadataFromS3(ctx, adminName, appName, "")
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to list metadata files: %w", err)
 	}
@@ -173,4 +173,52 @@ func FindLatestMetadataVersion(ctx context.Context, adminName string, roleName s
 	}
 
 	return maxVersion, latestFilename, nil
+}
+
+// GetAllDelegatedRoles returns all delegated role names found in S3 storage
+func GetAllDelegatedRoles(ctx context.Context, adminName string, appName string) ([]string, error) {
+	filenames, err := ListMetadataFromS3(ctx, adminName, appName, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list metadata files: %w", err)
+	}
+
+	roleSet := make(map[string]bool)
+	knownRoles := []string{"root", "targets", "snapshot", "timestamp"}
+
+	for _, filename := range filenames {
+
+		isKnownRole := false
+		for _, knownRole := range knownRoles {
+			if filename == knownRole+".json" || strings.HasSuffix(filename, "."+knownRole+".json") {
+				isKnownRole = true
+				break
+			}
+		}
+		if isKnownRole {
+			continue
+		}
+
+		nameWithoutExt := strings.TrimSuffix(filename, ".json")
+
+		lastDotIndex := strings.LastIndex(nameWithoutExt, ".")
+		if lastDotIndex == -1 {
+
+			roleSet[nameWithoutExt] = true
+		} else {
+
+			roleName := nameWithoutExt[lastDotIndex+1:]
+			versionStr := nameWithoutExt[:lastDotIndex]
+			if _, err := strconv.Atoi(versionStr); err == nil {
+				roleSet[roleName] = true
+			}
+		}
+	}
+
+	roles := make([]string, 0, len(roleSet))
+	for role := range roleSet {
+		roles = append(roles, role)
+	}
+
+	logrus.Debugf("Found %d delegated roles in S3: %v", len(roles), roles)
+	return roles, nil
 }

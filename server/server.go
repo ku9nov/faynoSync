@@ -112,7 +112,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	router.GET("/telemetry", authMiddleware, telemetryMiddleware(config), handler.GetTelemetry)
 
 	if config.GetBool("TUF_ENABLED") {
-		tuf.SetupRoutes(router, authMiddleware, mongoDatabase, redisClient)
+		tuf.SetupRoutes(router, authMiddleware, mongoDatabase, redisClient, db)
 	}
 
 	// get the port from the configuration file

@@ -6,12 +6,13 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
+	"faynoSync/mongod"
+	"faynoSync/server/model"
 	tuf_metadata "faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/signing"
@@ -19,6 +20,7 @@ import (
 	"faynoSync/server/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sirupsen/logrus"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
@@ -26,8 +28,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// GenerateRequest represents the request body for generating root keys
+type GenerateRequest struct {
+	AppName string `json:"appName" binding:"required"`
+}
+
 // Generates root keys for the repository
-func GenerateRootKeys(c *gin.Context, database *mongo.Database) {
+func GenerateRootKeys(c *gin.Context, database *mongo.Database, redisClient *redis.Client, appRepository mongod.AppRepository) {
 
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -36,7 +43,34 @@ func GenerateRootKeys(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	logrus.Debugf("Generating root keys for admin: %s", adminName)
+	// Parse request body for appName (required)
+	var req GenerateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logrus.Errorf("Failed to parse request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "appName is required in request body",
+		})
+		return
+	}
+
+	if req.AppName == "" {
+		logrus.Error("appName is empty")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "appName cannot be empty",
+		})
+		return
+	}
+
+	// Validate that appRepository is available
+	if appRepository == nil {
+		logrus.Errorf("appName '%s' provided but AppRepository is nil", req.AppName)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "appName cannot be validated: AppRepository is not available",
+		})
+		return
+	}
+
+	logrus.Debugf("Generating root keys for admin: %s, appName: %s", adminName, req.AppName)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
@@ -163,8 +197,51 @@ func GenerateRootKeys(c *gin.Context, database *mongo.Database) {
 	tuf_metadata.ValidateRoot(roles)
 	logrus.Debug("Root keys generation completed")
 
+	// Validate that the provided appName exists and has Tuf enabled
+	apps, err := appRepository.ListApps(ctx, adminName)
+	if err != nil {
+		logrus.Errorf("Failed to list apps: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to list apps",
+		})
+		return
+	}
+
+	// Find the specific app and validate it has Tuf enabled
+	var foundApp *model.App
+	for i, app := range apps {
+		if app == nil {
+			continue
+		}
+		logrus.Debugf("App[%d]: ID=%s, AppName=%s, Owner=%s, Tuf=%v, Private=%v, Description=%s",
+			i, app.ID.Hex(), app.AppName, app.Owner, app.Tuf, app.Private, app.Description)
+
+		if app.AppName == req.AppName {
+			foundApp = app
+			break
+		}
+	}
+
+	if foundApp == nil {
+		logrus.Errorf("App '%s' not found for admin %s", req.AppName, adminName)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("appName '%s' not found for admin %s", req.AppName, adminName),
+		})
+		return
+	}
+
+	if !foundApp.Tuf {
+		logrus.Errorf("App '%s' does not have Tuf enabled for admin %s", req.AppName, adminName)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("appName '%s' does not have Tuf enabled", req.AppName),
+		})
+		return
+	}
+
+	logrus.Infof("Validated appName '%s' for admin %s", req.AppName, adminName)
+
 	if database != nil {
-		err = signing.SavePrivateKeysToMongoDB(database, adminName, keys, publicKeyIDs, ctx)
+		err = signing.SavePrivateKeysToMongoDB(database, adminName, req.AppName, keys, publicKeyIDs, ctx)
 		if err != nil {
 			logrus.Errorf("Failed to save private keys to MongoDB: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -177,7 +254,9 @@ func GenerateRootKeys(c *gin.Context, database *mongo.Database) {
 		logrus.Warn("MongoDB database is nil, skipping private keys save")
 	}
 
-	payload, err := generatePayload(tmpDir)
+	// Generate payload only for the specified appName
+	payloadAppNames := []string{req.AppName}
+	payload, err := generatePayload(tmpDir, adminName, payloadAppNames)
 	if err != nil {
 		logrus.Errorf("Failed to generate payload: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -192,12 +271,11 @@ func GenerateRootKeys(c *gin.Context, database *mongo.Database) {
 	})
 }
 
-// generatePayload generates bootstrap payload from metadata directory
-func generatePayload(metadataDir string) (*models.BootstrapPayload, error) {
+func generatePayload(metadataDir string, adminName string, tufAppNames []string) (*models.BootstrapPayload, error) {
 	logrus.Debug("Generating payload")
 
 	rootPath := filepath.Join(metadataDir, "1.root.json")
-	rootData, err := ioutil.ReadFile(rootPath)
+	rootData, err := os.ReadFile(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading root metadata: %w", err)
 	}
@@ -215,7 +293,7 @@ func generatePayload(metadataDir string) (*models.BootstrapPayload, error) {
 
 	var timestampExpiration, snapshotExpiration, targetsExpiration int
 
-	if timestampData, err := ioutil.ReadFile(timestampPath); err == nil {
+	if timestampData, err := os.ReadFile(timestampPath); err == nil {
 		var timestampMeta map[string]interface{}
 		if err := json.Unmarshal(timestampData, &timestampMeta); err == nil {
 			if signed, ok := timestampMeta["signed"].(map[string]interface{}); ok {
@@ -226,7 +304,7 @@ func generatePayload(metadataDir string) (*models.BootstrapPayload, error) {
 		}
 	}
 
-	if snapshotData, err := ioutil.ReadFile(snapshotPath); err == nil {
+	if snapshotData, err := os.ReadFile(snapshotPath); err == nil {
 		var snapshotMeta map[string]interface{}
 		if err := json.Unmarshal(snapshotData, &snapshotMeta); err == nil {
 			if signed, ok := snapshotMeta["signed"].(map[string]interface{}); ok {
@@ -237,7 +315,7 @@ func generatePayload(metadataDir string) (*models.BootstrapPayload, error) {
 		}
 	}
 
-	if targetsData, err := ioutil.ReadFile(targetsPath); err == nil {
+	if targetsData, err := os.ReadFile(targetsPath); err == nil {
 		var targetsMeta map[string]interface{}
 		if err := json.Unmarshal(targetsData, &targetsMeta); err == nil {
 			if signed, ok := targetsMeta["signed"].(map[string]interface{}); ok {
@@ -258,19 +336,78 @@ func generatePayload(metadataDir string) (*models.BootstrapPayload, error) {
 		targetsExpiration = 365
 	}
 
+	// Get online key ID from timestamp role (used for delegations)
+	var onlineKeyID string
+	if timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]; ok && len(timestampRole.KeyIDs) > 0 {
+		onlineKeyID = timestampRole.KeyIDs[0]
+	} else {
+		return nil, fmt.Errorf("failed to find timestamp key in root metadata")
+	}
+
+	// Get online key to include in delegations
+	onlineKey, exists := rootMetadata.Signed.Keys[onlineKeyID]
+	if !exists {
+		return nil, fmt.Errorf("online key %s not found in root metadata", onlineKeyID)
+	}
+
+	// Create custom delegations with specific paths for each app that has Tuf=true
+	var delegationPaths []string
+
+	// Add paths for each app with Tuf=true
+	for _, appName := range tufAppNames {
+		delegationPaths = append(delegationPaths,
+			fmt.Sprintf("%s/%s/", adminName, appName),                  // adminName/appName/...
+			fmt.Sprintf("%s-%s/", appName, adminName),                  // appName-adminName/...
+			fmt.Sprintf("electron-builder/%s-%s/", appName, adminName), // electron-builder/appName-adminName/...
+			fmt.Sprintf("squirrel_windows/%s-%s/", appName, adminName), // squirrel_windows/appName-adminName/...
+		)
+	}
+
+	// If no TUF apps found, keep the catch-all wildcard paths as fallback
+	if len(delegationPaths) == 0 {
+		logrus.Warn("No apps with Tuf=true found, using wildcard paths as fallback")
+		delegationPaths = []string{
+			fmt.Sprintf("%s/", adminName),                    // adminName/appName/...
+			fmt.Sprintf("*-%s/", adminName),                  // appName-adminName/...
+			fmt.Sprintf("electron-builder/*-%s/", adminName), // electron-builder/appName-adminName/...
+			fmt.Sprintf("squirrel_windows/*-%s/", adminName), // squirrel_windows/appName-adminName/...
+		}
+	}
+
+	logrus.Debugf("Created %d delegation paths for %d TUF apps", len(delegationPaths), len(tufAppNames))
+
+	delegations := models.TUFDelegations{
+		Keys: map[string]models.TUFKey{
+			onlineKeyID: {
+				KeyType: onlineKey.KeyType,
+				Scheme:  onlineKey.KeyType, // For ed25519, scheme is same as keytype
+				KeyVal: models.TUFKeyVal{
+					Public: onlineKey.KeyVal.Public,
+				},
+			},
+		},
+		Roles: []models.TUFDelegatedRole{
+			{
+				Name:        "default",
+				Terminating: false, // Allow further delegation if needed? maybe true?
+				KeyIDs:      []string{onlineKeyID},
+				Threshold:   1,
+				Paths:       delegationPaths,
+			},
+		},
+	}
+
 	// Build payload
 	timeout := 300
 	payload := &models.BootstrapPayload{
+		AppName: tufAppNames[0],
 		Settings: models.Settings{
 			Roles: models.RolesData{
-				Root:      models.RoleExpiration{Expiration: rootExpiration},
-				Timestamp: models.RoleExpiration{Expiration: timestampExpiration},
-				Snapshot:  models.RoleExpiration{Expiration: snapshotExpiration},
-				Targets:   models.RoleExpiration{Expiration: targetsExpiration},
-				Bins: &models.BinsRole{
-					Expiration:            1,
-					NumberOfDelegatedBins: 4,
-				},
+				Root:        models.RoleExpiration{Expiration: rootExpiration},
+				Timestamp:   models.RoleExpiration{Expiration: timestampExpiration},
+				Snapshot:    models.RoleExpiration{Expiration: snapshotExpiration},
+				Targets:     models.RoleExpiration{Expiration: targetsExpiration},
+				Delegations: &delegations,
 			},
 		},
 		Metadata: map[string]models.RootMetadata{
@@ -279,6 +416,6 @@ func generatePayload(metadataDir string) (*models.BootstrapPayload, error) {
 		Timeout: &timeout,
 	}
 
-	logrus.Debug("Payload generation completed")
+	logrus.Debug("Payload generation completed with custom delegations")
 	return payload, nil
 }

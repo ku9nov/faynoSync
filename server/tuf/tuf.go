@@ -1,6 +1,7 @@
 package tuf
 
 import (
+	"faynoSync/mongod"
 	"faynoSync/server/tuf/artifacts"
 	"faynoSync/server/tuf/bootstrap"
 	"faynoSync/server/tuf/tasks"
@@ -11,7 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDatabase *mongo.Database, redisClient *redis.Client) {
+func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDatabase *mongo.Database, redisClient *redis.Client, appRepository mongod.AppRepository) {
 	adminMiddleware := utils.AdminOnlyMiddleware(mongoDatabase)
 
 	router.GET("/tuf/v1/bootstrap", authMiddleware, adminMiddleware, func(c *gin.Context) {
@@ -24,7 +25,7 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 		bootstrap.GetBootstrapLocks(c, redisClient)
 	})
 	router.POST("/tuf/v1/bootstrap/generate", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		bootstrap.GenerateRootKeys(c, mongoDatabase)
+		bootstrap.GenerateRootKeys(c, mongoDatabase, redisClient, appRepository)
 	})
 	router.GET("/tuf/v1/task", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		tasks.GetTask(c, redisClient)

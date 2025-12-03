@@ -32,6 +32,14 @@ func PostAddArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabase *
 		return
 	}
 
+	if payload.AppName == "" {
+		logrus.Error("Missing required field: appName")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Missing required field: appName",
+		})
+		return
+	}
+
 	if len(payload.Artifacts) == 0 {
 		logrus.Error("No artifacts provided in payload")
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -78,6 +86,7 @@ func PostAddArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabase *
 			redisClient,
 			mongoDatabase,
 			adminName,
+			payload.AppName,
 			payload.Artifacts,
 			publishArtifacts,
 			taskID,
