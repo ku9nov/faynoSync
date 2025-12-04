@@ -30,7 +30,12 @@ import (
 
 // GenerateRequest represents the request body for generating root keys
 type GenerateRequest struct {
-	AppName string `json:"appName" binding:"required"`
+	AppName             string `json:"appName" binding:"required"`
+	RootExpiration      *int   `json:"rootExpiration,omitempty"`
+	TargetsExpiration   *int   `json:"targetsExpiration,omitempty"`
+	SnapshotExpiration  *int   `json:"snapshotExpiration,omitempty"`
+	TimestampExpiration *int   `json:"timestampExpiration,omitempty"`
+	RoleName            string `json:"roleName,omitempty"`
 }
 
 // Generates root keys for the repository
@@ -74,18 +79,42 @@ func GenerateRootKeys(c *gin.Context, database *mongo.Database, redisClient *red
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
+	// Set default expiration values if not provided
+	rootExpiration := 365
+	if req.RootExpiration != nil {
+		rootExpiration = *req.RootExpiration
+	}
+
+	targetsExpiration := 7
+	if req.TargetsExpiration != nil {
+		targetsExpiration = *req.TargetsExpiration
+	}
+
+	snapshotExpiration := 7
+	if req.SnapshotExpiration != nil {
+		snapshotExpiration = *req.SnapshotExpiration
+	}
+
+	timestampExpiration := 1
+	if req.TimestampExpiration != nil {
+		timestampExpiration = *req.TimestampExpiration
+	}
+
+	logrus.Debugf("Using expiration values - root: %d days, targets: %d days, snapshot: %d days, timestamp: %d days",
+		rootExpiration, targetsExpiration, snapshotExpiration, timestampExpiration)
+
 	roles := repository.New()
 	keys := map[string]ed25519.PrivateKey{}
 	publicKeyIDs := map[string]string{}
 
-	targets := metadata.Targets(tuf_utils.HelperExpireIn(7))
+	targets := metadata.Targets(tuf_utils.HelperExpireIn(targetsExpiration))
 	roles.SetTargets("targets", targets)
 
-	snapshot := metadata.Snapshot(tuf_utils.HelperExpireIn(7))
+	snapshot := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
 	roles.SetSnapshot(snapshot)
-	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(1))
+	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
 	roles.SetTimestamp(timestamp)
-	root := metadata.Root(tuf_utils.HelperExpireIn(365))
+	root := metadata.Root(tuf_utils.HelperExpireIn(rootExpiration))
 	roles.SetRoot(root)
 	for _, name := range []string{"targets", "snapshot", "timestamp", "root"} {
 		_, private, err := ed25519.GenerateKey(nil)
@@ -256,7 +285,11 @@ func GenerateRootKeys(c *gin.Context, database *mongo.Database, redisClient *red
 
 	// Generate payload only for the specified appName
 	payloadAppNames := []string{req.AppName}
-	payload, err := generatePayload(tmpDir, adminName, payloadAppNames)
+	roleName := req.RoleName
+	if roleName == "" {
+		roleName = "default"
+	}
+	payload, err := generatePayload(tmpDir, adminName, payloadAppNames, roleName)
 	if err != nil {
 		logrus.Errorf("Failed to generate payload: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -271,7 +304,7 @@ func GenerateRootKeys(c *gin.Context, database *mongo.Database, redisClient *red
 	})
 }
 
-func generatePayload(metadataDir string, adminName string, tufAppNames []string) (*models.BootstrapPayload, error) {
+func generatePayload(metadataDir string, adminName string, tufAppNames []string, roleName string) (*models.BootstrapPayload, error) {
 	logrus.Debug("Generating payload")
 
 	rootPath := filepath.Join(metadataDir, "1.root.json")
@@ -326,16 +359,6 @@ func generatePayload(metadataDir string, adminName string, tufAppNames []string)
 		}
 	}
 
-	if timestampExpiration == 0 {
-		timestampExpiration = 1
-	}
-	if snapshotExpiration == 0 {
-		snapshotExpiration = 7
-	}
-	if targetsExpiration == 0 {
-		targetsExpiration = 365
-	}
-
 	// Get online key ID from timestamp role (used for delegations)
 	var onlineKeyID string
 	if timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]; ok && len(timestampRole.KeyIDs) > 0 {
@@ -388,7 +411,7 @@ func generatePayload(metadataDir string, adminName string, tufAppNames []string)
 		},
 		Roles: []models.TUFDelegatedRole{
 			{
-				Name:        "default",
+				Name:        roleName,
 				Terminating: false, // Allow further delegation if needed? maybe true?
 				KeyIDs:      []string{onlineKeyID},
 				Threshold:   1,

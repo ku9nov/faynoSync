@@ -24,19 +24,19 @@ import (
 )
 
 // bootstrapOnlineRoles creates online roles (targets, snapshot, timestamp) and delegations
-func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, appName string, payload *models.BootstrapPayload) {
+func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, appName string, payload *models.BootstrapPayload) error {
 	logrus.Debugf("Starting bootstrap online roles creation for admin: %s, app: %s", adminName, appName)
 
 	// Create temporary directory for storing metadata
 	cwd, err := os.Getwd()
 	if err != nil {
 		logrus.Errorf("Failed to get current working directory: %v", err)
-		return
+		return fmt.Errorf("failed to get current working directory: %w", err)
 	}
 	tmpDir, err := os.MkdirTemp(cwd, "tmp")
 	if err != nil {
 		logrus.Errorf("Failed to create temporary directory: %v", err)
-		return
+		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 	defer func() {
 		logrus.Debugf("Metadata stored in: %s", tmpDir)
@@ -49,20 +49,20 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	rootMetadata, exists := payload.Metadata["root"]
 	if !exists {
 		logrus.Error("Root metadata not found in payload")
-		return
+		return fmt.Errorf("root metadata not found in payload")
 	}
 
 	// Save root metadata to temporary file first
 	rootJSON, err := json.Marshal(rootMetadata)
 	if err != nil {
 		logrus.Errorf("Failed to marshal root metadata: %v", err)
-		return
+		return fmt.Errorf("failed to marshal root metadata: %w", err)
 	}
 	logrus.Debugf("Tmp dir will be used to store metadata: %s", tmpDir)
 	rootPath := filepath.Join(tmpDir, "1.root.json")
 	if err := os.WriteFile(rootPath, rootJSON, 0644); err != nil {
 		logrus.Errorf("Failed to write root metadata to file: %v", err)
-		return
+		return fmt.Errorf("failed to write root metadata to file: %w", err)
 	}
 
 	expires, err := time.Parse(time.RFC3339, rootMetadata.Signed.Expires)
@@ -81,7 +81,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	_, err = repo.Root().FromFile(rootPath)
 	if err != nil {
 		logrus.Errorf("Failed to load root metadata from file: %v", err)
-		return
+		return fmt.Errorf("failed to load root metadata from file: %w", err)
 	}
 
 	ctx := context.Background()
@@ -95,13 +95,13 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 		onlineKeyID = timestampRole.KeyIDs[0]
 	} else {
 		logrus.Error("Failed to find timestamp key in root metadata")
-		return
+		return fmt.Errorf("failed to find timestamp key in root metadata")
 	}
 
 	_, exists = rootMetadata.Signed.Keys[onlineKeyID]
 	if !exists {
 		logrus.Errorf("Online key %s not found in root metadata", onlineKeyID)
-		return
+		return fmt.Errorf("online key %s not found in root metadata", onlineKeyID)
 	}
 
 	logrus.Debugf("Using online key: %s", onlineKeyID)
@@ -113,19 +113,17 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 		onlinePrivateKey, err = signing.LoadPrivateKeyFromMongoDB(mongoDatabase, adminName, onlineKeyID, ctx)
 		if err != nil {
 			logrus.Errorf("Failed to load online private key from MongoDB: %v", err)
-			logrus.Warn("Continuing without signing - metadata will be unsigned")
-		} else {
-			signer, err = signature.LoadSigner(onlinePrivateKey, crypto.Hash(0))
-			if err != nil {
-				logrus.Errorf("Failed to create signer from private key: %v", err)
-				logrus.Warn("Continuing without signing - metadata will be unsigned")
-				signer = nil
-			} else {
-				logrus.Debug("Successfully loaded online private key and created signer")
-			}
+			return fmt.Errorf("failed to load online private key from MongoDB: %w", err)
 		}
+		signer, err = signature.LoadSigner(onlinePrivateKey, crypto.Hash(0))
+		if err != nil {
+			logrus.Errorf("Failed to create signer from private key: %v", err)
+			return fmt.Errorf("failed to create signer from private key: %w", err)
+		}
+		logrus.Debug("Successfully loaded online private key and created signer")
 	} else {
-		logrus.Warn("MongoDB database is nil, cannot load private key for signing")
+		logrus.Error("MongoDB database is nil, cannot load private key for signing")
+		return fmt.Errorf("MongoDB database is nil, cannot load private key for signing")
 	}
 
 	targets := metadata.Targets(tuf_utils.HelperExpireIn(targetsExpiration))
@@ -215,13 +213,11 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 			// Add role to snapshot meta
 			snapshot.Signed.Meta[fmt.Sprintf("%s.json", roleName)] = metadata.MetaFile(1)
 
-			if signer != nil {
-				if _, err := repo.Targets(roleName).Sign(signer); err != nil {
-					logrus.Errorf("Failed to sign delegated role metadata %s: %v", roleName, err)
-				} else {
-					logrus.Debugf("Successfully signed delegated role metadata: %s", roleName)
-				}
+			if _, err := repo.Targets(roleName).Sign(signer); err != nil {
+				logrus.Errorf("Failed to sign delegated role metadata %s: %v", roleName, err)
+				return fmt.Errorf("failed to sign delegated role metadata %s: %w", roleName, err)
 			}
+			logrus.Debugf("Successfully signed delegated role metadata: %s", roleName)
 
 			filename := fmt.Sprintf("1.%s.json", roleName)
 			rolePath := filepath.Join(tmpDir, filename)
@@ -239,32 +235,27 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 		logrus.Debug("Custom delegations created successfully")
 	}
 
-	if signer != nil {
-
-		if _, err := repo.Targets("targets").Sign(signer); err != nil {
-			logrus.Errorf("Failed to sign targets metadata: %v", err)
-		} else {
-			logrus.Debug("Successfully signed targets metadata")
-		}
-
-		if _, err := repo.Snapshot().Sign(signer); err != nil {
-			logrus.Errorf("Failed to sign snapshot metadata: %v", err)
-		} else {
-			logrus.Debug("Successfully signed snapshot metadata")
-		}
-
-		if _, err := repo.Timestamp().Sign(signer); err != nil {
-			logrus.Errorf("Failed to sign timestamp metadata: %v", err)
-		} else {
-			logrus.Debug("Successfully signed timestamp metadata")
-		}
-	} else {
-		logrus.Warn("Signer is not available, metadata will be saved without signatures")
+	if _, err := repo.Targets("targets").Sign(signer); err != nil {
+		logrus.Errorf("Failed to sign targets metadata: %v", err)
+		return fmt.Errorf("failed to sign targets metadata: %w", err)
 	}
+	logrus.Debug("Successfully signed targets metadata")
+
+	if _, err := repo.Snapshot().Sign(signer); err != nil {
+		logrus.Errorf("Failed to sign snapshot metadata: %v", err)
+		return fmt.Errorf("failed to sign snapshot metadata: %w", err)
+	}
+	logrus.Debug("Successfully signed snapshot metadata")
+
+	if _, err := repo.Timestamp().Sign(signer); err != nil {
+		logrus.Errorf("Failed to sign timestamp metadata: %v", err)
+		return fmt.Errorf("failed to sign timestamp metadata: %w", err)
+	}
+	logrus.Debug("Successfully signed timestamp metadata")
 
 	if err := repo.Root().ToFile(rootPath, true); err != nil {
 		logrus.Errorf("Failed to persist root metadata: %v", err)
-		return
+		return fmt.Errorf("failed to persist root metadata: %w", err)
 	}
 	logrus.Debugf("Successfully persisted root metadata: 1.root.json")
 
@@ -276,7 +267,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	targetsPath := filepath.Join(tmpDir, targetsFilename)
 	if err := repo.Targets("targets").ToFile(targetsPath, true); err != nil {
 		logrus.Errorf("Failed to persist targets metadata: %v", err)
-		return
+		return fmt.Errorf("failed to persist targets metadata: %w", err)
 	}
 	logrus.Debugf("Successfully persisted targets metadata: %s", targetsFilename)
 
@@ -288,7 +279,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	snapshotPath := filepath.Join(tmpDir, snapshotFilename)
 	if err := repo.Snapshot().ToFile(snapshotPath, true); err != nil {
 		logrus.Errorf("Failed to persist snapshot metadata: %v", err)
-		return
+		return fmt.Errorf("failed to persist snapshot metadata: %w", err)
 	}
 	logrus.Debugf("Successfully persisted snapshot metadata: %s", snapshotFilename)
 
@@ -299,7 +290,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
 	if err := repo.Timestamp().ToFile(timestampPath, true); err != nil {
 		logrus.Errorf("Failed to persist timestamp metadata: %v", err)
-		return
+		return fmt.Errorf("failed to persist timestamp metadata: %w", err)
 	}
 	logrus.Debugf("Successfully persisted timestamp metadata: timestamp.json")
 
@@ -308,6 +299,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 	}
 
 	logrus.Debug("Bootstrap online roles creation completed")
+	return nil
 }
 
 // validateRoot validates the root metadata
