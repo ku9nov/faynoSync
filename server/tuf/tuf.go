@@ -30,7 +30,7 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 	router.GET("/tuf/v1/task", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		tasks.GetTask(c, redisClient)
 	})
-	router.POST("/tuf/v1/artifacts", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		artifacts.PostAddArtifacts(c, redisClient, mongoDatabase)
+	router.POST("/tuf/v1/artifacts/publish", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		artifacts.PostPublishArtifacts(c, redisClient, mongoDatabase)
 	})
 }

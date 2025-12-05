@@ -476,24 +476,55 @@ func updateSnapshotAndTimestamp(
 	snapshotSigner signature.Signer,
 	tmpDir string,
 ) error {
-	// Use Redis lock to prevent race conditions when updating snapshot
 	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s", adminName)
-	lockTimeout := 300 * time.Second // 5 minutes timeout
+	lockTTL := 300 * time.Second
+	maxWaitTime := 500 * time.Second
 
-	// Try to acquire lock
-	lockAcquired, err := redisClient.SetNX(ctx, lockKey, "locked", lockTimeout).Result()
-	if err != nil {
-		return fmt.Errorf("failed to acquire snapshot lock: %w", err)
-	}
-	if !lockAcquired {
-		// Wait a bit and retry
-		time.Sleep(100 * time.Millisecond)
-		lockAcquired, err = redisClient.SetNX(ctx, lockKey, "locked", lockTimeout).Result()
-		if err != nil {
-			return fmt.Errorf("failed to acquire snapshot lock on retry: %w", err)
+	lockCtx, cancel := context.WithTimeout(ctx, maxWaitTime)
+	defer cancel()
+
+	lockAcquired := false
+	initialDelay := 50 * time.Millisecond
+	maxDelay := 2 * time.Second
+	currentDelay := initialDelay
+	startTime := time.Now()
+
+	for !lockAcquired {
+
+		select {
+		case <-lockCtx.Done():
+			return fmt.Errorf("failed to acquire snapshot lock: timeout after %v (another process is updating snapshot)", maxWaitTime)
+		default:
 		}
-		if !lockAcquired {
-			return fmt.Errorf("failed to acquire snapshot lock: another process is updating snapshot")
+
+		acquired, err := redisClient.SetNX(lockCtx, lockKey, "locked", lockTTL).Result()
+		if err != nil {
+
+			if lockCtx.Err() != nil {
+				return fmt.Errorf("failed to acquire snapshot lock: timeout after %v (another process is updating snapshot)", maxWaitTime)
+			}
+			return fmt.Errorf("failed to acquire snapshot lock: %w", err)
+		}
+
+		if acquired {
+			lockAcquired = true
+			elapsed := time.Since(startTime)
+			if elapsed > 100*time.Millisecond {
+				logrus.Debugf("Acquired snapshot lock after %v (retries with exponential backoff)", elapsed)
+			}
+			break
+		}
+
+		logrus.Debugf("Snapshot lock is held by another process, waiting %v before retry...", currentDelay)
+		select {
+		case <-lockCtx.Done():
+			return fmt.Errorf("failed to acquire snapshot lock: timeout after %v (another process is updating snapshot)", maxWaitTime)
+		case <-time.After(currentDelay):
+
+			currentDelay *= 2
+			if currentDelay > maxDelay {
+				currentDelay = maxDelay
+			}
 		}
 	}
 
