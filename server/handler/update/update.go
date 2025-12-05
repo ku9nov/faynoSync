@@ -203,6 +203,8 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	}
 	var links []string
 	var extensions []string
+	var fileHashes []map[string]string
+	var fileLengths []int64
 	var result bool
 	if form != nil {
 		files := form.File["file"] // Assuming the field name is "file" not "files"
@@ -215,6 +217,15 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 		}
 		for _, file := range files {
+			// Calculate hashes and length before uploading to S3
+			hashes, length, err := utils.CalculateFileHashes(file)
+			if err != nil {
+				logrus.Error(err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to calculate file hashes"})
+				return
+			}
+			fileHashes = append(fileHashes, hashes)
+			fileLengths = append(fileLengths, length)
 			link, ext, err := utils.UploadToS3(ctxQueryMap, owner, file, c, viper.GetViper(), checkAppVisibility)
 			if err != nil {
 				logrus.Error(err)
@@ -228,7 +239,14 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 
 	if len(links) > 0 {
 		for i, link := range links {
-			result, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, link, extensions[i], c.Request.Context())
+			// Add hashes and length to ctxQueryMap for this specific file
+			fileCtxQuery := make(map[string]interface{})
+			for k, v := range ctxQueryMap {
+				fileCtxQuery[k] = v
+			}
+			fileCtxQuery["hashes"] = fileHashes[i]
+			fileCtxQuery["length"] = fileLengths[i]
+			result, err = repository.UpdateSpecificApp(objID, owner, fileCtxQuery, link, extensions[i], c.Request.Context())
 			if err != nil {
 				logrus.Errorf("Error updating link %d: %v", i, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

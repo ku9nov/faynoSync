@@ -385,7 +385,18 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 					break
 				}
 			}
-
+			var hashes map[string]string
+			var length int64
+			if hashesVal, exists := ctxQuery["hashes"]; exists {
+				if hashesMap, ok := hashesVal.(map[string]string); ok {
+					hashes = hashesMap
+				}
+			}
+			if lengthVal, exists := ctxQuery["length"]; exists {
+				if lengthInt, ok := lengthVal.(int64); ok {
+					length = lengthInt
+				}
+			}
 			if !duplicateFound {
 				newArtifact := model.Artifact{
 					Link:      appLink,
@@ -393,6 +404,12 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 					Arch:      archMeta.ID,
 					Package:   extension,
 					Signature: ctxQuery["signature"].(string),
+				}
+				if hashes != nil {
+					newArtifact.Hashes = hashes
+				}
+				if length > 0 {
+					newArtifact.Length = length
 				}
 				appData.Artifacts = append(appData.Artifacts, newArtifact)
 				updateFields = append(updateFields, bson.E{Key: "artifacts", Value: appData.Artifacts})
