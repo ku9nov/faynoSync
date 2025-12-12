@@ -21,8 +21,10 @@ type AddArtifactsPayload struct {
 }
 
 type DeleteArtifactsPayload struct {
-	Artifacts        []string `json:"artifacts"`
-	PublishArtifacts bool     `json:"publish_artifacts,omitempty"`
+	AppID             string   `json:"id" binding:"required"`
+	AppName           string   `json:"app_name" binding:"required"`
+	Version           string   `json:"version" binding:"required"`
+	ArtifactsToDelete []string `json:"artifacts_to_delete" binding:"required"`
 }
 
 type ArtifactsResponse struct {

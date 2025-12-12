@@ -157,22 +157,6 @@ func AddArtifacts(
 		return fmt.Errorf("failed to load targets metadata: %w", err)
 	}
 
-	repo.Targets("targets").ClearSignatures()
-	if _, err := repo.Targets("targets").Sign(targetsSigner); err != nil {
-		return fmt.Errorf("failed to sign targets metadata: %w", err)
-	}
-
-	targetsVersion := repo.Targets("targets").Signed.Version
-	correctTargetsFilename := fmt.Sprintf("%d.targets.json", targetsVersion)
-	correctTargetsPath := filepath.Join(tmpDir, correctTargetsFilename)
-	if err := repo.Targets("targets").ToFile(correctTargetsPath, true); err != nil {
-		return fmt.Errorf("failed to save targets metadata: %w", err)
-	}
-
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, correctTargetsFilename, correctTargetsPath); err != nil {
-		return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
-	}
-
 	rolesArtifacts := make(map[string][]Artifact)
 	invalidPaths := []string{}
 
@@ -220,7 +204,8 @@ func AddArtifacts(
 	// If delegation paths were updated, save targets.json before processing artifacts
 	if targetsPathsUpdated {
 		logrus.Debugf("Delegation paths were updated, saving targets metadata before processing artifacts")
-		// Increment version when delegation paths are updated
+		// Update expiration and increment version when delegation paths are updated
+		repo.Targets("targets").Signed.Expires = tuf_utils.HelperExpireIn(targetsExpiration)
 		repo.Targets("targets").Signed.Version++
 		repo.Targets("targets").ClearSignatures()
 		if _, err := repo.Targets("targets").Sign(targetsSigner); err != nil {

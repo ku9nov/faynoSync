@@ -272,3 +272,245 @@ func updateAllArtifactsTUFStatus(
 		}
 	}
 }
+
+func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
+	owner, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		logrus.Errorf("Failed to get username from context: %v", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var payload DeleteArtifactsPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		logrus.Errorf("Failed to parse delete artifacts payload: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid payload format: %v", err),
+		})
+		return
+	}
+
+	ctx := context.Background()
+
+	appID, err := primitive.ObjectIDFromHex(payload.AppID)
+	if err != nil {
+		logrus.Errorf("Invalid app_id format: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid app_id format: %v", err),
+		})
+		return
+	}
+
+	collection := mongoDatabase.Collection("apps")
+	var appDoc model.SpecificApp
+	filter := bson.D{
+		{Key: "app_id", Value: appID},
+		{Key: "version", Value: payload.Version},
+		{Key: "owner", Value: owner},
+	}
+
+	err = collection.FindOne(ctx, filter).Decode(&appDoc)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			logrus.Errorf("App version not found: app_id=%s, version=%s, owner=%s", payload.AppID, payload.Version, owner)
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": fmt.Sprintf("App version not found: app_id=%s, version=%s", payload.AppID, payload.Version),
+			})
+			return
+		}
+		logrus.Errorf("Failed to find app document: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to find app document",
+		})
+		return
+	}
+
+	metaCollection := mongoDatabase.Collection("apps_meta")
+	var appMeta struct {
+		ID      primitive.ObjectID `bson:"_id"`
+		AppName string             `bson:"app_name"`
+	}
+	err = metaCollection.FindOne(ctx, bson.D{
+		{Key: "_id", Value: appID},
+		{Key: "owner", Value: owner},
+	}).Decode(&appMeta)
+	if err != nil {
+		logrus.Errorf("Failed to find app meta: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to find app metadata",
+		})
+		return
+	}
+
+	// Convert artifact indices to actual artifacts
+	artifactsToDelete := make([]model.Artifact, 0)
+	for _, indexStr := range payload.ArtifactsToDelete {
+		var index int
+		if _, err := fmt.Sscanf(indexStr, "%d", &index); err != nil {
+			logrus.Warnf("Invalid artifact index: %s, skipping", indexStr)
+			continue
+		}
+		if index < 0 || index >= len(appDoc.Artifacts) {
+			logrus.Warnf("Artifact index out of range: %d (total artifacts: %d), skipping", index, len(appDoc.Artifacts))
+			continue
+		}
+		artifact := appDoc.Artifacts[index]
+		if !artifact.TufSigned {
+			logrus.Warnf("Artifact at index %d is not TUF signed, skipping", index)
+			continue
+		}
+		artifactsToDelete = append(artifactsToDelete, artifact)
+	}
+
+	if len(artifactsToDelete) == 0 {
+		logrus.Debugf("No valid artifacts to delete for app_id=%s, version=%s", payload.AppID, payload.Version)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No valid artifacts to delete (all must be TUF signed)",
+		})
+		return
+	}
+
+	logrus.Debugf("Found %d artifacts to delete for app_id=%s, version=%s", len(artifactsToDelete), payload.AppID, payload.Version)
+
+	env := viper.GetViper()
+
+	tufArtifacts := make([]Artifact, 0, len(artifactsToDelete))
+
+	for _, mongoArtifact := range artifactsToDelete {
+		checkAppVisibility := strings.Contains(mongoArtifact.Link, "/download?key=")
+		logrus.Debugf("Determined checkAppVisibility=%v for link: %s", checkAppVisibility, mongoArtifact.Link)
+
+		tufArtifact, err := ConvertMongoArtifactToTUF(mongoArtifact, checkAppVisibility, env)
+		if err != nil {
+			logrus.Errorf("Failed to convert artifact to TUF format: %v", err)
+			continue
+		}
+		tufArtifacts = append(tufArtifacts, *tufArtifact)
+	}
+
+	if len(tufArtifacts) == 0 {
+		logrus.Errorf("No valid artifacts to delete after conversion")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No valid artifacts to delete",
+		})
+		return
+	}
+
+	taskID := uuid.New().String()
+	logrus.Debugf("Generated task_id for delete artifacts: %s", taskID)
+
+	taskName := tasks.TaskNameRemoveArtifacts
+	if err := tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStatePending, &tasks.TaskResult{
+		Task: &taskName,
+	}); err != nil {
+		logrus.Warnf("Failed to save initial task status: %v", err)
+	}
+
+	if err := tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateStarted); err != nil {
+		logrus.Warnf("Failed to update task state to STARTED: %v", err)
+	}
+
+	if err := tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateRunning); err != nil {
+		logrus.Warnf("Failed to update task state to RUNNING: %v", err)
+	}
+
+	updateArtifactsTUFStatusToDeleted(ctx, mongoDatabase, appID, payload.Version, owner, artifactsToDelete, &taskID)
+
+	go func() {
+		ctx := context.Background()
+		if err := RemoveArtifacts(
+			ctx,
+			redisClient,
+			mongoDatabase,
+			owner,
+			appMeta.AppName,
+			tufArtifacts,
+			taskID,
+		); err != nil {
+			logrus.Errorf("Failed to remove artifacts from TUF: %v", err)
+			errorMsg := err.Error()
+			taskName := tasks.TaskNameRemoveArtifacts
+			result := &tasks.TaskResult{
+				Message: func() *string { s := "Deleting artifact(s) from TUF metadata Failed"; return &s }(),
+				Error:   &errorMsg,
+				Status:  func() *bool { b := false; return &b }(),
+				Task:    &taskName,
+			}
+			now := time.Now()
+			result.LastUpdate = &now
+			if err := tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, result); err != nil {
+				logrus.Errorf("Failed to save error task status: %v", err)
+			}
+		}
+	}()
+
+	artifactPaths := make([]string, len(tufArtifacts))
+	for i, artifact := range tufArtifacts {
+		artifactPaths[i] = artifact.Path
+	}
+
+	response := gin.H{
+		"message": "Artifact(s) deletion started",
+		"data": gin.H{
+			"app_id":      payload.AppID,
+			"version":     payload.Version,
+			"artifacts":   artifactPaths,
+			"task_id":     taskID,
+			"last_update": time.Now(),
+		},
+	}
+
+	c.JSON(http.StatusAccepted, response)
+}
+
+func updateArtifactsTUFStatusToDeleted(
+	ctx context.Context,
+	mongoDatabase *mongo.Database,
+	appID primitive.ObjectID,
+	version string,
+	owner string,
+	artifacts []model.Artifact,
+	taskID *string,
+) {
+	collection := mongoDatabase.Collection("apps")
+
+	for _, artifact := range artifacts {
+		filter := bson.D{
+			{Key: "app_id", Value: appID},
+			{Key: "version", Value: version},
+			{Key: "owner", Value: owner},
+			{Key: "artifacts", Value: bson.D{
+				{Key: "$elemMatch", Value: bson.D{
+					{Key: "link", Value: artifact.Link},
+					{Key: "platform", Value: artifact.Platform},
+					{Key: "arch", Value: artifact.Arch},
+					{Key: "package", Value: artifact.Package},
+				}},
+			}},
+		}
+
+		update := bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "artifacts.$.tuf_signed", Value: false},
+				{Key: "artifacts.$.tuf_task_id", Value: taskID},
+				{Key: "updated_at", Value: time.Now()},
+			}},
+		}
+
+		result, err := collection.UpdateOne(ctx, filter, update)
+		if err != nil {
+			logrus.Errorf("Failed to update artifact TUF status in MongoDB: %v", err)
+			continue
+		}
+
+		if result.MatchedCount == 0 {
+			logrus.Warnf("No artifact found to update TUF status: app_id=%s, version=%s, link=%s, platform=%s, arch=%s, package=%s",
+				appID.Hex(), version, artifact.Link, artifact.Platform.Hex(), artifact.Arch.Hex(), artifact.Package)
+		} else if result.ModifiedCount == 0 {
+			logrus.Warnf("Artifact found but not modified (may already have same values): app_id=%s, version=%s, link=%s",
+				appID.Hex(), version, artifact.Link)
+		} else {
+			logrus.Debugf("Successfully updated artifact TUF status to deleted: signed=false, task_id=%v, link=%s", taskID, artifact.Link)
+		}
+	}
+}

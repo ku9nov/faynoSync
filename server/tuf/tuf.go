@@ -33,4 +33,7 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 	router.POST("/tuf/v1/artifacts/publish", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		artifacts.PostPublishArtifacts(c, redisClient, mongoDatabase)
 	})
+	router.POST("/tuf/v1/artifacts/delete", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		artifacts.PostDeleteArtifacts(c, redisClient, mongoDatabase)
+	})
 }

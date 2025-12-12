@@ -95,3 +95,56 @@ func UpdateDelegationPaths(
 	logrus.Debugf("Successfully updated delegation paths for role %s (targets metadata will be saved by caller)", roleName)
 	return true, nil
 }
+
+func RemoveDelegationPaths(
+	ctx context.Context,
+	repo *repository.Type,
+	roleName string,
+	artifactPaths []string,
+	adminName string,
+) (bool, error) {
+	targets := repo.Targets("targets")
+	if targets == nil {
+		return false, fmt.Errorf("targets metadata not loaded")
+	}
+
+	delegations := targets.Signed.Delegations
+	if delegations == nil || delegations.Roles == nil {
+		return false, fmt.Errorf("no custom delegations found in targets metadata")
+	}
+
+	var targetRole *metadata.DelegatedRole
+	for i := range delegations.Roles {
+		if delegations.Roles[i].Name == roleName {
+			targetRole = &delegations.Roles[i]
+			break
+		}
+	}
+
+	if targetRole == nil {
+		return false, fmt.Errorf("delegation role %s not found", roleName)
+	}
+
+	pathsRemoved := false
+	for _, artifactPath := range artifactPaths {
+		// Remove exact path match from targetRole.Paths
+		for i := len(targetRole.Paths) - 1; i >= 0; i-- {
+			if targetRole.Paths[i] == artifactPath {
+				targetRole.Paths = append(targetRole.Paths[:i], targetRole.Paths[i+1:]...)
+				pathsRemoved = true
+				logrus.Infof("Removed path pattern %s from delegation role %s", artifactPath, roleName)
+				break
+			}
+		}
+	}
+
+	if !pathsRemoved {
+		logrus.Debugf("No paths were removed for role %s (paths may not have existed or were prefixes)", roleName)
+		return false, nil
+	}
+
+	repo.SetTargets("targets", targets)
+
+	logrus.Debugf("Successfully removed delegation paths for role %s (targets metadata will be saved by caller)", roleName)
+	return true, nil
+}
