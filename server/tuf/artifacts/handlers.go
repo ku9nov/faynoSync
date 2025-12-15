@@ -304,7 +304,7 @@ func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabas
 	collection := mongoDatabase.Collection("apps")
 	var appDoc model.SpecificApp
 	filter := bson.D{
-		{Key: "app_id", Value: appID},
+		{Key: "_id", Value: appID},
 		{Key: "version", Value: payload.Version},
 		{Key: "owner", Value: owner},
 	}
@@ -331,7 +331,7 @@ func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabas
 		AppName string             `bson:"app_name"`
 	}
 	err = metaCollection.FindOne(ctx, bson.D{
-		{Key: "_id", Value: appID},
+		{Key: "_id", Value: appDoc.AppID},
 		{Key: "owner", Value: owner},
 	}).Decode(&appMeta)
 	if err != nil {
@@ -414,7 +414,7 @@ func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabas
 		logrus.Warnf("Failed to update task state to RUNNING: %v", err)
 	}
 
-	updateArtifactsTUFStatusToDeleted(ctx, mongoDatabase, appID, payload.Version, owner, artifactsToDelete, &taskID)
+	updateArtifactsTUFStatusToDeleted(ctx, mongoDatabase, appDoc.AppID, payload.Version, owner, artifactsToDelete, &taskID)
 
 	go func() {
 		ctx := context.Background()
