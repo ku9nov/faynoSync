@@ -4,6 +4,7 @@ import (
 	"faynoSync/mongod"
 	"faynoSync/server/tuf/artifacts"
 	"faynoSync/server/tuf/bootstrap"
+	"faynoSync/server/tuf/config"
 	"faynoSync/server/tuf/tasks"
 	"faynoSync/server/utils"
 
@@ -35,5 +36,11 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 	})
 	router.POST("/tuf/v1/artifacts/delete", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		artifacts.PostDeleteArtifacts(c, redisClient, mongoDatabase)
+	})
+	router.GET("/tuf/v1/config", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		config.GetConfig(c, redisClient)
+	})
+	router.PUT("/tuf/v1/config", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		config.PutConfig(c, redisClient)
 	})
 }

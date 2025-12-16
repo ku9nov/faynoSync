@@ -86,21 +86,5 @@ func saveSettings(redisClient *redis.Client, adminName string, appName string, p
 		logrus.Errorf("Failed to save TIMESTAMP_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
 	}
 
-	// Save BINS settings if present (with admin name and app name suffix)
-	if roles.Bins != nil {
-		if err := redisClient.Set(ctx, "BINS_EXPIRATION_"+keySuffix, roles.Bins.Expiration, 0).Err(); err != nil {
-			logrus.Errorf("Failed to save BINS_EXPIRATION for admin %s, app %s: %v", adminName, appName, err)
-		}
-		if err := redisClient.Set(ctx, "BINS_THRESHOLD_"+keySuffix, 1, 0).Err(); err != nil {
-			logrus.Errorf("Failed to save BINS_THRESHOLD for admin %s, app %s: %v", adminName, appName, err)
-		}
-		if err := redisClient.Set(ctx, "BINS_NUM_KEYS_"+keySuffix, 1, 0).Err(); err != nil {
-			logrus.Errorf("Failed to save BINS_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
-		}
-		if err := redisClient.Set(ctx, "NUMBER_OF_DELEGATED_BINS_"+keySuffix, roles.Bins.NumberOfDelegatedBins, 0).Err(); err != nil {
-			logrus.Errorf("Failed to save NUMBER_OF_DELEGATED_BINS for admin %s, app %s: %v", adminName, appName, err)
-		}
-	}
-
 	logrus.Debug("Successfully saved all bootstrap settings to Redis")
 }

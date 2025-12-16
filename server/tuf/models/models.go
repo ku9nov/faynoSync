@@ -23,17 +23,11 @@ type RolesData struct {
 	Timestamp   RoleExpiration  `json:"timestamp"`
 	Snapshot    RoleExpiration  `json:"snapshot"`
 	Targets     RoleExpiration  `json:"targets"`
-	Bins        *BinsRole       `json:"bins,omitempty"`
 	Delegations *TUFDelegations `json:"delegations,omitempty"`
 }
 
 type RoleExpiration struct {
 	Expiration int `json:"expiration"`
-}
-
-type BinsRole struct {
-	Expiration            int `json:"expiration"`
-	NumberOfDelegatedBins int `json:"number_of_delegated_bins"`
 }
 
 type RootMetadata struct {
@@ -109,4 +103,27 @@ type TUFDelegatedRole struct {
 	KeyIDs      []string `json:"keyids"`
 	Threshold   int      `json:"threshold"`
 	Paths       []string `json:"paths"`
+}
+
+type GetConfigResponse struct {
+	Data    map[string]interface{} `json:"data"`
+	Message string                 `json:"message"`
+}
+
+type PutConfigPayload struct {
+	Settings SettingsPayload `json:"settings" binding:"required"`
+}
+
+type SettingsPayload struct {
+	Expiration map[string]int `json:"expiration" binding:"required"`
+}
+
+type PutConfigResponse struct {
+	Data    PutConfigData `json:"data"`
+	Message string        `json:"message"`
+}
+
+type PutConfigData struct {
+	TaskID     string    `json:"task_id"`
+	LastUpdate time.Time `json:"last_update"`
 }

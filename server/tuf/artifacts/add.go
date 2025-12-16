@@ -300,22 +300,6 @@ func getRoleForArtifactPath(repo *repository.Type, artifactPath string) (string,
 		return "", fmt.Errorf("no delegations found in targets metadata")
 	}
 
-	if delegations.SuccinctRoles != nil {
-
-		roles := delegations.SuccinctRoles.GetRolesForTarget(artifactPath)
-		if len(roles) == 0 {
-			return "", fmt.Errorf("no role found for path: %s", artifactPath)
-		}
-		roleName := roles[0].Name
-		logrus.Debugf("Calculated role for path %s using go-tuf GetRolesForTarget: %s", artifactPath, roleName)
-
-		if strings.Contains(roleName, "--") {
-			logrus.Warnf("Role name contains double minus (negative bin index): %s for path %s", roleName, artifactPath)
-		}
-
-		return roleName, nil
-	}
-
 	if delegations.Roles != nil {
 
 		for _, role := range delegations.Roles {
@@ -368,8 +352,9 @@ func updateDelegatedRoleWithArtifacts(
 	_, delegationFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, roleName)
 	isNewDelegation := err != nil
 
-	binsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "BINS_EXPIRATION_"+adminName+"_"+appName, 90)
-	delegationTargets := metadata.Targets(tuf_utils.HelperExpireIn(binsExpiration))
+	roleExpirationKey := roleName + "_EXPIRATION_" + adminName + "_" + appName
+	roleExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, roleExpirationKey, 90)
+	delegationTargets := metadata.Targets(tuf_utils.HelperExpireIn(roleExpiration))
 	repo.SetTargets(roleName, delegationTargets)
 
 	if !isNewDelegation {
@@ -428,7 +413,7 @@ func updateDelegatedRoleWithArtifacts(
 
 	delegation.Signed.Version++
 
-	delegation.Signed.Expires = tuf_utils.HelperExpireIn(binsExpiration)
+	delegation.Signed.Expires = tuf_utils.HelperExpireIn(roleExpiration)
 
 	delegation.ClearSignatures()
 

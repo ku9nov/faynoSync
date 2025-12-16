@@ -64,7 +64,6 @@ func CalculateExpirationDays(expiresStr string) int {
 	return days
 }
 
-// CalculatePathHash обчислює SHA256 hash для path (використовується для bin index)
 func CalculatePathHash(path string) string {
 	hash := sha256.Sum256([]byte(path))
 	return hex.EncodeToString(hash[:])
@@ -75,15 +74,12 @@ func ExtractTUFPathFromLink(link string, checkAppVisibility bool, env *viper.Vip
 		return "", fmt.Errorf("link is empty")
 	}
 
-	// Використовуємо існуючу функцію для витягування S3 key
 	s3Key, err := utils.ExtractS3Key(link, checkAppVisibility, env)
 	if err != nil {
 		logrus.Errorf("Failed to extract S3 key from link: %v", err)
 		return "", fmt.Errorf("failed to extract S3 key from link: %w", err)
 	}
 
-	// S3 key вже є нормалізованим шляхом, який можна використати як TUF path
-	// Наприклад: "myapp-owner/stable/darwin/x64/app.dmg"
 	logrus.Debugf("Extracted TUF path from link: %s -> %s", link, s3Key)
 
 	return s3Key, nil

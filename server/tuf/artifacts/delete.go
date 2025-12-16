@@ -310,8 +310,9 @@ func removeArtifactsFromDelegatedRole(
 		return false, fmt.Errorf("failed to find latest delegation metadata for role %s: %w", roleName, err)
 	}
 
-	binsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "BINS_EXPIRATION_"+adminName+"_"+appName, 90)
-	delegationTargets := metadata.Targets(tuf_utils.HelperExpireIn(binsExpiration))
+	roleExpirationKey := roleName + "_EXPIRATION_" + adminName + "_" + appName
+	roleExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, roleExpirationKey, 90)
+	delegationTargets := metadata.Targets(tuf_utils.HelperExpireIn(roleExpiration))
 	repo.SetTargets(roleName, delegationTargets)
 
 	logrus.Debugf("Loading existing delegation metadata for role %s from %s", roleName, delegationFilename)
@@ -347,7 +348,7 @@ func removeArtifactsFromDelegatedRole(
 	}
 
 	delegation.Signed.Version++
-	delegation.Signed.Expires = tuf_utils.HelperExpireIn(binsExpiration)
+	delegation.Signed.Expires = tuf_utils.HelperExpireIn(roleExpiration)
 
 	delegation.ClearSignatures()
 
