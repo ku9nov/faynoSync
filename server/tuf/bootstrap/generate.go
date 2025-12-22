@@ -186,7 +186,7 @@ func GenerateRootKeys(c *gin.Context, database *mongo.Database, redisClient *red
 	if err != nil {
 		panic(fmt.Sprintln("TUF:", "creating a temporary folder failed", err))
 	}
-
+	defer os.RemoveAll(tmpDir)
 	for _, name := range []string{"targets", "snapshot", "timestamp", "root"} {
 		switch name {
 		case "targets":

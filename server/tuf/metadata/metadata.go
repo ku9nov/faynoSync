@@ -38,9 +38,7 @@ func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Databa
 		logrus.Errorf("Failed to create temporary directory: %v", err)
 		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
-	defer func() {
-		logrus.Debugf("Metadata stored in: %s", tmpDir)
-	}()
+	defer os.RemoveAll(tmpDir)
 
 	// Initialize repository
 	repo := repository.New()
