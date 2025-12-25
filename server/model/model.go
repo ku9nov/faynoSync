@@ -8,6 +8,10 @@ type Artifact struct {
 	Arch      primitive.ObjectID `bson:"arch"`
 	Package   string             `bson:"package"`
 	Signature string             `bson:"signature"`
+	Hashes    map[string]string  `bson:"hashes,omitempty"`
+	Length    int64              `bson:"length,omitempty"`
+	TufSigned bool               `bson:"tuf_signed,omitempty"`
+	TufTaskID *string            `bson:"tuf_task_id,omitempty"`
 }
 
 type App struct {
@@ -15,6 +19,7 @@ type App struct {
 	AppName     string             `bson:"app_name"`
 	Logo        string             `bson:"logo"`
 	Private     bool               `bson:"private"`
+	Tuf         bool               `bson:"tuf"`
 	Description string             `bson:"description"`
 	Owner       string             `bson:"owner"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`
@@ -37,10 +42,12 @@ type SpecificApp struct {
 }
 
 type SpecificArtifactsWithoutIDs struct {
-	Link     string `bson:"link" json:"link"`
-	Platform string `bson:"platform" json:"platform"`
-	Arch     string `bson:"arch" json:"arch"`
-	Package  string `bson:"package" json:"package"`
+	Link      string  `bson:"link" json:"link"`
+	Platform  string  `bson:"platform" json:"platform"`
+	Arch      string  `bson:"arch" json:"arch"`
+	Package   string  `bson:"package" json:"package"`
+	TufTaskID *string `bson:"tuf_task_id,omitempty"`
+	TufSigned bool    `bson:"tuf_signed,omitempty"`
 }
 
 type SpecificAppWithoutIDs struct {

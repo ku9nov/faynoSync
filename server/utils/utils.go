@@ -1,10 +1,15 @@
 package utils
 
 import (
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"faynoSync/server/model"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -296,4 +301,30 @@ func GetUsernameFromContext(c *gin.Context) (string, error) {
 		return "", errors.New("username not found in token")
 	}
 	return username.(string), nil
+}
+
+// CalculateFileHashes calculates SHA256 and SHA512 hashes and file length from a multipart file
+func CalculateFileHashes(file *multipart.FileHeader) (map[string]string, int64, error) {
+	hashes := make(map[string]string)
+
+	fileReader, err := file.Open()
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer fileReader.Close()
+
+	sha256Hash := sha256.New()
+	sha512Hash := sha512.New()
+
+	multiWriter := io.MultiWriter(sha256Hash, sha512Hash)
+
+	length, err := io.Copy(multiWriter, fileReader)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	hashes["sha256"] = hex.EncodeToString(sha256Hash.Sum(nil))
+	hashes["sha512"] = hex.EncodeToString(sha512Hash.Sum(nil))
+
+	return hashes, length, nil
 }

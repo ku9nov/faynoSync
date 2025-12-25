@@ -5,6 +5,8 @@ import (
 
 	"faynoSync/server/model"
 
+	"github.com/go-redis/redis/v8"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -16,7 +18,7 @@ type AppRepository interface {
 	GetAppByName(appName string, ctx context.Context, page, limit int64, owner string, filters map[string]interface{}) (*model.PaginatedResponse, error)
 	DeleteSpecificVersionOfApp(id primitive.ObjectID, owner string, ctx context.Context) ([]string, int64, string, error)
 	DeleteChannel(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
-	Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context) (interface{}, error)
+	Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context, redisClient *redis.Client, env *viper.Viper, checkAppVisibility bool) (interface{}, error)
 	UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error)
 	CheckLatestVersion(appName, version, channel, platform, arch string, ctx context.Context, owner string) (CheckResult, error)
 	FetchLatestVersionOfApp(appName, channel string, ctx context.Context, owner string) ([]*model.SpecificAppWithoutIDs, error)
@@ -29,10 +31,10 @@ type AppRepository interface {
 	CreateArch(archName string, owner string, ctx context.Context) (interface{}, error)
 	ListArchs(ctx context.Context, owner string) ([]*model.Arch, error)
 	DeleteArch(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
-	CreateApp(appName string, logo string, description string, private bool, owner string, ctx context.Context) (interface{}, error)
+	CreateApp(appName string, logo string, description string, private bool, tuf bool, owner string, ctx context.Context) (interface{}, error)
 	ListApps(ctx context.Context, owner string) ([]*model.App, error)
 	DeleteApp(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
-	UpdateApp(id primitive.ObjectID, appName string, logo string, description string, owner string, ctx context.Context) (interface{}, error)
+	UpdateApp(id primitive.ObjectID, appName string, logo string, tuf bool, description string, owner string, ctx context.Context) (interface{}, error)
 	UpdateChannel(id primitive.ObjectID, paramValue string, owner string, ctx context.Context) (interface{}, error)
 	UpdatePlatform(id primitive.ObjectID, platformName string, updaters []model.Updater, owner string, ctx context.Context) (interface{}, error)
 	UpdateArch(id primitive.ObjectID, paramValue string, owner string, ctx context.Context) (interface{}, error)
@@ -44,7 +46,12 @@ type appRepository struct {
 	config *connstring.ConnString
 }
 
-var appMeta, channelMeta, platformMeta, archMeta struct {
+var appMeta struct {
+	ID      primitive.ObjectID `bson:"_id"`
+	AppName string             `bson:"app_name"`
+	Tuf     bool               `bson:"tuf,omitempty"`
+}
+var channelMeta, platformMeta, archMeta struct {
 	ID primitive.ObjectID `bson:"_id"`
 }
 

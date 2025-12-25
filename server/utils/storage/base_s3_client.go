@@ -3,7 +3,9 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -134,4 +136,52 @@ func (b *BaseS3Client) GeneratePresignedURL(ctx context.Context, bucketName, obj
 		return "", &StorageError{Message: fmt.Sprintf("failed to generate presigned URL for %s", b.providerName), Err: err}
 	}
 	return request.URL, nil
+}
+
+// DownloadObject downloads a file from S3-compatible storage to a local file path
+func (b *BaseS3Client) DownloadObject(ctx context.Context, bucketName, objectKey string, filePath string) error {
+	result, err := b.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		return &StorageError{Message: fmt.Sprintf("failed to download object from %s", b.providerName), Err: err}
+	}
+	defer result.Body.Close()
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return &StorageError{Message: fmt.Sprintf("failed to create file %s", filePath), Err: err}
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, result.Body)
+	if err != nil {
+		return &StorageError{Message: fmt.Sprintf("failed to write to file %s", filePath), Err: err}
+	}
+
+	return nil
+}
+
+// ListObjects lists objects in S3-compatible storage with the given prefix
+func (b *BaseS3Client) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	input := &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucketName),
+		Prefix: aws.String(prefix),
+	}
+
+	var objectKeys []string
+	paginator := s3.NewListObjectsV2Paginator(b.client, input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, &StorageError{Message: fmt.Sprintf("failed to list objects from %s", b.providerName), Err: err}
+		}
+
+		for _, obj := range page.Contents {
+			objectKeys = append(objectKeys, *obj.Key)
+		}
+	}
+
+	return objectKeys, nil
 }

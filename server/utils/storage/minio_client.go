@@ -2,7 +2,10 @@ package storage
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"mime/multipart"
+	"os"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -78,4 +81,44 @@ func (m *MinioClient) GeneratePresignedURL(ctx context.Context, bucketName, obje
 		return "", &StorageError{Message: "failed to generate presigned URL for MinIO", Err: err}
 	}
 	return urlStr.String(), nil
+}
+
+// DownloadObject downloads a file from MinIO to a local file path
+func (m *MinioClient) DownloadObject(ctx context.Context, bucketName, objectKey string, filePath string) error {
+	object, err := m.client.GetObject(ctx, bucketName, objectKey, minio.GetObjectOptions{})
+	if err != nil {
+		return &StorageError{Message: "failed to get object from MinIO", Err: err}
+	}
+	defer object.Close()
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return &StorageError{Message: fmt.Sprintf("failed to create file %s", filePath), Err: err}
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, object)
+	if err != nil {
+		return &StorageError{Message: fmt.Sprintf("failed to write to file %s", filePath), Err: err}
+	}
+
+	return nil
+}
+
+// ListObjects lists objects in MinIO with the given prefix
+func (m *MinioClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	objectCh := m.client.ListObjects(ctx, bucketName, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	})
+
+	var objectKeys []string
+	for object := range objectCh {
+		if object.Err != nil {
+			return nil, &StorageError{Message: "failed to list objects from MinIO", Err: object.Err}
+		}
+		objectKeys = append(objectKeys, object.Key)
+	}
+
+	return objectKeys, nil
 }
