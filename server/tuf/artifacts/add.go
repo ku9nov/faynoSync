@@ -118,7 +118,7 @@ func AddArtifacts(
 		return fmt.Errorf("invalid root metadata: targets keyid is not a string")
 	}
 
-	timestampPrivateKey, err := signing.LoadPrivateKeyFromMongoDB(mongoDatabase, adminName, timestampKeyID, ctx)
+	timestampPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(timestampKeyID, timestampKeyID)
 	if err != nil {
 		return fmt.Errorf("failed to load timestamp private key: %w", err)
 	}
@@ -128,7 +128,7 @@ func AddArtifacts(
 		return fmt.Errorf("failed to create timestamp signer: %w", err)
 	}
 
-	targetsPrivateKey, err := signing.LoadPrivateKeyFromMongoDB(mongoDatabase, adminName, targetsKeyID, ctx)
+	targetsPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyID)
 	if err != nil {
 		return fmt.Errorf("failed to load targets private key: %w", err)
 	}
@@ -244,7 +244,7 @@ func AddArtifacts(
 		}
 		snapshotKeyID := snapshotRole.KeyIDs[0]
 
-		snapshotPrivateKey, err := signing.LoadPrivateKeyFromMongoDB(mongoDatabase, adminName, snapshotKeyID, ctx)
+		snapshotPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(snapshotKeyID, snapshotKeyID)
 		if err != nil {
 			return fmt.Errorf("failed to load snapshot private key: %w", err)
 		}
@@ -417,9 +417,38 @@ func updateDelegatedRoleWithArtifacts(
 
 	delegation.ClearSignatures()
 
-	if _, err := repo.Targets(roleName).Sign(signer); err != nil {
+	targets := repo.Targets("targets")
+	if targets == nil || targets.Signed.Delegations == nil {
+		return false, fmt.Errorf("failed to get delegations from targets metadata")
+	}
+
+	var roleKeyIDs []string
+	for _, role := range targets.Signed.Delegations.Roles {
+		if role.Name == roleName {
+			roleKeyIDs = role.KeyIDs
+			break
+		}
+	}
+
+	if len(roleKeyIDs) == 0 {
+		return false, fmt.Errorf("no key IDs found for delegated role %s", roleName)
+	}
+
+	delegationKeyID := roleKeyIDs[0]
+	delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
+	if err != nil {
+		return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
+	}
+
+	delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
+	if err != nil {
+		return false, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
+	}
+
+	if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
 		return false, fmt.Errorf("failed to sign %s metadata: %w", roleName, err)
 	}
+	logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, delegationKeyID)
 
 	newDelegationFilename := fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName)
 	delegationPath := filepath.Join(tmpDir, newDelegationFilename)

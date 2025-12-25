@@ -127,3 +127,32 @@ type PutConfigData struct {
 	TaskID     string    `json:"task_id"`
 	LastUpdate time.Time `json:"last_update"`
 }
+
+type MetadataSignPostPayload struct {
+	Role      string    `json:"role" binding:"required"`
+	Signature Signature `json:"signature" binding:"required"`
+}
+
+type MetadataSignPostResponse struct {
+	Data    MetadataSignData `json:"data"`
+	Message string           `json:"message"`
+}
+
+type MetadataSignData struct {
+	TaskID     string    `json:"task_id"`
+	LastUpdate time.Time `json:"last_update"`
+}
+
+type MetadataPostPayload struct {
+	Metadata map[string]RootMetadata `json:"metadata" binding:"required"`
+}
+
+type MetadataPostResponse struct {
+	Data    MetadataPostData `json:"data"`
+	Message string           `json:"message"`
+}
+
+type MetadataPostData struct {
+	TaskID     string    `json:"task_id"`
+	LastUpdate time.Time `json:"last_update"`
+}

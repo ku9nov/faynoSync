@@ -3,12 +3,19 @@ package signing
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/pem"
 	"faynoSync/server/tuf/models"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -94,4 +101,63 @@ func LoadPrivateKeyFromMongoDB(database *mongo.Database, adminName string, keyID
 	privateKey := ed25519.NewKeyFromSeed(privateKeyBytes)
 
 	return privateKey, nil
+}
+
+func LoadPrivateKeyFromFilesystem(keyID string, keyURI string) (ed25519.PrivateKey, error) {
+	env := viper.GetViper()
+	keyDir := env.GetString("ONLINE_KEY_DIR")
+	if keyDir == "" {
+		return nil, fmt.Errorf("ONLINE_KEY_DIR or RSTUF_ONLINE_KEY_DIR environment variable not set")
+	}
+
+	var fileName string
+	if strings.HasPrefix(keyURI, "fn:") {
+		fileName = strings.TrimPrefix(keyURI, "fn:")
+	} else if keyURI != "" {
+		fileName = keyURI
+	} else {
+		fileName = keyID
+	}
+
+	keyPath := filepath.Join(keyDir, fileName)
+	logrus.Debugf("Loading private key from filesystem: %s (keyID: %s)", keyPath, keyID)
+
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read private key file %s: %w", keyPath, err)
+	}
+
+	block, _ := pem.Decode(keyData)
+	if block != nil {
+		privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err == nil {
+			if ed25519Key, ok := privateKey.(ed25519.PrivateKey); ok {
+				logrus.Debugf("Successfully loaded Ed25519 private key from PEM file: %s", keyPath)
+				return ed25519Key, nil
+			}
+		}
+		if len(block.Bytes) == 32 {
+			ed25519Key := ed25519.NewKeyFromSeed(block.Bytes)
+			logrus.Debugf("Successfully loaded Ed25519 private key from raw seed in PEM: %s", keyPath)
+			return ed25519Key, nil
+		}
+	}
+
+	if len(keyData) == 32 {
+		ed25519Key := ed25519.NewKeyFromSeed(keyData)
+		logrus.Debugf("Successfully loaded Ed25519 private key from raw seed: %s", keyPath)
+		return ed25519Key, nil
+	}
+
+	keyDataStr := strings.TrimSpace(string(keyData))
+	if len(keyDataStr) == 64 {
+		seedBytes, err := hex.DecodeString(keyDataStr)
+		if err == nil && len(seedBytes) == 32 {
+			ed25519Key := ed25519.NewKeyFromSeed(seedBytes)
+			logrus.Debugf("Successfully loaded Ed25519 private key from hex-encoded seed: %s", keyPath)
+			return ed25519Key, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not load private key from %s: expected PEM format, raw 32 bytes, or hex-encoded seed", keyPath)
 }
