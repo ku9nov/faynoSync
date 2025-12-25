@@ -123,6 +123,10 @@ REDIS_DB (The Redis database number to use, default: `0`)
 # Feature Flags
 ENABLE_PRIVATE_APP_DOWNLOADING=false (if enabled, then apps located in private S3 can be downloaded using the public API; if disabled, then download links require authentication)
 ENABLE_TELEMETRY (Set to `true` to enable telemetry)
+
+# TUF Configuration
+TUF_ENABLED=true (Set to `true` to enable TUF (The Update Framework) functionality. This enables secure software update management with metadata signing, artifact publishing, and root key rotation capabilities)
+ONLINE_KEY_DIR=/private_keys (Directory path where online signing keys are stored. These keys are used for online metadata signing operations in TUF)
 ```
 
 ### 📝 Environment File Setup

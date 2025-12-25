@@ -12,6 +12,8 @@ type StorageClient interface {
 	UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error)
 	DeleteObject(ctx context.Context, bucketName, objectKey string) error
 	GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error)
+	DownloadObject(ctx context.Context, bucketName, objectKey string, filePath string) error
+	ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error)
 }
 
 type StorageError struct {

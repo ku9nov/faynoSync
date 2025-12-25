@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -211,7 +213,7 @@ func (c *appRepository) CreateArch(archID string, owner string, ctx context.Cont
 }
 
 // CreateApp creates a new app_name document
-func (c *appRepository) CreateApp(appName string, logo string, description string, private bool, owner string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreateApp(appName string, logo string, description string, private bool, tuf bool, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "app_name", Value: appName}}
 	if logo != "" {
 		document = append(document, bson.E{Key: "logo", Value: logo})
@@ -223,6 +225,9 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 		document = append(document, bson.E{Key: "private", Value: private})
 	}
 
+	if tuf == true {
+		document = append(document, bson.E{Key: "tuf", Value: tuf})
+	}
 	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
 		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "app", ctx)
 	}
@@ -262,14 +267,14 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 	return nil
 }
 
-func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context, redisClient *redis.Client, env *viper.Viper, checkAppVisibility bool) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	var uploadResult interface{}
 	var err error
 
-	logrus.Debugf("Upload called with owner: %s, app_name: %s, version: %s",
-		owner, ctxQuery["app_name"].(string), ctxQuery["version"].(string))
+	logrus.Debugf("Upload called with owner: %s, app_name: %s, version: %s, visibility: %t",
+		owner, ctxQuery["app_name"].(string), ctxQuery["version"].(string), checkAppVisibility)
 
 	// Check if the user is a team user
 	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
@@ -391,18 +396,39 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		for _, artifact := range appData.Artifacts {
 			if artifact.Package == extension && artifact.Arch == archMeta.ID && artifact.Platform == platformMeta.ID {
 				msg := "app with this name, version, platform, architecture and extension already exists"
-				logrus.Debugf(msg)
+				logrus.Debugf("Upload function in mongod/create.go: %s", msg)
 				return msg, errors.New(msg)
 			}
 		}
 
-		appData.Artifacts = append(appData.Artifacts, model.Artifact{
+		var hashes map[string]string
+		var length int64
+		if hashesVal, exists := ctxQuery["hashes"]; exists {
+			if hashesMap, ok := hashesVal.(map[string]string); ok {
+				hashes = hashesMap
+			}
+		}
+		if lengthVal, exists := ctxQuery["length"]; exists {
+			if lengthInt, ok := lengthVal.(int64); ok {
+				length = lengthInt
+			}
+		}
+
+		newArtifact := model.Artifact{
 			Link:      appLink,
 			Platform:  platformMeta.ID,
 			Arch:      archMeta.ID,
 			Package:   extension,
 			Signature: ctxQuery["signature"].(string),
-		})
+		}
+		if hashes != nil {
+			newArtifact.Hashes = hashes
+		}
+		if length > 0 {
+			newArtifact.Length = length
+		}
+
+		appData.Artifacts = append(appData.Artifacts, newArtifact)
 		logrus.Debugf("Adding new artifact to existing document")
 		_, err = collection.UpdateOne(
 			ctx,
@@ -441,6 +467,19 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			logrus.Debugf("Setting required_intermediate to: %t", requiredIntermediate)
 		}
 
+		var hashes map[string]string
+		var length int64
+		if hashesVal, exists := ctxQuery["hashes"]; exists {
+			if hashesMap, ok := hashesVal.(map[string]string); ok {
+				hashes = hashesMap
+			}
+		}
+		if lengthVal, exists := ctxQuery["length"]; exists {
+			if lengthInt, ok := lengthVal.(int64); ok {
+				length = lengthInt
+			}
+		}
+
 		artifact := model.Artifact{
 			Link:      appLink,
 			Platform:  platformMeta.ID,
@@ -448,6 +487,13 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			Package:   extension,
 			Signature: ctxQuery["signature"].(string),
 		}
+		if hashes != nil {
+			artifact.Hashes = hashes
+		}
+		if length > 0 {
+			artifact.Length = length
+		}
+
 		changelog := model.Changelog{
 			Version: ctxQuery["version"].(string),
 			Changes: ctxQuery["changelog"].(string),
