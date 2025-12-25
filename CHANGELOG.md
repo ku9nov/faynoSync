@@ -1,5 +1,63 @@
 # Changelog
 
+## v1.5.0
+
+### Important Notes
+
+- **⚠️ Pilot Version**: This release introduces a pilot/experimental TUF (The Update Framework) implementation. While the functionality is operational, it requires significant additional work and enhancements before production deployment. This version should be used for testing, evaluation, and gathering feedback.
+
+### Features
+
+- **TUF Bootstrap System**: Complete bootstrap functionality for initializing TUF repositories
+  - Repository initialization with secure root key generation
+  - Redis-based locking mechanism to prevent concurrent bootstrap operations
+  - Real-time bootstrap status and lock monitoring
+  - API endpoints: `GET /tuf/v1/bootstrap`, `POST /tuf/v1/bootstrap`
+
+- **TUF Artifacts Management**: Publish and delete application artifacts in TUF repository
+  - Automatic metadata generation for published artifacts
+  - Automatic hash calculation (SHA256, SHA512) for artifact integrity verification
+  - Separate TUF metadata per application
+  - Conversion between application artifacts and TUF targets format
+  - API endpoints: `POST /tuf/v1/artifacts/publish`, `POST /tuf/v1/artifacts/delete`
+
+- **TUF Metadata Management**: Comprehensive metadata operations
+  - Metadata rotation for root, targets, snapshot, and timestamp roles
+  - Root keys rotation with offline signing support
+  - Offline metadata signing capabilities
+  - Trusted root metadata retrieval
+  - Support for role-based access control with delegations
+  - Configurable expiration and threshold per role
+  - API endpoints: `POST /tuf/v1/metadata`, `GET /tuf/v1/metadata/sign`, `POST /tuf/v1/metadata/sign`, `GET /tuf/v1/metadata/root`
+
+- **TUF Configuration Management**: Get and update TUF repository settings
+  - Configurable expiration times, thresholds, and key counts for each metadata role
+  - Redis-based configuration storage with per-admin, per-app isolation
+  - API endpoints: `GET /tuf/v1/config`, `PUT /tuf/v1/config`
+
+- **Task System**: Asynchronous task-based system for long-running operations
+  - Real-time task status monitoring via Redis
+  - Task states: PENDING, IN_PROGRESS, SUCCESS, ERRORED
+  - API endpoint: `GET /tuf/v1/task`
+
+- **Storage Enhancements**: Extended storage client capabilities
+  - Added `DownloadObject` method to all storage clients (S3, GCS, MinIO)
+  - Added `ListObjects` method for listing objects with prefix filtering
+  - Unified storage interface across all providers
+
+- **Database Integration**: Enhanced artifact model and TUF state tracking
+  - Added `tuf_signed` field to artifacts
+  - Added hash fields (SHA256, SHA512) to artifacts
+  - Added `length` field to artifacts
+  - TUF publish state tracking in MongoDB
+
+### Maintenance
+
+- Updated Go dependencies with TUF-related libraries (`go-tuf/v2`)
+- Modular TUF architecture organized into separate packages (bootstrap, artifacts, metadata, config, tasks, signing, storage, delegations)
+- All TUF endpoints require authentication and admin-only middleware
+- Enhanced error handling and logging for TUF operations
+
 ## v1.4.6
 
 ### Security Fixes
