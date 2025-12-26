@@ -21,7 +21,7 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 		bootstrap.GetBootstrapStatus(c, redisClient)
 	})
 	router.POST("/tuf/v1/bootstrap", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		bootstrap.PostBootstrap(c, redisClient, mongoDatabase)
+		bootstrap.PostBootstrap(c, redisClient)
 	})
 	router.GET("/tuf/v1/bootstrap/locks", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		bootstrap.GetBootstrapLocks(c, redisClient)
@@ -51,10 +51,13 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 		metadata.GetMetadataSign(c, redisClient)
 	})
 	router.POST("/tuf/v1/metadata/sign", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		metadata.PostMetadataSign(c, redisClient, mongoDatabase)
+		metadata.PostMetadataSign(c, redisClient)
 	})
 	router.POST("/tuf/v1/metadata/sign/delete", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		metadata.PostMetadataSignDelete(c, redisClient)
+	})
+	router.POST("/tuf/v1/metadata/online", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		metadata.PostMetadataOnline(c, redisClient)
 	})
 	router.GET("/tuf/v1/metadata/root", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		metadata.GetMetadataRoot(c)

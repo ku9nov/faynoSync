@@ -24,15 +24,16 @@ const (
 type TaskName string
 
 const (
-	TaskNameAddArtifacts       TaskName = "add_artifacts"
-	TaskNameRemoveArtifacts    TaskName = "remove_artifacts"
-	TaskNameBootstrap          TaskName = "bootstrap"
-	TaskNameUpdateSettings     TaskName = "update_settings"
-	TaskNamePublishArtifacts   TaskName = "publish_artifacts"
-	TaskNameMetadataUpdate     TaskName = "metadata_update"
-	TaskNameMetadataDelegation TaskName = "metadata_delegation"
-	TaskNameSignMetadata       TaskName = "sign_metadata"
-	TaskNameDeleteSignMetadata TaskName = "delete_sign_metadata"
+	TaskNameAddArtifacts              TaskName = "add_artifacts"
+	TaskNameRemoveArtifacts           TaskName = "remove_artifacts"
+	TaskNameBootstrap                 TaskName = "bootstrap"
+	TaskNameUpdateSettings            TaskName = "update_settings"
+	TaskNamePublishArtifacts          TaskName = "publish_artifacts"
+	TaskNameMetadataUpdate            TaskName = "metadata_update"
+	TaskNameMetadataDelegation        TaskName = "metadata_delegation"
+	TaskNameSignMetadata              TaskName = "sign_metadata"
+	TaskNameDeleteSignMetadata        TaskName = "delete_sign_metadata"
+	TaskNameForceOnlineMetadataUpdate TaskName = "force_online_metadata_update"
 )
 
 // TaskResult contains the result of a task execution

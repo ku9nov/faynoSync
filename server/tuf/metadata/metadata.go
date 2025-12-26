@@ -26,11 +26,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
 	"github.com/theupdateframework/go-tuf/v2/metadata"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // bootstrapOnlineRoles creates online roles (targets, snapshot, timestamp) and delegations
-func BootstrapOnlineRoles(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, appName string, payload *models.BootstrapPayload) error {
+func BootstrapOnlineRoles(redisClient *redis.Client, taskID string, adminName string, appName string, payload *models.BootstrapPayload) error {
 	logrus.Debugf("Starting bootstrap online roles creation for admin: %s, app: %s", adminName, appName)
 
 	// Create temporary directory for storing metadata
@@ -798,7 +797,7 @@ func loadTrustedTargetsFromS3(ctx context.Context, adminName string, appName str
 	return targetsJSON, nil
 }
 
-func PostMetadataSign(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
+func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		logrus.Errorf("Failed to get admin name from context: %v", err)
@@ -945,7 +944,8 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client, mongoDatabase *
 	var thresholdReached bool
 	var validationError error
 
-	if metadataType == "root" {
+	switch metadataType {
+	case "root":
 		root := metadata.Root(time.Now().Add(365 * 24 * time.Hour))
 		repo.SetRoot(root)
 		if _, err := repo.Root().FromFile(metadataPath); err != nil {
@@ -1066,7 +1066,7 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client, mongoDatabase *
 			updatedJSON, _ := json.Marshal(metadataJSON)
 			redisClient.Set(ctx, signingKey, string(updatedJSON), 0)
 		}
-	} else if metadataType == "targets" {
+	case "targets":
 		targets := metadata.Targets(time.Now().Add(365 * 24 * time.Hour))
 		repo.SetTargets(payload.Role, targets)
 		if _, err := repo.Targets(payload.Role).FromFile(metadataPath); err != nil {
@@ -1096,7 +1096,7 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client, mongoDatabase *
 		}
 
 		if thresholdReached {
-			if err := finalizeTargetsMetadataUpdate(ctx, repo, payload.Role, adminName, appName, tmpDir, redisClient); err != nil {
+			if err := finalizeTargetsMetadataUpdate(ctx, repo, payload.Role, adminName, appName, tmpDir); err != nil {
 				logrus.Errorf("Failed to finalize targets metadata: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"error": fmt.Sprintf("Failed to finalize metadata: %v", err),
@@ -1110,7 +1110,7 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client, mongoDatabase *
 			updatedJSON, _ := json.Marshal(metadataJSON)
 			redisClient.Set(ctx, signingKey, string(updatedJSON), 0)
 		}
-	} else {
+	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("Unsupported metadata type: %s", metadataType),
 		})
@@ -1248,7 +1248,6 @@ func finalizeTargetsMetadataUpdate(
 	adminName string,
 	appName string,
 	tmpDir string,
-	redisClient *redis.Client,
 ) error {
 	targets := repo.Targets(roleName)
 	if targets == nil {

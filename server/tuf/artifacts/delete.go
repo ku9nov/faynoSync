@@ -135,8 +135,6 @@ func RemoveArtifacts(
 		return fmt.Errorf("failed to create targets signer: %w", err)
 	}
 
-	signer := timestampSigner
-
 	_, targetsFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "targets")
 	if err != nil {
 		return fmt.Errorf("failed to find latest targets version: %w", err)
@@ -227,7 +225,6 @@ func RemoveArtifacts(
 			adminName,
 			appName,
 			redisClient,
-			signer,
 			tmpDir,
 		)
 		if err != nil {
@@ -302,7 +299,6 @@ func removeArtifactsFromDelegatedRole(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	signer signature.Signer,
 	tmpDir string,
 ) (bool, error) {
 	_, delegationFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, roleName)

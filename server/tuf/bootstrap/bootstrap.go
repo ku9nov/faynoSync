@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func GetBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
@@ -188,7 +187,7 @@ func GetBootstrapLocks(c *gin.Context, redisClient *redis.Client) {
 	})
 }
 
-func PostBootstrap(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
+func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		logrus.Errorf("Failed to get admin name from context: %v", err)
@@ -397,7 +396,7 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client, mongoDatabase *mon
 
 	logrus.Debugf("Starting bootstrap function in background for app: %s", payload.AppName)
 	go func() {
-		bootstrap(redisClient, mongoDatabase, taskID, adminName, payload.AppName, &payload)
+		bootstrap(redisClient, taskID, adminName, payload.AppName, &payload)
 	}()
 
 	c.JSON(http.StatusAccepted, gin.H{
@@ -435,7 +434,7 @@ func preLockBootstrap(redisClient *redis.Client, taskID string, adminName string
 	}
 }
 
-func bootstrap(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, appName string, payload *models.BootstrapPayload) {
+func bootstrap(redisClient *redis.Client, taskID string, adminName string, appName string, payload *models.BootstrapPayload) {
 	logrus.Debugf("Starting bootstrap function for admin: %s, app: %s, task_id: %s", adminName, appName, taskID)
 
 	// Update task state to STARTED
@@ -448,7 +447,7 @@ func bootstrap(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID 
 	saveSettings(redisClient, adminName, appName, payload)
 
 	logrus.Debug("Finalizing bootstrap")
-	success := bootstrapFinalize(redisClient, mongoDatabase, taskID, adminName, appName, payload)
+	success := bootstrapFinalize(redisClient, taskID, adminName, appName, payload)
 
 	if success {
 		// Update task state to SUCCESS
@@ -479,11 +478,11 @@ func bootstrap(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID 
 	}
 }
 
-func bootstrapFinalize(redisClient *redis.Client, mongoDatabase *mongo.Database, taskID string, adminName string, appName string, payload *models.BootstrapPayload) bool {
+func bootstrapFinalize(redisClient *redis.Client, taskID string, adminName string, appName string, payload *models.BootstrapPayload) bool {
 	logrus.Debugf("Starting bootstrap finalization for admin: %s, app: %s", adminName, appName)
 
 	logrus.Debug("Calling bootstrap_online_roles")
-	if err := metadata.BootstrapOnlineRoles(redisClient, mongoDatabase, taskID, adminName, appName, payload); err != nil {
+	if err := metadata.BootstrapOnlineRoles(redisClient, taskID, adminName, appName, payload); err != nil {
 		logrus.Errorf("Bootstrap online roles failed: %v", err)
 		return false
 	}

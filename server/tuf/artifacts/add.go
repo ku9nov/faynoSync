@@ -228,7 +228,7 @@ func AddArtifacts(
 	// Now process artifacts for each role
 	for roleName, roleArtifacts := range rolesArtifacts {
 		_, err := updateDelegatedRoleWithArtifacts(
-			ctx, repo, roleName, roleArtifacts, adminName, appName, redisClient, signer, tmpDir,
+			ctx, repo, roleName, roleArtifacts, adminName, appName, redisClient, tmpDir,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to update role %s: %w", roleName, err)
@@ -345,7 +345,6 @@ func updateDelegatedRoleWithArtifacts(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	signer signature.Signer,
 	tmpDir string,
 ) (bool, error) {
 
