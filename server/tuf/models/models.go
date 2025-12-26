@@ -156,3 +156,12 @@ type MetadataPostData struct {
 	TaskID     string    `json:"task_id"`
 	LastUpdate time.Time `json:"last_update"`
 }
+
+type MetadataSignDeletePayload struct {
+	Role string `json:"role" binding:"required"`
+}
+
+type MetadataSignDeleteResponse struct {
+	Data    MetadataSignData `json:"data"`
+	Message string           `json:"message"`
+}
