@@ -200,7 +200,6 @@ func forceOnlineMetadataUpdate(
 		return nil, fmt.Errorf("failed to load root metadata: %w", err)
 	}
 
-	var onlineKeyID string
 	rootData, err := os.ReadFile(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read root metadata: %w", err)
@@ -211,21 +210,56 @@ func forceOnlineMetadataUpdate(
 		return nil, fmt.Errorf("failed to parse root metadata: %w", err)
 	}
 
+	// Load timestamp key for timestamp role
 	timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]
 	if !ok || len(timestampRole.KeyIDs) == 0 {
 		return nil, fmt.Errorf("timestamp role not found in root metadata")
 	}
-	onlineKeyID = timestampRole.KeyIDs[0]
+	timestampKeyID := timestampRole.KeyIDs[0]
 
-	keyURI := onlineKeyID
-	onlinePrivateKey, err := signing.LoadPrivateKeyFromFilesystem(onlineKeyID, keyURI)
+	timestampKeyURI := timestampKeyID
+	timestampPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(timestampKeyID, timestampKeyURI)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load online private key: %w", err)
+		return nil, fmt.Errorf("failed to load timestamp private key: %w", err)
 	}
 
-	signer, err := signature.LoadSigner(onlinePrivateKey, crypto.Hash(0))
+	timestampSigner, err := signature.LoadSigner(timestampPrivateKey, crypto.Hash(0))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create signer: %w", err)
+		return nil, fmt.Errorf("failed to create timestamp signer: %w", err)
+	}
+
+	snapshotRole, ok := rootMetadata.Signed.Roles["snapshot"]
+	if !ok || len(snapshotRole.KeyIDs) == 0 {
+		return nil, fmt.Errorf("snapshot role not found in root metadata")
+	}
+	snapshotKeyID := snapshotRole.KeyIDs[0]
+
+	snapshotKeyURI := snapshotKeyID
+	snapshotPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(snapshotKeyID, snapshotKeyURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load snapshot private key: %w", err)
+	}
+
+	snapshotSigner, err := signature.LoadSigner(snapshotPrivateKey, crypto.Hash(0))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create snapshot signer: %w", err)
+	}
+
+	targetsRole, ok := rootMetadata.Signed.Roles["targets"]
+	if !ok || len(targetsRole.KeyIDs) == 0 {
+		return nil, fmt.Errorf("targets role not found in root metadata")
+	}
+	targetsKeyID := targetsRole.KeyIDs[0]
+
+	targetsKeyURI := targetsKeyID
+	targetsPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load targets private key: %w", err)
+	}
+
+	targetsSigner, err := signature.LoadSigner(targetsPrivateKey, crypto.Hash(0))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create targets signer: %w", err)
 	}
 
 	updatedRoles := []string{}
@@ -239,7 +273,7 @@ func forceOnlineMetadataUpdate(
 	}
 
 	if contains(roles, "targets") {
-		if err := bumpTargetsRole(ctx, repo, adminName, appName, redisClient, signer, tmpDir, keySuffix); err != nil {
+		if err := bumpTargetsRole(ctx, repo, adminName, appName, redisClient, targetsSigner, tmpDir, keySuffix); err != nil {
 			return nil, fmt.Errorf("failed to bump targets role: %w", err)
 		}
 		updatedRoles = append(updatedRoles, "targets")
@@ -254,7 +288,7 @@ func forceOnlineMetadataUpdate(
 	}
 
 	if len(delegatedRoles) > 0 {
-		if err := bumpDelegatedRoles(ctx, repo, adminName, appName, redisClient, signer, tmpDir, keySuffix, delegatedRoles); err != nil {
+		if err := bumpDelegatedRoles(ctx, repo, adminName, appName, redisClient, tmpDir, keySuffix, delegatedRoles); err != nil {
 			return nil, fmt.Errorf("failed to bump delegated roles: %w", err)
 		}
 		updatedRoles = append(updatedRoles, delegatedRoles...)
@@ -262,7 +296,7 @@ func forceOnlineMetadataUpdate(
 	}
 
 	if contains(roles, "snapshot") || hasTargetsOrDelegations {
-		if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, signer, tmpDir, keySuffix); err != nil {
+		if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigner, tmpDir, keySuffix); err != nil {
 			return nil, fmt.Errorf("failed to bump snapshot role: %w", err)
 		}
 		if !contains(updatedRoles, "snapshot") {
@@ -271,7 +305,7 @@ func forceOnlineMetadataUpdate(
 	}
 
 	if contains(roles, "timestamp") || hasTargetsOrDelegations || contains(roles, "snapshot") {
-		if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, signer, tmpDir, keySuffix); err != nil {
+		if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigner, tmpDir, keySuffix); err != nil {
 			return nil, fmt.Errorf("failed to bump timestamp role: %w", err)
 		}
 		if !contains(updatedRoles, "timestamp") {
@@ -337,7 +371,6 @@ func bumpDelegatedRoles(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	signer signature.Signer,
 	tmpDir string,
 	keySuffix string,
 	roleNames []string,
@@ -360,9 +393,8 @@ func bumpDelegatedRoles(
 		return fmt.Errorf("failed to load targets metadata: %w", err)
 	}
 
-	binsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "BINS_EXPIRATION_"+keySuffix, 365)
-
 	for _, roleName := range roleNames {
+		rolesExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, roleName+"_EXPIRATION_"+keySuffix, 365)
 
 		_, delegationFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, roleName)
 		if err != nil {
@@ -376,18 +408,46 @@ func bumpDelegatedRoles(
 			continue
 		}
 
-		delegation := metadata.Targets(tuf_utils.HelperExpireIn(binsExpiration))
+		delegation := metadata.Targets(tuf_utils.HelperExpireIn(rolesExpiration))
 		repo.SetTargets(roleName, delegation)
 		if _, err := repo.Targets(roleName).FromFile(delegationPath); err != nil {
 			logrus.Warnf("Failed to load delegation %s, skipping: %v", roleName, err)
 			continue
 		}
 
+		targets := repo.Targets("targets")
+		if targets == nil || targets.Signed.Delegations == nil {
+			return fmt.Errorf("failed to get delegations from targets metadata for role %s", roleName)
+		}
+
+		var roleKeyIDs []string
+		for _, role := range targets.Signed.Delegations.Roles {
+			if role.Name == roleName {
+				roleKeyIDs = role.KeyIDs
+				break
+			}
+		}
+
+		if len(roleKeyIDs) == 0 {
+			return fmt.Errorf("no key IDs found for delegated role %s", roleName)
+		}
+
+		delegationKeyID := roleKeyIDs[0]
+		delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
+		if err != nil {
+			return fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
+		}
+
+		delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
+		if err != nil {
+			return fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
+		}
+
 		repo.Targets(roleName).Signed.Version++
-		repo.Targets(roleName).Signed.Expires = tuf_utils.HelperExpireIn(binsExpiration)
+		repo.Targets(roleName).Signed.Expires = tuf_utils.HelperExpireIn(rolesExpiration)
 		repo.Targets(roleName).ClearSignatures()
 
-		if _, err := repo.Targets(roleName).Sign(signer); err != nil {
+		if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
 			return fmt.Errorf("failed to sign delegation %s: %w", roleName, err)
 		}
 
