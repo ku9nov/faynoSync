@@ -495,6 +495,9 @@ func PostMetadataRotate(c *gin.Context, redisClient *redis.Client) {
 			taskID := uuid.New().String()
 			logrus.Debugf("Generated task_id: %s", taskID)
 
+			taskKey := "ROOT_SIGNING_TASK_" + keySuffix
+			redisClient.Set(ctx, taskKey, taskID, 0)
+
 			taskName := tasks.TaskNameMetadataUpdate
 			tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStatePending, &tasks.TaskResult{
 				Task: &taskName,
@@ -943,6 +946,25 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 
 	var thresholdReached bool
 	var validationError error
+	var currentSignatures int
+	var requiredThreshold int
+	var signedKeyIDs []string
+	var requiredKeyIDs []string
+	var oldKeyIDs []string
+	var newKeyIDs []string
+	var isRootRotation bool
+
+	taskKey := fmt.Sprintf("%s_SIGNING_TASK_%s", roleUpper, keySuffix)
+	taskIDStr, err := redisClient.Get(ctx, taskKey).Result()
+	var taskID string
+	if err == redis.Nil || taskIDStr == "" {
+		taskID = uuid.New().String()
+		logrus.Debugf("Generated new task_id: %s", taskID)
+		redisClient.Set(ctx, taskKey, taskID, 0)
+	} else {
+		taskID = taskIDStr
+		logrus.Debugf("Using existing task_id: %s", taskID)
+	}
 
 	switch metadataType {
 	case "root":
@@ -971,6 +993,12 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 		}
 		logrus.Infof("Signature key IDs: %v", sigKeyIDs)
 
+		currentSignatures = len(signatures)
+		requiredThreshold = rootRole.Threshold
+		signedKeyIDs = sigKeyIDs
+		requiredKeyIDs = rootRole.KeyIDs
+		newKeyIDs = rootRole.KeyIDs
+
 		if isSigningState {
 			logrus.Debugf("Bootstrap signing: validating root against itself")
 			if err := repo.Root().VerifyDelegate("root", repo.Root()); err != nil {
@@ -993,6 +1021,11 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 				trustedRootMeta := metadata.Root(time.Now().Add(365 * 24 * time.Hour))
 				trustedRepo.SetRoot(trustedRootMeta)
 				if _, err := trustedRepo.Root().FromFile(trustedRootPath); err == nil {
+
+					trustedRootRole := trustedRepo.Root().Signed.Roles["root"]
+					oldKeyIDs = trustedRootRole.KeyIDs
+					isRootRotation = true
+
 					logrus.Debugf("Validating new root against trusted root and itself")
 
 					err1 := trustedRepo.Root().VerifyDelegate("root", repo.Root())
@@ -1011,20 +1044,21 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 						logrus.Debugf("New root self-verification succeeded")
 					}
 
-					// For root rotation, threshold is reached if self-verification passes
-					// (new root is signed by enough new keys to meet threshold)
-					// Trusted root verification ensures trust chain, but doesn't need to meet threshold
-					if err2 == nil {
-						logrus.Infof("Self-verification succeeded: threshold reached (new root has enough signatures from new keys)")
+					// For root rotation, both verifications must pass:
+					// 1. Trusted root verification (err1) - ensures new root is signed by enough old keys
+					// 2. Self-verification (err2) - ensures new root is signed by enough new keys
+					if err1 == nil && err2 == nil {
+						logrus.Infof("Both verifications succeeded: threshold reached (new root has enough signatures from both old and new keys)")
 						thresholdReached = true
-						// Log warning if trusted root verification failed, but don't block
-						if err1 != nil {
-							logrus.Warnf("Trusted root verification failed, but threshold reached - proceeding with finalization")
-						}
 					} else {
-						validationError = err2
-						logrus.Warnf("Self-verification failed: threshold not reached, error=%v", validationError)
 						thresholdReached = false
+						if err2 != nil {
+							validationError = err2
+							logrus.Warnf("Self-verification failed: threshold not reached, error=%v", validationError)
+						} else if err1 != nil {
+							validationError = err1
+							logrus.Warnf("Trusted root verification failed: not enough old key signatures, error=%v", validationError)
+						}
 					}
 				} else {
 					logrus.Warnf("Failed to load trusted root from file, falling back to self-validation: %v", err)
@@ -1060,6 +1094,7 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 				return
 			}
 			redisClient.Del(ctx, signingKey)
+			redisClient.Del(ctx, taskKey)
 			logrus.Infof("Root metadata update finalized and signing key cleared from Redis")
 		} else {
 			logrus.Infof("Threshold not reached - saving updated metadata back to Redis (error: %v)", validationError)
@@ -1105,6 +1140,7 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 			}
 
 			redisClient.Del(ctx, signingKey)
+			redisClient.Del(ctx, taskKey)
 		} else {
 
 			updatedJSON, _ := json.Marshal(metadataJSON)
@@ -1116,9 +1152,6 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 		})
 		return
 	}
-
-	taskID := uuid.New().String()
-	logrus.Debugf("Generated task_id: %s", taskID)
 
 	taskName := tasks.TaskNameSignMetadata
 	tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStatePending, &tasks.TaskResult{
@@ -1192,9 +1225,123 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 	}
 
 	if validationError != nil && !thresholdReached {
+		// Build detailed error message with progress information
+		errorMsg := fmt.Sprintf("Invalid signature or threshold not reached: %v", validationError)
+
+		if metadataType == "root" {
+			if isRootRotation {
+				// For root rotation, we need threshold * 2 signatures total
+				expectedTotal := requiredThreshold * 2
+
+				oldKeySignatures := 0
+				newKeySignatures := 0
+				oldSignedKeys := make([]string, 0)
+				newSignedKeys := make([]string, 0)
+
+				for _, sigKeyID := range signedKeyIDs {
+					isOldKey := false
+					for _, oldKeyID := range oldKeyIDs {
+						if sigKeyID == oldKeyID {
+							isOldKey = true
+							oldKeySignatures++
+							oldSignedKeys = append(oldSignedKeys, sigKeyID)
+							break
+						}
+					}
+					if !isOldKey {
+						for _, newKeyID := range newKeyIDs {
+							if sigKeyID == newKeyID {
+								newKeySignatures++
+								newSignedKeys = append(newSignedKeys, sigKeyID)
+								break
+							}
+						}
+					}
+				}
+
+				remainingOld := requiredThreshold - oldKeySignatures
+				remainingNew := requiredThreshold - newKeySignatures
+				remainingTotal := remainingOld + remainingNew
+
+				progressMsg := fmt.Sprintf("Progress: %d/%d signatures collected (%d old + %d new). %d more required (%d old + %d new).",
+					currentSignatures, expectedTotal, oldKeySignatures, newKeySignatures, remainingTotal, remainingOld, remainingNew)
+				errorMsg = fmt.Sprintf("%s %s", errorMsg, progressMsg)
+
+				if len(oldSignedKeys) > 0 {
+					errorMsg = fmt.Sprintf("%s Old keys signed: %v.", errorMsg, oldSignedKeys)
+				}
+				if len(newSignedKeys) > 0 {
+					errorMsg = fmt.Sprintf("%s New keys signed: %v.", errorMsg, newSignedKeys)
+				}
+
+				missingOldKeys := make([]string, 0)
+				for _, oldKeyID := range oldKeyIDs {
+					found := false
+					for _, sigKeyID := range signedKeyIDs {
+						if oldKeyID == sigKeyID {
+							found = true
+							break
+						}
+					}
+					if !found {
+						missingOldKeys = append(missingOldKeys, oldKeyID)
+					}
+				}
+				if len(missingOldKeys) > 0 && remainingOld > 0 {
+					errorMsg = fmt.Sprintf("%s Missing old keys: %v.", errorMsg, missingOldKeys)
+				}
+
+				missingNewKeys := make([]string, 0)
+				for _, newKeyID := range newKeyIDs {
+					found := false
+					for _, sigKeyID := range signedKeyIDs {
+						if newKeyID == sigKeyID {
+							found = true
+							break
+						}
+					}
+					if !found {
+						missingNewKeys = append(missingNewKeys, newKeyID)
+					}
+				}
+				if len(missingNewKeys) > 0 && remainingNew > 0 {
+					errorMsg = fmt.Sprintf("%s Missing new keys: %v.", errorMsg, missingNewKeys)
+				}
+			} else {
+				remaining := requiredThreshold - currentSignatures
+				if remaining > 0 {
+					progressMsg := fmt.Sprintf("Progress: %d/%d signatures collected. %d more signature(s) required.",
+						currentSignatures, requiredThreshold, remaining)
+					errorMsg = fmt.Sprintf("%s %s", errorMsg, progressMsg)
+
+					if len(signedKeyIDs) > 0 {
+						errorMsg = fmt.Sprintf("%s Signed keys: %v.", errorMsg, signedKeyIDs)
+					}
+					if len(requiredKeyIDs) > 0 {
+						missingKeys := make([]string, 0)
+						for _, reqKeyID := range requiredKeyIDs {
+							found := false
+							for _, sigKeyID := range signedKeyIDs {
+								if reqKeyID == sigKeyID {
+									found = true
+									break
+								}
+							}
+							if !found {
+								missingKeys = append(missingKeys, reqKeyID)
+							}
+						}
+						if len(missingKeys) > 0 {
+							errorMsg = fmt.Sprintf("%s Missing keys: %v.", errorMsg, missingKeys)
+						}
+					}
+				}
+			}
+		}
+
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": "Signature Failed",
-			"error":   fmt.Sprintf("Invalid signature or threshold not reached: %v", validationError),
+			"error":   errorMsg,
 		})
 		return
 	}
