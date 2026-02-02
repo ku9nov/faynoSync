@@ -170,15 +170,15 @@ func Test_UploadMetadataToS3_Success(t *testing.T) {
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
 
-	savedGetViper := getViperForUpload
-	savedFactory := storageFactoryForUpload
-	getViperForUpload = func() *viper.Viper { return mockViper }
-	storageFactoryForUpload = func(*viper.Viper) storageFactory {
+	savedGetViper := GetViperForUpload
+	savedFactory := StorageFactoryForUpload
+	GetViperForUpload = func() *viper.Viper { return mockViper }
+	StorageFactoryForUpload = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: mockClient}
 	}
 	defer func() {
-		getViperForUpload = savedGetViper
-		storageFactoryForUpload = savedFactory
+		GetViperForUpload = savedGetViper
+		StorageFactoryForUpload = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -205,15 +205,15 @@ func Test_UploadMetadataToS3_MissingBucket(t *testing.T) {
 	mockViper := viper.New()
 	// S3_BUCKET_NAME not set (empty)
 
-	savedGetViper := getViperForUpload
-	savedFactory := storageFactoryForUpload
-	getViperForUpload = func() *viper.Viper { return mockViper }
-	storageFactoryForUpload = func(*viper.Viper) storageFactory {
+	savedGetViper := GetViperForUpload
+	savedFactory := StorageFactoryForUpload
+	GetViperForUpload = func() *viper.Viper { return mockViper }
+	StorageFactoryForUpload = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: &mockStorageClient{}}
 	}
 	defer func() {
-		getViperForUpload = savedGetViper
-		storageFactoryForUpload = savedFactory
+		GetViperForUpload = savedGetViper
+		StorageFactoryForUpload = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -232,15 +232,15 @@ func Test_UploadMetadataToS3_CreateClientFails(t *testing.T) {
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "bucket")
 
-	savedGetViper := getViperForUpload
-	savedFactory := storageFactoryForUpload
-	getViperForUpload = func() *viper.Viper { return mockViper }
-	storageFactoryForUpload = func(*viper.Viper) storageFactory {
+	savedGetViper := GetViperForUpload
+	savedFactory := StorageFactoryForUpload
+	GetViperForUpload = func() *viper.Viper { return mockViper }
+	StorageFactoryForUpload = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{err: utils.ErrUnknownStorageDriver}
 	}
 	defer func() {
-		getViperForUpload = savedGetViper
-		storageFactoryForUpload = savedFactory
+		GetViperForUpload = savedGetViper
+		StorageFactoryForUpload = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -260,15 +260,15 @@ func Test_UploadMetadataToS3_UploadFails(t *testing.T) {
 	mockViper.Set("S3_BUCKET_NAME", "bucket")
 	mockClient := &mockStorageClient{uploadErr: utils.ErrUploadFailed}
 
-	savedGetViper := getViperForUpload
-	savedFactory := storageFactoryForUpload
-	getViperForUpload = func() *viper.Viper { return mockViper }
-	storageFactoryForUpload = func(*viper.Viper) storageFactory {
+	savedGetViper := GetViperForUpload
+	savedFactory := StorageFactoryForUpload
+	GetViperForUpload = func() *viper.Viper { return mockViper }
+	StorageFactoryForUpload = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: mockClient}
 	}
 	defer func() {
-		getViperForUpload = savedGetViper
-		storageFactoryForUpload = savedFactory
+		GetViperForUpload = savedGetViper
+		StorageFactoryForUpload = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -289,15 +289,15 @@ func TestDownloadMetadataFromS3_Success(t *testing.T) {
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
 
-	savedGetViper := getViperForDownload
-	savedFactory := storageFactoryForDownload
-	getViperForDownload = func() *viper.Viper { return mockViper }
-	storageFactoryForDownload = func(*viper.Viper) storageFactory {
+	savedGetViper := GetViperForDownload
+	savedFactory := StorageFactoryForDownload
+	GetViperForDownload = func() *viper.Viper { return mockViper }
+	StorageFactoryForDownload = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: mockClient}
 	}
 	defer func() {
-		getViperForDownload = savedGetViper
-		storageFactoryForDownload = savedFactory
+		GetViperForDownload = savedGetViper
+		StorageFactoryForDownload = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -324,15 +324,15 @@ func TestDownloadMetadataFromS3_MissingBucket(t *testing.T) {
 	mockViper := viper.New()
 	// S3_BUCKET_NAME not set (empty)
 
-	savedGetViper := getViperForDownload
-	savedFactory := storageFactoryForDownload
-	getViperForDownload = func() *viper.Viper { return mockViper }
-	storageFactoryForDownload = func(*viper.Viper) storageFactory {
+	savedGetViper := GetViperForDownload
+	savedFactory := StorageFactoryForDownload
+	GetViperForDownload = func() *viper.Viper { return mockViper }
+	StorageFactoryForDownload = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: &mockStorageClient{}}
 	}
 	defer func() {
-		getViperForDownload = savedGetViper
-		storageFactoryForDownload = savedFactory
+		GetViperForDownload = savedGetViper
+		StorageFactoryForDownload = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -349,15 +349,15 @@ func TestDownloadMetadataFromS3_CreateClientFails(t *testing.T) {
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "bucket")
 
-	savedGetViper := getViperForDownload
-	savedFactory := storageFactoryForDownload
-	getViperForDownload = func() *viper.Viper { return mockViper }
-	storageFactoryForDownload = func(*viper.Viper) storageFactory {
+	savedGetViper := GetViperForDownload
+	savedFactory := StorageFactoryForDownload
+	GetViperForDownload = func() *viper.Viper { return mockViper }
+	StorageFactoryForDownload = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{err: utils.ErrUnknownStorageDriver}
 	}
 	defer func() {
-		getViperForDownload = savedGetViper
-		storageFactoryForDownload = savedFactory
+		GetViperForDownload = savedGetViper
+		StorageFactoryForDownload = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -376,15 +376,15 @@ func TestDownloadMetadataFromS3_DownloadFails(t *testing.T) {
 	downloadErr := fmt.Errorf("download failed")
 	mockClient := &mockStorageClient{downloadErr: downloadErr}
 
-	savedGetViper := getViperForDownload
-	savedFactory := storageFactoryForDownload
-	getViperForDownload = func() *viper.Viper { return mockViper }
-	storageFactoryForDownload = func(*viper.Viper) storageFactory {
+	savedGetViper := GetViperForDownload
+	savedFactory := StorageFactoryForDownload
+	GetViperForDownload = func() *viper.Viper { return mockViper }
+	StorageFactoryForDownload = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: mockClient}
 	}
 	defer func() {
-		getViperForDownload = savedGetViper
-		storageFactoryForDownload = savedFactory
+		GetViperForDownload = savedGetViper
+		StorageFactoryForDownload = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -410,14 +410,14 @@ func TestListMetadataFromS3_Success(t *testing.T) {
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
 
 	savedGetViper := getViperForList
-	savedFactory := storageFactoryForList
+	savedFactory := StorageFactoryForList
 	getViperForList = func() *viper.Viper { return mockViper }
-	storageFactoryForList = func(*viper.Viper) storageFactory {
+	StorageFactoryForList = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: mockClient}
 	}
 	defer func() {
 		getViperForList = savedGetViper
-		storageFactoryForList = savedFactory
+		StorageFactoryForList = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -441,14 +441,14 @@ func TestListMetadataFromS3_MissingBucket(t *testing.T) {
 	// S3_BUCKET_NAME not set (empty)
 
 	savedGetViper := getViperForList
-	savedFactory := storageFactoryForList
+	savedFactory := StorageFactoryForList
 	getViperForList = func() *viper.Viper { return mockViper }
-	storageFactoryForList = func(*viper.Viper) storageFactory {
+	StorageFactoryForList = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: &mockStorageClient{}}
 	}
 	defer func() {
 		getViperForList = savedGetViper
-		storageFactoryForList = savedFactory
+		StorageFactoryForList = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -465,14 +465,14 @@ func TestListMetadataFromS3_CreateClientFails(t *testing.T) {
 	mockViper.Set("S3_BUCKET_NAME", "bucket")
 
 	savedGetViper := getViperForList
-	savedFactory := storageFactoryForList
+	savedFactory := StorageFactoryForList
 	getViperForList = func() *viper.Viper { return mockViper }
-	storageFactoryForList = func(*viper.Viper) storageFactory {
+	StorageFactoryForList = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{err: utils.ErrUnknownStorageDriver}
 	}
 	defer func() {
 		getViperForList = savedGetViper
-		storageFactoryForList = savedFactory
+		StorageFactoryForList = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -491,14 +491,14 @@ func TestListMetadataFromS3_ListFails(t *testing.T) {
 	mockViper.Set("S3_BUCKET_NAME", "bucket")
 
 	savedGetViper := getViperForList
-	savedFactory := storageFactoryForList
+	savedFactory := StorageFactoryForList
 	getViperForList = func() *viper.Viper { return mockViper }
-	storageFactoryForList = func(*viper.Viper) storageFactory {
+	StorageFactoryForList = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: mockClient}
 	}
 	defer func() {
 		getViperForList = savedGetViper
-		storageFactoryForList = savedFactory
+		StorageFactoryForList = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -516,14 +516,14 @@ func TestListMetadataFromS3_EmptyResult(t *testing.T) {
 	mockViper.Set("S3_BUCKET_NAME", "bucket")
 
 	savedGetViper := getViperForList
-	savedFactory := storageFactoryForList
+	savedFactory := StorageFactoryForList
 	getViperForList = func() *viper.Viper { return mockViper }
-	storageFactoryForList = func(*viper.Viper) storageFactory {
+	StorageFactoryForList = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: mockClient}
 	}
 	defer func() {
 		getViperForList = savedGetViper
-		storageFactoryForList = savedFactory
+		StorageFactoryForList = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -548,14 +548,14 @@ func TestListMetadataFromS3_SkipsShortKeys(t *testing.T) {
 	mockViper.Set("S3_BUCKET_NAME", "bucket")
 
 	savedGetViper := getViperForList
-	savedFactory := storageFactoryForList
+	savedFactory := StorageFactoryForList
 	getViperForList = func() *viper.Viper { return mockViper }
-	storageFactoryForList = func(*viper.Viper) storageFactory {
+	StorageFactoryForList = func(*viper.Viper) StorageFactory {
 		return &mockStorageFactory{client: mockClient}
 	}
 	defer func() {
 		getViperForList = savedGetViper
-		storageFactoryForList = savedFactory
+		StorageFactoryForList = savedFactory
 	}()
 
 	ctx := context.Background()
@@ -582,14 +582,14 @@ func TestFindLatestMetadataVersion_TimestampRole(t *testing.T) {
 	assert.Equal(t, "timestamp.json", filename, "Timestamp role should return timestamp.json")
 }
 
-// To verify: In FindLatestMetadataVersion ignore listMetadataForLatest error; test will fail (no error or wrong message).
+// To verify: In FindLatestMetadataVersion ignore ListMetadataForLatest error; test will fail (no error or wrong message).
 func TestFindLatestMetadataVersion_ListFails(t *testing.T) {
 	listErr := fmt.Errorf("list failed")
-	saved := listMetadataForLatest
-	listMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	saved := ListMetadataForLatest
+	ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
 		return nil, listErr
 	}
-	defer func() { listMetadataForLatest = saved }()
+	defer func() { ListMetadataForLatest = saved }()
 
 	ctx := context.Background()
 	ver, filename, err := FindLatestMetadataVersion(ctx, "admin", "app", "snapshot")
@@ -602,11 +602,11 @@ func TestFindLatestMetadataVersion_ListFails(t *testing.T) {
 
 // To verify: In FindLatestMetadataVersion return (1, expectedSuffix, nil) when latestFilename is empty; test will fail (no error returned).
 func TestFindLatestMetadataVersion_NoFileForRole(t *testing.T) {
-	saved := listMetadataForLatest
-	listMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	saved := ListMetadataForLatest
+	ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
 		return []string{"root.json", "timestamp.json"}, nil // no snapshot.json
 	}
-	defer func() { listMetadataForLatest = saved }()
+	defer func() { ListMetadataForLatest = saved }()
 
 	ctx := context.Background()
 	ver, filename, err := FindLatestMetadataVersion(ctx, "admin", "app", "snapshot")
@@ -619,11 +619,11 @@ func TestFindLatestMetadataVersion_NoFileForRole(t *testing.T) {
 
 // To verify: In FindLatestMetadataVersion change unversioned handling (filename == expectedSuffix) to set maxVersion=0 or skip; test will fail (wrong version/filename).
 func TestFindLatestMetadataVersion_UnversionedRole(t *testing.T) {
-	saved := listMetadataForLatest
-	listMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	saved := ListMetadataForLatest
+	ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
 		return []string{"snapshot.json"}, nil // only unversioned
 	}
-	defer func() { listMetadataForLatest = saved }()
+	defer func() { ListMetadataForLatest = saved }()
 
 	ctx := context.Background()
 	ver, filename, err := FindLatestMetadataVersion(ctx, "admin", "app", "snapshot")
@@ -637,11 +637,11 @@ func TestFindLatestMetadataVersion_UnversionedRole(t *testing.T) {
 
 // To verify: In FindLatestMetadataVersion change version comparison to >= or use wrong max; test will fail (wrong version or filename).
 func TestFindLatestMetadataVersion_VersionedRole(t *testing.T) {
-	saved := listMetadataForLatest
-	listMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	saved := ListMetadataForLatest
+	ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
 		return []string{"1.snapshot.json", "2.snapshot.json", "3.snapshot.json"}, nil
 	}
-	defer func() { listMetadataForLatest = saved }()
+	defer func() { ListMetadataForLatest = saved }()
 
 	ctx := context.Background()
 	ver, filename, err := FindLatestMetadataVersion(ctx, "admin", "app", "snapshot")
@@ -655,11 +655,11 @@ func TestFindLatestMetadataVersion_VersionedRole(t *testing.T) {
 
 // To verify: In FindLatestMetadataVersion change filtering (expectedSuffix or namePart); test will fail (wrong filename or include other role).
 func TestFindLatestMetadataVersion_IgnoresOtherRoles(t *testing.T) {
-	saved := listMetadataForLatest
-	listMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	saved := ListMetadataForLatest
+	ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
 		return []string{"root.json", "timestamp.json", "1.snapshot.json", "2.targets.json"}, nil
 	}
-	defer func() { listMetadataForLatest = saved }()
+	defer func() { ListMetadataForLatest = saved }()
 
 	ctx := context.Background()
 	ver, filename, err := FindLatestMetadataVersion(ctx, "admin", "app", "snapshot")
@@ -673,11 +673,11 @@ func TestFindLatestMetadataVersion_IgnoresOtherRoles(t *testing.T) {
 
 // To verify: In FindLatestMetadataVersion skip invalid version (Atoi failure) and still pick valid one
 func TestFindLatestMetadataVersion_IgnoresInvalidVersion(t *testing.T) {
-	saved := listMetadataForLatest
-	listMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	saved := ListMetadataForLatest
+	ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
 		return []string{"x.snapshot.json", "1.snapshot.json"}, nil // x.snapshot.json has non-numeric version
 	}
-	defer func() { listMetadataForLatest = saved }()
+	defer func() { ListMetadataForLatest = saved }()
 
 	ctx := context.Background()
 	ver, filename, err := FindLatestMetadataVersion(ctx, "admin", "app", "snapshot")
@@ -691,11 +691,11 @@ func TestFindLatestMetadataVersion_IgnoresInvalidVersion(t *testing.T) {
 
 // To verify: In FindLatestMetadataVersion when only invalid/unmatched files exist return error; remove "no metadata file found" check and test will fail (wrong return).
 func TestFindLatestMetadataVersion_OnlyInvalidVersionReturnsError(t *testing.T) {
-	saved := listMetadataForLatest
-	listMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	saved := ListMetadataForLatest
+	ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
 		return []string{"x.snapshot.json"}, nil // Atoi fails, no valid version
 	}
-	defer func() { listMetadataForLatest = saved }()
+	defer func() { ListMetadataForLatest = saved }()
 
 	ctx := context.Background()
 	ver, filename, err := FindLatestMetadataVersion(ctx, "admin", "app", "snapshot")

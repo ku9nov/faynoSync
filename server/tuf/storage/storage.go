@@ -12,32 +12,32 @@ import (
 	"github.com/spf13/viper"
 )
 
-// storageFactory is minimal interface for creating storage client (injectable for tests).
-type storageFactory interface {
+// StorageFactory is minimal interface for creating storage client (injectable for tests from other packages).
+type StorageFactory interface {
 	CreateStorageClient() (utils.StorageClient, error)
 }
 
-// listMetadataFunc is the type for listing metadata from storage (injectable for tests).
-type listMetadataFunc func(ctx context.Context, adminName, appName, prefix string) ([]string, error)
+// ListMetadataFunc is the type for listing metadata from storage (injectable for tests from other packages).
+type ListMetadataFunc func(ctx context.Context, adminName, appName, prefix string) ([]string, error)
 
 var (
-	getViperForUpload                          = func() *viper.Viper { return viper.GetViper() }
-	storageFactoryForUpload                    = func(env *viper.Viper) storageFactory { return utils.NewStorageFactory(env) }
-	getViperForDownload                        = func() *viper.Viper { return viper.GetViper() }
-	storageFactoryForDownload                  = func(env *viper.Viper) storageFactory { return utils.NewStorageFactory(env) }
+	GetViperForUpload                          = func() *viper.Viper { return viper.GetViper() }
+	StorageFactoryForUpload                    = func(env *viper.Viper) StorageFactory { return utils.NewStorageFactory(env) }
+	GetViperForDownload                        = func() *viper.Viper { return viper.GetViper() }
+	StorageFactoryForDownload                  = func(env *viper.Viper) StorageFactory { return utils.NewStorageFactory(env) }
 	getViperForList                            = func() *viper.Viper { return viper.GetViper() }
-	storageFactoryForList                      = func(env *viper.Viper) storageFactory { return utils.NewStorageFactory(env) }
-	listMetadataForLatest     listMetadataFunc = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+	StorageFactoryForList                      = func(env *viper.Viper) StorageFactory { return utils.NewStorageFactory(env) }
+	ListMetadataForLatest     ListMetadataFunc = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
 		return ListMetadataFromS3(ctx, adminName, appName, prefix)
 	}
-	listMetadataForGetAllDelegatedRoles listMetadataFunc = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+	listMetadataForGetAllDelegatedRoles ListMetadataFunc = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
 		return ListMetadataFromS3(ctx, adminName, appName, prefix)
 	}
 )
 
 func UploadMetadataToS3(ctx context.Context, adminName string, appName string, filename string, filePath string) error {
-	env := getViperForUpload()
-	factory := storageFactoryForUpload(env)
+	env := GetViperForUpload()
+	factory := StorageFactoryForUpload(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		return fmt.Errorf("failed to create storage client: %w", err)
@@ -92,8 +92,8 @@ func (f *fileWrapper) Close() error {
 }
 
 func DownloadMetadataFromS3(ctx context.Context, adminName string, appName string, filename string, filePath string) error {
-	env := getViperForDownload()
-	factory := storageFactoryForDownload(env)
+	env := GetViperForDownload()
+	factory := StorageFactoryForDownload(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		return fmt.Errorf("failed to create storage client: %w", err)
@@ -115,7 +115,7 @@ func DownloadMetadataFromS3(ctx context.Context, adminName string, appName strin
 
 func ListMetadataFromS3(ctx context.Context, adminName string, appName string, prefix string) ([]string, error) {
 	env := getViperForList()
-	factory := storageFactoryForList(env)
+	factory := StorageFactoryForList(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
@@ -148,7 +148,7 @@ func FindLatestMetadataVersion(ctx context.Context, adminName string, appName st
 		return 0, "timestamp.json", nil
 	}
 
-	filenames, err := listMetadataForLatest(ctx, adminName, appName, "")
+	filenames, err := ListMetadataForLatest(ctx, adminName, appName, "")
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to list metadata files: %w", err)
 	}
