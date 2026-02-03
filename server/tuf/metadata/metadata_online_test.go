@@ -896,7 +896,8 @@ func makeTargetsAndDelegationForBumpDelegated(t *testing.T, delegationRoleName s
 	require.NoError(t, err)
 	delegationKey, err := tuf_metadata.KeyFromPublicKey(delegationPriv.Public())
 	require.NoError(t, err)
-	delegationKeyID := delegationKey.ID()
+	delegationKeyID, err := delegationKey.ID()
+	require.NoError(t, err)
 
 	exp := tuf_utils.HelperExpireIn(365)
 	targets := tuf_metadata.Targets(exp)
