@@ -1,4 +1,4 @@
-name: Docker Compose Test
+name: Tests
 
 on:
   pull_request:
@@ -6,7 +6,26 @@ on:
       - main
 
 jobs:
-  test:
+  unit-tests:
+    name: Go unit tests (TUF)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run unit tests
+        run: |
+          go test ./server/tuf/... -race
+          continue-on-error: false
+
+  integration-tests:
+    name: Docker Compose integration tests
     runs-on: ubuntu-22.04
 
     steps:
