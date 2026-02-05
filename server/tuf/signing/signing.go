@@ -107,7 +107,7 @@ func LoadPrivateKeyFromFilesystem(keyID string, keyURI string) (ed25519.PrivateK
 	env := viper.GetViper()
 	keyDir := env.GetString("ONLINE_KEY_DIR")
 	if keyDir == "" {
-		return nil, fmt.Errorf("ONLINE_KEY_DIR or RSTUF_ONLINE_KEY_DIR environment variable not set")
+		return nil, fmt.Errorf("ONLINE_KEY_DIR environment variable not set")
 	}
 
 	var fileName string
