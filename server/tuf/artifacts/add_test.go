@@ -399,13 +399,13 @@ func (c *failUploadClient) ListObjects(ctx context.Context, bucketName, prefix s
 
 // To verify: In AddArtifacts skip loading timestamp private key error; test will fail (no error or wrong message).
 func TestAddArtifacts_LoadTimestampKeyFails_ReturnsError(t *testing.T) {
-	storeDir, keyDir, cleanup := makeAddArtifactsTestEnv(t, testAdminName, testAppName)
+	storeDir, _, cleanup := makeAddArtifactsTestEnv(t, testAdminName, testAppName)
 	defer cleanup()
 	_ = storeDir
 	emptyKeyDir := t.TempDir()
 	oldDir := viper.GetViper().GetString("ONLINE_KEY_DIR")
-	viper.GetViper().Set("ONLINE_KEY_DIR", keyDir)
 	viper.GetViper().Set("ONLINE_KEY_DIR", emptyKeyDir)
+	defer viper.GetViper().Set("ONLINE_KEY_DIR", oldDir)
 
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
@@ -417,7 +417,6 @@ func TestAddArtifacts_LoadTimestampKeyFails_ReturnsError(t *testing.T) {
 		{Path: "updates/x", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
 	}, false, testTaskID)
 
-	viper.GetViper().Set("ONLINE_KEY_DIR", oldDir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load timestamp private key")
 }

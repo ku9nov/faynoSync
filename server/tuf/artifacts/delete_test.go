@@ -307,12 +307,12 @@ func TestRemoveArtifacts_FindLatestTargetsFails_ReturnsError(t *testing.T) {
 
 // To verify: In RemoveArtifacts skip loading timestamp private key error; test will fail (no error or wrong message).
 func TestRemoveArtifacts_LoadTimestampKeyFails_ReturnsError(t *testing.T) {
-	_, keyDir, cleanup := makeRemoveArtifactsTestEnv(t, testAdminName, testAppName)
+	_, _, cleanup := makeRemoveArtifactsTestEnv(t, testAdminName, testAppName)
 	defer cleanup()
 	emptyKeyDir := t.TempDir()
 	oldDir := viper.GetViper().GetString("ONLINE_KEY_DIR")
-	viper.GetViper().Set("ONLINE_KEY_DIR", keyDir)
 	viper.GetViper().Set("ONLINE_KEY_DIR", emptyKeyDir)
+	defer viper.GetViper().Set("ONLINE_KEY_DIR", oldDir)
 
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
@@ -324,7 +324,6 @@ func TestRemoveArtifacts_LoadTimestampKeyFails_ReturnsError(t *testing.T) {
 		{Path: "updates/x", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
 	}, testTaskID)
 
-	viper.GetViper().Set("ONLINE_KEY_DIR", oldDir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load timestamp private key")
 }
