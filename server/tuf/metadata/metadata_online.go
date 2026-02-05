@@ -57,6 +57,14 @@ func PostMetadataOnline(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 	logrus.Debugf("payload: %+v", payload)
+
+	if contains(payload.Roles, "root") {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Root role cannot be updated via this endpoint",
+		})
+		return
+	}
+
 	ctx := context.Background()
 	keySuffix := adminName + "_" + appName
 

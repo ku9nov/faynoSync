@@ -60,6 +60,22 @@ func makePostMetadataOnlineContext(username string, appName string, body interfa
 	return c, w
 }
 
+// To verify: In PostMetadataOnline remove the root-role check or return 200; test will fail (wrong status).
+func TestPostMetadataOnline_RootRoleInPayload_ReturnsBadRequest(t *testing.T) {
+	c, w := makePostMetadataOnlineContext("admin", "myapp", models.MetadataOnlinePostPayload{Roles: []string{"root"}})
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_admin_myapp", "done")
+
+	PostMetadataOnline(c, client)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "Expected 400 when root is in roles")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Root role cannot be updated via this endpoint", body["error"])
+}
+
 // To verify: In PostMetadataOnline remove GetUsernameFromContext check or return 200 on error; test will fail (wrong status).
 func TestPostMetadataOnline_NoUsernameInContext_ReturnsUnauthorized(t *testing.T) {
 	c, w := makePostMetadataOnlineContext("", "myapp", models.MetadataOnlinePostPayload{Roles: []string{"snapshot", "timestamp"}})
