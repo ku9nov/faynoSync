@@ -62,7 +62,7 @@ func uploadWithClient(ctx context.Context, client utils.StorageClient, bucketNam
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
-
+	defer file.Close()
 	fileWrapper := &fileWrapper{file: file}
 	_, err = client.UploadPublicObject(ctx, bucketName, s3Key, fileWrapper, contentType)
 	if err != nil {
