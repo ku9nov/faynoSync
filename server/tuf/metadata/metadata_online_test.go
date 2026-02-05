@@ -9,6 +9,7 @@ import (
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/signing"
 	tuf_storage "faynoSync/server/tuf/storage"
+	"faynoSync/server/tuf/tasks"
 	tuf_utils "faynoSync/server/tuf/utils"
 	"faynoSync/server/utils"
 	"fmt"
@@ -58,6 +59,30 @@ func makePostMetadataOnlineContext(username string, appName string, body interfa
 		c.Set("username", username)
 	}
 	return c, w
+}
+
+func waitForOnlineTaskTerminalState(t *testing.T, redisClient *redis.Client, taskID string, timeout time.Duration) {
+	t.Helper()
+	ctx := context.Background()
+	taskKey := "task:" + taskID
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		data, err := redisClient.Get(ctx, taskKey).Result()
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		var status tasks.TaskStatus
+		if err := json.Unmarshal([]byte(data), &status); err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if status.State == tasks.TaskStateSuccess || status.State == tasks.TaskStateFailure {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for task %s to reach terminal state", taskID)
 }
 
 // To verify: In PostMetadataOnline remove the root-role check or return 200; test will fail (wrong status).
@@ -224,6 +249,7 @@ func TestPostMetadataOnline_TargetsOnlineKeyVariants_Accepted(t *testing.T) {
 				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 				assert.NotEmpty(t, resp.Data.TaskID, "task_id should be set")
 				assert.Equal(t, "Force online metadata update accepted.", resp.Message)
+				waitForOnlineTaskTerminalState(t, client, resp.Data.TaskID, 5*time.Second)
 			} else {
 				assert.Equal(t, http.StatusNotFound, w.Code, "Expected 404 when targets is offline")
 			}
@@ -247,6 +273,7 @@ func TestPostMetadataOnline_Success_AcceptedWithTaskID(t *testing.T) {
 	assert.NotEmpty(t, resp.Data.TaskID, "task_id should be non-empty UUID")
 	assert.False(t, resp.Data.LastUpdate.IsZero(), "last_update should be set")
 	assert.Equal(t, "Force online metadata update accepted.", resp.Message)
+	waitForOnlineTaskTerminalState(t, client, resp.Data.TaskID, 5*time.Second)
 }
 
 // To verify: In PostMetadataOnline change default roles when payload.Roles is empty (e.g. omit "targets" when targetsOnline); test will fail (wrong behavior in goroutine; we only assert 202 here).
@@ -264,6 +291,7 @@ func TestPostMetadataOnline_EmptyRoles_DefaultsAccepted(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.NotEmpty(t, resp.Data.TaskID)
 	assert.Equal(t, "Force online metadata update accepted.", resp.Message)
+	waitForOnlineTaskTerminalState(t, client, resp.Data.TaskID, 5*time.Second)
 }
 
 // --- forceOnlineMetadataUpdate tests ---

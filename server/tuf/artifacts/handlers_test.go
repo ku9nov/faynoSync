@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"faynoSync/mongod"
 	"faynoSync/server/model"
+	"faynoSync/server/tuf/tasks"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
@@ -83,6 +85,30 @@ func makePostDeleteArtifactsContext(username string, payload interface{}) (*gin.
 		c.Set("username", username)
 	}
 	return c, w
+}
+
+func waitForTaskTerminalState(t *testing.T, redisClient *redis.Client, taskID string, timeout time.Duration) {
+	t.Helper()
+	ctx := context.Background()
+	taskKey := "task:" + taskID
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		data, err := redisClient.Get(ctx, taskKey).Result()
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		var status tasks.TaskStatus
+		if err := json.Unmarshal([]byte(data), &status); err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if status.State == tasks.TaskStateSuccess || status.State == tasks.TaskStateFailure {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for task %s to reach terminal state", taskID)
 }
 
 // To verify: In PostPublishArtifacts remove GetUsernameFromContext check or return 200 on error; test will fail (wrong status).
@@ -356,6 +382,9 @@ func TestPostPublishArtifacts_PublishStarted_ReturnsAccepted(t *testing.T) {
 	assert.Equal(t, "1.0.0", data["version"])
 	assert.NotEmpty(t, data["task_id"], "task_id must be returned")
 	assert.NotNil(t, data["artifacts"], "artifacts list must be present")
+	taskID, ok := data["task_id"].(string)
+	require.True(t, ok, "task_id must be string")
+	waitForTaskTerminalState(t, redisClient, taskID, 5*time.Second)
 	t.Logf("Inputs: app_id=%s, owner=%s; Result: code=%d, task_id=%v", appID.Hex(), owner, w.Code, data["task_id"])
 }
 
@@ -642,6 +671,9 @@ func TestPostDeleteArtifacts_DeletionStarted_ReturnsAccepted(t *testing.T) {
 	assert.Equal(t, "1.0.0", data["version"])
 	assert.NotEmpty(t, data["task_id"])
 	assert.NotNil(t, data["artifacts"])
+	taskID, ok := data["task_id"].(string)
+	require.True(t, ok, "task_id must be string")
+	waitForTaskTerminalState(t, redisClient, taskID, 5*time.Second)
 	t.Logf("Inputs: app_id=%s, owner=%s; Result: code=%d, task_id=%v", appID.Hex(), owner, w.Code, data["task_id"])
 }
 
