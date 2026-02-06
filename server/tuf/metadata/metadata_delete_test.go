@@ -125,7 +125,23 @@ func TestPostMetadataSignDelete_MissingRoleInPayload_ReturnsBadRequest(t *testin
 	assert.Contains(t, body["error"], "Invalid payload format")
 }
 
-// To verify: In PostMetadataSignDelete remove signing-key-missing branch (err == redis.Nil || signingStatus == ""); test will fail (wrong status).
+// To verify: In PostMetadataSignDelete remove Redis Get error branch (err != nil && err != redis.Nil); test will fail (wrong status).
+func TestPostMetadataSignDelete_RedisGetError_ReturnsServiceUnavailable(t *testing.T) {
+	payload := models.MetadataSignDeletePayload{Role: "targets"}
+	c, w := makePostMetadataSignDeleteContext("admin", "myapp", payload)
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Close()
+
+	PostMetadataSignDelete(c, client)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code, "Expected 503 when Redis Get fails")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Redis error while checking signing status", body["error"])
+}
+
+// To verify: In PostMetadataSignDelete remove signing-key-missing branch (err == redis.Nil); test will fail (wrong status).
 func TestPostMetadataSignDelete_SigningKeyMissing_ReturnsNotFound(t *testing.T) {
 	payload := models.MetadataSignDeletePayload{Role: "snapshot"}
 	c, w := makePostMetadataSignDeleteContext("admin", "myapp", payload)
@@ -142,8 +158,8 @@ func TestPostMetadataSignDelete_SigningKeyMissing_ReturnsNotFound(t *testing.T) 
 	assert.Contains(t, body["error"], "not in a signing process")
 }
 
-// To verify: In PostMetadataSignDelete change condition to only check redis.Nil and not empty signingStatus; test will fail (wrong status).
-func TestPostMetadataSignDelete_SigningKeyEmpty_ReturnsNotFound(t *testing.T) {
+// To verify: In PostMetadataSignDelete remove empty signingStatus branch; test will fail (wrong status).
+func TestPostMetadataSignDelete_SigningKeyEmpty_ReturnsInternalServerError(t *testing.T) {
 	payload := models.MetadataSignDeletePayload{Role: "timestamp"}
 	c, w := makePostMetadataSignDeleteContext("admin", "myapp", payload)
 	mr := miniredis.RunT(t)
@@ -153,10 +169,10 @@ func TestPostMetadataSignDelete_SigningKeyEmpty_ReturnsNotFound(t *testing.T) {
 
 	PostMetadataSignDelete(c, client)
 
-	assert.Equal(t, http.StatusNotFound, w.Code, "Expected 404 when signing key value is empty")
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "Expected 500 when signing key value is empty")
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Contains(t, body["message"], "No signing process")
+	assert.Contains(t, body["error"], "Invalid signing status state")
 }
 
 // To verify: In PostMetadataSignDelete change response status from 202 or response message/body; test will fail (wrong status or body).

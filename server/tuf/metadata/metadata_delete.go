@@ -54,10 +54,30 @@ func PostMetadataSignDelete(c *gin.Context, redisClient *redis.Client) {
 
 	signingKey := fmt.Sprintf("%s_SIGNING_%s", roleUpper, keySuffix)
 	signingStatus, err := redisClient.Get(ctx, signingKey).Result()
-	if err == redis.Nil || signingStatus == "" {
+	switch {
+	case err != nil && err != redis.Nil:
+		logrus.WithError(err).
+			WithField("key", signingKey).
+			Error("Failed to read signing status from Redis")
+
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Redis error while checking signing status",
+		})
+		return
+
+	case err == redis.Nil:
 		c.JSON(http.StatusNotFound, gin.H{
 			"message": fmt.Sprintf("No signing process for %s.", payload.Role),
 			"error":   fmt.Sprintf("The %s role is not in a signing process.", payload.Role),
+		})
+		return
+
+	case signingStatus == "":
+		logrus.WithField("key", signingKey).
+			Error("Signing status key exists but value is empty")
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Invalid signing status state",
 		})
 		return
 	}
