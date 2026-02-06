@@ -198,7 +198,10 @@ func forceOnlineMetadataUpdate(
 	rootPath := filepath.Join(tmpDir, "root.json")
 	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err != nil {
 		if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err2 != nil {
-			return nil, fmt.Errorf("failed to download root metadata: %w", err)
+			return nil, fmt.Errorf(
+				"failed to download root metadata: primary error: %v, fallback error: %w",
+				err, err2,
+			)
 		}
 	}
 

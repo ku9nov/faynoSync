@@ -121,7 +121,7 @@ func PostMetadataSignDelete(c *gin.Context, redisClient *redis.Client) {
 			logrus.Warnf("Failed to delete signing task key from Redis: %v", err)
 		}
 
-		if payload.Role == "root" {
+		if strings.EqualFold(payload.Role, "root") {
 			bootstrapKey := "BOOTSTRAP_" + keySuffix
 			bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
 			if err == nil && strings.HasPrefix(bootstrapValue, "signing-") {
