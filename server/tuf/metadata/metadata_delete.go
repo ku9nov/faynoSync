@@ -53,6 +53,7 @@ func PostMetadataSignDelete(c *gin.Context, redisClient *redis.Client) {
 	roleUpper := strings.ToUpper(payload.Role)
 
 	signingKey := fmt.Sprintf("%s_SIGNING_%s", roleUpper, keySuffix)
+	taskKey := fmt.Sprintf("%s_SIGNING_TASK_%s", roleUpper, keySuffix)
 	signingStatus, err := redisClient.Get(ctx, signingKey).Result()
 	switch {
 	case err != nil && err != redis.Nil:
@@ -115,6 +116,9 @@ func PostMetadataSignDelete(c *gin.Context, redisClient *redis.Client) {
 				logrus.Errorf("Failed to save error task status: %v", err)
 			}
 			return
+		}
+		if err := redisClient.Del(ctx, taskKey).Err(); err != nil {
+			logrus.Warnf("Failed to delete signing task key from Redis: %v", err)
 		}
 
 		if payload.Role == "root" {
