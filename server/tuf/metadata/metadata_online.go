@@ -485,19 +485,15 @@ func bumpSnapshotRole(
 	tmpDir string,
 	keySuffix string,
 ) error {
-	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s", adminName)
+	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s_%s", adminName, appName)
 	lockTTL := 300 * time.Second
-	maxWaitTime := 500 * time.Second
 
-	lockCtx, cancel := context.WithTimeout(ctx, maxWaitTime)
-	defer cancel()
-
-	acquired, err := redisClient.SetNX(lockCtx, lockKey, "locked", lockTTL).Result()
+	acquired, err := redisClient.SetNX(ctx, lockKey, "locked", lockTTL).Result()
 	if err != nil {
 		return fmt.Errorf("failed to acquire snapshot lock: %w", err)
 	}
 	if !acquired {
-		return fmt.Errorf("failed to acquire snapshot lock: timeout after %v", maxWaitTime)
+		return fmt.Errorf("failed to acquire snapshot lock: snapshot lock already held")
 	}
 
 	defer func() {

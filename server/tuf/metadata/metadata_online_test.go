@@ -1381,13 +1381,13 @@ func TestBumpSnapshotRole_LockNotAcquired(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	mr.Set("LOCK_SNAPSHOT_admin", "locked") // lock already held
+	mr.Set("LOCK_SNAPSHOT_admin_app", "locked") // lock already held
 
 	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
-	assert.Contains(t, err.Error(), "timeout after")
+	assert.Contains(t, err.Error(), "snapshot lock already held")
 }
 
 // To verify: In bumpSnapshotRole remove the FindLatestMetadataVersion error handling or return a different error; test will fail (no error or wrong message).
