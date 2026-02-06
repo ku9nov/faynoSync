@@ -215,12 +215,11 @@ func TestBootstrapOnlineRoles_OnlineKeyNotFoundInRoot(t *testing.T) {
 
 // To verify: In BootstrapOnlineRoles ignore LoadPrivateKeyFromFilesystem error and proceed; test will fail (no error).
 func TestBootstrapOnlineRoles_SignerCreationFails_NoKeyDir(t *testing.T) {
-	payload, _, _ := makeValidRootAndPayload(t)
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	// Override ONLINE_KEY_DIR to empty for this test
+	viper.GetViper().Set("ONLINE_KEY_DIR", "")
 	// Restore viper so ONLINE_KEY_DIR is unset for this test
-	env := viper.GetViper()
-	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", "")
-	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	mr := miniredis.RunT(t)
 	defer mr.Close()
