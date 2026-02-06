@@ -1284,13 +1284,20 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{URL}}/tuf/bootstrap",
+          "raw": "{{URL}}/tuf/v1/bootstrap?appName=tuf",
           "host": [
             "{{URL}}"
           ],
           "path": [
             "tuf",
+            "v1",
             "bootstrap"
+          ],
+          "query": [
+            {
+              "key": "appName",
+              "value": "tuf"
+            }
           ]
         }
       },
@@ -1313,7 +1320,7 @@
         "header": [],
         "body": {
           "mode": "raw",
-          "raw": "{\n        \"appName\": \"tuf\",\n        \"settings\": {\n            \"roles\": {\n                \"root\": {\n                    \"expiration\": 364\n                },\n                \"timestamp\": {\n                    \"expiration\": 1\n                },\n                \"snapshot\": {\n                    \"expiration\": 6\n                },\n                \"targets\": {\n                    \"expiration\": 6\n                },\n                \"delegations\": {\n                    \"keys\": {\n                        \"65c670a869b6ee88d828460ef0ee078c91bbe16964168415ce36f980bde95f47\": {\n                            \"keytype\": \"ed25519\",\n                            \"scheme\": \"ed25519\",\n                            \"keyval\": {\n                                \"public\": \"a50bf156b55a2ca79984564a24947190acff3d4f391a37030dd4c4ef43e22727\"\n                            }\n                        }\n                    },\n                    \"roles\": [\n                        {\n                            \"name\": \"default\",\n                            \"terminating\": false,\n                            \"keyids\": [\n                                \"65c670a869b6ee88d828460ef0ee078c91bbe16964168415ce36f980bde95f47\"\n                            ],\n                            \"threshold\": 1,\n                            \"paths\": [\n                                \"ku9n/tuf/\",\n                                \"tuf-ku9n/\",\n                                \"electron-builder/tuf-ku9n/\",\n                                \"squirrel_windows/tuf-ku9n/\"\n                            ]\n                        }\n                    ]\n                }\n            }\n        },\n        \"metadata\": {\n            \"root\": {\n                \"signatures\": [\n                    {\n                        \"keyid\": \"e2b4c8e251c04200c678165077ec31de9457d524d4b8b31cda2d8a1bf70356a1\",\n                        \"sig\": \"486d15fb87af3c97fa4941452d28cd3f9185aa6d93ce448a21c8996984c8f1ffb9dc89c943163cca0dc459ba961a2030f29fc8b0cc44b5e46d15b704db8e4e0d\"\n                    },\n                    {\n                        \"keyid\": \"5863a6ec6fdfaa6aa7f5547ed1d7e1801097c7765d7741b97bc9b935aec02542\",\n                        \"sig\": \"71426b199b449dace08ce9a330882cc8feb434893711c2aebfa690d8593310f28c42709384f3a8f62d174fa7692b1fb18cc24fdb547800653d2b84126c37c20f\"\n                    }\n                ],\n                \"signed\": {\n                    \"_type\": \"root\",\n                    \"version\": 1,\n                    \"spec_version\": \"1.0.31\",\n                    \"expires\": \"2026-12-03T16:24:35.029046Z\",\n                    \"consistent_snapshot\": true,\n                    \"keys\": {\n                        \"4988b90dba6ca37df8bff1f87bc91aaa167dcce9532baebdb81e79a323bfe750\": {\n                            \"keytype\": \"ed25519\",\n                            \"scheme\": \"ed25519\",\n                            \"keyval\": {\n                                \"public\": \"e45ee4c938f71f8a9b44865343dfb9b7e1f4fb698a35a7ce85819af333f786e6\"\n                            }\n                        },\n                        \"5863a6ec6fdfaa6aa7f5547ed1d7e1801097c7765d7741b97bc9b935aec02542\": {\n                            \"keytype\": \"ed25519\",\n                            \"scheme\": \"ed25519\",\n                            \"keyval\": {\n                                \"public\": \"c1702cd02c2311019e06c23af921a511d34ef0b58e67a0fa70537c2478f31d19\"\n                            }\n                        },\n                        \"65c670a869b6ee88d828460ef0ee078c91bbe16964168415ce36f980bde95f47\": {\n                            \"keytype\": \"ed25519\",\n                            \"scheme\": \"ed25519\",\n                            \"keyval\": {\n                                \"public\": \"a50bf156b55a2ca79984564a24947190acff3d4f391a37030dd4c4ef43e22727\"\n                            }\n                        },\n                        \"bc6ddade88173eeba22bf368f55329d0499d8e5fa80daf0cd0b4586bcb802872\": {\n                            \"keytype\": \"ed25519\",\n                            \"scheme\": \"ed25519\",\n                            \"keyval\": {\n                                \"public\": \"fe78bc848b90a64837eba235ca8f642548f80d5adb2a696887d3a2d88faf5a15\"\n                            }\n                        },\n                        \"e2b4c8e251c04200c678165077ec31de9457d524d4b8b31cda2d8a1bf70356a1\": {\n                            \"keytype\": \"ed25519\",\n                            \"scheme\": \"ed25519\",\n                            \"keyval\": {\n                                \"public\": \"041a51a559857bf2af82d7473e837e7fd8be159a439872256726ac932a28f3a2\"\n                            }\n                        }\n                    },\n                    \"roles\": {\n                        \"root\": {\n                            \"keyids\": [\n                                \"e2b4c8e251c04200c678165077ec31de9457d524d4b8b31cda2d8a1bf70356a1\",\n                                \"5863a6ec6fdfaa6aa7f5547ed1d7e1801097c7765d7741b97bc9b935aec02542\"\n                            ],\n                            \"threshold\": 2\n                        },\n                        \"snapshot\": {\n                            \"keyids\": [\n                                \"4988b90dba6ca37df8bff1f87bc91aaa167dcce9532baebdb81e79a323bfe750\"\n                            ],\n                            \"threshold\": 1\n                        },\n                        \"targets\": {\n                            \"keyids\": [\n                                \"bc6ddade88173eeba22bf368f55329d0499d8e5fa80daf0cd0b4586bcb802872\"\n                            ],\n                            \"threshold\": 1\n                        },\n                        \"timestamp\": {\n                            \"keyids\": [\n                                \"65c670a869b6ee88d828460ef0ee078c91bbe16964168415ce36f980bde95f47\"\n                            ],\n                            \"threshold\": 1\n                        }\n                    }\n                }\n            }\n        }\n}",
+          "raw": "{\n  \"settings\": {\n    \"roles\": {\n      \"root\": {\n        \"expiration\": 364\n      },\n      \"timestamp\": {\n        \"expiration\": 1\n      },\n      \"snapshot\": {\n        \"expiration\": 6\n      },\n      \"targets\": {\n        \"expiration\": 6\n      },\n      \"delegations\": {\n        \"keys\": {\n          \"eb6c12a7654f2fd7ce2e9bc8d3a97a605c05876e6e4b4f1fe86143b3897f91bf\": {\n            \"keytype\": \"ed25519\",\n            \"scheme\": \"ed25519\",\n            \"keyval\": {\n              \"public\": \"92adbbcb17210e4148ca08622d85f038012ccb704cae29d33ea934ba2c30d860\"\n            }\n          }\n        },\n        \"roles\": [\n          {\n            \"name\": \"default\",\n            \"terminating\": false,\n            \"keyids\": [\n              \"eb6c12a7654f2fd7ce2e9bc8d3a97a605c05876e6e4b4f1fe86143b3897f91bf\"\n            ],\n            \"threshold\": 1,\n            \"paths\": [\n              \"ku9n/tuf/\",\n              \"tuf-ku9n/\",\n              \"electron-builder/tuf-ku9n/\",\n              \"squirrel_windows/tuf-ku9n/\"\n            ]\n          }\n        ]\n      }\n    }\n  },\n  \"metadata\": {\n    \"root\": {\n      \"signatures\": [\n        {\n          \"keyid\": \"968352800a111846dad3f17a9371eb09a273ddef7c774252801be50cfda5520d\",\n          \"sig\": \"2ddce997785246627572fbefe1a09c23caae58d69d19efd4e902b30f9c902cf2e9859f9f53c7a0223c6f84d2a873864088758990df952c8027973eca999df504\"\n        },\n        {\n          \"keyid\": \"9faebed624cd1be5521cc9b5c4285afb441a1d042053c78229da2ef8336a33f0\",\n          \"sig\": \"ff7152dbbe8e303fb567e40ce428451d069298e3915b732c940cd43d589f5f3f6f38cc3992e4fc2aefb5ddcee882f1bfba1d9e050aee3ae0beb0e914cfffed09\"\n        }\n      ],\n      \"signed\": {\n        \"_type\": \"root\",\n        \"version\": 1,\n        \"spec_version\": \"1.0.31\",\n        \"expires\": \"2027-01-29T12:47:14Z\",\n        \"consistent_snapshot\": true,\n        \"keys\": {\n          \"968352800a111846dad3f17a9371eb09a273ddef7c774252801be50cfda5520d\": {\n            \"keytype\": \"ed25519\",\n            \"scheme\": \"ed25519\",\n            \"keyval\": {\n              \"public\": \"8b70bc180ef010eb3f606f0a7dde6456ae2cc32958bbff34ac5a70ea250b5ca7\"\n            }\n          },\n          \"9faebed624cd1be5521cc9b5c4285afb441a1d042053c78229da2ef8336a33f0\": {\n            \"keytype\": \"ed25519\",\n            \"scheme\": \"ed25519\",\n            \"keyval\": {\n              \"public\": \"03e2e74b81bfd426c641bb392482bd24dd852094bb9843ecde4875a11b088947\"\n            }\n          },\n          \"48525fedb706148ca1aa24c262ca88c3a1a5a478992b7e8cc950c330de56dba8\": {\n            \"keytype\": \"ed25519\",\n            \"scheme\": \"ed25519\",\n            \"keyval\": {\n              \"public\": \"0036841a4e89fda24e09bac8b17006d52b14564613c9cc0025cd16dc0f969ae7\"\n            }\n          },\n          \"b19a200ed85f276cb5f1aab998f272ad37c129d527d91dc13252031888d3776b\": {\n            \"keytype\": \"ed25519\",\n            \"scheme\": \"ed25519\",\n            \"keyval\": {\n              \"public\": \"1e454f8d6421ffe0c60630327fd02e29cc870232816248ebc126cdba2a3c662c\"\n            }\n          },\n          \"7bf578578be1794e70199d9ea6edafcf643ef44ea38c91dd579b65b73d871fdc\": {\n            \"keytype\": \"ed25519\",\n            \"scheme\": \"ed25519\",\n            \"keyval\": {\n              \"public\": \"6af0258b72ce858f9c4ffdc21b3009a20f839c79a28266de9131c951158b04b6\"\n            }\n          },\n          \"eb6c12a7654f2fd7ce2e9bc8d3a97a605c05876e6e4b4f1fe86143b3897f91bf\": {\n            \"keytype\": \"ed25519\",\n            \"scheme\": \"ed25519\",\n            \"keyval\": {\n              \"public\": \"92adbbcb17210e4148ca08622d85f038012ccb704cae29d33ea934ba2c30d860\"\n            }\n          }\n        },\n        \"roles\": {\n          \"root\": {\n            \"keyids\": [\n              \"968352800a111846dad3f17a9371eb09a273ddef7c774252801be50cfda5520d\",\n              \"9faebed624cd1be5521cc9b5c4285afb441a1d042053c78229da2ef8336a33f0\"\n            ],\n            \"threshold\": 2\n          },\n          \"timestamp\": {\n            \"keyids\": [\n              \"48525fedb706148ca1aa24c262ca88c3a1a5a478992b7e8cc950c330de56dba8\"\n            ],\n            \"threshold\": 1\n          },\n          \"snapshot\": {\n            \"keyids\": [\n              \"b19a200ed85f276cb5f1aab998f272ad37c129d527d91dc13252031888d3776b\"\n            ],\n            \"threshold\": 1\n          },\n          \"targets\": {\n            \"keyids\": [\n              \"7bf578578be1794e70199d9ea6edafcf643ef44ea38c91dd579b65b73d871fdc\"\n            ],\n            \"threshold\": 1\n          }\n        }\n      }\n    }\n  },\n  \"appName\": \"tuf\"\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -1376,16 +1383,75 @@
     {
       "name": "Check TUF tasks",
       "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
         "method": "GET",
-        "header": []
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/tuf/v1/task?task_id=ecca335d-9192-4fc2-bbb0-3d7a38a55c84",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "tuf",
+            "v1",
+            "task"
+          ],
+          "query": [
+            {
+              "key": "task_id",
+              "value": "ecca335d-9192-4fc2-bbb0-3d7a38a55c84",
+              "type": "text"
+            }
+          ]
+        }
       },
       "response": []
     },
     {
       "name": "Publish artifacts",
       "request": {
-        "method": "GET",
-        "header": []
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"app_id\": \"69259667351f660c2fd62d39\",\n  \"version\": \"0.0.0.5\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/tuf/v1/artifacts/publish",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "tuf",
+            "v1",
+            "artifacts",
+            "publish"
+          ]
+        }
       },
       "response": []
     },
@@ -1405,14 +1471,8 @@
         "method": "POST",
         "header": [],
         "body": {
-          "mode": "formdata",
-          "formdata": [
-            {
-              "key": "data",
-              "value": "{\"id\": \"\", \"app_name\": \"{{app_name}}\", \"version\": \"{{version}}\", \"artifacts_to_delete\": [ \"0\"]}",
-              "type": "text"
-            }
-          ]
+          "mode": "raw",
+          "raw": "{\"id\": \"697100362fadc9dccd0e3a96\", \"app_name\": \"tuf\", \"version\": \"0.0.0.5\", \"artifacts_to_delete\": [\"0\"]}"
         },
         "url": {
           "raw": "{{URL}}/tuf/v1/artifacts/delete",
@@ -1445,7 +1505,7 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{URL}}/tuf/v1/config?appName=",
+          "raw": "{{URL}}/tuf/v1/config?appName=tuf",
           "host": [
             "{{URL}}"
           ],
@@ -1457,7 +1517,7 @@
           "query": [
             {
               "key": "appName",
-              "value": ""
+              "value": "tuf"
             }
           ]
         }
@@ -1489,7 +1549,7 @@
           }
         },
         "url": {
-          "raw": "{{URL}}/tuf/v1/config?appName=",
+          "raw": "{{URL}}/tuf/v1/config?appName=tuf",
           "host": [
             "{{URL}}"
           ],
@@ -1501,7 +1561,7 @@
           "query": [
             {
               "key": "appName",
-              "value": ""
+              "value": "tuf"
             }
           ]
         }
@@ -1525,7 +1585,7 @@
         "header": [],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"metadata\": {\n    \"root\": {\n  \"signatures\": [],\n  \"signed\": {\n    \"_type\": \"root\",\n    \"consistent_snapshot\": true,\n    \"expires\": \"2026-12-21T12:52:51.723305Z\",\n    \"keys\": {\n      \"18f2980c42c908043968e311f47d3c4ee5df742f9aa576539f9c1862a2fa2ef3\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"ea32244bae0003362bcbd6f1bd89bccda11edf9f20ec5478a999cec2e3eecaeb\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"21c8c23aa4618474aebd009d281212062c9e772147c647e55577775f83b2f0ad\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"314dba4cf2da86a6cff4b216eaf479d56690edd2e8d4986ba168a116f02f5bc2\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"88012e32fb1fb53dda065fcdeac9344e643c5480216184588615175fc784b483\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"12392e9b65ff007b89f30bf98986d94c94f1cb9f4ea79088d642295b619f7e2f\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"9f67a415fe9c1e5c6fa3b07a13f11ca8bf7add20abb16cc877cbcfbbea9258a8\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"ca0b0f8de1143e5bd35f1099f0cadd1a4518d2e4d990230b4cfbb2af77914731\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"cefea790be72d8fd1f505dc7f13a18cce3b23573d3a0bbbbf37a842f21ac7662\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"3d1e94bd4de769589c11b81cf9b48bbb66b1f92c7d24e776afa1e20cae981216\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"f29cbe22bb9312f60830940d1f2cb1e96d26b2b2615712b740ea3e9380578fd2\": {\n        \"keytype\": \"ed25519\",\n        \"scheme\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"e733ddf1a803a6db9fa8fee67479ac108dbecf686ac0ad02c6a3d4756bfdf1dc\"\n        }\n      },\n      \"9f5b6c0d9dfdece5480acff3b5a0288f4048da7226287567d3e62810ddb8da3a\": {\n        \"keytype\": \"ed25519\",\n        \"scheme\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"4d57e7e8fb2edf48ace5f83029f43f185667d321a4a91bf8ee3b135ee33f1711\"\n        }\n      }\n    },\n    \"roles\": {\n      \"root\": {\n        \"keyids\": [\n          \"f29cbe22bb9312f60830940d1f2cb1e96d26b2b2615712b740ea3e9380578fd2\",\n          \"9f5b6c0d9dfdece5480acff3b5a0288f4048da7226287567d3e62810ddb8da3a\"\n        ],\n        \"threshold\": 2\n      },\n      \"snapshot\": {\n        \"keyids\": [\n          \"88012e32fb1fb53dda065fcdeac9344e643c5480216184588615175fc784b483\"\n        ],\n        \"threshold\": 1\n      },\n      \"targets\": {\n        \"keyids\": [\n          \"21c8c23aa4618474aebd009d281212062c9e772147c647e55577775f83b2f0ad\"\n        ],\n        \"threshold\": 1\n      },\n      \"timestamp\": {\n        \"keyids\": [\n          \"18f2980c42c908043968e311f47d3c4ee5df742f9aa576539f9c1862a2fa2ef3\"\n        ],\n        \"threshold\": 1\n      }\n    },\n    \"spec_version\": \"1.0.31\",\n    \"version\": 2\n  }\n}\n  }\n}\n",
+          "raw": "{\n  \"metadata\": {\n    \"root\": {\n  \"signatures\": [],\n  \"signed\": {\n    \"_type\": \"root\",\n    \"consistent_snapshot\": true,\n    \"expires\": \"2028-01-29T12:47:14Z\",\n    \"keys\": {\n      \"48525fedb706148ca1aa24c262ca88c3a1a5a478992b7e8cc950c330de56dba8\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"0036841a4e89fda24e09bac8b17006d52b14564613c9cc0025cd16dc0f969ae7\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"7bf578578be1794e70199d9ea6edafcf643ef44ea38c91dd579b65b73d871fdc\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"6af0258b72ce858f9c4ffdc21b3009a20f839c79a28266de9131c951158b04b6\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"b19a200ed85f276cb5f1aab998f272ad37c129d527d91dc13252031888d3776b\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"1e454f8d6421ffe0c60630327fd02e29cc870232816248ebc126cdba2a3c662c\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"eb6c12a7654f2fd7ce2e9bc8d3a97a605c05876e6e4b4f1fe86143b3897f91bf\": {\n        \"keytype\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"92adbbcb17210e4148ca08622d85f038012ccb704cae29d33ea934ba2c30d860\"\n        },\n        \"scheme\": \"ed25519\"\n      },\n      \"18aa7db1a150ab12b7fcd143d782afec2ba2600d654d352557b9d048a0d7b6b0\": {\n        \"keytype\": \"ed25519\",\n        \"scheme\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"1c05fbe4059718357bf58e2d89454ebd198f6cb035ad6138e332ecf6a21db370\"\n        }\n      },\n      \"42d7f85d3981872a7b687a3c11a8d6adc856b9048242784cfeeae88ec4bf69a5\": {\n        \"keytype\": \"ed25519\",\n        \"scheme\": \"ed25519\",\n        \"keyval\": {\n          \"public\": \"27037c131a1b1a84f467766533777113e7958f75404cef1c3ff22ca6739bd5c5\"\n        }\n      }\n    },\n    \"roles\": {\n      \"root\": {\n        \"keyids\": [\n          \"18aa7db1a150ab12b7fcd143d782afec2ba2600d654d352557b9d048a0d7b6b0\",\n          \"42d7f85d3981872a7b687a3c11a8d6adc856b9048242784cfeeae88ec4bf69a5\"\n        ],\n        \"threshold\": 2\n      },\n      \"snapshot\": {\n        \"keyids\": [\n          \"b19a200ed85f276cb5f1aab998f272ad37c129d527d91dc13252031888d3776b\"\n        ],\n        \"threshold\": 1\n      },\n      \"targets\": {\n        \"keyids\": [\n          \"7bf578578be1794e70199d9ea6edafcf643ef44ea38c91dd579b65b73d871fdc\"\n        ],\n        \"threshold\": 1\n      },\n      \"timestamp\": {\n        \"keyids\": [\n          \"48525fedb706148ca1aa24c262ca88c3a1a5a478992b7e8cc950c330de56dba8\"\n        ],\n        \"threshold\": 1\n      }\n    },\n    \"spec_version\": \"1.0.31\",\n    \"version\": 2\n  }\n}\n  }\n}\n",
           "options": {
             "raw": {
               "language": "json"
@@ -1603,6 +1663,15 @@
         },
         "method": "POST",
         "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"role\": \"root\",\n  \"signature\": {\n  \"keyid\": \"9faebed624cd1be5521cc9b5c4285afb441a1d042053c78229da2ef8336a33f0\",\n  \"sig\": \"7dd21f2243bab47fa00d5119423c202b7f88eadce659cda4241ae597b98299d7cc7a9e519383e4c03651973793e5bf3637a8c882c7b7960dde938e9ccf7ee306\"\n}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
         "url": {
           "raw": "{{URL}}/tuf/v1/metadata/sign?appName=tuf",
           "host": [
@@ -1687,7 +1756,7 @@
         "header": [],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"role\": \"root\"\n}",
+          "raw": "{\n  \"roles\": [\"targets\", \"snapshot\", \"timestamp\"]\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -1695,7 +1764,7 @@
           }
         },
         "url": {
-          "raw": "{{URL}}/tuf/v1/metadata/sign/delete?appName=tuf",
+          "raw": "{{URL}}/tuf/v1/metadata/online?appName=tuf",
           "host": [
             "{{URL}}"
           ],
@@ -1703,8 +1772,7 @@
             "tuf",
             "v1",
             "metadata",
-            "sign",
-            "delete"
+            "online"
           ],
           "query": [
             {
