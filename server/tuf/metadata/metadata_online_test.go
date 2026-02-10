@@ -1731,6 +1731,48 @@ func TestBumpTimestampRole_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.False(t, repo.Timestamp().Signed.Expires.IsZero())
+	// When existing timestamp is loaded from S3, version must be incremented (was 1, becomes 2).
+	assert.Equal(t, int64(2), repo.Timestamp().Signed.Version)
+}
+
+// To verify: In bumpTimestampRole when no existing timestamp is loaded, version is not incremented (stays default 1).
+func TestBumpTimestampRole_NewTimestamp_VersionIsOne(t *testing.T) {
+	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTimestampSigner(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	savedDownloadViper := tuf_storage.GetViperForDownload
+	savedDownloadFactory := tuf_storage.StorageFactoryForDownload
+	savedUploadViper := tuf_storage.GetViperForUpload
+	savedUploadFactory := tuf_storage.StorageFactoryForUpload
+
+	client := &storageMockClientForForceUpdate{body: nil}
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &forceUpdateMockFactory{client: client}
+	}
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &forceUpdateMockFactory{client: client}
+	}
+	defer func() {
+		tuf_storage.GetViperForDownload = savedDownloadViper
+		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
+		tuf_storage.GetViperForUpload = savedUploadViper
+		tuf_storage.StorageFactoryForUpload = savedUploadFactory
+	}()
+
+	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+
+	require.NoError(t, err)
+	assert.False(t, repo.Timestamp().Signed.Expires.IsZero())
+	assert.Equal(t, int64(1), repo.Timestamp().Signed.Version)
 }
 
 // --- contains and isStandardRole tests ---
