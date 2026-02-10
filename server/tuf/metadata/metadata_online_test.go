@@ -988,7 +988,7 @@ func TestBumpDelegatedRoles_FindLatestTargetsFails(t *testing.T) {
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
+	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to find latest targets version")
@@ -1020,7 +1020,7 @@ func TestBumpDelegatedRoles_DownloadTargetsFails(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
+	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to download targets metadata")
@@ -1055,7 +1055,7 @@ func TestBumpDelegatedRoles_LoadTargetsFails(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
+	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load targets metadata")
@@ -1091,9 +1091,10 @@ func TestBumpDelegatedRoles_EmptyRoleNames_Success(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, nil)
+	updated, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, nil)
 
 	require.NoError(t, err)
+	assert.Empty(t, updated)
 }
 
 // To verify: In bumpDelegatedRoles remove the Delegations nil check; test will fail (no error or wrong message).
@@ -1127,7 +1128,7 @@ func TestBumpDelegatedRoles_DelegationsNil_ReturnsError(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
+	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get delegations from targets metadata for role my-role")
@@ -1164,7 +1165,7 @@ func TestBumpDelegatedRoles_NoKeyIDsForRole_ReturnsError(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
+	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, keySuffix, []string{"my-role"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no key IDs found for delegated role my-role")
@@ -1213,7 +1214,7 @@ func TestBumpDelegatedRoles_LoadDelegationKeyFails(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
+	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load delegation private key")
@@ -1259,7 +1260,7 @@ func TestBumpDelegatedRoles_UploadFails(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
+	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload delegation my-role to S3")
@@ -1305,9 +1306,10 @@ func TestBumpDelegatedRoles_Success(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
+	updated, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
 
 	require.NoError(t, err)
+	assert.Equal(t, []string{"my-role"}, updated)
 	assert.Equal(t, int64(2), repo.Targets("my-role").Signed.Version)
 }
 

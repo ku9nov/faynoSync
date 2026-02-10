@@ -299,11 +299,14 @@ func forceOnlineMetadataUpdate(
 	}
 
 	if len(delegatedRoles) > 0 {
-		if err := bumpDelegatedRoles(ctx, repo, adminName, appName, redisClient, tmpDir, keySuffix, delegatedRoles); err != nil {
+		updatedDelegated, err := bumpDelegatedRoles(ctx, repo, adminName, appName, redisClient, tmpDir, keySuffix, delegatedRoles)
+		if err != nil {
 			return nil, fmt.Errorf("failed to bump delegated roles: %w", err)
 		}
-		updatedRoles = append(updatedRoles, delegatedRoles...)
-		hasTargetsOrDelegations = true
+		updatedRoles = append(updatedRoles, updatedDelegated...)
+		if len(updatedDelegated) > 0 {
+			hasTargetsOrDelegations = true
+		}
 	}
 
 	if contains(roles, "snapshot") || hasTargetsOrDelegations {
@@ -385,25 +388,26 @@ func bumpDelegatedRoles(
 	tmpDir string,
 	keySuffix string,
 	roleNames []string,
-) error {
+) (updatedDelegatedRoles []string, err error) {
 
 	_, targetsFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "targets")
 	if err != nil {
-		return fmt.Errorf("failed to find latest targets version: %w", err)
+		return nil, fmt.Errorf("failed to find latest targets version: %w", err)
 	}
 
 	targetsPath := filepath.Join(tmpDir, targetsFilename)
 	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, targetsFilename, targetsPath); err != nil {
-		return fmt.Errorf("failed to download targets metadata: %w", err)
+		return nil, fmt.Errorf("failed to download targets metadata: %w", err)
 	}
 
 	targetsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TARGETS_EXPIRATION_"+keySuffix, 365)
 	targets := metadata.Targets(tuf_utils.HelperExpireIn(targetsExpiration))
 	repo.SetTargets("targets", targets)
 	if _, err := repo.Targets("targets").FromFile(targetsPath); err != nil {
-		return fmt.Errorf("failed to load targets metadata: %w", err)
+		return nil, fmt.Errorf("failed to load targets metadata: %w", err)
 	}
 
+	var updated []string
 	for _, roleName := range roleNames {
 		rolesExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, roleName+"_EXPIRATION_"+keySuffix, 365)
 
@@ -428,7 +432,7 @@ func bumpDelegatedRoles(
 
 		targets := repo.Targets("targets")
 		if targets == nil || targets.Signed.Delegations == nil {
-			return fmt.Errorf("failed to get delegations from targets metadata for role %s", roleName)
+			return nil, fmt.Errorf("failed to get delegations from targets metadata for role %s", roleName)
 		}
 
 		var roleKeyIDs []string
@@ -440,18 +444,18 @@ func bumpDelegatedRoles(
 		}
 
 		if len(roleKeyIDs) == 0 {
-			return fmt.Errorf("no key IDs found for delegated role %s", roleName)
+			return nil, fmt.Errorf("no key IDs found for delegated role %s", roleName)
 		}
 
 		delegationKeyID := roleKeyIDs[0]
 		delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
 		if err != nil {
-			return fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
+			return nil, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
 		}
 
 		delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
 		if err != nil {
-			return fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
+			return nil, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
 		}
 
 		repo.Targets(roleName).Signed.Version++
@@ -459,23 +463,24 @@ func bumpDelegatedRoles(
 		repo.Targets(roleName).ClearSignatures()
 
 		if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
-			return fmt.Errorf("failed to sign delegation %s: %w", roleName, err)
+			return nil, fmt.Errorf("failed to sign delegation %s: %w", roleName, err)
 		}
 
 		newDelegationFilename := fmt.Sprintf("%d.%s.json", repo.Targets(roleName).Signed.Version, roleName)
 		newDelegationPath := filepath.Join(tmpDir, newDelegationFilename)
 		if err := repo.Targets(roleName).ToFile(newDelegationPath, true); err != nil {
-			return fmt.Errorf("failed to save delegation %s: %w", roleName, err)
+			return nil, fmt.Errorf("failed to save delegation %s: %w", roleName, err)
 		}
 
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newDelegationFilename, newDelegationPath); err != nil {
-			return fmt.Errorf("failed to upload delegation %s to S3: %w", roleName, err)
+			return nil, fmt.Errorf("failed to upload delegation %s to S3: %w", roleName, err)
 		}
 
 		logrus.Infof("Successfully bumped delegation %s to version %d", roleName, repo.Targets(roleName).Signed.Version)
+		updated = append(updated, roleName)
 	}
 
-	return nil
+	return updated, nil
 }
 
 func bumpSnapshotRole(
