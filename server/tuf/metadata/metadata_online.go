@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"path/filepath"
 	"time"
 
@@ -70,21 +71,41 @@ func PostMetadataOnline(c *gin.Context, redisClient *redis.Client) {
 
 	bootstrapKey := "BOOTSTRAP_" + keySuffix
 	bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
-	if err == redis.Nil || bootstrapValue == "" {
+	switch {
+	case err == redis.Nil, bootstrapValue == "":
 		c.JSON(http.StatusNotFound, gin.H{
 			"message": "Task not accepted.",
 			"error":   fmt.Sprintf("Requires bootstrap finished. State: %s", bootstrapValue),
 		})
 		return
+	case err != nil:
+		logrus.Errorf("Redis error reading bootstrap key %q: %v", bootstrapKey, err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Storage temporarily unavailable",
+		})
+		return
 	}
 
-	targetsOnlineKey, err := redisClient.Get(ctx, "TARGETS_ONLINE_KEY_"+keySuffix).Result()
-	if err == redis.Nil {
-		targetsOnlineKey = "true"
+	targetsOnlineRedisKey := "TARGETS_ONLINE_KEY_" + keySuffix
+	targetsOnlineVal, err := redisClient.Get(ctx, targetsOnlineRedisKey).Result()
+	var targetsOnline bool
+	switch {
+	case err == redis.Nil:
+		targetsOnline = true
+	case err != nil:
+		logrus.Errorf("Redis error reading targets online key %q: %v", targetsOnlineRedisKey, err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Storage temporarily unavailable",
+		})
+		return
+	default:
+		switch {
+		case strings.EqualFold(targetsOnlineVal, "true"), targetsOnlineVal == "1":
+			targetsOnline = true
+		default:
+			targetsOnline = false
+		}
 	}
-
-	// Check if targets uses online key (accept "true", "1", or "True")
-	targetsOnline := targetsOnlineKey == "true" || targetsOnlineKey == "1" || targetsOnlineKey == "True"
 
 	if contains(payload.Roles, "targets") && !targetsOnline {
 		c.JSON(http.StatusNotFound, gin.H{
