@@ -586,10 +586,12 @@ func bumpTimestampRole(
 	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, 1)
 	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
 	repo.SetTimestamp(timestamp)
-
+	loadedTimestamp := false
 	if _, err := os.Stat(timestampPath); err == nil {
 		if _, err := repo.Timestamp().FromFile(timestampPath); err != nil {
 			logrus.Warnf("Failed to load timestamp metadata: %v, creating new one", err)
+		} else {
+			loadedTimestamp = true
 		}
 	}
 
@@ -603,6 +605,9 @@ func bumpTimestampRole(
 	if snapshot != nil {
 		snapshotMetaFile := metadata.MetaFile(int64(snapshot.Signed.Version))
 		timestampMeta["snapshot.json"] = snapshotMetaFile
+	}
+	if loadedTimestamp {
+		repo.Timestamp().Signed.Version++
 	}
 
 	repo.Timestamp().Signed.Expires = tuf_utils.HelperExpireIn(timestampExpiration)
