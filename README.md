@@ -229,6 +229,14 @@ go test
 go test -c -o faynoSync_tests
 ```
 
+### 🧪 Run Unit Tests (TUF functionality)
+
+```bash
+# Optional: set MONGODB_URL_TESTS for tests that require a MongoDB connection
+# export MONGODB_URL_TESTS=mongodb://root:MheCk6sSKB1m4xKNw5I@localhost/cb_faynosync_db_tests?authSource=admin
+go test ./server/tuf/...
+```
+
 ### 📋 Test Requirements
 
 **Test Descriptions**
@@ -380,6 +388,15 @@ The tests verify the implemented API using a test database and an existing S3 bu
   <li>TestDeleteAppMetaUpdaters</li>
   <li>TestPlatformCreateMacosTauri</li>
   <li>TestDeletePlatformMacosTauri</li>
+  <li>tuf/utils (Unit)</li>
+  <li>tuf/tasks (Unit)</li>
+  <li>tuf/storage (Unit)</li>
+  <li>tuf/signing (Unit)</li>
+  <li>tuf/config (Unit)</li>
+  <li>tuf/delegations (Unit)</li>
+  <li>tuf/metadata (Unit)</li>
+  <li>tuf/bootstrap (Unit)</li>
+  <li>tuf/artifacts (Unit)</li>
 
 </details>
 

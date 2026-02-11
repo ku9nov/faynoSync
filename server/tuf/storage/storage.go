@@ -12,35 +12,62 @@ import (
 	"github.com/spf13/viper"
 )
 
+// StorageFactory is minimal interface for creating storage client (injectable for tests from other packages).
+type StorageFactory interface {
+	CreateStorageClient() (utils.StorageClient, error)
+}
+
+// ListMetadataFunc is the type for listing metadata from storage (injectable for tests from other packages).
+type ListMetadataFunc func(ctx context.Context, adminName, appName, prefix string) ([]string, error)
+
+var (
+	GetViperForUpload                          = func() *viper.Viper { return viper.GetViper() }
+	StorageFactoryForUpload                    = func(env *viper.Viper) StorageFactory { return utils.NewStorageFactory(env) }
+	GetViperForDownload                        = func() *viper.Viper { return viper.GetViper() }
+	StorageFactoryForDownload                  = func(env *viper.Viper) StorageFactory { return utils.NewStorageFactory(env) }
+	getViperForList                            = func() *viper.Viper { return viper.GetViper() }
+	StorageFactoryForList                      = func(env *viper.Viper) StorageFactory { return utils.NewStorageFactory(env) }
+	ListMetadataForLatest     ListMetadataFunc = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		return ListMetadataFromS3(ctx, adminName, appName, prefix)
+	}
+	listMetadataForGetAllDelegatedRoles ListMetadataFunc = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		return ListMetadataFromS3(ctx, adminName, appName, prefix)
+	}
+)
+
 func UploadMetadataToS3(ctx context.Context, adminName string, appName string, filename string, filePath string) error {
-	env := viper.GetViper()
-	factory := utils.NewStorageFactory(env)
+	env := GetViperForUpload()
+	factory := StorageFactoryForUpload(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		return fmt.Errorf("failed to create storage client: %w", err)
 	}
 
 	s3Key := fmt.Sprintf("tuf_metadata/%s/%s/%s", adminName, appName, filename)
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file %s: %w", filePath, err)
-	}
-	defer file.Close()
-
 	bucketName := env.GetString("S3_BUCKET_NAME")
 	if bucketName == "" {
 		return fmt.Errorf("S3_BUCKET_NAME is not configured")
 	}
 
-	fileWrapper := &fileWrapper{file: file}
-
-	_, err = storageClient.UploadPublicObject(ctx, bucketName, s3Key, fileWrapper, "application/json")
-	if err != nil {
+	if err := uploadWithClient(ctx, storageClient, bucketName, s3Key, filePath, "application/json"); err != nil {
 		return fmt.Errorf("failed to upload %s to S3: %w", filename, err)
 	}
 
 	logrus.Debugf("Successfully uploaded %s to S3: %s/%s", filename, bucketName, s3Key)
+	return nil
+}
+
+func uploadWithClient(ctx context.Context, client utils.StorageClient, bucketName, s3Key, filePath, contentType string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+	defer file.Close()
+	fileWrapper := &fileWrapper{file: file}
+	_, err = client.UploadPublicObject(ctx, bucketName, s3Key, fileWrapper, contentType)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -65,8 +92,8 @@ func (f *fileWrapper) Close() error {
 }
 
 func DownloadMetadataFromS3(ctx context.Context, adminName string, appName string, filename string, filePath string) error {
-	env := viper.GetViper()
-	factory := utils.NewStorageFactory(env)
+	env := GetViperForDownload()
+	factory := StorageFactoryForDownload(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		return fmt.Errorf("failed to create storage client: %w", err)
@@ -87,8 +114,8 @@ func DownloadMetadataFromS3(ctx context.Context, adminName string, appName strin
 }
 
 func ListMetadataFromS3(ctx context.Context, adminName string, appName string, prefix string) ([]string, error) {
-	env := viper.GetViper()
-	factory := utils.NewStorageFactory(env)
+	env := getViperForList()
+	factory := StorageFactoryForList(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage client: %w", err)
@@ -121,7 +148,7 @@ func FindLatestMetadataVersion(ctx context.Context, adminName string, appName st
 		return 0, "timestamp.json", nil
 	}
 
-	filenames, err := ListMetadataFromS3(ctx, adminName, appName, "")
+	filenames, err := ListMetadataForLatest(ctx, adminName, appName, "")
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to list metadata files: %w", err)
 	}
@@ -177,7 +204,7 @@ func FindLatestMetadataVersion(ctx context.Context, adminName string, appName st
 
 // GetAllDelegatedRoles returns all delegated role names found in S3 storage
 func GetAllDelegatedRoles(ctx context.Context, adminName string, appName string) ([]string, error) {
-	filenames, err := ListMetadataFromS3(ctx, adminName, appName, "")
+	filenames, err := listMetadataForGetAllDelegatedRoles(ctx, adminName, appName, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metadata files: %w", err)
 	}

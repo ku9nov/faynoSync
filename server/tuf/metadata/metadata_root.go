@@ -22,6 +22,7 @@ func GetMetadataRoot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "appName query parameter is required",
 		})
+		return
 	}
 	ctx := context.Background()
 	trustedRoot, err := loadTrustedRootFromS3(ctx, adminName, appName)

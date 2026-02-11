@@ -37,8 +37,8 @@
 - [ ] Evaluate if delegations make sense for faynoSync use case
 
 ### Metadata Management Enhancements
-- [ ] **POST /tuf/v1/metadata/sign/delete** - Delete metadata in signing process
-- [ ] **POST /tuf/v1/metadata/online** - Force new version of online metadata
+- [x] **POST /tuf/v1/metadata/sign/delete** - Delete metadata in signing process
+- [x] **POST /tuf/v1/metadata/online** - Force new version of online metadata
 - [ ] Evaluate and implement full online signing functionality through MongoDB (partial functionality exists)
 
 ### Documentation & Tooling

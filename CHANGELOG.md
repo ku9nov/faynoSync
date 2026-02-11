@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.5.1
+
+### Bug Fixes
+
+- **Fixed incorrect key usage in metadata signing**: Each TUF role (snapshot, targets, delegated roles) now uses its own dedicated key for signing instead of incorrectly using the timestamp key. This ensures proper TUF specification compliance.
+
+### Features
+
+- **Online metadata update endpoint**: Added `POST /tuf/v1/metadata/online` endpoint for force updating online metadata roles (snapshot, timestamp, targets, delegated roles) without requiring offline signing workflow.
+
+- **Metadata sign deletion endpoint**: Added `POST /tuf/v1/metadata/sign/delete` endpoint for deleting pending metadata signatures from Redis.
+
+### Improvements
+
+- **Delegated roles expiration**: Each delegated role now uses its own expiration configuration from Redis instead of a shared BINS_EXPIRATION setting.
+
+### Testing
+
+- **TUF unit test coverage**: Added unit tests for TUF metadata, metadata root, config, storage, signing, tasks, settings, delegations, artifacts, generate, bootstrap, delete, converter and utils. Storage mock is now global for tests.
+
+### Security Fixes
+
+- Fix: go-tuf affected by client DoS via malformed server response 
+- Fix: go-tuf improperly validates the configured threshold for delegations
+- Fix: sigstore legacy TUF client allows for arbitrary file writes with target cache path traversal 
+- Fix: go-tuf Path Traversal in TAP 4 Multirepo Client Allows Arbitrary File Write via Malicious Repository Names 
+- Upgraded github.com/theupdateframework/go-tuf/v2 to version v2.4.1
+
 ## v1.5.0
 
 ### Important Notes
