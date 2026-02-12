@@ -422,9 +422,11 @@ func updateDelegatedRoleWithArtifacts(
 	}
 
 	var roleKeyIDs []string
+	var roleThreshold int
 	for _, role := range targets.Signed.Delegations.Roles {
 		if role.Name == roleName {
 			roleKeyIDs = role.KeyIDs
+			roleThreshold = role.Threshold
 			break
 		}
 	}
@@ -432,22 +434,41 @@ func updateDelegatedRoleWithArtifacts(
 	if len(roleKeyIDs) == 0 {
 		return false, fmt.Errorf("no key IDs found for delegated role %s", roleName)
 	}
-
-	delegationKeyID := roleKeyIDs[0]
-	delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
-	if err != nil {
-		return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
+	if roleThreshold < 1 {
+		roleThreshold = 1
+	}
+	seenKeyID := make(map[string]bool)
+	keysToSign := make([]string, 0, roleThreshold)
+	for _, keyID := range roleKeyIDs {
+		if seenKeyID[keyID] {
+			continue
+		}
+		seenKeyID[keyID] = true
+		keysToSign = append(keysToSign, keyID)
+		if len(keysToSign) == roleThreshold {
+			break
+		}
+	}
+	if len(keysToSign) < roleThreshold {
+		return false, fmt.Errorf("not enough distinct keys for delegated role %s: need %d, got %d", roleName, roleThreshold, len(keysToSign))
 	}
 
-	delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return false, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
-	}
+	for _, delegationKeyID := range keysToSign {
+		delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
+		if err != nil {
+			return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
+		}
 
-	if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
-		return false, fmt.Errorf("failed to sign %s metadata: %w", roleName, err)
+		delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
+		if err != nil {
+			return false, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
+		}
+
+		if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
+			return false, fmt.Errorf("failed to sign %s metadata with key %s: %w", roleName, delegationKeyID, err)
+		}
+		logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, delegationKeyID)
 	}
-	logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, delegationKeyID)
 
 	newDelegationFilename := fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName)
 	delegationPath := filepath.Join(tmpDir, newDelegationFilename)
