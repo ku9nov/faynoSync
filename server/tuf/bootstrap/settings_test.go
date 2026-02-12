@@ -204,6 +204,43 @@ func TestSaveSettings_RootNumKeysFromSignatures(t *testing.T) {
 	assert.Equal(t, "3", numKeys, "ROOT_NUM_KEYS must equal len(rootMetadata.Signatures)")
 }
 
+// To verify: Use hardcoded 1 for targets/snapshot/timestamp threshold or num keys instead of rootMetadata.Signed.Roles; test will fail.
+func TestSaveSettings_TargetsSnapshotTimestampFromRootRoles(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	payload := validSaveSettingsPayload()
+	payload.Metadata["root"] = models.RootMetadata{
+		Signatures: []models.Signature{{KeyID: "k1", Sig: "s1"}},
+		Signed: models.Signed{
+			Roles: map[string]models.Role{
+				"root":      {KeyIDs: []string{"k1"}, Threshold: 1},
+				"targets":   {KeyIDs: []string{"t1", "t2"}, Threshold: 2},
+				"snapshot":  {KeyIDs: []string{"s1"}, Threshold: 1},
+				"timestamp": {KeyIDs: []string{"ts1", "ts2", "ts3"}, Threshold: 2},
+			},
+		},
+	}
+
+	saveSettings(client, "admin", "myapp", payload)
+
+	ctx := context.Background()
+	suffix := "admin_myapp"
+	targetsThr, _ := client.Get(ctx, "TARGETS_THRESHOLD_"+suffix).Result()
+	assert.Equal(t, "2", targetsThr, "TARGETS_THRESHOLD must come from root roles")
+	targetsKeys, _ := client.Get(ctx, "TARGETS_NUM_KEYS_"+suffix).Result()
+	assert.Equal(t, "2", targetsKeys, "TARGETS_NUM_KEYS must be len(KeyIDs)")
+	snapThr, _ := client.Get(ctx, "SNAPSHOT_THRESHOLD_"+suffix).Result()
+	assert.Equal(t, "1", snapThr, "SNAPSHOT_THRESHOLD must come from root roles")
+	snapKeys, _ := client.Get(ctx, "SNAPSHOT_NUM_KEYS_"+suffix).Result()
+	assert.Equal(t, "1", snapKeys, "SNAPSHOT_NUM_KEYS must be len(KeyIDs)")
+	tsThr, _ := client.Get(ctx, "TIMESTAMP_THRESHOLD_"+suffix).Result()
+	assert.Equal(t, "2", tsThr, "TIMESTAMP_THRESHOLD must come from root roles")
+	tsKeys, _ := client.Get(ctx, "TIMESTAMP_NUM_KEYS_"+suffix).Result()
+	assert.Equal(t, "3", tsKeys, "TIMESTAMP_NUM_KEYS must be len(KeyIDs)")
+}
+
 // To verify: Omit writing TARGETS_EXPIRATION or use wrong role; TARGETS_EXPIRATION_ value will be wrong.
 func TestSaveSettings_AllRoleExpirationsWritten(t *testing.T) {
 	mr := miniredis.RunT(t)

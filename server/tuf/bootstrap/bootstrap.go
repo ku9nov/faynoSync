@@ -408,7 +408,12 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 	})
 }
 
-func preLockBootstrap(redisClient *redis.Client, taskID string, adminName string, appName string) {
+func preLockBootstrap(
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+) {
 	logrus.Debugf("Setting pre-lock and BOOTSTRAP lock in Redis for admin: %s, app: %s, task_id: %s", adminName, appName, taskID)
 	if redisClient != nil {
 		ctx := context.Background()
@@ -434,7 +439,13 @@ func preLockBootstrap(redisClient *redis.Client, taskID string, adminName string
 	}
 }
 
-func bootstrap(redisClient *redis.Client, taskID string, adminName string, appName string, payload *models.BootstrapPayload) {
+func bootstrap(
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+	payload *models.BootstrapPayload,
+) {
 	logrus.Debugf("Starting bootstrap function for admin: %s, app: %s, task_id: %s", adminName, appName, taskID)
 
 	// Update task state to STARTED
@@ -478,7 +489,13 @@ func bootstrap(redisClient *redis.Client, taskID string, adminName string, appNa
 	}
 }
 
-func bootstrapFinalize(redisClient *redis.Client, taskID string, adminName string, appName string, payload *models.BootstrapPayload) bool {
+func bootstrapFinalize(
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+	payload *models.BootstrapPayload,
+) bool {
 	logrus.Debugf("Starting bootstrap finalization for admin: %s, app: %s", adminName, appName)
 
 	logrus.Debug("Calling bootstrap_online_roles")
@@ -521,7 +538,12 @@ func bootstrapFinalize(redisClient *redis.Client, taskID string, adminName strin
 	return true
 }
 
-func releaseBootstrapLock(redisClient *redis.Client, taskID string, adminName string, appName string) {
+func releaseBootstrapLock(
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+) {
 	if redisClient == nil {
 		logrus.Warn("Redis client is nil, skipping bootstrap lock cleanup")
 		return
@@ -565,7 +587,10 @@ func releaseBootstrapLock(redisClient *redis.Client, taskID string, adminName st
 	logrus.Debugf("Bootstrap lock cleanup completed for admin: %s, app: %s, task_id: %s", adminName, appName, taskID)
 }
 
-func getTaskStatusFromRedis(redisClient *redis.Client, taskID string) tasks.TaskState {
+func getTaskStatusFromRedis(
+	redisClient *redis.Client,
+	taskID string,
+) tasks.TaskState {
 	if redisClient == nil {
 		return tasks.TaskStatePending
 	}
