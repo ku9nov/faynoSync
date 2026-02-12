@@ -158,10 +158,11 @@ func TestBootstrapOnlineRoles_InvalidRootStructure_NoTimestampRole(t *testing.T)
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	// Root is written to file; go-tuf FromFile may fail on type/structure, or we fail on timestamp key
+	// Root is written to file; go-tuf FromFile may fail on type/structure, or VerifyDelegate may fail (e.g. no delegation for root), or we fail on timestamp key
 	assert.True(t, strings.Contains(err.Error(), "failed to load root metadata from file") ||
+		strings.Contains(err.Error(), "failed to verify root metadata") ||
 		strings.Contains(err.Error(), "failed to find timestamp key in root metadata"),
-		"expected load or timestamp error, got: %s", err.Error())
+		"expected load, verify, or timestamp error, got: %s", err.Error())
 }
 
 // To verify: In BootstrapOnlineRoles accept root without timestamp role; test will fail (no error).
@@ -190,7 +191,10 @@ func TestBootstrapOnlineRoles_TimestampKeyMissingInRoot(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to find timestamp key in root metadata")
+	// VerifyDelegate runs before timestamp key lookup; root with no timestamp role may fail verification or we fail on timestamp key
+	assert.True(t, strings.Contains(err.Error(), "failed to verify root metadata") ||
+		strings.Contains(err.Error(), "failed to find timestamp key in root metadata"),
+		"expected verify or timestamp error, got: %s", err.Error())
 }
 
 // To verify: In BootstrapOnlineRoles skip the check that online key exists in Keys; test will fail (no error or wrong message).
@@ -209,8 +213,10 @@ func TestBootstrapOnlineRoles_OnlineKeyNotFoundInRoot(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "online key")
-	assert.Contains(t, err.Error(), "not found in root metadata")
+	// VerifyDelegate runs first and may fail with "key with ID ... not found in root keyids"; or we fail at online key lookup
+	assert.True(t, strings.Contains(err.Error(), "failed to verify root metadata") ||
+		(strings.Contains(err.Error(), "online key") && strings.Contains(err.Error(), "not found in root metadata")),
+		"expected verify or online key error, got: %s", err.Error())
 }
 
 // To verify: In BootstrapOnlineRoles ignore LoadPrivateKeyFromFilesystem error and proceed; test will fail (no error).
@@ -254,6 +260,42 @@ func TestBootstrapOnlineRoles_LoadRootFromFileFails_InvalidJSON(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load root metadata from file")
+}
+
+// To verify: In BootstrapOnlineRoles remove or bypass the root expiration check; test will fail (bootstrap must reject expired root).
+func TestBootstrapOnlineRoles_RootExpired_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	root := payload.Metadata["root"]
+	root.Signed.Expires = time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
+	payload.Metadata["root"] = root
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "root expiration is in the past")
+}
+
+// To verify: In BootstrapOnlineRoles remove VerifyDelegate("root", repo.Root()) or return nil on error; test will fail (bootstrap must reject root with insufficient signatures).
+func TestBootstrapOnlineRoles_RootVerifyDelegateFails_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	root := payload.Metadata["root"]
+	root.Signatures = []models.Signature{} // empty signatures so threshold is not reached
+	payload.Metadata["root"] = root
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to verify root metadata")
 }
 
 // To verify: In BootstrapOnlineRoles return an error when targets signing fails; change Sign to succeed; test will fail (error expected).

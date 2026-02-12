@@ -29,7 +29,13 @@ import (
 )
 
 // bootstrapOnlineRoles creates online roles (targets, snapshot, timestamp) and delegations
-func BootstrapOnlineRoles(redisClient *redis.Client, taskID string, adminName string, appName string, payload *models.BootstrapPayload) error {
+func BootstrapOnlineRoles(
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+	payload *models.BootstrapPayload,
+) error {
 	logrus.Debugf("Starting bootstrap online roles creation for admin: %s, app: %s", adminName, appName)
 
 	// Create temporary directory for storing metadata
@@ -70,14 +76,15 @@ func BootstrapOnlineRoles(redisClient *redis.Client, taskID string, adminName st
 
 	expires, err := time.Parse(time.RFC3339, rootMetadata.Signed.Expires)
 	if err != nil {
-
 		expires, err = time.Parse("2006-01-02T15:04:05.999999999Z", rootMetadata.Signed.Expires)
 		if err != nil {
 			logrus.Errorf("Failed to parse root expiration: %v", err)
 			expires = tuf_utils.HelperExpireIn(365)
 		}
 	}
-
+	if !expires.After(time.Now().UTC()) {
+		return fmt.Errorf("root expiration is in the past")
+	}
 	tempRoot := metadata.Root(expires)
 	repo.SetRoot(tempRoot)
 
@@ -85,6 +92,14 @@ func BootstrapOnlineRoles(redisClient *redis.Client, taskID string, adminName st
 	if err != nil {
 		logrus.Errorf("Failed to load root metadata from file: %v", err)
 		return fmt.Errorf("failed to load root metadata from file: %w", err)
+	}
+
+	err = repo.Root().VerifyDelegate("root", repo.Root())
+	if err != nil {
+		logrus.Errorf("Failed to verify root metadata: %v", err)
+		return fmt.Errorf("failed to verify root metadata: %w", err)
+	} else {
+		logrus.Debug("Successfully verified root metadata")
 	}
 
 	ctx := context.Background()
