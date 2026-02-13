@@ -569,6 +569,31 @@ func TestRemoveArtifactsFromDelegatedRole_ArtifactNotFound_ReturnsFalseNil(t *te
 	t.Logf("Artifact not in delegation: removed=false, err=nil")
 }
 
+// To verify: In removeArtifactsFromDelegatedRole skip "not enough distinct keys" check for threshold; test will fail (no error or wrong message).
+func TestRemoveArtifactsFromDelegatedRole_NotEnoughDistinctKeys_ReturnsError(t *testing.T) {
+	repo, _, _, tmpDir, redisClient, cleanup := makeRemoveArtifactsFromDelegatedRoleEnv(t, testAdminName, testAppName)
+	defer cleanup()
+
+	// Role has one key but threshold 2: signing will fail with "not enough distinct keys".
+	for i := range repo.Targets("targets").Signed.Delegations.Roles {
+		if repo.Targets("targets").Signed.Delegations.Roles[i].Name == "updates" {
+			repo.Targets("targets").Signed.Delegations.Roles[i].Threshold = 2
+			break
+		}
+	}
+
+	ctx := context.Background()
+	artifacts := []Artifact{
+		{Path: "updates/app-1.0.0.tar", Info: ArtifactInfo{Length: 1024, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
+	}
+
+	_, err := removeArtifactsFromDelegatedRole(ctx, repo, "updates", artifacts, testAdminName, testAppName, redisClient, tmpDir)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role updates")
+	assert.Contains(t, err.Error(), "need 2, got 1")
+}
+
 // To verify: In removeArtifactsFromDelegatedRole skip "no key IDs found" check; test will fail (no error or wrong message).
 func TestRemoveArtifactsFromDelegatedRole_NoKeyIDsForRole_ReturnsError(t *testing.T) {
 	repo, storeDir, keyDir, tmpDir, redisClient, cleanup := makeRemoveArtifactsFromDelegatedRoleEnv(t, testAdminName, testAppName)

@@ -382,6 +382,94 @@ func TestBootstrapOnlineRoles_DelegationRole_PrivateKeyNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to load delegation private key")
 }
 
+// To verify: In BootstrapOnlineRoles skip "not enough distinct keys" check for threshold; test will fail (no error or wrong message).
+func TestBootstrapOnlineRoles_DelegationRole_NotEnoughDistinctKeys(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	tsKeyID := ""
+	for id := range payload.Metadata["root"].Signed.Keys {
+		tsKeyID = id
+		break
+	}
+	require.NotEmpty(t, tsKeyID)
+	k := payload.Metadata["root"].Signed.Keys[tsKeyID]
+
+	payload.Settings.Roles.Delegations = &models.TUFDelegations{
+		Keys: map[string]models.TUFKey{
+			tsKeyID: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: k.KeyVal.Public}},
+		},
+		Roles: []models.TUFDelegatedRole{
+			{Name: "delegated", KeyIDs: []string{tsKeyID}, Threshold: 2, Paths: []string{"*"}, Terminating: false},
+		},
+	}
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role")
+	assert.Contains(t, err.Error(), "delegated")
+	assert.Contains(t, err.Error(), "need 2, got 1")
+}
+
+// To verify: In BootstrapOnlineRoles delegated role with threshold 2 must be signed with 2 distinct keys; remove loop or distinct check and test fails.
+func TestBootstrapOnlineRoles_DelegationRole_ThresholdTwo_Success(t *testing.T) {
+	payload, keyDir, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+
+	// Create two delegation keys and add both to payload.
+	_, priv1, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	_, priv2, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	key1, err := tuf_metadata.KeyFromPublicKey(priv1.Public())
+	require.NoError(t, err)
+	key2, err := tuf_metadata.KeyFromPublicKey(priv2.Public())
+	require.NoError(t, err)
+	id1, err := key1.ID()
+	require.NoError(t, err)
+	id2, err := key2.ID()
+	require.NoError(t, err)
+
+	hexPub1 := hex.EncodeToString(priv1.Public().(ed25519.PublicKey))
+	hexPub2 := hex.EncodeToString(priv2.Public().(ed25519.PublicKey))
+	payload.Settings.Roles.Delegations = &models.TUFDelegations{
+		Keys: map[string]models.TUFKey{
+			id1: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: hexPub1}},
+			id2: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: hexPub2}},
+		},
+		Roles: []models.TUFDelegatedRole{
+			{Name: "delegated", KeyIDs: []string{id1, id2}, Threshold: 2, Paths: []string{"*"}, Terminating: false},
+		},
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(keyDir, id1), priv1.Seed(), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(keyDir, id2), priv2.Seed(), 0600))
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err = BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.NoError(t, err)
+}
+
 // makeValidRolesForValidateRoot creates a fully signed repository (root, targets, snapshot, timestamp).
 // To verify: change AddKey or Sign so one role is invalid; ValidateRoot test will fail.
 func makeValidRolesForValidateRoot(t *testing.T) *repository.Type {

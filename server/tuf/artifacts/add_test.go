@@ -765,6 +765,39 @@ func TestUpdateDelegatedRoleWithArtifacts_TargetsOrDelegationsNil_ReturnsError(t
 	assert.Contains(t, err.Error(), "failed to get delegations from targets metadata")
 }
 
+// To verify: In updateDelegatedRoleWithArtifacts skip "not enough distinct keys" check for threshold; test will fail (no error or wrong message).
+func TestUpdateDelegatedRoleWithArtifacts_NotEnoughDistinctKeys_ReturnsError(t *testing.T) {
+	repo, _, cleanup := makeRepoAndKeyForUpdateDelegatedRole(t, "updates")
+	defer cleanup()
+
+	for i := range repo.Targets("targets").Signed.Delegations.Roles {
+		if repo.Targets("targets").Signed.Delegations.Roles[i].Name == "updates" {
+			repo.Targets("targets").Signed.Delegations.Roles[i].Threshold = 2
+			break
+		}
+	}
+
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	tmpDir := t.TempDir()
+
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return nil, fmt.Errorf("no files")
+	}
+	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
+
+	_, err := updateDelegatedRoleWithArtifacts(ctx, repo, "updates", []Artifact{
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+	}, testAdminName, testAppName, redisClient, tmpDir)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role updates")
+	assert.Contains(t, err.Error(), "need 2, got 1")
+}
+
 // To verify: In updateDelegatedRoleWithArtifacts change role lookup so wrong role name is accepted; test will fail (no error or wrong message).
 func TestUpdateDelegatedRoleWithArtifacts_NoKeyIDsForRole_ReturnsError(t *testing.T) {
 	repo := repoWithTargetsAndOneRoleForGetRole("other", []string{"other/"})

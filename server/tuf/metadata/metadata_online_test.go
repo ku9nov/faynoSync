@@ -972,6 +972,103 @@ func makeTargetsAndDelegationForBumpDelegated(t *testing.T, delegationRoleName s
 	return targetsJSON, delegationJSON, keyDir, cleanup
 }
 
+// makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey returns targets and delegation JSON for a role with Threshold: 2 but only one key (bump will fail with "not enough distinct keys").
+func makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t *testing.T, delegationRoleName string) (targetsJSON, delegationJSON []byte, keyDir string, cleanup func()) {
+	t.Helper()
+	rootJSON, keyDir, cleanup := makeRootAndOnlineKeysForForceUpdate(t)
+	tmpDir := t.TempDir()
+	rootPath := filepath.Join(tmpDir, "root.json")
+	require.NoError(t, os.WriteFile(rootPath, rootJSON, 0644))
+
+	repo := repository.New()
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	repo.SetRoot(tuf_metadata.Root(expires))
+	_, err := repo.Root().FromFile(rootPath)
+	require.NoError(t, err)
+
+	var rootMeta models.RootMetadata
+	require.NoError(t, json.Unmarshal(rootJSON, &rootMeta))
+	targetsKeyID := rootMeta.Signed.Roles["targets"].KeyIDs[0]
+	targetsPriv, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyID)
+	require.NoError(t, err)
+	targetsSigner, err := signature.LoadSigner(targetsPriv, crypto.Hash(0))
+	require.NoError(t, err)
+
+	_, delegationPriv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	delegationKey, err := tuf_metadata.KeyFromPublicKey(delegationPriv.Public())
+	require.NoError(t, err)
+	delegationKeyID, err := delegationKey.ID()
+	require.NoError(t, err)
+
+	exp := tuf_utils.HelperExpireIn(365)
+	targets := tuf_metadata.Targets(exp)
+	targets.Signed.Delegations = &tuf_metadata.Delegations{
+		Keys:  map[string]*tuf_metadata.Key{delegationKeyID: delegationKey},
+		Roles: []tuf_metadata.DelegatedRole{{Name: delegationRoleName, KeyIDs: []string{delegationKeyID}, Threshold: 2}},
+	}
+	repo.SetTargets("targets", targets)
+	_, err = repo.Targets("targets").Sign(targetsSigner)
+	require.NoError(t, err)
+	targetsPath := filepath.Join(tmpDir, "1.targets.json")
+	require.NoError(t, repo.Targets("targets").ToFile(targetsPath, true))
+	targetsJSON, err = os.ReadFile(targetsPath)
+	require.NoError(t, err)
+
+	delegationSigner, err := signature.LoadSigner(delegationPriv, crypto.Hash(0))
+	require.NoError(t, err)
+	delegationMeta := tuf_metadata.Targets(exp)
+	repo.SetTargets(delegationRoleName, delegationMeta)
+	_, err = repo.Targets(delegationRoleName).Sign(delegationSigner)
+	require.NoError(t, err)
+	delegationPath := filepath.Join(tmpDir, "1."+delegationRoleName+".json")
+	require.NoError(t, repo.Targets(delegationRoleName).ToFile(delegationPath, true))
+	delegationJSON, err = os.ReadFile(delegationPath)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(keyDir, delegationKeyID), delegationPriv.Seed(), 0600))
+	return targetsJSON, delegationJSON, keyDir, cleanup
+}
+
+// To verify: In bumpDelegatedRoles skip "not enough distinct keys" check; test will fail (no error or wrong message).
+func TestBumpDelegatedRoles_NotEnoughDistinctKeys(t *testing.T) {
+	targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t, "my-role")
+	defer cleanup()
+
+	repo := repository.New()
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	tmpDir := t.TempDir()
+
+	bodies := map[string][]byte{"1.targets.json": targetsJSON, "1.my-role.json": delegationJSON}
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	savedList := tuf_storage.ListMetadataForLatest
+	savedDownloadViper := tuf_storage.GetViperForDownload
+	savedDownloadFactory := tuf_storage.StorageFactoryForDownload
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.targets.json", "1.my-role.json"}, nil
+	}
+	client := &multiBodyDownloadMock{bodies: bodies}
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &forceUpdateMockFactory{client: client}
+	}
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedDownloadViper
+		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
+	}()
+
+	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role my-role")
+	assert.Contains(t, err.Error(), "need 2, got 1")
+}
+
 // To verify: In bumpDelegatedRoles remove the FindLatestMetadataVersion (targets) error handling; test will fail (no error or wrong message).
 func TestBumpDelegatedRoles_FindLatestTargetsFails(t *testing.T) {
 	repo, _, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTargetsSigner(t)
