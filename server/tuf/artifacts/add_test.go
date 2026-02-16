@@ -1003,7 +1003,7 @@ func TestUpdateSnapshotAndTimestamp_ContextCancelled_LockTimeout_ReturnsError(t 
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -1021,7 +1021,7 @@ func TestUpdateSnapshotAndTimestamp_RedisSetNXError_ReturnsError(t *testing.T) {
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -1040,7 +1040,7 @@ func TestUpdateSnapshotAndTimestamp_LockHeld_Timeout_ReturnsError(t *testing.T) 
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -1064,7 +1064,7 @@ func TestUpdateSnapshotAndTimestamp_FindLatestSnapshotFails_ReturnsError(t *test
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to find latest snapshot version")
@@ -1097,7 +1097,7 @@ func TestUpdateSnapshotAndTimestamp_DownloadSnapshotFails_ReturnsError(t *testin
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to download snapshot metadata")
@@ -1138,7 +1138,7 @@ func TestUpdateSnapshotAndTimestamp_LoadSnapshotFails_ReturnsError(t *testing.T)
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load snapshot metadata")
@@ -1196,7 +1196,7 @@ func TestUpdateSnapshotAndTimestamp_UploadSnapshotFails_ReturnsError(t *testing.
 	tsSigner, _ := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err = updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err = updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload snapshot metadata to S3")
@@ -1236,7 +1236,7 @@ func TestUpdateTimestamp_UploadFails_ReturnsError(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, signer, tmpDir)
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload timestamp metadata to S3")
@@ -1270,7 +1270,7 @@ func TestUpdateTimestamp_ToFileFails_ReturnsError(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, signer, tmpDir)
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to save timestamp metadata")
@@ -1314,12 +1314,22 @@ func TestUpdateTimestamp_Success_NoExistingTimestamp(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, signer, tmpDir)
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
 
 	require.NoError(t, err)
 	require.FileExists(t, filepath.Join(tmpDir, "timestamp.json"))
 	uploadedPath := filepath.Join(storeDir, "tuf_metadata", testAdminName, testAppName, "timestamp.json")
 	require.FileExists(t, uploadedPath)
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "timestamp.json"))
+	require.NoError(t, err)
+	var tsSigned struct {
+		Signed struct {
+			Version int `json:"version"`
+		} `json:"signed"`
+	}
+	require.NoError(t, json.Unmarshal(data, &tsSigned))
+	assert.Equal(t, 1, tsSigned.Signed.Version, "new timestamp without existing file must have version 1")
 }
 
 // To verify: In updateTimestamp when snapshot is nil, timestamp meta still updated; when snapshot set, snapshot.json in meta; change logic and test will fail.
@@ -1353,7 +1363,7 @@ func TestUpdateTimestamp_Success_WithSnapshotInRepo(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, signer, tmpDir)
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
 
 	require.NoError(t, err)
 	require.FileExists(t, filepath.Join(tmpDir, "timestamp.json"))
@@ -1369,6 +1379,69 @@ func TestUpdateTimestamp_Success_WithSnapshotInRepo(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &tsMeta))
 	require.Contains(t, tsMeta.Signed.Meta, "snapshot.json")
 	assert.Equal(t, 2, tsMeta.Signed.Meta["snapshot.json"].Version)
+}
+
+// To verify: In updateTimestamp when an existing timestamp file is loaded, its version is incremented (bump behavior for add/delete artifacts flow).
+func TestUpdateTimestamp_VersionIncremented_WhenExistingTimestampLoaded(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	storeDir := t.TempDir()
+	tmpDir := t.TempDir()
+
+	repo := repository.New()
+	exp := tuf_utils.HelperExpireIn(7)
+	snap := tuf_metadata.Snapshot(exp)
+	snap.Signed.Version = 2
+	repo.SetSnapshot(snap)
+
+	ts := tuf_metadata.Timestamp(exp)
+	ts.Signed.Version = 3
+	repo.SetTimestamp(ts)
+	signer, _ := makeSnapshotAndTimestampSigners(t)
+	if _, err := repo.Timestamp().Sign(signer); err != nil {
+		t.Fatal(err)
+	}
+	timestampPath := filepath.Join(tmpDir, "timestamp.json")
+	require.NoError(t, repo.Timestamp().ToFile(timestampPath, true))
+	require.FileExists(t, timestampPath)
+
+	savedGetViperD := tuf_storage.GetViperForDownload
+	savedFactoryD := tuf_storage.StorageFactoryForDownload
+	savedGetViperU := tuf_storage.GetViperForUpload
+	savedFactoryU := tuf_storage.StorageFactoryForUpload
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return viper.New() }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &fsStorageFactory{client: &failDownloadClient{}}
+	}
+	tuf_storage.GetViperForUpload = func() *viper.Viper {
+		v := viper.New()
+		v.Set("S3_BUCKET_NAME", "test-bucket")
+		return v
+	}
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
+	}
+	defer func() {
+		tuf_storage.GetViperForDownload = savedGetViperD
+		tuf_storage.StorageFactoryForDownload = savedFactoryD
+		tuf_storage.GetViperForUpload = savedGetViperU
+		tuf_storage.StorageFactoryForUpload = savedFactoryU
+	}()
+
+	ctx := context.Background()
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "timestamp.json"))
+	require.NoError(t, err)
+	var tsSigned struct {
+		Signed struct {
+			Version int `json:"version"`
+		} `json:"signed"`
+	}
+	require.NoError(t, json.Unmarshal(data, &tsSigned))
+	assert.Equal(t, 4, tsSigned.Signed.Version, "when existing timestamp (version 3) is loaded, version must be incremented to 4")
 }
 
 // --- getArtifactPaths tests ---

@@ -93,14 +93,9 @@ func AddArtifacts(
 		return fmt.Errorf("invalid root metadata: no timestamp role")
 	}
 
-	timestampKeyIDs, ok := timestampRole["keyids"].([]interface{})
-	if !ok || len(timestampKeyIDs) == 0 {
-		return fmt.Errorf("invalid root metadata: no timestamp keyids")
-	}
-
-	timestampKeyID, ok := timestampKeyIDs[0].(string)
-	if !ok {
-		return fmt.Errorf("invalid root metadata: timestamp keyid is not a string")
+	timestampSigners, err := buildSignersFromRoleMap(timestampRole, "timestamp")
+	if err != nil {
+		return err
 	}
 
 	targetsRole, ok := roles["targets"].(map[string]interface{})
@@ -108,37 +103,10 @@ func AddArtifacts(
 		return fmt.Errorf("invalid root metadata: no targets role")
 	}
 
-	targetsKeyIDs, ok := targetsRole["keyids"].([]interface{})
-	if !ok || len(targetsKeyIDs) == 0 {
-		return fmt.Errorf("invalid root metadata: no targets keyids")
-	}
-
-	targetsKeyID, ok := targetsKeyIDs[0].(string)
-	if !ok {
-		return fmt.Errorf("invalid root metadata: targets keyid is not a string")
-	}
-
-	timestampPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(timestampKeyID, timestampKeyID)
+	targetsSigners, err := buildSignersFromRoleMap(targetsRole, "targets")
 	if err != nil {
-		return fmt.Errorf("failed to load timestamp private key: %w", err)
+		return err
 	}
-
-	timestampSigner, err := signature.LoadSigner(timestampPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return fmt.Errorf("failed to create timestamp signer: %w", err)
-	}
-
-	targetsPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyID)
-	if err != nil {
-		return fmt.Errorf("failed to load targets private key: %w", err)
-	}
-
-	targetsSigner, err := signature.LoadSigner(targetsPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return fmt.Errorf("failed to create targets signer: %w", err)
-	}
-
-	signer := timestampSigner
 
 	_, targetsFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "targets")
 	if err != nil {
@@ -208,8 +176,10 @@ func AddArtifacts(
 		repo.Targets("targets").Signed.Expires = tuf_utils.HelperExpireIn(targetsExpiration)
 		repo.Targets("targets").Signed.Version++
 		repo.Targets("targets").ClearSignatures()
-		if _, err := repo.Targets("targets").Sign(targetsSigner); err != nil {
-			return fmt.Errorf("failed to re-sign targets metadata after path update: %w", err)
+		for i, s := range targetsSigners {
+			if _, err := repo.Targets("targets").Sign(s); err != nil {
+				return fmt.Errorf("failed to re-sign targets metadata with key %d: %w", i+1, err)
+			}
 		}
 
 		targetsVersion := repo.Targets("targets").Signed.Version
@@ -242,20 +212,13 @@ func AddArtifacts(
 		if !ok || len(snapshotRole.KeyIDs) == 0 {
 			return fmt.Errorf("failed to find snapshot key in root metadata")
 		}
-		snapshotKeyID := snapshotRole.KeyIDs[0]
-
-		snapshotPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(snapshotKeyID, snapshotKeyID)
+		snapshotSigners, err := buildSignersFromKeyIDsAndThreshold(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 		if err != nil {
-			return fmt.Errorf("failed to load snapshot private key: %w", err)
-		}
-
-		snapshotSigner, err := signature.LoadSigner(snapshotPrivateKey, crypto.Hash(0))
-		if err != nil {
-			return fmt.Errorf("failed to create snapshot signer: %w", err)
+			return fmt.Errorf("failed to build snapshot signers: %w", err)
 		}
 
 		if err := updateSnapshotAndTimestamp(
-			ctx, repo, updatedRoles, adminName, appName, redisClient, signer, snapshotSigner, tmpDir,
+			ctx, repo, updatedRoles, adminName, appName, redisClient, timestampSigners, snapshotSigners, tmpDir,
 		); err != nil {
 			return fmt.Errorf("failed to update snapshot and timestamp: %w", err)
 		}
@@ -491,8 +454,8 @@ func updateSnapshotAndTimestamp(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	timestampSigner signature.Signer,
-	snapshotSigner signature.Signer,
+	timestampSigners []signature.Signer,
+	snapshotSigners []signature.Signer,
 	tmpDir string,
 ) error {
 	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s", adminName)
@@ -603,8 +566,10 @@ func updateSnapshotAndTimestamp(
 
 	repo.Snapshot().ClearSignatures()
 
-	if _, err := repo.Snapshot().Sign(snapshotSigner); err != nil {
-		return fmt.Errorf("failed to sign snapshot metadata: %w", err)
+	for i, s := range snapshotSigners {
+		if _, err := repo.Snapshot().Sign(s); err != nil {
+			return fmt.Errorf("failed to sign snapshot metadata with key %d: %w", i+1, err)
+		}
 	}
 
 	snapshotFilename = fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
@@ -617,7 +582,7 @@ func updateSnapshotAndTimestamp(
 		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 	}
 
-	if err := updateTimestamp(ctx, repo, adminName, appName, redisClient, timestampSigner, tmpDir); err != nil {
+	if err := updateTimestamp(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir); err != nil {
 		return fmt.Errorf("failed to update timestamp: %w", err)
 	}
 
@@ -630,7 +595,7 @@ func updateTimestamp(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	signer signature.Signer,
+	signers []signature.Signer,
 	tmpDir string,
 ) error {
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
@@ -642,9 +607,12 @@ func updateTimestamp(
 	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
 	repo.SetTimestamp(timestamp)
 
+	loadedTimestamp := false
 	if _, err := os.Stat(timestampPath); err == nil {
 		if _, err := repo.Timestamp().FromFile(timestampPath); err != nil {
 			logrus.Warnf("Failed to load timestamp metadata: %v, creating new one", err)
+		} else {
+			loadedTimestamp = true
 		}
 	}
 
@@ -659,13 +627,18 @@ func updateTimestamp(
 		snapshotMetaFile := metadata.MetaFile(int64(snapshot.Signed.Version))
 		timestampMeta["snapshot.json"] = snapshotMetaFile
 	}
+	if loadedTimestamp {
+		repo.Timestamp().Signed.Version++
+	}
 
 	repo.Timestamp().Signed.Expires = tuf_utils.HelperExpireIn(timestampExpiration)
 
 	repo.Timestamp().ClearSignatures()
 
-	if _, err := repo.Timestamp().Sign(signer); err != nil {
-		return fmt.Errorf("failed to sign timestamp metadata: %w", err)
+	for i, s := range signers {
+		if _, err := repo.Timestamp().Sign(s); err != nil {
+			return fmt.Errorf("failed to sign timestamp metadata with key %d: %w", i+1, err)
+		}
 	}
 
 	timestampPath = filepath.Join(tmpDir, "timestamp.json")
@@ -678,6 +651,58 @@ func updateTimestamp(
 	}
 
 	return nil
+}
+
+func buildSignersFromRoleMap(roleMap map[string]interface{}, roleName string) ([]signature.Signer, error) {
+	keyIDsRaw, ok := roleMap["keyids"].([]interface{})
+	if !ok || len(keyIDsRaw) == 0 {
+		return nil, fmt.Errorf("invalid root metadata: no %s keyids", roleName)
+	}
+	threshold := 1
+	if t, ok := roleMap["threshold"].(float64); ok && int(t) >= 1 {
+		threshold = int(t)
+	}
+	keyIDs := make([]string, 0, len(keyIDsRaw))
+	for _, v := range keyIDsRaw {
+		if s, ok := v.(string); ok {
+			keyIDs = append(keyIDs, s)
+		}
+	}
+	return buildSignersFromKeyIDsAndThreshold(keyIDs, threshold, roleName)
+}
+
+func buildSignersFromKeyIDsAndThreshold(keyIDs []string, threshold int, roleName string) ([]signature.Signer, error) {
+	if threshold < 1 {
+		threshold = 1
+	}
+	seen := make(map[string]bool)
+	keysToSign := make([]string, 0, threshold)
+	for _, keyID := range keyIDs {
+		if seen[keyID] {
+			continue
+		}
+		seen[keyID] = true
+		keysToSign = append(keysToSign, keyID)
+		if len(keysToSign) == threshold {
+			break
+		}
+	}
+	if len(keysToSign) < threshold {
+		return nil, fmt.Errorf("not enough distinct keys for %s role: need %d, got %d", roleName, threshold, len(keysToSign))
+	}
+	signers := make([]signature.Signer, 0, len(keysToSign))
+	for _, keyID := range keysToSign {
+		priv, err := signing.LoadPrivateKeyFromFilesystem(keyID, keyID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load %s private key %s: %w", roleName, keyID, err)
+		}
+		sig, err := signature.LoadSigner(priv, crypto.Hash(0))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s signer for key %s: %w", roleName, keyID, err)
+		}
+		signers = append(signers, sig)
+	}
+	return signers, nil
 }
 
 func getArtifactPaths(artifacts []Artifact) []string {

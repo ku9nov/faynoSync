@@ -242,56 +242,32 @@ func forceOnlineMetadataUpdate(
 		return nil, fmt.Errorf("failed to parse root metadata: %w", err)
 	}
 
-	// Load timestamp key for timestamp role
+	// Load signers for online roles (timestamp, snapshot, targets)
 	timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]
 	if !ok || len(timestampRole.KeyIDs) == 0 {
 		return nil, fmt.Errorf("timestamp role not found in root metadata")
 	}
-	timestampKeyID := timestampRole.KeyIDs[0]
-
-	timestampKeyURI := timestampKeyID
-	timestampPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(timestampKeyID, timestampKeyURI)
+	timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
 	if err != nil {
-		return nil, fmt.Errorf("failed to load timestamp private key: %w", err)
-	}
-
-	timestampSigner, err := signature.LoadSigner(timestampPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create timestamp signer: %w", err)
+		return nil, err
 	}
 
 	snapshotRole, ok := rootMetadata.Signed.Roles["snapshot"]
 	if !ok || len(snapshotRole.KeyIDs) == 0 {
 		return nil, fmt.Errorf("snapshot role not found in root metadata")
 	}
-	snapshotKeyID := snapshotRole.KeyIDs[0]
-
-	snapshotKeyURI := snapshotKeyID
-	snapshotPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(snapshotKeyID, snapshotKeyURI)
+	snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 	if err != nil {
-		return nil, fmt.Errorf("failed to load snapshot private key: %w", err)
-	}
-
-	snapshotSigner, err := signature.LoadSigner(snapshotPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create snapshot signer: %w", err)
+		return nil, err
 	}
 
 	targetsRole, ok := rootMetadata.Signed.Roles["targets"]
 	if !ok || len(targetsRole.KeyIDs) == 0 {
 		return nil, fmt.Errorf("targets role not found in root metadata")
 	}
-	targetsKeyID := targetsRole.KeyIDs[0]
-
-	targetsKeyURI := targetsKeyID
-	targetsPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyURI)
+	targetsSigners, err := buildOnlineRoleSigners(targetsRole.KeyIDs, targetsRole.Threshold, "targets")
 	if err != nil {
-		return nil, fmt.Errorf("failed to load targets private key: %w", err)
-	}
-
-	targetsSigner, err := signature.LoadSigner(targetsPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create targets signer: %w", err)
+		return nil, err
 	}
 
 	updatedRoles := []string{}
@@ -305,7 +281,7 @@ func forceOnlineMetadataUpdate(
 	}
 
 	if contains(roles, "targets") {
-		if err := bumpTargetsRole(ctx, repo, adminName, appName, redisClient, targetsSigner, tmpDir, keySuffix); err != nil {
+		if err := bumpTargetsRole(ctx, repo, adminName, appName, redisClient, targetsSigners, tmpDir, keySuffix); err != nil {
 			return nil, fmt.Errorf("failed to bump targets role: %w", err)
 		}
 		updatedRoles = append(updatedRoles, "targets")
@@ -331,7 +307,7 @@ func forceOnlineMetadataUpdate(
 	}
 
 	if contains(roles, "snapshot") || hasTargetsOrDelegations {
-		if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigner, tmpDir, keySuffix); err != nil {
+		if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
 			return nil, fmt.Errorf("failed to bump snapshot role: %w", err)
 		}
 		if !contains(updatedRoles, "snapshot") {
@@ -340,7 +316,7 @@ func forceOnlineMetadataUpdate(
 	}
 
 	if contains(roles, "timestamp") || hasTargetsOrDelegations || contains(roles, "snapshot") {
-		if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigner, tmpDir, keySuffix); err != nil {
+		if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
 			return nil, fmt.Errorf("failed to bump timestamp role: %w", err)
 		}
 		if !contains(updatedRoles, "timestamp") {
@@ -357,7 +333,7 @@ func bumpTargetsRole(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	signer signature.Signer,
+	signers []signature.Signer,
 	tmpDir string,
 	keySuffix string,
 ) error {
@@ -382,8 +358,10 @@ func bumpTargetsRole(
 	repo.Targets("targets").Signed.Expires = tuf_utils.HelperExpireIn(targetsExpiration)
 	repo.Targets("targets").ClearSignatures()
 
-	if _, err := repo.Targets("targets").Sign(signer); err != nil {
-		return fmt.Errorf("failed to sign targets metadata: %w", err)
+	for i, s := range signers {
+		if _, err := repo.Targets("targets").Sign(s); err != nil {
+			return fmt.Errorf("failed to sign targets metadata with key %d: %w", i+1, err)
+		}
 	}
 
 	newTargetsFilename := fmt.Sprintf("%d.targets.json", repo.Targets("targets").Signed.Version)
@@ -532,7 +510,7 @@ func bumpSnapshotRole(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	signer signature.Signer,
+	signers []signature.Signer,
 	tmpDir string,
 	keySuffix string,
 ) error {
@@ -597,8 +575,10 @@ func bumpSnapshotRole(
 	repo.Snapshot().Signed.Expires = tuf_utils.HelperExpireIn(snapshotExpiration)
 	repo.Snapshot().ClearSignatures()
 
-	if _, err := repo.Snapshot().Sign(signer); err != nil {
-		return fmt.Errorf("failed to sign snapshot metadata: %w", err)
+	for i, s := range signers {
+		if _, err := repo.Snapshot().Sign(s); err != nil {
+			return fmt.Errorf("failed to sign snapshot metadata with key %d: %w", i+1, err)
+		}
 	}
 
 	newSnapshotFilename := fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
@@ -621,7 +601,7 @@ func bumpTimestampRole(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	signer signature.Signer,
+	signers []signature.Signer,
 	tmpDir string,
 	keySuffix string,
 ) error {
@@ -661,8 +641,10 @@ func bumpTimestampRole(
 	repo.Timestamp().Signed.Expires = tuf_utils.HelperExpireIn(timestampExpiration)
 	repo.Timestamp().ClearSignatures()
 
-	if _, err := repo.Timestamp().Sign(signer); err != nil {
-		return fmt.Errorf("failed to sign timestamp metadata: %w", err)
+	for i, s := range signers {
+		if _, err := repo.Timestamp().Sign(s); err != nil {
+			return fmt.Errorf("failed to sign timestamp metadata with key %d: %w", i+1, err)
+		}
 	}
 
 	timestampPath = filepath.Join(tmpDir, "timestamp.json")
@@ -685,6 +667,40 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func buildOnlineRoleSigners(keyIDs []string, threshold int, roleName string) ([]signature.Signer, error) {
+	if threshold < 1 {
+		threshold = 1
+	}
+	seen := make(map[string]bool)
+	keysToSign := make([]string, 0, threshold)
+	for _, keyID := range keyIDs {
+		if seen[keyID] {
+			continue
+		}
+		seen[keyID] = true
+		keysToSign = append(keysToSign, keyID)
+		if len(keysToSign) == threshold {
+			break
+		}
+	}
+	if len(keysToSign) < threshold {
+		return nil, fmt.Errorf("not enough distinct keys for %s role: need %d, got %d", roleName, threshold, len(keysToSign))
+	}
+	signers := make([]signature.Signer, 0, len(keysToSign))
+	for _, keyID := range keysToSign {
+		priv, err := signing.LoadPrivateKeyFromFilesystem(keyID, keyID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load %s private key %s: %w", roleName, keyID, err)
+		}
+		sig, err := signature.LoadSigner(priv, crypto.Hash(0))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s signer for key %s: %w", roleName, keyID, err)
+		}
+		signers = append(signers, sig)
+	}
+	return signers, nil
 }
 
 func isStandardRole(role string) bool {

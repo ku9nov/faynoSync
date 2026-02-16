@@ -234,7 +234,8 @@ func TestBootstrapOnlineRoles_SignerCreationFails_NoKeyDir(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create signer from private key")
+	assert.True(t, strings.Contains(err.Error(), "failed to load online private key") || strings.Contains(err.Error(), "failed to create signer from private key"),
+		"error should mention key loading or signer creation: %s", err.Error())
 }
 
 // To verify: In BootstrapOnlineRoles change repo.Root().FromFile to skip error or use wrong path; test will fail (no error or wrong behavior).

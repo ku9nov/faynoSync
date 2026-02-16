@@ -359,6 +359,83 @@ func TestRemoveArtifacts_ValidArtifact_Removal_Success(t *testing.T) {
 	t.Logf("Inputs: artifacts=%v; Result: success, task status saved", artifacts)
 }
 
+// To verify: When remove flow updates snapshot and timestamp (updateSnapshotAndTimestamp), existing timestamp version is incremented.
+func TestUpdateSnapshotAndTimestamp_AfterRemove_TimestampVersionIncremented(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	storeDir := t.TempDir()
+	tmpDir := t.TempDir()
+	metadataPrefix := filepath.Join(storeDir, "tuf_metadata", testAdminName, testAppName)
+	require.NoError(t, os.MkdirAll(metadataPrefix, 0755))
+
+	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
+	repo := repository.New()
+	exp := tuf_utils.HelperExpireIn(7)
+	snap := tuf_metadata.Snapshot(exp)
+	snap.Signed.Version = 1
+	repo.SetSnapshot(snap)
+	_, err := repo.Snapshot().Sign(snapSigner)
+	require.NoError(t, err)
+	snapshotPath := filepath.Join(metadataPrefix, "1.snapshot.json")
+	require.NoError(t, repo.Snapshot().ToFile(snapshotPath, true))
+
+	ts := tuf_metadata.Timestamp(exp)
+	ts.Signed.Version = 3
+	repo.SetTimestamp(ts)
+	_, err = repo.Timestamp().Sign(tsSigner)
+	require.NoError(t, err)
+	timestampPath := filepath.Join(tmpDir, "timestamp.json")
+	require.NoError(t, repo.Timestamp().ToFile(timestampPath, true))
+	require.FileExists(t, timestampPath)
+
+	savedList := tuf_storage.ListMetadataForLatest
+	savedGetViperD := tuf_storage.GetViperForDownload
+	savedFactoryD := tuf_storage.StorageFactoryForDownload
+	savedGetViperU := tuf_storage.GetViperForUpload
+	savedFactoryU := tuf_storage.StorageFactoryForUpload
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.snapshot.json"}, nil
+	}
+	tuf_storage.GetViperForDownload = func() *viper.Viper {
+		v := viper.New()
+		v.Set("S3_BUCKET_NAME", "test-bucket")
+		return v
+	}
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
+	}
+	tuf_storage.GetViperForUpload = func() *viper.Viper {
+		v := viper.New()
+		v.Set("S3_BUCKET_NAME", "test-bucket")
+		return v
+	}
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
+	}
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedGetViperD
+		tuf_storage.StorageFactoryForDownload = savedFactoryD
+		tuf_storage.GetViperForUpload = savedGetViperU
+		tuf_storage.StorageFactoryForUpload = savedFactoryU
+	}()
+
+	ctx := context.Background()
+	err = updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "timestamp.json"))
+	require.NoError(t, err)
+	var tsSigned struct {
+		Signed struct {
+			Version int `json:"version"`
+		} `json:"signed"`
+	}
+	require.NoError(t, json.Unmarshal(data, &tsSigned))
+	assert.Equal(t, 4, tsSigned.Signed.Version, "when remove flow updates snapshot and timestamp, existing timestamp (version 3) must be incremented to 4")
+}
+
 // --- removeArtifactsFromDelegatedRole tests ---
 
 func makeRemoveArtifactsFromDelegatedRoleEnv(t *testing.T, adminName, appName string) (repo *repository.Type, storeDir, keyDir, tmpDir string, redisClient *redis.Client, cleanup func()) {

@@ -720,7 +720,7 @@ func TestBumpTargetsRole_FindLatestFails(t *testing.T) {
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
-	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to find latest targets version")
@@ -752,7 +752,7 @@ func TestBumpTargetsRole_DownloadFails(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
-	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to download targets metadata")
@@ -796,7 +796,7 @@ func TestBumpTargetsRole_LoadTargetsFails(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load targets metadata")
@@ -842,7 +842,7 @@ func TestBumpTargetsRole_UploadFails(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload targets metadata to S3")
@@ -888,7 +888,7 @@ func TestBumpTargetsRole_Success(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTargetsRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.NoError(t, err)
 	// Version was 1, after bump it should be 2
@@ -1465,7 +1465,7 @@ func TestBumpSnapshotRole_LockAcquireFails(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	mr.Close() // cause Redis operations to fail
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -1482,7 +1482,7 @@ func TestBumpSnapshotRole_LockNotAcquired(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	mr.Set("LOCK_SNAPSHOT_admin_app", "locked") // lock already held
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -1505,7 +1505,7 @@ func TestBumpSnapshotRole_FindLatestFails(t *testing.T) {
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to find latest snapshot version")
@@ -1537,7 +1537,7 @@ func TestBumpSnapshotRole_DownloadFails(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to download snapshot metadata")
@@ -1581,7 +1581,7 @@ func TestBumpSnapshotRole_LoadFails(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load snapshot metadata")
@@ -1626,7 +1626,7 @@ func TestBumpSnapshotRole_UploadFails(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload snapshot metadata to S3")
@@ -1671,7 +1671,7 @@ func TestBumpSnapshotRole_Success(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), repo.Snapshot().Signed.Version)
@@ -1743,7 +1743,7 @@ func TestBumpTimestampRole_UploadFails(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload timestamp metadata to S3")
@@ -1784,7 +1784,7 @@ func TestBumpTimestampRole_ToFileFails(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to save timestamp metadata")
@@ -1824,7 +1824,7 @@ func TestBumpTimestampRole_Success(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.NoError(t, err)
 	assert.False(t, repo.Timestamp().Signed.Expires.IsZero())
@@ -1865,7 +1865,7 @@ func TestBumpTimestampRole_NewTimestamp_VersionIsOne(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
 	}()
 
-	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, signer, tmpDir, keySuffix)
+	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
 
 	require.NoError(t, err)
 	assert.False(t, repo.Timestamp().Signed.Expires.IsZero())
