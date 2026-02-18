@@ -512,6 +512,114 @@ func TestBootstrapOnlineRoles_DelegationRole_ThresholdTwo_Success(t *testing.T) 
 	require.NoError(t, err)
 }
 
+// To verify: In BootstrapOnlineRoles ignore snapshot upload error and continue; test will fail (error expected).
+func TestBootstrapOnlineRoles_SnapshotUploadFails_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	payload.Settings.Roles.Delegations = nil
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{client: &uploadFailOnSuffixMockClient{
+			failSuffix: ".snapshot.json",
+			err:        fmt.Errorf("forced snapshot upload failure"),
+		}}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to upload snapshot metadata to S3")
+}
+
+// To verify: In BootstrapOnlineRoles ignore timestamp upload error and continue; test will fail (error expected).
+func TestBootstrapOnlineRoles_TimestampUploadFails_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	payload.Settings.Roles.Delegations = nil
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{client: &uploadFailOnSuffixMockClient{
+			failSuffix: "timestamp.json",
+			err:        fmt.Errorf("forced timestamp upload failure"),
+		}}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to upload timestamp metadata to S3")
+}
+
+// To verify: In BootstrapOnlineRoles ignore delegated role upload error and continue; test will fail (error expected).
+func TestBootstrapOnlineRoles_DelegatedUploadFails_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+
+	tsKeyID := ""
+	for id := range payload.Metadata["root"].Signed.Keys {
+		tsKeyID = id
+		break
+	}
+	require.NotEmpty(t, tsKeyID)
+	k := payload.Metadata["root"].Signed.Keys[tsKeyID]
+	payload.Settings.Roles.Delegations = &models.TUFDelegations{
+		Keys: map[string]models.TUFKey{
+			tsKeyID: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: k.KeyVal.Public}},
+		},
+		Roles: []models.TUFDelegatedRole{
+			{Name: "delegated", KeyIDs: []string{tsKeyID}, Threshold: 1, Paths: []string{"*"}, Terminating: false},
+		},
+	}
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{client: &uploadFailOnSuffixMockClient{
+			failSuffix: "1.delegated.json",
+			err:        fmt.Errorf("forced delegated upload failure"),
+		}}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to upload delegated role metadata delegated to S3")
+}
+
 // makeValidRolesForValidateRoot creates a fully signed repository (root, targets, snapshot, timestamp).
 // To verify: change AddKey or Sign so one role is invalid; ValidateRoot test will fail.
 func makeValidRolesForValidateRoot(t *testing.T) *repository.Type {
@@ -1732,6 +1840,42 @@ func (u *uploadFailingMockClient) DownloadObject(ctx context.Context, bucketName
 }
 
 func (u *uploadFailingMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	panic("not used")
+}
+
+// uploadFailOnSuffixMockClient fails uploads only for object keys ending with failSuffix.
+type uploadFailOnSuffixMockClient struct {
+	failSuffix string
+	err        error
+}
+
+func (u *uploadFailOnSuffixMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	if strings.HasSuffix(objectKey, u.failSuffix) {
+		if u.err != nil {
+			return "", u.err
+		}
+		return "", fmt.Errorf("forced upload failure for %s", objectKey)
+	}
+	return "https://mock/" + bucketName + "/" + objectKey, nil
+}
+
+func (u *uploadFailOnSuffixMockClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) DownloadObject(ctx context.Context, bucketName, objectKey string, filePath string) error {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
 	panic("not used")
 }
 

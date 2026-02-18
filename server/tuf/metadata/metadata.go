@@ -300,12 +300,13 @@ func BootstrapOnlineRoles(
 			rolePath := filepath.Join(tmpDir, filename)
 			if err := repo.Targets(roleName).ToFile(rolePath, true); err != nil {
 				logrus.Errorf("Failed to persist delegated role metadata %s: %v", roleName, err)
-				continue
+				return fmt.Errorf("failed to persist delegated role metadata %s: %w", roleName, err)
 			}
 			logrus.Debugf("Successfully persisted delegated role metadata: %s", filename)
 
 			if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, filename, rolePath); err != nil {
 				logrus.Errorf("Failed to upload delegated role metadata %s to S3: %v", roleName, err)
+				return fmt.Errorf("failed to upload delegated role metadata %s to S3: %w", roleName, err)
 			}
 		}
 
@@ -352,6 +353,7 @@ func BootstrapOnlineRoles(
 
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "1.root.json", rootPath); err != nil {
 		logrus.Errorf("Failed to upload root metadata to S3: %v", err)
+		return fmt.Errorf("failed to upload root metadata to S3: %w", err)
 	}
 
 	targetsFilename := fmt.Sprintf("%d.targets.json", targets.Signed.Version)
@@ -364,6 +366,7 @@ func BootstrapOnlineRoles(
 
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, targetsFilename, targetsPath); err != nil {
 		logrus.Errorf("Failed to upload targets metadata to S3: %v", err)
+		return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
 	}
 
 	snapshotFilename := fmt.Sprintf("%d.snapshot.json", snapshot.Signed.Version)
@@ -376,6 +379,7 @@ func BootstrapOnlineRoles(
 
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
 		logrus.Errorf("Failed to upload snapshot metadata to S3: %v", err)
+		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 	}
 
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
@@ -387,6 +391,7 @@ func BootstrapOnlineRoles(
 
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
 		logrus.Errorf("Failed to upload timestamp metadata to S3: %v", err)
+		return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
 	}
 
 	logrus.Debug("Bootstrap online roles creation completed")
