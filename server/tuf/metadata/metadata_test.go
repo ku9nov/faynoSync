@@ -401,9 +401,12 @@ func TestBootstrapOnlineRoles_DelegationRole_NoKeyIDs(t *testing.T) {
 func TestBootstrapOnlineRoles_DelegationRole_PrivateKeyNotFound(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
-	// Use a key ID that does not exist on disk (not the timestamp key we wrote)
-	fakeKeyID := "nonexistent-delegation-key-id"
-	pub, _, _ := ed25519.GenerateKey(nil)
+	pub, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	delegationKey, err := tuf_metadata.KeyFromPublicKey(pub)
+	require.NoError(t, err)
+	fakeKeyID, err := delegationKey.ID()
+	require.NoError(t, err)
 	hexPub := hex.EncodeToString(pub)
 	payload.Settings.Roles.Delegations = &models.TUFDelegations{
 		Keys: map[string]models.TUFKey{
@@ -418,7 +421,7 @@ func TestBootstrapOnlineRoles_DelegationRole_PrivateKeyNotFound(t *testing.T) {
 	defer mr.Close()
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
-	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+	err = BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load delegation private key")

@@ -195,6 +195,16 @@ func BootstrapOnlineRoles(
 					logrus.Errorf("Failed to create metadata key from public key for key %s: %v", keyID, err)
 					continue
 				}
+
+				computedKeyID, err := delegationKey.ID()
+				if err != nil {
+					logrus.Errorf("Failed to compute key ID from public key for key %s: %v", keyID, err)
+					return fmt.Errorf("failed to compute key ID for delegation key %s: %w", keyID, err)
+				}
+				if computedKeyID != keyID {
+					logrus.Errorf("Delegation key ID mismatch: provided %s, computed %s", keyID, computedKeyID)
+					return fmt.Errorf("delegation key ID mismatch for key %s: computed %s", keyID, computedKeyID)
+				}
 			} else {
 				logrus.Errorf("Unsupported key type for delegations: %s", tufKey.KeyType)
 				continue
