@@ -60,7 +60,7 @@ func AddArtifacts(
 	if err != nil {
 		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err != nil {
 			if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err2 != nil {
-				return fmt.Errorf("failed to download latest root metadata: %w", err)
+				return fmt.Errorf("failed to download root metadata (tried root.json and 1.root.json): %w", err)
 			}
 		}
 	} else {

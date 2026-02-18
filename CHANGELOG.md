@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5.2
+
+* **New Features**
+  * Added multi-signer support for secure cryptographic operations across roles
+  * Introduced per-role key threshold configuration for enhanced key management
+  * Enhanced bootstrap process with conflict detection and persistent metadata validation
+
+* **Improvements**
+  * More detailed error messages including per-key failure information
+  * Better root metadata versioning with intelligent fallback logic
+  * Added context-aware cancellation support and improved compatibility with large datasets
+
 ## v1.5.1
 
 ### Bug Fixes

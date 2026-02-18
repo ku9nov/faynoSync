@@ -1110,7 +1110,7 @@ func validateIncomingMetadataSignature(
 			}
 		}
 	default:
-		return nil
+		return fmt.Errorf("signature validation not supported for metadata type %q", metadataType)
 	}
 
 	key, ok := allowedKeys[keyID]

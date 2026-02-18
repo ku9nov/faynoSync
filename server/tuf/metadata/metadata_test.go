@@ -372,12 +372,10 @@ func TestBootstrapOnlineRoles_Success_NoDelegations(t *testing.T) {
 func TestBootstrapOnlineRoles_DelegationRole_NoKeyIDs(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
-	tsKeyID := ""
-	for id := range payload.Metadata["root"].Signed.Keys {
-		tsKeyID = id
-		break
-	}
-	require.NotEmpty(t, tsKeyID)
+	timestampRole, ok := payload.Metadata["root"].Signed.Roles["timestamp"]
+	require.True(t, ok, "timestamp role must be present in root metadata")
+	require.NotEmpty(t, timestampRole.KeyIDs, "timestamp role must include at least one key id")
+	tsKeyID := timestampRole.KeyIDs[0]
 	k := payload.Metadata["root"].Signed.Keys[tsKeyID]
 	payload.Settings.Roles.Delegations = &models.TUFDelegations{
 		Keys: map[string]models.TUFKey{tsKeyID: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: k.KeyVal.Public}}},
@@ -582,12 +580,10 @@ func TestBootstrapOnlineRoles_DelegatedUploadFails_ReturnsError(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
 
-	tsKeyID := ""
-	for id := range payload.Metadata["root"].Signed.Keys {
-		tsKeyID = id
-		break
-	}
-	require.NotEmpty(t, tsKeyID)
+	timestampRole, ok := payload.Metadata["root"].Signed.Roles["timestamp"]
+	require.True(t, ok, "timestamp role must be present in root metadata")
+	require.NotEmpty(t, timestampRole.KeyIDs, "timestamp role must include at least one key id")
+	tsKeyID := timestampRole.KeyIDs[0]
 	k := payload.Metadata["root"].Signed.Keys[tsKeyID]
 	payload.Settings.Roles.Delegations = &models.TUFDelegations{
 		Keys: map[string]models.TUFKey{
@@ -1567,7 +1563,7 @@ func TestPostMetadataSign_UnsupportedMetadataType_ReturnsBadRequest(t *testing.T
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Contains(t, body["error"], "Unsupported metadata type")
+	assert.Contains(t, body["error"], "signature validation not supported for metadata type")
 }
 
 // To verify: In PostMetadataSign remove pre-append signature authorization/verification; test will fail (signature must be rejected before loading root).
