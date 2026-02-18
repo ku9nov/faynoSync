@@ -312,6 +312,14 @@ func BootstrapOnlineRoles(
 		logrus.Debug("Custom delegations created successfully")
 	}
 
+	timestampMeta := repo.Timestamp().Signed.Meta
+	if timestampMeta == nil {
+		timestampMeta = make(map[string]*metadata.MetaFiles)
+		repo.Timestamp().Signed.Meta = timestampMeta
+	}
+	timestampMeta["snapshot.json"] = metadata.MetaFile(int64(repo.Snapshot().Signed.Version))
+	logrus.Debugf("Timestamp metadata references snapshot version %d", repo.Snapshot().Signed.Version)
+
 	for i, s := range targetsSigners {
 		if _, err := repo.Targets("targets").Sign(s); err != nil {
 			logrus.Errorf("Failed to sign targets metadata with key %d: %v", i+1, err)

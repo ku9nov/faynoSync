@@ -11,6 +11,7 @@ import (
 	tuf_storage "faynoSync/server/tuf/storage"
 	"faynoSync/server/utils"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -312,6 +313,7 @@ func TestBootstrapOnlineRoles_Success_NoDelegations(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
 	payload.Settings.Roles.Delegations = nil
+	captureClient := &uploadCaptureMockClient{objects: map[string][]byte{}}
 
 	savedViper := tuf_storage.GetViperForUpload
 	savedFactory := tuf_storage.StorageFactoryForUpload
@@ -319,7 +321,7 @@ func TestBootstrapOnlineRoles_Success_NoDelegations(t *testing.T) {
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
 	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &uploadMockFactory{}
+		return &uploadMockFactory{client: captureClient}
 	}
 	defer func() {
 		tuf_storage.GetViperForUpload = savedViper
@@ -333,6 +335,37 @@ func TestBootstrapOnlineRoles_Success_NoDelegations(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.NoError(t, err)
+
+	timestampBody, ok := captureClient.objects["tuf_metadata/admin/app/timestamp.json"]
+	require.True(t, ok, "timestamp.json must be uploaded")
+
+	var timestampJSON struct {
+		Signed struct {
+			Meta map[string]struct {
+				Version int64 `json:"version"`
+			} `json:"meta"`
+		} `json:"signed"`
+	}
+	require.NoError(t, json.Unmarshal(timestampBody, &timestampJSON))
+
+	snapshotMeta, ok := timestampJSON.Signed.Meta["snapshot.json"]
+	require.True(t, ok, "timestamp must reference snapshot.json")
+
+	var snapshotVersion int64
+	for objectKey, body := range captureClient.objects {
+		if strings.HasSuffix(objectKey, ".snapshot.json") {
+			var snapshotJSON struct {
+				Signed struct {
+					Version int64 `json:"version"`
+				} `json:"signed"`
+			}
+			require.NoError(t, json.Unmarshal(body, &snapshotJSON))
+			snapshotVersion = snapshotJSON.Signed.Version
+			break
+		}
+	}
+	require.Greater(t, snapshotVersion, int64(0), "snapshot metadata must be uploaded")
+	assert.Equal(t, snapshotVersion, snapshotMeta.Version, "timestamp snapshot version must match snapshot metadata version")
 }
 
 // To verify: In BootstrapOnlineRoles skip the check for empty KeyIDs in delegated role; test will fail (no error).
@@ -1615,6 +1648,42 @@ func (u *uploadMockClient) DownloadObject(ctx context.Context, bucketName, objec
 }
 
 func (u *uploadMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	panic("not used")
+}
+
+type uploadCaptureMockClient struct {
+	objects map[string][]byte
+}
+
+func (u *uploadCaptureMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	body, err := io.ReadAll(fileReader)
+	if err != nil {
+		return "", err
+	}
+	if u.objects == nil {
+		u.objects = map[string][]byte{}
+	}
+	u.objects[objectKey] = append([]byte(nil), body...)
+	return "https://mock/" + bucketName + "/" + objectKey, nil
+}
+
+func (u *uploadCaptureMockClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) DownloadObject(ctx context.Context, bucketName, objectKey, filePath string) error {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
 	panic("not used")
 }
 
