@@ -31,7 +31,7 @@ import (
 	tuf_metadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
 
-// makeValidRootAndPayload creates a valid root using go-tuf, writes the timestamp private key to keyDir,
+// makeValidRootAndPayload creates a valid root using go-tuf, writes online role private keys to keyDir,
 // and returns a BootstrapPayload and cleanup function. To verify: change AddKey/FromFile so root is invalid; test fails.
 func makeValidRootAndPayload(t *testing.T) (payload *models.BootstrapPayload, keyDir string, cleanup func()) {
 	t.Helper()
@@ -83,16 +83,16 @@ func makeValidRootAndPayload(t *testing.T) (payload *models.BootstrapPayload, ke
 	err = json.Unmarshal(rootData, &rootMeta)
 	require.NoError(t, err)
 
-	timestampKeyID := ""
-	if r, ok := rootMeta.Signed.Roles["timestamp"]; ok && len(r.KeyIDs) > 0 {
-		timestampKeyID = r.KeyIDs[0]
+	// Write online role private keys as 32-byte raw seeds so LoadPrivateKeyFromFilesystem can load them.
+	for _, roleName := range []string{"targets", "snapshot", "timestamp"} {
+		role, ok := rootMeta.Signed.Roles[roleName]
+		require.True(t, ok, "%s role must be present in root", roleName)
+		require.NotEmpty(t, role.KeyIDs, "%s key IDs must be present in root", roleName)
+		keyID := role.KeyIDs[0]
+		seed := keys[roleName].Seed()
+		keyPath := filepath.Join(keyDir, keyID)
+		require.NoError(t, os.WriteFile(keyPath, seed, 0600))
 	}
-	require.NotEmpty(t, timestampKeyID, "timestamp key ID must be present in root")
-
-	// Write timestamp private key as 32-byte raw seed so LoadPrivateKeyFromFilesystem can load it
-	seed := keys["timestamp"].Seed()
-	timestampKeyPath := filepath.Join(keyDir, timestampKeyID)
-	require.NoError(t, os.WriteFile(timestampKeyPath, seed, 0600))
 
 	payload = &models.BootstrapPayload{
 		AppName: "testapp",
@@ -133,7 +133,7 @@ func TestBootstrapOnlineRoles_RootMetadataNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "root metadata not found in payload")
 }
 
-// To verify: In BootstrapOnlineRoles skip validation of root structure; test will fail (error expected at load or timestamp).
+// To verify: In BootstrapOnlineRoles skip validation of root structure; test will fail (error expected at load or role key lookup).
 func TestBootstrapOnlineRoles_InvalidRootStructure_NoTimestampRole(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -158,14 +158,16 @@ func TestBootstrapOnlineRoles_InvalidRootStructure_NoTimestampRole(t *testing.T)
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	// Root is written to file; go-tuf FromFile may fail on type/structure, or VerifyDelegate may fail (e.g. no delegation for root), or we fail on timestamp key
+	// Root is written to file; go-tuf FromFile may fail on type/structure, or VerifyDelegate may fail (e.g. no delegation for root), or we fail on online role key lookup.
 	assert.True(t, strings.Contains(err.Error(), "failed to load root metadata from file") ||
 		strings.Contains(err.Error(), "failed to verify root metadata") ||
-		strings.Contains(err.Error(), "failed to find timestamp key in root metadata"),
-		"expected load, verify, or timestamp error, got: %s", err.Error())
+		strings.Contains(err.Error(), "failed to find targets role keys in root metadata") ||
+		strings.Contains(err.Error(), "failed to find snapshot role keys in root metadata") ||
+		strings.Contains(err.Error(), "failed to find timestamp role keys in root metadata"),
+		"expected load, verify, or role key error, got: %s", err.Error())
 }
 
-// To verify: In BootstrapOnlineRoles accept root without timestamp role; test will fail (no error).
+// To verify: In BootstrapOnlineRoles accept root without online roles; test will fail (no error).
 func TestBootstrapOnlineRoles_TimestampKeyMissingInRoot(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -191,13 +193,15 @@ func TestBootstrapOnlineRoles_TimestampKeyMissingInRoot(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	// VerifyDelegate runs before timestamp key lookup; root with no timestamp role may fail verification or we fail on timestamp key
+	// VerifyDelegate runs before role key lookup; root with no online roles may fail verification or we fail on role key lookup.
 	assert.True(t, strings.Contains(err.Error(), "failed to verify root metadata") ||
-		strings.Contains(err.Error(), "failed to find timestamp key in root metadata"),
-		"expected verify or timestamp error, got: %s", err.Error())
+		strings.Contains(err.Error(), "failed to find targets role keys in root metadata") ||
+		strings.Contains(err.Error(), "failed to find snapshot role keys in root metadata") ||
+		strings.Contains(err.Error(), "failed to find timestamp role keys in root metadata"),
+		"expected verify or role key error, got: %s", err.Error())
 }
 
-// To verify: In BootstrapOnlineRoles skip the check that online key exists in Keys; test will fail (no error or wrong message).
+// To verify: In BootstrapOnlineRoles skip the check that role key exists in Keys; test will fail (no error or wrong message).
 func TestBootstrapOnlineRoles_OnlineKeyNotFoundInRoot(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
@@ -213,10 +217,12 @@ func TestBootstrapOnlineRoles_OnlineKeyNotFoundInRoot(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	// VerifyDelegate runs first and may fail with "key with ID ... not found in root keyids"; or we fail at online key lookup
+	// VerifyDelegate runs first and may fail with "key with ID ... not found in root keyids"; or we fail at role key lookup.
 	assert.True(t, strings.Contains(err.Error(), "failed to verify root metadata") ||
-		(strings.Contains(err.Error(), "online key") && strings.Contains(err.Error(), "not found in root metadata")),
-		"expected verify or online key error, got: %s", err.Error())
+		(strings.Contains(err.Error(), "targets key") && strings.Contains(err.Error(), "not found in root metadata")) ||
+		(strings.Contains(err.Error(), "snapshot key") && strings.Contains(err.Error(), "not found in root metadata")) ||
+		(strings.Contains(err.Error(), "timestamp key") && strings.Contains(err.Error(), "not found in root metadata")),
+		"expected verify or role key error, got: %s", err.Error())
 }
 
 // To verify: In BootstrapOnlineRoles ignore LoadPrivateKeyFromFilesystem error and proceed; test will fail (no error).
@@ -234,7 +240,9 @@ func TestBootstrapOnlineRoles_SignerCreationFails_NoKeyDir(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "failed to load online private key") || strings.Contains(err.Error(), "failed to create signer from private key"),
+	assert.True(t, strings.Contains(err.Error(), "failed to build targets signers") ||
+		strings.Contains(err.Error(), "failed to build snapshot signers") ||
+		strings.Contains(err.Error(), "failed to build timestamp signers"),
 		"error should mention key loading or signer creation: %s", err.Error())
 }
 

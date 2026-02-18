@@ -108,53 +108,59 @@ func BootstrapOnlineRoles(
 	snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, payload.Settings.Roles.Snapshot.Expiration)
 	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, payload.Settings.Roles.Timestamp.Expiration)
 
+	targetsRole, ok := rootMetadata.Signed.Roles["targets"]
+	if !ok || len(targetsRole.KeyIDs) == 0 {
+		logrus.Error("Failed to find targets role keys in root metadata")
+		return fmt.Errorf("failed to find targets role keys in root metadata")
+	}
+	for _, keyID := range targetsRole.KeyIDs {
+		if _, keyExists := rootMetadata.Signed.Keys[keyID]; !keyExists {
+			logrus.Errorf("Targets key %s not found in root metadata", keyID)
+			return fmt.Errorf("targets key %s not found in root metadata", keyID)
+		}
+	}
+	targetsSigners, err := buildOnlineRoleSigners(targetsRole.KeyIDs, targetsRole.Threshold, "targets")
+	if err != nil {
+		logrus.Errorf("Failed to build targets signers: %v", err)
+		return fmt.Errorf("failed to build targets signers: %w", err)
+	}
+	logrus.Debugf("Using %d online key(s) for targets (threshold %d)", len(targetsSigners), targetsRole.Threshold)
+
+	snapshotRole, ok := rootMetadata.Signed.Roles["snapshot"]
+	if !ok || len(snapshotRole.KeyIDs) == 0 {
+		logrus.Error("Failed to find snapshot role keys in root metadata")
+		return fmt.Errorf("failed to find snapshot role keys in root metadata")
+	}
+	for _, keyID := range snapshotRole.KeyIDs {
+		if _, keyExists := rootMetadata.Signed.Keys[keyID]; !keyExists {
+			logrus.Errorf("Snapshot key %s not found in root metadata", keyID)
+			return fmt.Errorf("snapshot key %s not found in root metadata", keyID)
+		}
+	}
+	snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
+	if err != nil {
+		logrus.Errorf("Failed to build snapshot signers: %v", err)
+		return fmt.Errorf("failed to build snapshot signers: %w", err)
+	}
+	logrus.Debugf("Using %d online key(s) for snapshot (threshold %d)", len(snapshotSigners), snapshotRole.Threshold)
+
 	timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]
 	if !ok || len(timestampRole.KeyIDs) == 0 {
-		logrus.Error("Failed to find timestamp key in root metadata")
-		return fmt.Errorf("failed to find timestamp key in root metadata")
+		logrus.Error("Failed to find timestamp role keys in root metadata")
+		return fmt.Errorf("failed to find timestamp role keys in root metadata")
 	}
-
-	onlineThreshold := timestampRole.Threshold
-	if onlineThreshold < 1 {
-		onlineThreshold = 1
-	}
-	seenOnlineKeyID := make(map[string]bool)
-	onlineKeysToSign := make([]string, 0, onlineThreshold)
 	for _, keyID := range timestampRole.KeyIDs {
-		if seenOnlineKeyID[keyID] {
-			continue
-		}
 		if _, keyExists := rootMetadata.Signed.Keys[keyID]; !keyExists {
 			logrus.Errorf("Timestamp key %s not found in root metadata", keyID)
 			return fmt.Errorf("timestamp key %s not found in root metadata", keyID)
 		}
-		seenOnlineKeyID[keyID] = true
-		onlineKeysToSign = append(onlineKeysToSign, keyID)
-		if len(onlineKeysToSign) == onlineThreshold {
-			break
-		}
 	}
-	if len(onlineKeysToSign) < onlineThreshold {
-		logrus.Errorf("Not enough distinct keys for timestamp role: need %d, got %d", onlineThreshold, len(onlineKeysToSign))
-		return fmt.Errorf("not enough distinct keys for timestamp role: need %d, got %d", onlineThreshold, len(onlineKeysToSign))
+	timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
+	if err != nil {
+		logrus.Errorf("Failed to build timestamp signers: %v", err)
+		return fmt.Errorf("failed to build timestamp signers: %w", err)
 	}
-
-	onlineSigners := make([]signature.Signer, 0, len(onlineKeysToSign))
-	for _, keyID := range onlineKeysToSign {
-		onlinePrivateKey, loadErr := signing.LoadPrivateKeyFromFilesystem(keyID, keyID)
-		if loadErr != nil {
-			logrus.Errorf("Failed to load online private key %s from filesystem: %v", keyID, loadErr)
-			return fmt.Errorf("failed to load online private key %s from filesystem: %w", keyID, loadErr)
-		}
-		signer, loadErr := signature.LoadSigner(onlinePrivateKey, crypto.Hash(0))
-		if loadErr != nil {
-			logrus.Errorf("Failed to create signer from private key %s: %v", keyID, loadErr)
-			return fmt.Errorf("failed to create signer from private key %s: %w", keyID, loadErr)
-		}
-		onlineSigners = append(onlineSigners, signer)
-		logrus.Debugf("Loaded online signer for key: %s", keyID)
-	}
-	logrus.Debugf("Using %d online key(s) for timestamp (threshold %d)", len(onlineSigners), onlineThreshold)
+	logrus.Debugf("Using %d online key(s) for timestamp (threshold %d)", len(timestampSigners), timestampRole.Threshold)
 
 	targets := metadata.Targets(tuf_utils.HelperExpireIn(targetsExpiration))
 	repo.SetTargets("targets", targets)
@@ -306,7 +312,7 @@ func BootstrapOnlineRoles(
 		logrus.Debug("Custom delegations created successfully")
 	}
 
-	for i, s := range onlineSigners {
+	for i, s := range targetsSigners {
 		if _, err := repo.Targets("targets").Sign(s); err != nil {
 			logrus.Errorf("Failed to sign targets metadata with key %d: %v", i+1, err)
 			return fmt.Errorf("failed to sign targets metadata with key %d: %w", i+1, err)
@@ -314,7 +320,7 @@ func BootstrapOnlineRoles(
 	}
 	logrus.Debug("Successfully signed targets metadata")
 
-	for i, s := range onlineSigners {
+	for i, s := range snapshotSigners {
 		if _, err := repo.Snapshot().Sign(s); err != nil {
 			logrus.Errorf("Failed to sign snapshot metadata with key %d: %v", i+1, err)
 			return fmt.Errorf("failed to sign snapshot metadata with key %d: %w", i+1, err)
@@ -322,7 +328,7 @@ func BootstrapOnlineRoles(
 	}
 	logrus.Debug("Successfully signed snapshot metadata")
 
-	for i, s := range onlineSigners {
+	for i, s := range timestampSigners {
 		if _, err := repo.Timestamp().Sign(s); err != nil {
 			logrus.Errorf("Failed to sign timestamp metadata with key %d: %v", i+1, err)
 			return fmt.Errorf("failed to sign timestamp metadata with key %d: %w", i+1, err)
