@@ -235,6 +235,14 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
+	if redisClient == nil {
+		logrus.Errorf("Redis client is nil, refusing bootstrap for admin %s, app %s", adminName, payload.AppName)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Redis client is not available",
+		})
+		return
+	}
+
 	if redisClient != nil {
 		ctx := context.Background()
 		bootstrapKey := "BOOTSTRAP_" + adminName + "_" + payload.AppName
@@ -461,40 +469,40 @@ func preLockBootstrap(
 	appName string,
 ) (bool, string) {
 	logrus.Debugf("Setting pre-lock and BOOTSTRAP lock in Redis for admin: %s, app: %s, task_id: %s", adminName, appName, taskID)
-	if redisClient != nil {
-		ctx := context.Background()
-		bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
-		bootstrapValue := "pre-" + taskID
-
-		wasSet, err := redisClient.SetNX(ctx, bootstrapKey, bootstrapValue, 0).Result()
-		if err != nil {
-			logrus.Errorf("Failed to atomically acquire BOOTSTRAP lock in Redis for admin %s, app %s: %v", adminName, appName, err)
-			return false, ""
-		}
-		if !wasSet {
-			existingBootstrapValue, getErr := redisClient.Get(ctx, bootstrapKey).Result()
-			if getErr != nil && getErr != redis.Nil {
-				logrus.Warnf("Failed to read existing BOOTSTRAP lock in Redis for admin %s, app %s: %v", adminName, appName, getErr)
-			}
-			return false, existingBootstrapValue
-		}
-
-		preLockKey := "pre-" + taskID
-		err = redisClient.Set(ctx, preLockKey, taskID, 0).Err()
-		if err != nil {
-			logrus.Errorf("Failed to set pre-lock in Redis: %v", err)
-			if delErr := redisClient.Del(ctx, bootstrapKey).Err(); delErr != nil {
-				logrus.Warnf("Failed to rollback BOOTSTRAP lock %s after pre-lock set failure: %v", bootstrapKey, delErr)
-			}
-			return false, ""
-		} else {
-			logrus.Debugf("Successfully set pre-lock in Redis: %s", preLockKey)
-		}
-
-		logrus.Debugf("Successfully acquired BOOTSTRAP lock in Redis for admin %s, app %s: %s (key: %s)", adminName, appName, bootstrapValue, bootstrapKey)
-	} else {
-		logrus.Warn("Redis client is nil, skipping pre-lock and BOOTSTRAP lock")
+	if redisClient == nil {
+		logrus.Errorf("Redis client is nil, failed to acquire pre-lock and BOOTSTRAP lock for admin: %s, app: %s", adminName, appName)
+		return false, ""
 	}
+
+	ctx := context.Background()
+	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
+	bootstrapValue := "pre-" + taskID
+
+	wasSet, err := redisClient.SetNX(ctx, bootstrapKey, bootstrapValue, 0).Result()
+	if err != nil {
+		logrus.Errorf("Failed to atomically acquire BOOTSTRAP lock in Redis for admin %s, app %s: %v", adminName, appName, err)
+		return false, ""
+	}
+	if !wasSet {
+		existingBootstrapValue, getErr := redisClient.Get(ctx, bootstrapKey).Result()
+		if getErr != nil && getErr != redis.Nil {
+			logrus.Warnf("Failed to read existing BOOTSTRAP lock in Redis for admin %s, app %s: %v", adminName, appName, getErr)
+		}
+		return false, existingBootstrapValue
+	}
+
+	preLockKey := "pre-" + taskID
+	err = redisClient.Set(ctx, preLockKey, taskID, 0).Err()
+	if err != nil {
+		logrus.Errorf("Failed to set pre-lock in Redis: %v", err)
+		if delErr := redisClient.Del(ctx, bootstrapKey).Err(); delErr != nil {
+			logrus.Warnf("Failed to rollback BOOTSTRAP lock %s after pre-lock set failure: %v", bootstrapKey, delErr)
+		}
+		return false, ""
+	}
+
+	logrus.Debugf("Successfully set pre-lock in Redis: %s", preLockKey)
+	logrus.Debugf("Successfully acquired BOOTSTRAP lock in Redis for admin %s, app %s: %s (key: %s)", adminName, appName, bootstrapValue, bootstrapKey)
 
 	return true, ""
 }

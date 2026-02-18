@@ -1095,72 +1095,40 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 			if err == nil {
 				trustedRootPath := filepath.Join(tmpDir, "trusted_root.json")
 				trustedRootJSON, _ := json.Marshal(trustedRoot)
-				os.WriteFile(trustedRootPath, trustedRootJSON, 0644)
+				if writeErr := os.WriteFile(trustedRootPath, trustedRootJSON, 0644); writeErr != nil {
+					logrus.Warnf("Failed to persist trusted root locally: %v", writeErr)
+					validationError = fmt.Errorf("trusted root is required for root rotation: %w", writeErr)
+					thresholdReached = false
+					break
+				}
 
 				trustedRepo := repository.New()
 				trustedRootMeta := metadata.Root(time.Now().Add(365 * 24 * time.Hour))
 				trustedRepo.SetRoot(trustedRootMeta)
-				if _, err := trustedRepo.Root().FromFile(trustedRootPath); err == nil {
+				if _, parseErr := trustedRepo.Root().FromFile(trustedRootPath); parseErr == nil {
 
 					trustedRootRole := trustedRepo.Root().Signed.Roles["root"]
 					oldKeyIDs = trustedRootRole.KeyIDs
 					isRootRotation = true
 
 					logrus.Debugf("Validating new root against trusted root and itself")
-
-					err1 := trustedRepo.Root().VerifyDelegate("root", repo.Root())
-					err2 := repo.Root().VerifyDelegate("root", repo.Root())
-
-					if err1 != nil {
-						logrus.Warnf("Trusted root verification failed: %v", err1)
-						logrus.Debugf("Note: For root rotation, trusted root verification may fail if not enough old key signatures, but this is OK if self-verification passes")
-					} else {
-						logrus.Debugf("Trusted root verification succeeded")
-					}
-
-					if err2 != nil {
-						logrus.Warnf("New root self-verification failed: %v", err2)
-					} else {
-						logrus.Debugf("New root self-verification succeeded")
-					}
-
-					// For root rotation, both verifications must pass:
-					// 1. Trusted root verification (err1) - ensures new root is signed by enough old keys
-					// 2. Self-verification (err2) - ensures new root is signed by enough new keys
-					if err1 == nil && err2 == nil {
-						logrus.Infof("Both verifications succeeded: threshold reached (new root has enough signatures from both old and new keys)")
+					if err := verifyNewRootMetadata(trustedRepo.Root(), repo.Root()); err == nil {
+						logrus.Infof("Root rotation verification succeeded: threshold reached with trusted and new root signatures")
 						thresholdReached = true
 					} else {
+						logrus.Warnf("Root rotation verification failed: %v", err)
 						thresholdReached = false
-						if err2 != nil {
-							validationError = err2
-							logrus.Warnf("Self-verification failed: threshold not reached, error=%v", validationError)
-						} else if err1 != nil {
-							validationError = err1
-							logrus.Warnf("Trusted root verification failed: not enough old key signatures, error=%v", validationError)
-						}
+						validationError = err
 					}
 				} else {
-					logrus.Warnf("Failed to load trusted root from file, falling back to self-validation: %v", err)
-					if err := repo.Root().VerifyDelegate("root", repo.Root()); err != nil {
-						logrus.Warnf("Self-validation failed: %v", err)
-						validationError = err
-						thresholdReached = false
-					} else {
-						logrus.Infof("Self-validation succeeded: threshold reached")
-						thresholdReached = true
-					}
+					logrus.Warnf("Failed to load trusted root from file: %v", parseErr)
+					validationError = fmt.Errorf("trusted root is required for root rotation: %w", parseErr)
+					thresholdReached = false
 				}
 			} else {
-				logrus.Warnf("Failed to load trusted root from S3, falling back to self-validation: %v", err)
-				if err := repo.Root().VerifyDelegate("root", repo.Root()); err != nil {
-					logrus.Warnf("Self-validation failed: %v", err)
-					validationError = err
-					thresholdReached = false
-				} else {
-					logrus.Infof("Self-validation succeeded: threshold reached")
-					thresholdReached = true
-				}
+				logrus.Warnf("Failed to load trusted root from S3: %v", err)
+				validationError = fmt.Errorf("trusted root is required for root rotation: %w", err)
+				thresholdReached = false
 			}
 		}
 

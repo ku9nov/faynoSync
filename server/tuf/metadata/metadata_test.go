@@ -1657,6 +1657,42 @@ func TestPostMetadataSign_RootBootstrapSigning_ThresholdNotReached_ReturnsBadReq
 	assert.Contains(t, body["error"], "threshold not reached")
 }
 
+// To verify: In PostMetadataSign re-introduce self-validation fallback when trusted root is unavailable; test will fail (must reject root rotation).
+func TestPostMetadataSign_RootRotation_TrustedRootUnavailable_ReturnsBadRequest(t *testing.T) {
+	rootJSON, keyID := makeValidRootJSONForSign(t)
+	payload := models.MetadataSignPostPayload{Role: "root", Signature: models.Signature{KeyID: keyID, Sig: hex.EncodeToString(make([]byte, 32))}}
+	c, w := makePostMetadataSignContext("admin", "myapp", payload)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_admin_myapp", "done")
+	mr.Set("ROOT_SIGNING_admin_myapp", rootJSON)
+
+	savedList := tuf_storage.ListMetadataForLatest
+	savedFactory := tuf_storage.StorageFactoryForDownload
+	savedViper := tuf_storage.GetViperForDownload
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return nil, fmt.Errorf("s3 unavailable")
+	}
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &downloadMockFactory{err: fmt.Errorf("s3 unavailable")}
+	}
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return viper.New() }
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.StorageFactoryForDownload = savedFactory
+		tuf_storage.GetViperForDownload = savedViper
+	}()
+
+	PostMetadataSign(c, client)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Signature Failed", body["message"])
+	assert.Contains(t, body["error"], "trusted root is required for root rotation")
+}
+
 // To verify: In PostMetadataSign change error response when finalize fails; test will fail (wrong status).
 func TestPostMetadataSign_Root_FinalizeFails_ReturnsInternalServerError(t *testing.T) {
 	rootJSON, keyID := makeValidRootJSONForSign(t)

@@ -568,25 +568,25 @@ func TestPostBootstrap_ValidPayload_NoLock_ReturnsAccepted(t *testing.T) {
 	assert.NotEmpty(t, data["last_update"])
 }
 
-// To verify: In PostBootstrap add early return when redisClient is nil; test will fail (wrong status or panic).
-func TestPostBootstrap_NilRedis_ValidPayload_ReturnsAccepted(t *testing.T) {
+// To verify: In PostBootstrap remove nil redisClient guard; test will fail (wrong status/message).
+func TestPostBootstrap_NilRedis_ValidPayload_ReturnsServiceUnavailable(t *testing.T) {
 	payload := validMinimalBootstrapPayload()
 	c, w := makePostBootstrapContext("admin", payload)
 
 	PostBootstrap(c, nil)
 
-	assert.Equal(t, http.StatusAccepted, w.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, "Bootstrap accepted and started in background", body["message"])
+	assert.Equal(t, "Redis client is not available", body["error"])
 }
 
 // --- preLockBootstrap tests ---
 
-// To verify: In preLockBootstrap remove nil redisClient check; test will panic when client is nil.
-func TestPreLockBootstrap_NilRedis_NoPanic(t *testing.T) {
+// To verify: In preLockBootstrap allow nil redisClient as success; test will fail (must return not acquired).
+func TestPreLockBootstrap_NilRedis_ReturnsNotAcquired(t *testing.T) {
 	acquired, existing := preLockBootstrap(nil, "task-1", "admin", "myapp")
-	assert.True(t, acquired)
+	assert.False(t, acquired)
 	assert.Equal(t, "", existing)
 }
 
