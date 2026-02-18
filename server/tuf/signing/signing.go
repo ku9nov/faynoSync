@@ -2,6 +2,7 @@ package signing
 
 import (
 	"context"
+	"crypto"
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/base64"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
@@ -160,4 +162,54 @@ func LoadPrivateKeyFromFilesystem(keyID string, keyURI string) (ed25519.PrivateK
 	}
 
 	return nil, fmt.Errorf("could not load private key from %s: expected PEM format, raw 32 bytes, or hex-encoded seed", keyPath)
+}
+
+func LoadAndSignDelegation(
+	roleName string,
+	roleKeyIDs []string,
+	threshold int,
+	signWithSigner func(signature.Signer, string) error,
+) ([]string, error) {
+	if signWithSigner == nil {
+		return nil, fmt.Errorf("sign callback is required for %s role", roleName)
+	}
+	if threshold < 1 {
+		threshold = 1
+	}
+
+	seen := make(map[string]bool)
+	keysToUse := make([]string, 0, threshold)
+	for _, keyID := range roleKeyIDs {
+		if seen[keyID] {
+			continue
+		}
+		seen[keyID] = true
+		keysToUse = append(keysToUse, keyID)
+		if len(keysToUse) == threshold {
+			break
+		}
+	}
+	if len(keysToUse) < threshold {
+		return nil, fmt.Errorf("not enough distinct keys for %s role: need %d, got %d", roleName, threshold, len(keysToUse))
+	}
+
+	usedKeyIDs := make([]string, 0, len(keysToUse))
+	for _, keyID := range keysToUse {
+		privateKey, err := LoadPrivateKeyFromFilesystem(keyID, keyID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load %s private key %s: %w", roleName, keyID, err)
+		}
+
+		signer, err := signature.LoadSigner(privateKey, crypto.Hash(0))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s signer for key %s: %w", roleName, keyID, err)
+		}
+
+		if err := signWithSigner(signer, keyID); err != nil {
+			return nil, fmt.Errorf("failed to sign %s metadata with key %s: %w", roleName, keyID, err)
+		}
+		usedKeyIDs = append(usedKeyIDs, keyID)
+	}
+
+	return usedKeyIDs, nil
 }

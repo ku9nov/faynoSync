@@ -2,7 +2,6 @@ package artifacts
 
 import (
 	"context"
-	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -432,14 +431,20 @@ func updateDelegatedRoleWithArtifacts(
 	if len(roleKeyIDs) == 0 {
 		return false, fmt.Errorf("no key IDs found for delegated role %s", roleName)
 	}
-	delegationSigners, err := buildSignersFromKeyIDsAndThreshold(roleKeyIDs, roleThreshold, roleName)
+	usedKeyIDs, err := signing.LoadAndSignDelegation(
+		roleName,
+		roleKeyIDs,
+		roleThreshold,
+		func(s signature.Signer, _ string) error {
+			_, signErr := repo.Targets(roleName).Sign(s)
+			return signErr
+		},
+	)
 	if err != nil {
 		return false, err
 	}
-	for i, s := range delegationSigners {
-		if _, err := repo.Targets(roleName).Sign(s); err != nil {
-			return false, fmt.Errorf("failed to sign %s metadata with key %d: %w", roleName, i+1, err)
-		}
+	for _, keyID := range usedKeyIDs {
+		logrus.Debugf("Successfully signed delegated role metadata %s with key %s", roleName, keyID)
 	}
 	newDelegationFilename := fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName)
 	delegationPath := filepath.Join(tmpDir, newDelegationFilename)
@@ -680,35 +685,18 @@ func buildSignersFromRoleMap(roleMap map[string]interface{}, roleName string) ([
 }
 
 func buildSignersFromKeyIDsAndThreshold(keyIDs []string, threshold int, roleName string) ([]signature.Signer, error) {
-	if threshold < 1 {
-		threshold = 1
-	}
-	seen := make(map[string]bool)
-	keysToSign := make([]string, 0, threshold)
-	for _, keyID := range keyIDs {
-		if seen[keyID] {
-			continue
-		}
-		seen[keyID] = true
-		keysToSign = append(keysToSign, keyID)
-		if len(keysToSign) == threshold {
-			break
-		}
-	}
-	if len(keysToSign) < threshold {
-		return nil, fmt.Errorf("not enough distinct keys for %s role: need %d, got %d", roleName, threshold, len(keysToSign))
-	}
-	signers := make([]signature.Signer, 0, len(keysToSign))
-	for _, keyID := range keysToSign {
-		priv, err := signing.LoadPrivateKeyFromFilesystem(keyID, keyID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load %s private key %s: %w", roleName, keyID, err)
-		}
-		sig, err := signature.LoadSigner(priv, crypto.Hash(0))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create %s signer for key %s: %w", roleName, keyID, err)
-		}
-		signers = append(signers, sig)
+	signers := make([]signature.Signer, 0)
+	_, err := signing.LoadAndSignDelegation(
+		roleName,
+		keyIDs,
+		threshold,
+		func(s signature.Signer, _ string) error {
+			signers = append(signers, s)
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
 	return signers, nil
 }

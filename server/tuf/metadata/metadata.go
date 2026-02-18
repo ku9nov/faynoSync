@@ -275,44 +275,23 @@ func BootstrapOnlineRolesWithContext(
 				return fmt.Errorf("no key IDs found for delegated role %s", roleName)
 			}
 
-			threshold := delegatedRoles[i].Threshold
-			if threshold < 1 {
-				threshold = 1
+			usedKeyIDs, err := signing.LoadAndSignDelegation(
+				roleName,
+				roleKeyIDs,
+				delegatedRoles[i].Threshold,
+				func(s signature.Signer, delegationKeyID string) error {
+					_, signErr := repo.Targets(roleName).Sign(s)
+					return signErr
+				},
+			)
+			if err != nil {
+				logrus.Errorf("Failed to sign delegated role metadata %s: %v", roleName, err)
+				if strings.Contains(err.Error(), "failed to load "+roleName+" private key") {
+					return fmt.Errorf("failed to load delegation private key for role %s: %w", roleName, err)
+				}
+				return fmt.Errorf("failed to sign delegated role metadata %s: %w", roleName, err)
 			}
-			seenKeyID := make(map[string]bool)
-			keysToSign := make([]string, 0, threshold)
-			for _, keyID := range roleKeyIDs {
-				if seenKeyID[keyID] {
-					continue
-				}
-				seenKeyID[keyID] = true
-				keysToSign = append(keysToSign, keyID)
-				if len(keysToSign) == threshold {
-					break
-				}
-			}
-			if len(keysToSign) < threshold {
-				logrus.Errorf("Not enough distinct keys for delegated role %s: need %d, got %d", roleName, threshold, len(keysToSign))
-				return fmt.Errorf("not enough distinct keys for delegated role %s: need %d, got %d", roleName, threshold, len(keysToSign))
-			}
-
-			for _, delegationKeyID := range keysToSign {
-				delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
-				if err != nil {
-					logrus.Errorf("Failed to load delegation private key %s for role %s: %v", delegationKeyID, roleName, err)
-					return fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
-				}
-
-				delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
-				if err != nil {
-					logrus.Errorf("Failed to create delegation signer for role %s: %v", roleName, err)
-					return fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
-				}
-
-				if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
-					logrus.Errorf("Failed to sign delegated role metadata %s with key %s: %v", roleName, delegationKeyID, err)
-					return fmt.Errorf("failed to sign delegated role metadata %s with key %s: %w", roleName, delegationKeyID, err)
-				}
+			for _, delegationKeyID := range usedKeyIDs {
 				logrus.Debugf("Successfully signed delegated role metadata %s with key %s", roleName, delegationKeyID)
 			}
 
