@@ -74,13 +74,10 @@ func BootstrapOnlineRoles(
 		return fmt.Errorf("failed to write root metadata to file: %w", err)
 	}
 
-	expires, err := time.Parse(time.RFC3339, rootMetadata.Signed.Expires)
+	expires, err := time.Parse(time.RFC3339Nano, rootMetadata.Signed.Expires)
 	if err != nil {
-		expires, err = time.Parse("2006-01-02T15:04:05.999999999Z", rootMetadata.Signed.Expires)
-		if err != nil {
-			logrus.Errorf("Failed to parse root expiration: %v", err)
-			expires = tuf_utils.HelperExpireIn(365)
-		}
+		logrus.Errorf("Failed to parse root expiration: %v", err)
+		return fmt.Errorf("invalid root expiration format: %w", err)
 	}
 	if !expires.After(time.Now().UTC()) {
 		return fmt.Errorf("root expiration is in the past")

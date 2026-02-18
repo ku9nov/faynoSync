@@ -247,8 +247,8 @@ func TestBootstrapOnlineRoles_SignerCreationFails_NoKeyDir(t *testing.T) {
 		"error should mention key loading or signer creation: %s", err.Error())
 }
 
-// To verify: In BootstrapOnlineRoles change repo.Root().FromFile to skip error or use wrong path; test will fail (no error or wrong behavior).
-func TestBootstrapOnlineRoles_LoadRootFromFileFails_InvalidJSON(t *testing.T) {
+// To verify: In BootstrapOnlineRoles bypass/relax expiration parsing; test will fail (invalid format must be rejected).
+func TestBootstrapOnlineRoles_InvalidRootExpirationFormat_ReturnsError(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
 	// Corrupt root so that go-tuf FromFile fails (e.g. invalid JSON structure for TUF)
@@ -269,7 +269,7 @@ func TestBootstrapOnlineRoles_LoadRootFromFileFails_InvalidJSON(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load root metadata from file")
+	assert.Contains(t, err.Error(), "invalid root expiration format")
 }
 
 // To verify: In BootstrapOnlineRoles remove or bypass the root expiration check; test will fail (bootstrap must reject expired root).
