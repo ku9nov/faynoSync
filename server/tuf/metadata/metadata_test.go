@@ -1570,8 +1570,8 @@ func TestPostMetadataSign_UnsupportedMetadataType_ReturnsBadRequest(t *testing.T
 	assert.Contains(t, body["error"], "Unsupported metadata type")
 }
 
-// To verify: In PostMetadataSign change error response when root FromFile fails; test will fail (wrong status).
-func TestPostMetadataSign_Root_LoadFromFileFails_ReturnsBadRequest(t *testing.T) {
+// To verify: In PostMetadataSign remove pre-append signature authorization/verification; test will fail (signature must be rejected before loading root).
+func TestPostMetadataSign_Root_InvalidRoleAuthorization_RejectedBeforeLoad(t *testing.T) {
 	payload := models.MetadataSignPostPayload{Role: "root", Signature: models.Signature{KeyID: "k1", Sig: "sig"}}
 	c, w := makePostMetadataSignContext("admin", "myapp", payload)
 	mr := miniredis.RunT(t)
@@ -1585,7 +1585,8 @@ func TestPostMetadataSign_Root_LoadFromFileFails_ReturnsBadRequest(t *testing.T)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Contains(t, body["error"], "Failed to load root metadata")
+	assert.Equal(t, "Signature Failed", body["message"])
+	assert.Contains(t, body["error"], "role root not found in metadata")
 }
 
 // To verify: In PostMetadataSign remove bootstrap root validation or finalize; test will fail (wrong status or message).
@@ -1747,8 +1748,8 @@ func TestPostMetadataSign_Targets_LoadFromFileFails_ReturnsBadRequest(t *testing
 	assert.Contains(t, body["error"], "Failed to load targets metadata")
 }
 
-// To verify: In PostMetadataSign change response when targets threshold not reached; test will fail (wrong message).
-func TestPostMetadataSign_Targets_ThresholdNotReached_ReturnsOKWithPending(t *testing.T) {
+// To verify: In PostMetadataSign remove trusted-root key authorization for targets signatures; test will fail (must reject unauthorized signature flow).
+func TestPostMetadataSign_Targets_WithoutTrustedRoot_RejectsSignature(t *testing.T) {
 	targetsJSON := makeValidTargetsJSONForSign(t)
 	payload := models.MetadataSignPostPayload{Role: "targets", Signature: models.Signature{KeyID: "k1", Sig: hex.EncodeToString(make([]byte, 32))}}
 	c, w := makePostMetadataSignContext("admin", "myapp", payload)
@@ -1766,10 +1767,11 @@ func TestPostMetadataSign_Targets_ThresholdNotReached_ReturnsOKWithPending(t *te
 
 	PostMetadataSign(c, client)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Contains(t, body["message"], "pending signatures")
+	assert.Equal(t, "Signature Failed", body["message"])
+	assert.Contains(t, body["error"], "trusted root is required for signature authorization")
 }
 
 type uploadMockClient struct{}

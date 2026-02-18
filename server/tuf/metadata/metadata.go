@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ed25519"
@@ -22,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"github.com/secure-systems-lab/go-securesystemslib/cjson"
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sirupsen/logrus"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
@@ -30,6 +32,18 @@ import (
 
 // bootstrapOnlineRoles creates online roles (targets, snapshot, timestamp) and delegations
 func BootstrapOnlineRoles(
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+	payload *models.BootstrapPayload,
+) error {
+	return BootstrapOnlineRolesWithContext(context.Background(), redisClient, taskID, adminName, appName, payload)
+}
+
+// BootstrapOnlineRolesWithContext creates online roles with caller-provided context.
+func BootstrapOnlineRolesWithContext(
+	ctx context.Context,
 	redisClient *redis.Client,
 	taskID string,
 	adminName string,
@@ -99,7 +113,6 @@ func BootstrapOnlineRoles(
 		logrus.Debug("Successfully verified root metadata")
 	}
 
-	ctx := context.Background()
 	keySuffix := adminName + "_" + appName
 	targetsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TARGETS_EXPIRATION_"+keySuffix, payload.Settings.Roles.Targets.Expiration)
 	snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, payload.Settings.Roles.Snapshot.Expiration)
@@ -880,6 +893,238 @@ func loadTrustedTargetsFromS3(ctx context.Context, adminName string, appName str
 	return targetsJSON, nil
 }
 
+func extractSignedSection(metadataJSON map[string]interface{}) (map[string]interface{}, error) {
+	signedData, ok := metadataJSON["signed"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid metadata format: missing 'signed' field")
+	}
+	return signedData, nil
+}
+
+func decodeAndValidateMetadataKey(keyData interface{}, expectedKeyID string) (*metadata.Key, error) {
+	keyBytes, err := json.Marshal(keyData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode key %s: %w", expectedKeyID, err)
+	}
+	var key metadata.Key
+	if err := json.Unmarshal(keyBytes, &key); err != nil {
+		return nil, fmt.Errorf("failed to decode key %s: %w", expectedKeyID, err)
+	}
+
+	computedKeyID, err := key.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute key ID for %s: %w", expectedKeyID, err)
+	}
+	if computedKeyID != expectedKeyID {
+		return nil, fmt.Errorf("keyid mismatch: provided %s, computed %s", expectedKeyID, computedKeyID)
+	}
+
+	return &key, nil
+}
+
+func getRootRoleKeysFromSigned(signedData map[string]interface{}, roleName string) (map[string]*metadata.Key, error) {
+	rolesMap, ok := signedData["roles"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid metadata format: missing 'roles' field")
+	}
+	roleData, ok := rolesMap[roleName].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("role %s not found in metadata", roleName)
+	}
+	keyIDsRaw, ok := roleData["keyids"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid metadata format: role %s missing keyids", roleName)
+	}
+	keysMap, ok := signedData["keys"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid metadata format: missing 'keys' field")
+	}
+
+	result := make(map[string]*metadata.Key, len(keyIDsRaw))
+	for _, raw := range keyIDsRaw {
+		keyID, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid keyid entry in role %s", roleName)
+		}
+		keyData, exists := keysMap[keyID]
+		if !exists {
+			return nil, fmt.Errorf("key %s referenced by role %s not found", keyID, roleName)
+		}
+		key, err := decodeAndValidateMetadataKey(keyData, keyID)
+		if err != nil {
+			return nil, err
+		}
+		result[keyID] = key
+	}
+
+	return result, nil
+}
+
+func getDelegatedRoleKeysFromTrustedTargets(trustedTargets map[string]interface{}, roleName string) (map[string]*metadata.Key, error) {
+	signedData, err := extractSignedSection(trustedTargets)
+	if err != nil {
+		return nil, err
+	}
+	delegationsMap, ok := signedData["delegations"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid trusted targets metadata: missing delegations")
+	}
+	delegatedRolesRaw, ok := delegationsMap["roles"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid trusted targets metadata: missing delegated roles")
+	}
+	delegatedKeysRaw, ok := delegationsMap["keys"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid trusted targets metadata: missing delegated keys")
+	}
+
+	var delegatedRole map[string]interface{}
+	for _, rawRole := range delegatedRolesRaw {
+		roleMap, ok := rawRole.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := roleMap["name"].(string)
+		if name == roleName {
+			delegatedRole = roleMap
+			break
+		}
+	}
+	if delegatedRole == nil {
+		return nil, fmt.Errorf("delegated role %s not found in trusted targets metadata", roleName)
+	}
+
+	keyIDsRaw, ok := delegatedRole["keyids"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid delegated role %s: missing keyids", roleName)
+	}
+
+	result := make(map[string]*metadata.Key, len(keyIDsRaw))
+	for _, raw := range keyIDsRaw {
+		keyID, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid delegated keyid for role %s", roleName)
+		}
+		keyData, exists := delegatedKeysRaw[keyID]
+		if !exists {
+			return nil, fmt.Errorf("delegated key %s for role %s not found", keyID, roleName)
+		}
+		key, err := decodeAndValidateMetadataKey(keyData, keyID)
+		if err != nil {
+			return nil, err
+		}
+		result[keyID] = key
+	}
+
+	return result, nil
+}
+
+func verifySignatureOverSignedPayload(signedData map[string]interface{}, key *metadata.Key, signatureHex string) error {
+	canonicalSigned, err := cjson.EncodeCanonical(signedData)
+	if err != nil {
+		return fmt.Errorf("failed to canonicalize signed payload: %w", err)
+	}
+
+	signatureBytes, err := hex.DecodeString(signatureHex)
+	if err != nil {
+		return fmt.Errorf("invalid signature hex: %w", err)
+	}
+
+	publicKey, err := key.ToPublicKey()
+	if err != nil {
+		return fmt.Errorf("failed to parse public key for verification: %w", err)
+	}
+	verifier, err := signature.LoadVerifier(publicKey, crypto.Hash(0))
+	if err != nil {
+		return fmt.Errorf("failed to initialize verifier: %w", err)
+	}
+
+	if err := verifier.VerifySignature(bytes.NewReader(signatureBytes), bytes.NewReader(canonicalSigned)); err != nil {
+		return fmt.Errorf("signature verification failed: %w", err)
+	}
+
+	return nil
+}
+
+func validateIncomingMetadataSignature(
+	ctx context.Context,
+	adminName string,
+	appName string,
+	metadataType string,
+	roleName string,
+	keyID string,
+	signatureHex string,
+	signedData map[string]interface{},
+	isSigningState bool,
+) error {
+	var allowedKeys map[string]*metadata.Key
+	var err error
+
+	switch metadataType {
+	case "root":
+		allowedKeys, err = getRootRoleKeysFromSigned(signedData, "root")
+		if err != nil {
+			return err
+		}
+		if !isSigningState {
+			trustedRoot, trustedErr := loadTrustedRootFromS3(ctx, adminName, appName)
+			if trustedErr != nil {
+				return fmt.Errorf("trusted root is required for signature authorization: %w", trustedErr)
+			}
+			trustedRootSigned, signedErr := extractSignedSection(trustedRoot)
+			if signedErr != nil {
+				return fmt.Errorf("invalid trusted root metadata: %w", signedErr)
+			}
+			oldRootKeys, keyErr := getRootRoleKeysFromSigned(trustedRootSigned, "root")
+			if keyErr != nil {
+				return fmt.Errorf("failed to read trusted root keys: %w", keyErr)
+			}
+			for oldKeyID, oldKey := range oldRootKeys {
+				if _, exists := allowedKeys[oldKeyID]; !exists {
+					allowedKeys[oldKeyID] = oldKey
+				}
+			}
+		}
+	case "targets":
+		if roleName == "targets" {
+			trustedRoot, trustedErr := loadTrustedRootFromS3(ctx, adminName, appName)
+			if trustedErr != nil {
+				return fmt.Errorf("trusted root is required for signature authorization: %w", trustedErr)
+			}
+			trustedRootSigned, signedErr := extractSignedSection(trustedRoot)
+			if signedErr != nil {
+				return fmt.Errorf("invalid trusted root metadata: %w", signedErr)
+			}
+			allowedKeys, err = getRootRoleKeysFromSigned(trustedRootSigned, "targets")
+			if err != nil {
+				return fmt.Errorf("failed to read trusted root targets keys: %w", err)
+			}
+		} else {
+			trustedTargets, trustedErr := loadTrustedTargetsFromS3(ctx, adminName, appName)
+			if trustedErr != nil {
+				return fmt.Errorf("trusted targets metadata is required for delegated signature authorization: %w", trustedErr)
+			}
+			allowedKeys, err = getDelegatedRoleKeysFromTrustedTargets(trustedTargets, roleName)
+			if err != nil {
+				return err
+			}
+		}
+	default:
+		return nil
+	}
+
+	key, ok := allowedKeys[keyID]
+	if !ok {
+		return fmt.Errorf("keyid %s is not authorized for role %s", keyID, roleName)
+	}
+
+	if err := verifySignatureOverSignedPayload(signedData, key, signatureHex); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -956,6 +1201,22 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
+	signedData, ok := metadataJSON["signed"].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid metadata format: missing 'signed' field",
+		})
+		return
+	}
+
+	metadataType, ok := signedData["_type"].(string)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid metadata format: missing '_type' field",
+		})
+		return
+	}
+
 	signatures, ok := metadataJSON["signatures"].([]interface{})
 	if !ok {
 		signatures = []interface{}{}
@@ -972,6 +1233,14 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 	}
 
 	if !signatureExists {
+		if err := validateIncomingMetadataSignature(ctx, adminName, appName, metadataType, payload.Role, payload.Signature.KeyID, payload.Signature.Sig, signedData, isSigningState); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Signature Failed",
+				"error":   fmt.Sprintf("Invalid signature or unauthorized key: %v", err),
+			})
+			return
+		}
+
 		signatureMap := map[string]interface{}{
 			"keyid": payload.Signature.KeyID,
 			"sig":   payload.Signature.Sig,
@@ -1007,22 +1276,6 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 	repo := repository.New()
-
-	signedData, ok := metadataJSON["signed"].(map[string]interface{})
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid metadata format: missing 'signed' field",
-		})
-		return
-	}
-
-	metadataType, ok := signedData["_type"].(string)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid metadata format: missing '_type' field",
-		})
-		return
-	}
 
 	var thresholdReached bool
 	var validationError error

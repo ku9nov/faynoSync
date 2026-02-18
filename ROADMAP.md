@@ -42,8 +42,8 @@
 - [ ] Evaluate and implement full online signing functionality through MongoDB (partial functionality exists)
 
 ### Documentation & Tooling
-- [ ] Update Postman template with TUF endpoints
-- [ ] Update API documentation for TUF functionality
+- [x] Update Postman template with TUF endpoints
+- [x] Update API documentation for TUF functionality
 - [ ] Add TUF usage examples and guides
 - [ ] Document TUF configuration and setup process
 

@@ -219,9 +219,9 @@ func forceOnlineMetadataUpdate(
 	rootPath := filepath.Join(tmpDir, "root.json")
 	_, latestRootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
 	if err != nil {
-		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err != nil {
+		if downloadErr := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); downloadErr != nil {
 			if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err2 != nil {
-				return nil, fmt.Errorf("failed to download latest root metadata: %w", err)
+				return nil, fmt.Errorf("failed to download root metadata (tried root.json and 1.root.json): %w", err2)
 			}
 		}
 	} else {
@@ -234,6 +234,9 @@ func forceOnlineMetadataUpdate(
 	repo.SetRoot(tempRoot)
 	if _, err := repo.Root().FromFile(rootPath); err != nil {
 		return nil, fmt.Errorf("failed to load root metadata: %w", err)
+	}
+	if !repo.Root().Signed.Expires.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("root metadata is expired at %s", repo.Root().Signed.Expires.UTC().Format(time.RFC3339))
 	}
 
 	rootData, err := os.ReadFile(rootPath)

@@ -21,6 +21,55 @@ import (
 
 var listMetadataForBootstrap = tuf_storage.ListMetadataFromS3
 
+func scanKeys(ctx context.Context, redisClient *redis.Client, pattern string) ([]string, error) {
+	if redisClient == nil {
+		return nil, fmt.Errorf("redis client is nil")
+	}
+
+	const scanCount int64 = 100
+	var (
+		cursor uint64
+		keys   []string
+	)
+	for {
+		batch, nextCursor, err := redisClient.Scan(ctx, cursor, pattern, scanCount).Result()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, batch...)
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return keys, nil
+}
+
+func abortBootstrapIfContextDone(
+	ctx context.Context,
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+	stage string,
+) bool {
+	if err := ctx.Err(); err != nil {
+		taskName := tasks.TaskNameBootstrap
+		successStatus := false
+		errorMsg := fmt.Sprintf("Bootstrap aborted: %v", err)
+		tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &successStatus,
+			Error:  &errorMsg,
+		})
+		logrus.Errorf("Bootstrap aborted %s for admin: %s, task_id: %s, err: %v", stage, adminName, taskID, err)
+		releaseBootstrapLock(redisClient, taskID, adminName, appName)
+		return true
+	}
+	return false
+}
+
 func hasPersistedRootMetadata(ctx context.Context, adminName, appName string) (bool, error) {
 	filenames, err := listMetadataForBootstrap(ctx, adminName, appName, "")
 	if err != nil {
@@ -83,7 +132,7 @@ func GetBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
 		}
 
 		// Check pre-locks (keys starting with "pre-")
-		keys, err := redisClient.Keys(ctx, "pre-*").Result()
+		keys, err := scanKeys(ctx, redisClient, "pre-*")
 		if err == nil {
 			preLocks = keys
 			logrus.Debugf("Found %d pre-locks in Redis", len(preLocks))
@@ -159,7 +208,7 @@ func GetBootstrapLocks(c *gin.Context, redisClient *redis.Client) {
 		logrus.Debugf("No BOOTSTRAP lock found for admin %s, app %s", adminName, appName)
 	}
 
-	preLockKeys, err := redisClient.Keys(ctx, "pre-*").Result()
+	preLockKeys, err := scanKeys(ctx, redisClient, "pre-*")
 	if err == nil {
 		preLocks := make([]map[string]interface{}, 0)
 		for _, key := range preLockKeys {
@@ -180,7 +229,7 @@ func GetBootstrapLocks(c *gin.Context, redisClient *redis.Client) {
 		logrus.Debugf("Error searching for pre-locks: %v", err)
 	}
 
-	settingsKeys, err := redisClient.Keys(ctx, "bootstrap:settings:*").Result()
+	settingsKeys, err := scanKeys(ctx, redisClient, "bootstrap:settings:*")
 	if err == nil {
 		settings := make([]map[string]interface{}, 0)
 		for _, key := range settingsKeys {
@@ -334,7 +383,7 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 			}
 		}
 
-		preLockKeys, err := redisClient.Keys(ctx, "pre-*").Result()
+		preLockKeys, err := scanKeys(ctx, redisClient, "pre-*")
 		if err == nil {
 			for _, preKey := range preLockKeys {
 
@@ -411,8 +460,10 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 
 	// Set default timeout if not provided
 	timeout := 300
-	if payload.Timeout != nil {
+	if payload.Timeout != nil && *payload.Timeout > 0 {
 		timeout = *payload.Timeout
+	} else if payload.Timeout != nil {
+		logrus.Warnf("Invalid bootstrap timeout %d seconds for admin %s, app %s. Falling back to default %d seconds", *payload.Timeout, adminName, payload.AppName, timeout)
 	}
 	logrus.Debugf("Bootstrap timeout set to: %d seconds", timeout)
 
@@ -450,7 +501,9 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 
 	logrus.Debugf("Starting bootstrap function in background for app: %s", payload.AppName)
 	go func() {
-		bootstrap(redisClient, taskID, adminName, payload.AppName, &payload)
+		bootstrapCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+		defer cancel()
+		bootstrapWithContext(bootstrapCtx, redisClient, taskID, adminName, payload.AppName, &payload)
 	}()
 
 	c.JSON(http.StatusAccepted, gin.H{
@@ -514,6 +567,17 @@ func bootstrap(
 	appName string,
 	payload *models.BootstrapPayload,
 ) {
+	bootstrapWithContext(context.Background(), redisClient, taskID, adminName, appName, payload)
+}
+
+func bootstrapWithContext(
+	ctx context.Context,
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+	payload *models.BootstrapPayload,
+) {
 	logrus.Debugf("Starting bootstrap function for admin: %s, app: %s, task_id: %s", adminName, appName, taskID)
 
 	// Update task state to STARTED
@@ -522,11 +586,19 @@ func bootstrap(
 	// Update task state to RUNNING
 	tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateRunning)
 
+	if abortBootstrapIfContextDone(ctx, redisClient, taskID, adminName, appName, "before settings save") {
+		return
+	}
+
 	logrus.Debug("Saving bootstrap settings")
 	saveSettings(redisClient, adminName, appName, payload)
 
+	if abortBootstrapIfContextDone(ctx, redisClient, taskID, adminName, appName, "after settings save") {
+		return
+	}
+
 	logrus.Debug("Finalizing bootstrap")
-	success := bootstrapFinalize(redisClient, taskID, adminName, appName, payload)
+	success := bootstrapFinalizeWithContext(ctx, redisClient, taskID, adminName, appName, payload)
 
 	if success {
 		// Update task state to SUCCESS
@@ -564,18 +636,32 @@ func bootstrapFinalize(
 	appName string,
 	payload *models.BootstrapPayload,
 ) bool {
+	return bootstrapFinalizeWithContext(context.Background(), redisClient, taskID, adminName, appName, payload)
+}
+
+func bootstrapFinalizeWithContext(
+	ctx context.Context,
+	redisClient *redis.Client,
+	taskID string,
+	adminName string,
+	appName string,
+	payload *models.BootstrapPayload,
+) bool {
+	if err := ctx.Err(); err != nil {
+		logrus.Errorf("Bootstrap finalize aborted for admin: %s, app: %s, err: %v", adminName, appName, err)
+		return false
+	}
+
 	logrus.Debugf("Starting bootstrap finalization for admin: %s, app: %s", adminName, appName)
 
 	logrus.Debug("Calling bootstrap_online_roles")
-	if err := metadata.BootstrapOnlineRoles(redisClient, taskID, adminName, appName, payload); err != nil {
+	if err := metadata.BootstrapOnlineRolesWithContext(ctx, redisClient, taskID, adminName, appName, payload); err != nil {
 		logrus.Errorf("Bootstrap online roles failed: %v", err)
 		return false
 	}
 
 	logrus.Debug("Cleaning up temporary bootstrap keys and finalizing state")
 	if redisClient != nil {
-		ctx := context.Background()
-
 		preLockKey := "pre-" + taskID
 		err := redisClient.Del(ctx, preLockKey).Err()
 		if err != nil {
