@@ -168,7 +168,7 @@ func makeAddArtifactsTestEnv(t *testing.T, adminName, appName string) (storeDir,
 	targets := tuf_metadata.Targets(exp)
 	targets.Signed.Delegations = &tuf_metadata.Delegations{
 		Keys:  map[string]*tuf_metadata.Key{targetsKeyID: targetsKey},
-		Roles: []tuf_metadata.DelegatedRole{{Name: "updates", KeyIDs: []string{targetsKeyID}, Threshold: 1, Paths: []string{"updates/"}}},
+		Roles: []tuf_metadata.DelegatedRole{{Name: "updates", KeyIDs: []string{targetsKeyID}, Threshold: 1, Paths: []string{"updates/*"}}},
 	}
 	roles.SetTargets("targets", targets)
 	targetsSigner, err := signature.LoadSigner(keys["targets"], crypto.Hash(0))
@@ -351,7 +351,7 @@ func TestAddArtifacts_DownloadRootFails_ReturnsError(t *testing.T) {
 	}, false, testTaskID)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to download root metadata")
+	assert.Contains(t, err.Error(), "failed to download latest root metadata")
 }
 
 type failDownloadClient struct{}
@@ -572,7 +572,7 @@ func TestGetRoleForArtifactPath_DelegationsRolesEmpty_ReturnsError(t *testing.T)
 
 // To verify: In getRoleForArtifactPath change path matching so non-matching path is accepted; test will fail (wrong role or no error).
 func TestGetRoleForArtifactPath_NoMatchingPath_ReturnsError(t *testing.T) {
-	repo := repoWithTargetsAndOneRoleForGetRole("updates", []string{"updates/"})
+	repo := repoWithTargetsAndOneRoleForGetRole("updates", []string{"updates/*"})
 
 	roleName, err := getRoleForArtifactPath(repo, "other/unknown.exe")
 
@@ -583,7 +583,7 @@ func TestGetRoleForArtifactPath_NoMatchingPath_ReturnsError(t *testing.T) {
 
 // To verify: In getRoleForArtifactPath change path matching (e.g. use exact match instead of prefix) or role return; test will fail (wrong role name).
 func TestGetRoleForArtifactPath_PathMatchesByPrefix_ReturnsRoleName(t *testing.T) {
-	repo := repoWithTargetsAndOneRoleForGetRole("updates", []string{"updates/"})
+	repo := repoWithTargetsAndOneRoleForGetRole("updates", []string{"updates/*"})
 
 	roleName, err := getRoleForArtifactPath(repo, "updates/app-1.0.0.tar")
 
@@ -594,7 +594,7 @@ func TestGetRoleForArtifactPath_PathMatchesByPrefix_ReturnsRoleName(t *testing.T
 // To verify: In getRoleForArtifactPath change PathHashPrefixes matching; test will fail (wrong role or no match).
 // Path "a" has hex representation "61"; prefix "6" matches.
 func TestGetRoleForArtifactPath_PathMatchesByPathHashPrefix_ReturnsRoleName(t *testing.T) {
-	repo := repoWithTargetsAndRolePathHashPrefixesForGetRole("hashed-role", []string{"61"})
+	repo := repoWithTargetsAndRolePathHashPrefixesForGetRole("hashed-role", []string{"ca"})
 
 	roleName, err := getRoleForArtifactPath(repo, "a")
 
@@ -608,8 +608,8 @@ func TestGetRoleForArtifactPath_MultipleRoles_ReturnsFirstMatchingRole(t *testin
 		Name  string
 		Paths []string
 	}{
-		{Name: "other", Paths: []string{"other/"}},
-		{Name: "updates", Paths: []string{"updates/"}},
+		{Name: "other", Paths: []string{"other/*"}},
+		{Name: "updates", Paths: []string{"updates/*"}},
 	})
 
 	roleName, err := getRoleForArtifactPath(repo, "updates/app.tar")
@@ -624,14 +624,23 @@ func TestGetRoleForArtifactPath_MultipleRoles_FirstRoleMatches_ReturnsFirst(t *t
 		Name  string
 		Paths []string
 	}{
-		{Name: "updates", Paths: []string{"updates/"}},
-		{Name: "releases", Paths: []string{"releases/"}},
+		{Name: "updates", Paths: []string{"updates/*"}},
+		{Name: "releases", Paths: []string{"releases/*"}},
 	})
 
 	roleName, err := getRoleForArtifactPath(repo, "updates/foo.zip")
 
 	require.NoError(t, err)
 	assert.Equal(t, "updates", roleName)
+}
+
+func TestGetRoleForArtifactPath_SingleWildcardPatternMatchesNestedPath_ReturnsRoleName(t *testing.T) {
+	repo := repoWithTargetsAndOneRoleForGetRole("default", []string{"tuf-ku9n/*"})
+
+	roleName, err := getRoleForArtifactPath(repo, "tuf-ku9n/nightly/linux/amd64/tuf-0.0.0.1.js")
+
+	require.NoError(t, err)
+	assert.Equal(t, "default", roleName)
 }
 
 // --- matchesRole tests ---
@@ -651,14 +660,14 @@ func TestMatchesRole_EmptyPathsAndPathHashPrefixes_ReturnsFalse(t *testing.T) {
 
 // To verify: In matchesRole use exact match instead of HasPrefix for Paths; test will fail (false instead of true).
 func TestMatchesRole_PathPrefixMatches_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "updates", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/"}}
+	role := &tuf_metadata.DelegatedRole{Name: "updates", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/*"}}
 	got := matchesRole("updates/app-1.0.0.tar", role)
 	assert.True(t, got)
 }
 
 // To verify: In matchesRole when path does not match any Paths prefix, return false; change to true and test will fail.
 func TestMatchesRole_PathPrefixNoMatch_ReturnsFalse(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "updates", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/"}}
+	role := &tuf_metadata.DelegatedRole{Name: "updates", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/*"}}
 	got := matchesRole("other/file.exe", role)
 	assert.False(t, got)
 }
@@ -672,21 +681,27 @@ func TestMatchesRole_PathEqualsRolePath_ReturnsTrue(t *testing.T) {
 
 // To verify: In matchesRole iterate over all Paths; if only first path is checked, test will fail (false instead of true).
 func TestMatchesRole_SecondPathMatches_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "r", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"a/", "b/"}}
+	role := &tuf_metadata.DelegatedRole{Name: "r", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"a/*", "b/*"}}
 	got := matchesRole("b/file.zip", role)
+	assert.True(t, got)
+}
+
+func TestMatchesRole_SingleWildcardPatternMatchesNestedPath_ReturnsTrue(t *testing.T) {
+	role := &tuf_metadata.DelegatedRole{Name: "default", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"tuf-ku9n/*"}}
+	got := matchesRole("tuf-ku9n/nightly/linux/amd64/tuf-0.0.0.1.js", role)
 	assert.True(t, got)
 }
 
 // To verify: In matchesRole hash is fmt.Sprintf("%x", artifactPath); path "a" gives hex "61"; change hash and test will fail.
 func TestMatchesRole_PathHashPrefixMatches_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, PathHashPrefixes: []string{"61"}}
+	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, PathHashPrefixes: []string{"ca"}}
 	got := matchesRole("a", role)
 	assert.True(t, got)
 }
 
 // To verify: In matchesRole PathHashPrefixes use prefix match on hash; prefix "6" matches hash "61" of "a".
 func TestMatchesRole_PathHashPrefixPartialMatch_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, PathHashPrefixes: []string{"6"}}
+	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, PathHashPrefixes: []string{"c"}}
 	got := matchesRole("a", role)
 	assert.True(t, got)
 }
@@ -700,14 +715,14 @@ func TestMatchesRole_PathHashPrefixNoMatch_ReturnsFalse(t *testing.T) {
 
 // To verify: In matchesRole Paths are checked before PathHashPrefixes; if order is reversed or only hash is used, test may fail.
 func TestMatchesRole_PathsCheckedFirst_PathMatchReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "r", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/"}, PathHashPrefixes: []string{"xx"}}
+	role := &tuf_metadata.DelegatedRole{Name: "r", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/*"}, PathHashPrefixes: []string{"xx"}}
 	got := matchesRole("updates/app.tar", role)
 	assert.True(t, got)
 }
 
 // To verify: In matchesRole when Paths do not match but PathHashPrefixes match, return true; skip PathHashPrefixes branch and test will fail.
 func TestMatchesRole_OnlyPathHashPrefixMatches_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"other/"}, PathHashPrefixes: []string{"61"}}
+	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"other/*"}, PathHashPrefixes: []string{"ca"}}
 	got := matchesRole("a", role)
 	assert.True(t, got)
 }
@@ -732,7 +747,7 @@ func makeRepoAndKeyForUpdateDelegatedRole(t *testing.T, roleName string) (repo *
 	targets := tuf_metadata.Targets(expires)
 	targets.Signed.Delegations = &tuf_metadata.Delegations{
 		Keys:  map[string]*tuf_metadata.Key{keyID: key},
-		Roles: []tuf_metadata.DelegatedRole{{Name: roleName, KeyIDs: []string{keyID}, Threshold: 1, Paths: []string{"updates/"}}},
+		Roles: []tuf_metadata.DelegatedRole{{Name: roleName, KeyIDs: []string{keyID}, Threshold: 1, Paths: []string{"updates/*"}}},
 	}
 	repo.SetTargets("targets", targets)
 
@@ -763,6 +778,39 @@ func TestUpdateDelegatedRoleWithArtifacts_TargetsOrDelegationsNil_ReturnsError(t
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get delegations from targets metadata")
+}
+
+// To verify: In updateDelegatedRoleWithArtifacts skip "not enough distinct keys" check for threshold; test will fail (no error or wrong message).
+func TestUpdateDelegatedRoleWithArtifacts_NotEnoughDistinctKeys_ReturnsError(t *testing.T) {
+	repo, _, cleanup := makeRepoAndKeyForUpdateDelegatedRole(t, "updates")
+	defer cleanup()
+
+	for i := range repo.Targets("targets").Signed.Delegations.Roles {
+		if repo.Targets("targets").Signed.Delegations.Roles[i].Name == "updates" {
+			repo.Targets("targets").Signed.Delegations.Roles[i].Threshold = 2
+			break
+		}
+	}
+
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	tmpDir := t.TempDir()
+
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return nil, fmt.Errorf("no files")
+	}
+	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
+
+	_, err := updateDelegatedRoleWithArtifacts(ctx, repo, "updates", []Artifact{
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+	}, testAdminName, testAppName, redisClient, tmpDir)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough distinct keys for updates role")
+	assert.Contains(t, err.Error(), "need 2, got 1")
 }
 
 // To verify: In updateDelegatedRoleWithArtifacts change role lookup so wrong role name is accepted; test will fail (no error or wrong message).
@@ -814,7 +862,7 @@ func TestUpdateDelegatedRoleWithArtifacts_LoadDelegationKeyFails_ReturnsError(t 
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load delegation private key")
+	assert.Contains(t, err.Error(), "failed to load updates private key")
 }
 
 // To verify: In updateDelegatedRoleWithArtifacts when !isNewDelegation, skip DownloadMetadataFromS3 error handling; test will fail (no error or wrong message).
@@ -970,7 +1018,7 @@ func TestUpdateSnapshotAndTimestamp_ContextCancelled_LockTimeout_ReturnsError(t 
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -988,7 +1036,7 @@ func TestUpdateSnapshotAndTimestamp_RedisSetNXError_ReturnsError(t *testing.T) {
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -1007,7 +1055,7 @@ func TestUpdateSnapshotAndTimestamp_LockHeld_Timeout_ReturnsError(t *testing.T) 
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -1031,7 +1079,7 @@ func TestUpdateSnapshotAndTimestamp_FindLatestSnapshotFails_ReturnsError(t *test
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to find latest snapshot version")
@@ -1064,7 +1112,7 @@ func TestUpdateSnapshotAndTimestamp_DownloadSnapshotFails_ReturnsError(t *testin
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to download snapshot metadata")
@@ -1105,7 +1153,7 @@ func TestUpdateSnapshotAndTimestamp_LoadSnapshotFails_ReturnsError(t *testing.T)
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load snapshot metadata")
@@ -1163,7 +1211,7 @@ func TestUpdateSnapshotAndTimestamp_UploadSnapshotFails_ReturnsError(t *testing.
 	tsSigner, _ := makeSnapshotAndTimestampSigners(t)
 	tmpDir := t.TempDir()
 
-	err = updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, tsSigner, snapSigner, tmpDir)
+	err = updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload snapshot metadata to S3")
@@ -1203,7 +1251,7 @@ func TestUpdateTimestamp_UploadFails_ReturnsError(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, signer, tmpDir)
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload timestamp metadata to S3")
@@ -1237,7 +1285,7 @@ func TestUpdateTimestamp_ToFileFails_ReturnsError(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, signer, tmpDir)
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to save timestamp metadata")
@@ -1281,12 +1329,22 @@ func TestUpdateTimestamp_Success_NoExistingTimestamp(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, signer, tmpDir)
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
 
 	require.NoError(t, err)
 	require.FileExists(t, filepath.Join(tmpDir, "timestamp.json"))
 	uploadedPath := filepath.Join(storeDir, "tuf_metadata", testAdminName, testAppName, "timestamp.json")
 	require.FileExists(t, uploadedPath)
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "timestamp.json"))
+	require.NoError(t, err)
+	var tsSigned struct {
+		Signed struct {
+			Version int `json:"version"`
+		} `json:"signed"`
+	}
+	require.NoError(t, json.Unmarshal(data, &tsSigned))
+	assert.Equal(t, 1, tsSigned.Signed.Version, "new timestamp without existing file must have version 1")
 }
 
 // To verify: In updateTimestamp when snapshot is nil, timestamp meta still updated; when snapshot set, snapshot.json in meta; change logic and test will fail.
@@ -1320,7 +1378,7 @@ func TestUpdateTimestamp_Success_WithSnapshotInRepo(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, signer, tmpDir)
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
 
 	require.NoError(t, err)
 	require.FileExists(t, filepath.Join(tmpDir, "timestamp.json"))
@@ -1336,6 +1394,69 @@ func TestUpdateTimestamp_Success_WithSnapshotInRepo(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &tsMeta))
 	require.Contains(t, tsMeta.Signed.Meta, "snapshot.json")
 	assert.Equal(t, 2, tsMeta.Signed.Meta["snapshot.json"].Version)
+}
+
+// To verify: In updateTimestamp when an existing timestamp file is loaded, its version is incremented (bump behavior for add/delete artifacts flow).
+func TestUpdateTimestamp_VersionIncremented_WhenExistingTimestampLoaded(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	storeDir := t.TempDir()
+	tmpDir := t.TempDir()
+
+	repo := repository.New()
+	exp := tuf_utils.HelperExpireIn(7)
+	snap := tuf_metadata.Snapshot(exp)
+	snap.Signed.Version = 2
+	repo.SetSnapshot(snap)
+
+	ts := tuf_metadata.Timestamp(exp)
+	ts.Signed.Version = 3
+	repo.SetTimestamp(ts)
+	signer, _ := makeSnapshotAndTimestampSigners(t)
+	if _, err := repo.Timestamp().Sign(signer); err != nil {
+		t.Fatal(err)
+	}
+	timestampPath := filepath.Join(tmpDir, "timestamp.json")
+	require.NoError(t, repo.Timestamp().ToFile(timestampPath, true))
+	require.FileExists(t, timestampPath)
+
+	savedGetViperD := tuf_storage.GetViperForDownload
+	savedFactoryD := tuf_storage.StorageFactoryForDownload
+	savedGetViperU := tuf_storage.GetViperForUpload
+	savedFactoryU := tuf_storage.StorageFactoryForUpload
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return viper.New() }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &fsStorageFactory{client: &failDownloadClient{}}
+	}
+	tuf_storage.GetViperForUpload = func() *viper.Viper {
+		v := viper.New()
+		v.Set("S3_BUCKET_NAME", "test-bucket")
+		return v
+	}
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
+	}
+	defer func() {
+		tuf_storage.GetViperForDownload = savedGetViperD
+		tuf_storage.StorageFactoryForDownload = savedFactoryD
+		tuf_storage.GetViperForUpload = savedGetViperU
+		tuf_storage.StorageFactoryForUpload = savedFactoryU
+	}()
+
+	ctx := context.Background()
+	err := updateTimestamp(ctx, repo, testAdminName, testAppName, redisClient, []signature.Signer{signer}, tmpDir)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "timestamp.json"))
+	require.NoError(t, err)
+	var tsSigned struct {
+		Signed struct {
+			Version int `json:"version"`
+		} `json:"signed"`
+	}
+	require.NoError(t, json.Unmarshal(data, &tsSigned))
+	assert.Equal(t, 4, tsSigned.Signed.Version, "when existing timestamp (version 3) is loaded, version must be incremented to 4")
 }
 
 // --- getArtifactPaths tests ---

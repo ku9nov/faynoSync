@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.15
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-version v1.6.0
+	github.com/secure-systems-lab/go-securesystemslib v0.10.0
 	github.com/sigstore/sigstore v1.10.4
 	github.com/spf13/viper v1.14.0
 	github.com/theupdateframework/go-tuf/v2 v2.4.1
@@ -74,7 +75,6 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rs/xid v1.5.0 // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect
 	github.com/sigstore/protobuf-specs v0.5.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.5.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect

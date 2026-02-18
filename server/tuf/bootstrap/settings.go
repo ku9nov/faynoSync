@@ -27,9 +27,36 @@ func saveSettings(redisClient *redis.Client, adminName string, appName string, p
 
 	rootThreshold := 1
 	rootNumKeys := len(rootMetadata.Signatures)
+	targetsThreshold := 1
+	targetsNumKeys := 1
+	snapshotThreshold := 1
+	snapshotNumKeys := 1
+	timestampThreshold := 1
+	timestampNumKeys := 1
 	if len(rootMetadata.Signed.Roles) > 0 {
-		if rootRole, ok := rootMetadata.Signed.Roles["root"]; ok {
-			rootThreshold = rootRole.Threshold
+		if r, ok := rootMetadata.Signed.Roles["root"]; ok {
+			rootThreshold = r.Threshold
+		}
+		if r, ok := rootMetadata.Signed.Roles["targets"]; ok {
+			targetsThreshold = r.Threshold
+			targetsNumKeys = len(r.KeyIDs)
+			if targetsNumKeys < 1 {
+				targetsNumKeys = 1
+			}
+		}
+		if r, ok := rootMetadata.Signed.Roles["snapshot"]; ok {
+			snapshotThreshold = r.Threshold
+			snapshotNumKeys = len(r.KeyIDs)
+			if snapshotNumKeys < 1 {
+				snapshotNumKeys = 1
+			}
+		}
+		if r, ok := rootMetadata.Signed.Roles["timestamp"]; ok {
+			timestampThreshold = r.Threshold
+			timestampNumKeys = len(r.KeyIDs)
+			if timestampNumKeys < 1 {
+				timestampNumKeys = 1
+			}
 		}
 	}
 
@@ -50,39 +77,39 @@ func saveSettings(redisClient *redis.Client, adminName string, appName string, p
 		logrus.Errorf("Failed to save ROOT_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
 	}
 
-	// Save TARGETS settings (with admin name and app name suffix)
+	// Save TARGETS settings (from root metadata roles)
 	if err := redisClient.Set(ctx, "TARGETS_EXPIRATION_"+keySuffix, roles.Targets.Expiration, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save TARGETS_EXPIRATION for admin %s, app %s: %v", adminName, appName, err)
 	}
-	if err := redisClient.Set(ctx, "TARGETS_THRESHOLD_"+keySuffix, 1, 0).Err(); err != nil {
+	if err := redisClient.Set(ctx, "TARGETS_THRESHOLD_"+keySuffix, targetsThreshold, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save TARGETS_THRESHOLD for admin %s, app %s: %v", adminName, appName, err)
 	}
-	if err := redisClient.Set(ctx, "TARGETS_NUM_KEYS_"+keySuffix, 1, 0).Err(); err != nil {
+	if err := redisClient.Set(ctx, "TARGETS_NUM_KEYS_"+keySuffix, targetsNumKeys, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save TARGETS_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
 	}
 	if err := redisClient.Set(ctx, "TARGETS_ONLINE_KEY_"+keySuffix, true, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save TARGETS_ONLINE_KEY for admin %s, app %s: %v", adminName, appName, err)
 	}
 
-	// Save SNAPSHOT settings (with admin name and app name suffix)
+	// Save SNAPSHOT settings (from root metadata roles)
 	if err := redisClient.Set(ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, roles.Snapshot.Expiration, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save SNAPSHOT_EXPIRATION for admin %s, app %s: %v", adminName, appName, err)
 	}
-	if err := redisClient.Set(ctx, "SNAPSHOT_THRESHOLD_"+keySuffix, 1, 0).Err(); err != nil {
+	if err := redisClient.Set(ctx, "SNAPSHOT_THRESHOLD_"+keySuffix, snapshotThreshold, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save SNAPSHOT_THRESHOLD for admin %s, app %s: %v", adminName, appName, err)
 	}
-	if err := redisClient.Set(ctx, "SNAPSHOT_NUM_KEYS_"+keySuffix, 1, 0).Err(); err != nil {
+	if err := redisClient.Set(ctx, "SNAPSHOT_NUM_KEYS_"+keySuffix, snapshotNumKeys, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save SNAPSHOT_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
 	}
 
-	// Save TIMESTAMP settings (with admin name and app name suffix)
+	// Save TIMESTAMP settings (from root metadata roles)
 	if err := redisClient.Set(ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, roles.Timestamp.Expiration, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save TIMESTAMP_EXPIRATION for admin %s, app %s: %v", adminName, appName, err)
 	}
-	if err := redisClient.Set(ctx, "TIMESTAMP_THRESHOLD_"+keySuffix, 1, 0).Err(); err != nil {
+	if err := redisClient.Set(ctx, "TIMESTAMP_THRESHOLD_"+keySuffix, timestampThreshold, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save TIMESTAMP_THRESHOLD for admin %s, app %s: %v", adminName, appName, err)
 	}
-	if err := redisClient.Set(ctx, "TIMESTAMP_NUM_KEYS_"+keySuffix, 1, 0).Err(); err != nil {
+	if err := redisClient.Set(ctx, "TIMESTAMP_NUM_KEYS_"+keySuffix, timestampNumKeys, 0).Err(); err != nil {
 		logrus.Errorf("Failed to save TIMESTAMP_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
 	}
 

@@ -2,9 +2,11 @@ package bootstrap
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"faynoSync/server/tuf/models"
@@ -16,6 +18,28 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	originalListMetadataForBootstrap := listMetadataForBootstrap
+	listMetadataForBootstrap = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		return []string{}, nil
+	}
+
+	code := m.Run()
+	listMetadataForBootstrap = originalListMetadataForBootstrap
+	os.Exit(code)
+}
+
+func mockListMetadataForBootstrap(t *testing.T, files []string, err error) {
+	t.Helper()
+	originalListMetadataForBootstrap := listMetadataForBootstrap
+	listMetadataForBootstrap = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		return files, err
+	}
+	t.Cleanup(func() {
+		listMetadataForBootstrap = originalListMetadataForBootstrap
+	})
+}
 
 // To verify: Change c.Query("appName") in GetBootstrapStatus to c.Query("app") to make appName-related tests fail.
 func makeGetBootstrapStatusContext(username string, appName string) (*gin.Context, *httptest.ResponseRecorder) {
@@ -186,6 +210,39 @@ func TestGetBootstrapStatus_WithRedis_BootstrapKeyFormat_AdminAndAppName(t *test
 	require.True(t, ok)
 	assert.Equal(t, true, data["bootstrap"])
 	assert.Equal(t, "completed", data["id"])
+}
+
+func TestGetBootstrapStatus_WithPersistedRootMetadata_ReturnsAlreadyCompleted(t *testing.T) {
+	mockListMetadataForBootstrap(t, []string{"1.root.json"}, nil)
+	c, w := makeGetBootstrapStatusContext("admin", "myapp")
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	GetBootstrapStatus(c, client)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	data, ok := body["data"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, data["bootstrap"])
+	assert.Equal(t, "Bootstrap already completed for this admin.", body["message"])
+}
+
+func TestGetBootstrapStatus_PersistentMetadataCheckFails_ReturnsServiceUnavailable(t *testing.T) {
+	mockListMetadataForBootstrap(t, nil, assert.AnError)
+	c, w := makeGetBootstrapStatusContext("admin", "myapp")
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	GetBootstrapStatus(c, client)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Failed to determine bootstrap state from persistent metadata", body["error"])
 }
 
 // --- PostBootstrap helpers and tests ---
@@ -459,6 +516,38 @@ func TestPostBootstrap_RedisPreLockWithSettingsForSameAdminApp_ReturnsConflict(t
 	assert.Equal(t, "Bootstrap already in progress for this admin and app", body["error"])
 }
 
+func TestPostBootstrap_PersistedRootMetadataExists_ReturnsConflict(t *testing.T) {
+	mockListMetadataForBootstrap(t, []string{"2.root.json", "timestamp.json"}, nil)
+	payload := validMinimalBootstrapPayload()
+	c, w := makePostBootstrapContext("admin", payload)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	PostBootstrap(c, client)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "System already has root metadata. Bootstrap already completed.", body["error"])
+}
+
+func TestPostBootstrap_PersistentMetadataCheckFails_ReturnsServiceUnavailable(t *testing.T) {
+	mockListMetadataForBootstrap(t, nil, assert.AnError)
+	payload := validMinimalBootstrapPayload()
+	c, w := makePostBootstrapContext("admin", payload)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	PostBootstrap(c, client)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Failed to determine bootstrap state from persistent metadata", body["error"])
+}
+
 // To verify: In PostBootstrap change StatusAccepted to StatusOK or change message; test will fail (wrong code or message).
 func TestPostBootstrap_ValidPayload_NoLock_ReturnsAccepted(t *testing.T) {
 	payload := validMinimalBootstrapPayload()
@@ -479,24 +568,26 @@ func TestPostBootstrap_ValidPayload_NoLock_ReturnsAccepted(t *testing.T) {
 	assert.NotEmpty(t, data["last_update"])
 }
 
-// To verify: In PostBootstrap add early return when redisClient is nil; test will fail (wrong status or panic).
-func TestPostBootstrap_NilRedis_ValidPayload_ReturnsAccepted(t *testing.T) {
+// To verify: In PostBootstrap remove nil redisClient guard; test will fail (wrong status/message).
+func TestPostBootstrap_NilRedis_ValidPayload_ReturnsServiceUnavailable(t *testing.T) {
 	payload := validMinimalBootstrapPayload()
 	c, w := makePostBootstrapContext("admin", payload)
 
 	PostBootstrap(c, nil)
 
-	assert.Equal(t, http.StatusAccepted, w.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, "Bootstrap accepted and started in background", body["message"])
+	assert.Equal(t, "Redis client is not available", body["error"])
 }
 
 // --- preLockBootstrap tests ---
 
-// To verify: In preLockBootstrap remove nil redisClient check; test will panic when client is nil.
-func TestPreLockBootstrap_NilRedis_NoPanic(t *testing.T) {
-	preLockBootstrap(nil, "task-1", "admin", "myapp")
+// To verify: In preLockBootstrap allow nil redisClient as success; test will fail (must return not acquired).
+func TestPreLockBootstrap_NilRedis_ReturnsNotAcquired(t *testing.T) {
+	acquired, existing := preLockBootstrap(nil, "task-1", "admin", "myapp")
+	assert.False(t, acquired)
+	assert.Equal(t, "", existing)
 }
 
 // To verify: In preLockBootstrap change pre-lock key format "pre-" + taskID; test will fail (wrong key or value).
@@ -508,7 +599,9 @@ func TestPreLockBootstrap_WithRedis_SetsPreLockKey(t *testing.T) {
 	adminName := "admin"
 	appName := "myapp"
 
-	preLockBootstrap(client, taskID, adminName, appName)
+	acquired, existing := preLockBootstrap(client, taskID, adminName, appName)
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 
 	preLockKey := "pre-" + taskID
 	val, err := client.Get(client.Context(), preLockKey).Result()
@@ -525,7 +618,9 @@ func TestPreLockBootstrap_WithRedis_SetsBootstrapKey(t *testing.T) {
 	adminName := "owner"
 	appName := "app1"
 
-	preLockBootstrap(client, taskID, adminName, appName)
+	acquired, existing := preLockBootstrap(client, taskID, adminName, appName)
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 
 	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
 	val, err := client.Get(client.Context(), bootstrapKey).Result()
@@ -538,11 +633,35 @@ func TestPreLockBootstrap_WithRedis_BootstrapKeyFormat(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	preLockBootstrap(client, "tid", "user1", "myApp")
+	acquired, existing := preLockBootstrap(client, "tid", "user1", "myApp")
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 
 	val, err := client.Get(client.Context(), "BOOTSTRAP_user1_myApp").Result()
 	require.NoError(t, err)
 	assert.Equal(t, "pre-tid", val)
+}
+
+// To verify: In preLockBootstrap replace SetNX with Set; test will fail (second call overwrites lock).
+func TestPreLockBootstrap_WithRedis_BootstrapKeyAlreadyExists_ReturnsNotAcquired(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	adminName := "admin"
+	appName := "myapp"
+	existingValue := "pre-existing-task"
+	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
+	mr.Set(bootstrapKey, existingValue)
+
+	acquired, existing := preLockBootstrap(client, "new-task", adminName, appName)
+
+	assert.False(t, acquired)
+	assert.Equal(t, existingValue, existing)
+	val, err := client.Get(client.Context(), bootstrapKey).Result()
+	require.NoError(t, err)
+	assert.Equal(t, existingValue, val, "existing lock value must not be overwritten")
+	_, err = client.Get(client.Context(), "pre-new-task").Result()
+	require.Error(t, err, "pre-lock key should not be created when lock acquisition fails")
 }
 
 // --- bootstrap (internal) tests ---
@@ -561,7 +680,9 @@ func TestBootstrap_FinalizeFails_ReleasesLock(t *testing.T) {
 	taskID := "task-fail"
 	adminName := "admin"
 	appName := "myapp"
-	preLockBootstrap(client, taskID, adminName, appName)
+	acquired, existing := preLockBootstrap(client, taskID, adminName, appName)
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 	payload := validMinimalBootstrapPayload()
 	// Minimal payload causes BootstrapOnlineRoles to fail, so bootstrapFinalize returns false
 

@@ -90,14 +90,9 @@ func RemoveArtifacts(
 		return fmt.Errorf("invalid root metadata: no timestamp role")
 	}
 
-	timestampKeyIDs, ok := timestampRole["keyids"].([]interface{})
-	if !ok || len(timestampKeyIDs) == 0 {
-		return fmt.Errorf("invalid root metadata: no timestamp keyids")
-	}
-
-	timestampKeyID, ok := timestampKeyIDs[0].(string)
-	if !ok {
-		return fmt.Errorf("invalid root metadata: timestamp keyid is not a string")
+	timestampSigners, err := buildSignersFromRoleMap(timestampRole, "timestamp")
+	if err != nil {
+		return err
 	}
 
 	targetsRole, ok := roles["targets"].(map[string]interface{})
@@ -105,34 +100,9 @@ func RemoveArtifacts(
 		return fmt.Errorf("invalid root metadata: no targets role")
 	}
 
-	targetsKeyIDs, ok := targetsRole["keyids"].([]interface{})
-	if !ok || len(targetsKeyIDs) == 0 {
-		return fmt.Errorf("invalid root metadata: no targets keyids")
-	}
-
-	targetsKeyID, ok := targetsKeyIDs[0].(string)
-	if !ok {
-		return fmt.Errorf("invalid root metadata: targets keyid is not a string")
-	}
-
-	timestampPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(timestampKeyID, timestampKeyID)
+	targetsSigners, err := buildSignersFromRoleMap(targetsRole, "targets")
 	if err != nil {
-		return fmt.Errorf("failed to load timestamp private key: %w", err)
-	}
-
-	timestampSigner, err := signature.LoadSigner(timestampPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return fmt.Errorf("failed to create timestamp signer: %w", err)
-	}
-
-	targetsPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyID)
-	if err != nil {
-		return fmt.Errorf("failed to load targets private key: %w", err)
-	}
-
-	targetsSigner, err := signature.LoadSigner(targetsPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return fmt.Errorf("failed to create targets signer: %w", err)
+		return err
 	}
 
 	_, targetsFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "targets")
@@ -199,8 +169,10 @@ func RemoveArtifacts(
 		repo.Targets("targets").Signed.Expires = tuf_utils.HelperExpireIn(targetsExpiration)
 		repo.Targets("targets").Signed.Version++
 		repo.Targets("targets").ClearSignatures()
-		if _, err := repo.Targets("targets").Sign(targetsSigner); err != nil {
-			return fmt.Errorf("failed to re-sign targets metadata after path removal: %w", err)
+		for i, s := range targetsSigners {
+			if _, err := repo.Targets("targets").Sign(s); err != nil {
+				return fmt.Errorf("failed to re-sign targets metadata with key %d: %w", i+1, err)
+			}
 		}
 
 		targetsVersion := repo.Targets("targets").Signed.Version
@@ -246,16 +218,9 @@ func RemoveArtifacts(
 	if !ok || len(snapshotRole.KeyIDs) == 0 {
 		return fmt.Errorf("failed to find snapshot key in root metadata")
 	}
-	snapshotKeyID := snapshotRole.KeyIDs[0]
-
-	snapshotPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(snapshotKeyID, snapshotKeyID)
+	snapshotSigners, err := buildSignersFromKeyIDsAndThreshold(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 	if err != nil {
-		return fmt.Errorf("failed to load snapshot private key: %w", err)
-	}
-
-	snapshotSigner, err := signature.LoadSigner(snapshotPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return fmt.Errorf("failed to create snapshot signer: %w", err)
+		return fmt.Errorf("failed to build snapshot signers: %w", err)
 	}
 
 	if err := updateSnapshotAndTimestamp(
@@ -265,8 +230,8 @@ func RemoveArtifacts(
 		adminName,
 		appName,
 		redisClient,
-		timestampSigner,
-		snapshotSigner,
+		timestampSigners,
+		snapshotSigners,
 		tmpDir,
 	); err != nil {
 		return fmt.Errorf("failed to update snapshot and timestamp: %w", err)
@@ -354,9 +319,11 @@ func removeArtifactsFromDelegatedRole(
 	}
 
 	var roleKeyIDs []string
+	var roleThreshold int
 	for _, role := range targets.Signed.Delegations.Roles {
 		if role.Name == roleName {
 			roleKeyIDs = role.KeyIDs
+			roleThreshold = role.Threshold
 			break
 		}
 	}
@@ -364,22 +331,41 @@ func removeArtifactsFromDelegatedRole(
 	if len(roleKeyIDs) == 0 {
 		return false, fmt.Errorf("no key IDs found for delegated role %s", roleName)
 	}
-
-	delegationKeyID := roleKeyIDs[0]
-	delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
-	if err != nil {
-		return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
+	if roleThreshold < 1 {
+		roleThreshold = 1
+	}
+	seenKeyID := make(map[string]bool)
+	keysToSign := make([]string, 0, roleThreshold)
+	for _, keyID := range roleKeyIDs {
+		if seenKeyID[keyID] {
+			continue
+		}
+		seenKeyID[keyID] = true
+		keysToSign = append(keysToSign, keyID)
+		if len(keysToSign) == roleThreshold {
+			break
+		}
+	}
+	if len(keysToSign) < roleThreshold {
+		return false, fmt.Errorf("not enough distinct keys for delegated role %s: need %d, got %d", roleName, roleThreshold, len(keysToSign))
 	}
 
-	delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return false, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
-	}
+	for _, delegationKeyID := range keysToSign {
+		delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
+		if err != nil {
+			return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
+		}
 
-	if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
-		return false, fmt.Errorf("failed to sign %s metadata: %w", roleName, err)
+		delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
+		if err != nil {
+			return false, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
+		}
+
+		if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
+			return false, fmt.Errorf("failed to sign %s metadata with key %s: %w", roleName, delegationKeyID, err)
+		}
+		logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, delegationKeyID)
 	}
-	logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, delegationKeyID)
 
 	newDelegationFilename := fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName)
 	delegationPath = filepath.Join(tmpDir, newDelegationFilename)

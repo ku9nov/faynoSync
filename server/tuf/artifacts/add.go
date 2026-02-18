@@ -2,11 +2,12 @@ package artifacts
 
 import (
 	"context"
-	"crypto"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -56,9 +57,16 @@ func AddArtifacts(
 	repo := repository.New()
 
 	rootPath := filepath.Join(tmpDir, "root.json")
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err != nil {
-		if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err2 != nil {
-			return fmt.Errorf("failed to download root metadata: %w", err)
+	_, latestRootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
+	if err != nil {
+		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err != nil {
+			if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err2 != nil {
+				return fmt.Errorf("failed to download root metadata (tried root.json and 1.root.json): %w", err)
+			}
+		}
+	} else {
+		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, latestRootFilename, rootPath); err != nil {
+			return fmt.Errorf("failed to download latest root metadata: %w", err)
 		}
 	}
 
@@ -93,14 +101,9 @@ func AddArtifacts(
 		return fmt.Errorf("invalid root metadata: no timestamp role")
 	}
 
-	timestampKeyIDs, ok := timestampRole["keyids"].([]interface{})
-	if !ok || len(timestampKeyIDs) == 0 {
-		return fmt.Errorf("invalid root metadata: no timestamp keyids")
-	}
-
-	timestampKeyID, ok := timestampKeyIDs[0].(string)
-	if !ok {
-		return fmt.Errorf("invalid root metadata: timestamp keyid is not a string")
+	timestampSigners, err := buildSignersFromRoleMap(timestampRole, "timestamp")
+	if err != nil {
+		return err
 	}
 
 	targetsRole, ok := roles["targets"].(map[string]interface{})
@@ -108,37 +111,10 @@ func AddArtifacts(
 		return fmt.Errorf("invalid root metadata: no targets role")
 	}
 
-	targetsKeyIDs, ok := targetsRole["keyids"].([]interface{})
-	if !ok || len(targetsKeyIDs) == 0 {
-		return fmt.Errorf("invalid root metadata: no targets keyids")
-	}
-
-	targetsKeyID, ok := targetsKeyIDs[0].(string)
-	if !ok {
-		return fmt.Errorf("invalid root metadata: targets keyid is not a string")
-	}
-
-	timestampPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(timestampKeyID, timestampKeyID)
+	targetsSigners, err := buildSignersFromRoleMap(targetsRole, "targets")
 	if err != nil {
-		return fmt.Errorf("failed to load timestamp private key: %w", err)
+		return err
 	}
-
-	timestampSigner, err := signature.LoadSigner(timestampPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return fmt.Errorf("failed to create timestamp signer: %w", err)
-	}
-
-	targetsPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyID)
-	if err != nil {
-		return fmt.Errorf("failed to load targets private key: %w", err)
-	}
-
-	targetsSigner, err := signature.LoadSigner(targetsPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return fmt.Errorf("failed to create targets signer: %w", err)
-	}
-
-	signer := timestampSigner
 
 	_, targetsFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "targets")
 	if err != nil {
@@ -208,8 +184,10 @@ func AddArtifacts(
 		repo.Targets("targets").Signed.Expires = tuf_utils.HelperExpireIn(targetsExpiration)
 		repo.Targets("targets").Signed.Version++
 		repo.Targets("targets").ClearSignatures()
-		if _, err := repo.Targets("targets").Sign(targetsSigner); err != nil {
-			return fmt.Errorf("failed to re-sign targets metadata after path update: %w", err)
+		for i, s := range targetsSigners {
+			if _, err := repo.Targets("targets").Sign(s); err != nil {
+				return fmt.Errorf("failed to re-sign targets metadata with key %d: %w", i+1, err)
+			}
 		}
 
 		targetsVersion := repo.Targets("targets").Signed.Version
@@ -242,20 +220,13 @@ func AddArtifacts(
 		if !ok || len(snapshotRole.KeyIDs) == 0 {
 			return fmt.Errorf("failed to find snapshot key in root metadata")
 		}
-		snapshotKeyID := snapshotRole.KeyIDs[0]
-
-		snapshotPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(snapshotKeyID, snapshotKeyID)
+		snapshotSigners, err := buildSignersFromKeyIDsAndThreshold(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 		if err != nil {
-			return fmt.Errorf("failed to load snapshot private key: %w", err)
-		}
-
-		snapshotSigner, err := signature.LoadSigner(snapshotPrivateKey, crypto.Hash(0))
-		if err != nil {
-			return fmt.Errorf("failed to create snapshot signer: %w", err)
+			return fmt.Errorf("failed to build snapshot signers: %w", err)
 		}
 
 		if err := updateSnapshotAndTimestamp(
-			ctx, repo, updatedRoles, adminName, appName, redisClient, signer, snapshotSigner, tmpDir,
+			ctx, repo, updatedRoles, adminName, appName, redisClient, timestampSigners, snapshotSigners, tmpDir,
 		); err != nil {
 			return fmt.Errorf("failed to update snapshot and timestamp: %w", err)
 		}
@@ -318,23 +289,49 @@ func matchesRole(artifactPath string, role *metadata.DelegatedRole) bool {
 	}
 
 	if len(role.Paths) > 0 {
-		for _, path := range role.Paths {
-			if strings.HasPrefix(artifactPath, path) {
+		for _, pattern := range role.Paths {
+			matched, err := matchDelegatedPathPattern(pattern, artifactPath)
+			if err != nil {
+				logrus.WithError(err).Warnf("Invalid delegation path pattern %q for artifact %q", pattern, artifactPath)
+				continue
+			}
+			if matched {
 				return true
 			}
 		}
 	}
 
 	if len(role.PathHashPrefixes) > 0 {
-		hash := fmt.Sprintf("%x", artifactPath)
+		digest := sha256.Sum256([]byte(artifactPath))
+		hashHex := hex.EncodeToString(digest[:])
 		for _, prefix := range role.PathHashPrefixes {
-			if strings.HasPrefix(hash, prefix) {
+			if strings.HasPrefix(hashHex, prefix) {
 				return true
 			}
 		}
 	}
 
 	return false
+}
+
+func matchDelegatedPathPattern(pattern string, artifactPath string) (bool, error) {
+	matched, err := path.Match(pattern, artifactPath)
+	if err != nil {
+		return false, err
+	}
+	if matched {
+		return true, nil
+	}
+
+	// Preserve legacy delegation semantics where "prefix/*" is used as recursive prefix.
+	if strings.HasSuffix(pattern, "/*") {
+		prefix := strings.TrimSuffix(pattern, "*")
+		if strings.HasPrefix(artifactPath, prefix) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func updateDelegatedRoleWithArtifacts(
@@ -422,9 +419,11 @@ func updateDelegatedRoleWithArtifacts(
 	}
 
 	var roleKeyIDs []string
+	var roleThreshold int
 	for _, role := range targets.Signed.Delegations.Roles {
 		if role.Name == roleName {
 			roleKeyIDs = role.KeyIDs
+			roleThreshold = role.Threshold
 			break
 		}
 	}
@@ -432,23 +431,21 @@ func updateDelegatedRoleWithArtifacts(
 	if len(roleKeyIDs) == 0 {
 		return false, fmt.Errorf("no key IDs found for delegated role %s", roleName)
 	}
-
-	delegationKeyID := roleKeyIDs[0]
-	delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
+	usedKeyIDs, err := signing.LoadAndSignDelegation(
+		roleName,
+		roleKeyIDs,
+		roleThreshold,
+		func(s signature.Signer, _ string) error {
+			_, signErr := repo.Targets(roleName).Sign(s)
+			return signErr
+		},
+	)
 	if err != nil {
-		return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
+		return false, err
 	}
-
-	delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
-	if err != nil {
-		return false, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
+	for _, keyID := range usedKeyIDs {
+		logrus.Debugf("Successfully signed delegated role metadata %s with key %s", roleName, keyID)
 	}
-
-	if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
-		return false, fmt.Errorf("failed to sign %s metadata: %w", roleName, err)
-	}
-	logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, delegationKeyID)
-
 	newDelegationFilename := fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName)
 	delegationPath := filepath.Join(tmpDir, newDelegationFilename)
 	if err := repo.Targets(roleName).ToFile(delegationPath, true); err != nil {
@@ -470,8 +467,8 @@ func updateSnapshotAndTimestamp(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	timestampSigner signature.Signer,
-	snapshotSigner signature.Signer,
+	timestampSigners []signature.Signer,
+	snapshotSigners []signature.Signer,
 	tmpDir string,
 ) error {
 	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s", adminName)
@@ -582,8 +579,10 @@ func updateSnapshotAndTimestamp(
 
 	repo.Snapshot().ClearSignatures()
 
-	if _, err := repo.Snapshot().Sign(snapshotSigner); err != nil {
-		return fmt.Errorf("failed to sign snapshot metadata: %w", err)
+	for i, s := range snapshotSigners {
+		if _, err := repo.Snapshot().Sign(s); err != nil {
+			return fmt.Errorf("failed to sign snapshot metadata with key %d: %w", i+1, err)
+		}
 	}
 
 	snapshotFilename = fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
@@ -596,7 +595,7 @@ func updateSnapshotAndTimestamp(
 		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 	}
 
-	if err := updateTimestamp(ctx, repo, adminName, appName, redisClient, timestampSigner, tmpDir); err != nil {
+	if err := updateTimestamp(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir); err != nil {
 		return fmt.Errorf("failed to update timestamp: %w", err)
 	}
 
@@ -609,7 +608,7 @@ func updateTimestamp(
 	adminName string,
 	appName string,
 	redisClient *redis.Client,
-	signer signature.Signer,
+	signers []signature.Signer,
 	tmpDir string,
 ) error {
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
@@ -621,9 +620,12 @@ func updateTimestamp(
 	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
 	repo.SetTimestamp(timestamp)
 
+	loadedTimestamp := false
 	if _, err := os.Stat(timestampPath); err == nil {
 		if _, err := repo.Timestamp().FromFile(timestampPath); err != nil {
 			logrus.Warnf("Failed to load timestamp metadata: %v, creating new one", err)
+		} else {
+			loadedTimestamp = true
 		}
 	}
 
@@ -638,13 +640,18 @@ func updateTimestamp(
 		snapshotMetaFile := metadata.MetaFile(int64(snapshot.Signed.Version))
 		timestampMeta["snapshot.json"] = snapshotMetaFile
 	}
+	if loadedTimestamp {
+		repo.Timestamp().Signed.Version++
+	}
 
 	repo.Timestamp().Signed.Expires = tuf_utils.HelperExpireIn(timestampExpiration)
 
 	repo.Timestamp().ClearSignatures()
 
-	if _, err := repo.Timestamp().Sign(signer); err != nil {
-		return fmt.Errorf("failed to sign timestamp metadata: %w", err)
+	for i, s := range signers {
+		if _, err := repo.Timestamp().Sign(s); err != nil {
+			return fmt.Errorf("failed to sign timestamp metadata with key %d: %w", i+1, err)
+		}
 	}
 
 	timestampPath = filepath.Join(tmpDir, "timestamp.json")
@@ -657,6 +664,41 @@ func updateTimestamp(
 	}
 
 	return nil
+}
+
+func buildSignersFromRoleMap(roleMap map[string]interface{}, roleName string) ([]signature.Signer, error) {
+	keyIDsRaw, ok := roleMap["keyids"].([]interface{})
+	if !ok || len(keyIDsRaw) == 0 {
+		return nil, fmt.Errorf("invalid root metadata: no %s keyids", roleName)
+	}
+	threshold := 1
+	if t, ok := roleMap["threshold"].(float64); ok && int(t) >= 1 {
+		threshold = int(t)
+	}
+	keyIDs := make([]string, 0, len(keyIDsRaw))
+	for _, v := range keyIDsRaw {
+		if s, ok := v.(string); ok {
+			keyIDs = append(keyIDs, s)
+		}
+	}
+	return buildSignersFromKeyIDsAndThreshold(keyIDs, threshold, roleName)
+}
+
+func buildSignersFromKeyIDsAndThreshold(keyIDs []string, threshold int, roleName string) ([]signature.Signer, error) {
+	signers := make([]signature.Signer, 0)
+	_, err := signing.LoadAndSignDelegation(
+		roleName,
+		keyIDs,
+		threshold,
+		func(s signature.Signer, _ string) error {
+			signers = append(signers, s)
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return signers, nil
 }
 
 func getArtifactPaths(artifacts []Artifact) []string {

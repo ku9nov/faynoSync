@@ -11,6 +11,7 @@ import (
 	tuf_storage "faynoSync/server/tuf/storage"
 	"faynoSync/server/utils"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +32,7 @@ import (
 	tuf_metadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
 
-// makeValidRootAndPayload creates a valid root using go-tuf, writes the timestamp private key to keyDir,
+// makeValidRootAndPayload creates a valid root using go-tuf, writes online role private keys to keyDir,
 // and returns a BootstrapPayload and cleanup function. To verify: change AddKey/FromFile so root is invalid; test fails.
 func makeValidRootAndPayload(t *testing.T) (payload *models.BootstrapPayload, keyDir string, cleanup func()) {
 	t.Helper()
@@ -83,16 +84,16 @@ func makeValidRootAndPayload(t *testing.T) (payload *models.BootstrapPayload, ke
 	err = json.Unmarshal(rootData, &rootMeta)
 	require.NoError(t, err)
 
-	timestampKeyID := ""
-	if r, ok := rootMeta.Signed.Roles["timestamp"]; ok && len(r.KeyIDs) > 0 {
-		timestampKeyID = r.KeyIDs[0]
+	// Write online role private keys as 32-byte raw seeds so LoadPrivateKeyFromFilesystem can load them.
+	for _, roleName := range []string{"targets", "snapshot", "timestamp"} {
+		role, ok := rootMeta.Signed.Roles[roleName]
+		require.True(t, ok, "%s role must be present in root", roleName)
+		require.NotEmpty(t, role.KeyIDs, "%s key IDs must be present in root", roleName)
+		keyID := role.KeyIDs[0]
+		seed := keys[roleName].Seed()
+		keyPath := filepath.Join(keyDir, keyID)
+		require.NoError(t, os.WriteFile(keyPath, seed, 0600))
 	}
-	require.NotEmpty(t, timestampKeyID, "timestamp key ID must be present in root")
-
-	// Write timestamp private key as 32-byte raw seed so LoadPrivateKeyFromFilesystem can load it
-	seed := keys["timestamp"].Seed()
-	timestampKeyPath := filepath.Join(keyDir, timestampKeyID)
-	require.NoError(t, os.WriteFile(timestampKeyPath, seed, 0600))
 
 	payload = &models.BootstrapPayload{
 		AppName: "testapp",
@@ -133,7 +134,7 @@ func TestBootstrapOnlineRoles_RootMetadataNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "root metadata not found in payload")
 }
 
-// To verify: In BootstrapOnlineRoles skip validation of root structure; test will fail (error expected at load or timestamp).
+// To verify: In BootstrapOnlineRoles skip validation of root structure; test will fail (error expected at load or role key lookup).
 func TestBootstrapOnlineRoles_InvalidRootStructure_NoTimestampRole(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -158,13 +159,16 @@ func TestBootstrapOnlineRoles_InvalidRootStructure_NoTimestampRole(t *testing.T)
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	// Root is written to file; go-tuf FromFile may fail on type/structure, or we fail on timestamp key
+	// Root is written to file; go-tuf FromFile may fail on type/structure, or VerifyDelegate may fail (e.g. no delegation for root), or we fail on online role key lookup.
 	assert.True(t, strings.Contains(err.Error(), "failed to load root metadata from file") ||
-		strings.Contains(err.Error(), "failed to find timestamp key in root metadata"),
-		"expected load or timestamp error, got: %s", err.Error())
+		strings.Contains(err.Error(), "failed to verify root metadata") ||
+		strings.Contains(err.Error(), "failed to find targets role keys in root metadata") ||
+		strings.Contains(err.Error(), "failed to find snapshot role keys in root metadata") ||
+		strings.Contains(err.Error(), "failed to find timestamp role keys in root metadata"),
+		"expected load, verify, or role key error, got: %s", err.Error())
 }
 
-// To verify: In BootstrapOnlineRoles accept root without timestamp role; test will fail (no error).
+// To verify: In BootstrapOnlineRoles accept root without online roles; test will fail (no error).
 func TestBootstrapOnlineRoles_TimestampKeyMissingInRoot(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -190,10 +194,15 @@ func TestBootstrapOnlineRoles_TimestampKeyMissingInRoot(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to find timestamp key in root metadata")
+	// VerifyDelegate runs before role key lookup; root with no online roles may fail verification or we fail on role key lookup.
+	assert.True(t, strings.Contains(err.Error(), "failed to verify root metadata") ||
+		strings.Contains(err.Error(), "failed to find targets role keys in root metadata") ||
+		strings.Contains(err.Error(), "failed to find snapshot role keys in root metadata") ||
+		strings.Contains(err.Error(), "failed to find timestamp role keys in root metadata"),
+		"expected verify or role key error, got: %s", err.Error())
 }
 
-// To verify: In BootstrapOnlineRoles skip the check that online key exists in Keys; test will fail (no error or wrong message).
+// To verify: In BootstrapOnlineRoles skip the check that role key exists in Keys; test will fail (no error or wrong message).
 func TestBootstrapOnlineRoles_OnlineKeyNotFoundInRoot(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
@@ -209,8 +218,12 @@ func TestBootstrapOnlineRoles_OnlineKeyNotFoundInRoot(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "online key")
-	assert.Contains(t, err.Error(), "not found in root metadata")
+	// VerifyDelegate runs first and may fail with "key with ID ... not found in root keyids"; or we fail at role key lookup.
+	assert.True(t, strings.Contains(err.Error(), "failed to verify root metadata") ||
+		(strings.Contains(err.Error(), "targets key") && strings.Contains(err.Error(), "not found in root metadata")) ||
+		(strings.Contains(err.Error(), "snapshot key") && strings.Contains(err.Error(), "not found in root metadata")) ||
+		(strings.Contains(err.Error(), "timestamp key") && strings.Contains(err.Error(), "not found in root metadata")),
+		"expected verify or role key error, got: %s", err.Error())
 }
 
 // To verify: In BootstrapOnlineRoles ignore LoadPrivateKeyFromFilesystem error and proceed; test will fail (no error).
@@ -228,11 +241,14 @@ func TestBootstrapOnlineRoles_SignerCreationFails_NoKeyDir(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create signer from private key")
+	assert.True(t, strings.Contains(err.Error(), "failed to build targets signers") ||
+		strings.Contains(err.Error(), "failed to build snapshot signers") ||
+		strings.Contains(err.Error(), "failed to build timestamp signers"),
+		"error should mention key loading or signer creation: %s", err.Error())
 }
 
-// To verify: In BootstrapOnlineRoles change repo.Root().FromFile to skip error or use wrong path; test will fail (no error or wrong behavior).
-func TestBootstrapOnlineRoles_LoadRootFromFileFails_InvalidJSON(t *testing.T) {
+// To verify: In BootstrapOnlineRoles bypass/relax expiration parsing; test will fail (invalid format must be rejected).
+func TestBootstrapOnlineRoles_InvalidRootExpirationFormat_ReturnsError(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
 	// Corrupt root so that go-tuf FromFile fails (e.g. invalid JSON structure for TUF)
@@ -253,7 +269,43 @@ func TestBootstrapOnlineRoles_LoadRootFromFileFails_InvalidJSON(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load root metadata from file")
+	assert.Contains(t, err.Error(), "invalid root expiration format")
+}
+
+// To verify: In BootstrapOnlineRoles remove or bypass the root expiration check; test will fail (bootstrap must reject expired root).
+func TestBootstrapOnlineRoles_RootExpired_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	root := payload.Metadata["root"]
+	root.Signed.Expires = time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
+	payload.Metadata["root"] = root
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "root expiration is in the past")
+}
+
+// To verify: In BootstrapOnlineRoles remove VerifyDelegate("root", repo.Root()) or return nil on error; test will fail (bootstrap must reject root with insufficient signatures).
+func TestBootstrapOnlineRoles_RootVerifyDelegateFails_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	root := payload.Metadata["root"]
+	root.Signatures = []models.Signature{} // empty signatures so threshold is not reached
+	payload.Metadata["root"] = root
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to verify root metadata")
 }
 
 // To verify: In BootstrapOnlineRoles return an error when targets signing fails; change Sign to succeed; test will fail (error expected).
@@ -261,6 +313,7 @@ func TestBootstrapOnlineRoles_Success_NoDelegations(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
 	payload.Settings.Roles.Delegations = nil
+	captureClient := &uploadCaptureMockClient{objects: map[string][]byte{}}
 
 	savedViper := tuf_storage.GetViperForUpload
 	savedFactory := tuf_storage.StorageFactoryForUpload
@@ -268,7 +321,7 @@ func TestBootstrapOnlineRoles_Success_NoDelegations(t *testing.T) {
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
 	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &uploadMockFactory{}
+		return &uploadMockFactory{client: captureClient}
 	}
 	defer func() {
 		tuf_storage.GetViperForUpload = savedViper
@@ -282,18 +335,47 @@ func TestBootstrapOnlineRoles_Success_NoDelegations(t *testing.T) {
 	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.NoError(t, err)
+
+	timestampBody, ok := captureClient.objects["tuf_metadata/admin/app/timestamp.json"]
+	require.True(t, ok, "timestamp.json must be uploaded")
+
+	var timestampJSON struct {
+		Signed struct {
+			Meta map[string]struct {
+				Version int64 `json:"version"`
+			} `json:"meta"`
+		} `json:"signed"`
+	}
+	require.NoError(t, json.Unmarshal(timestampBody, &timestampJSON))
+
+	snapshotMeta, ok := timestampJSON.Signed.Meta["snapshot.json"]
+	require.True(t, ok, "timestamp must reference snapshot.json")
+
+	var snapshotVersion int64
+	for objectKey, body := range captureClient.objects {
+		if strings.HasSuffix(objectKey, ".snapshot.json") {
+			var snapshotJSON struct {
+				Signed struct {
+					Version int64 `json:"version"`
+				} `json:"signed"`
+			}
+			require.NoError(t, json.Unmarshal(body, &snapshotJSON))
+			snapshotVersion = snapshotJSON.Signed.Version
+			break
+		}
+	}
+	require.Greater(t, snapshotVersion, int64(0), "snapshot metadata must be uploaded")
+	assert.Equal(t, snapshotVersion, snapshotMeta.Version, "timestamp snapshot version must match snapshot metadata version")
 }
 
 // To verify: In BootstrapOnlineRoles skip the check for empty KeyIDs in delegated role; test will fail (no error).
 func TestBootstrapOnlineRoles_DelegationRole_NoKeyIDs(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
-	tsKeyID := ""
-	for id := range payload.Metadata["root"].Signed.Keys {
-		tsKeyID = id
-		break
-	}
-	require.NotEmpty(t, tsKeyID)
+	timestampRole, ok := payload.Metadata["root"].Signed.Roles["timestamp"]
+	require.True(t, ok, "timestamp role must be present in root metadata")
+	require.NotEmpty(t, timestampRole.KeyIDs, "timestamp role must include at least one key id")
+	tsKeyID := timestampRole.KeyIDs[0]
 	k := payload.Metadata["root"].Signed.Keys[tsKeyID]
 	payload.Settings.Roles.Delegations = &models.TUFDelegations{
 		Keys: map[string]models.TUFKey{tsKeyID: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: k.KeyVal.Public}}},
@@ -317,9 +399,12 @@ func TestBootstrapOnlineRoles_DelegationRole_NoKeyIDs(t *testing.T) {
 func TestBootstrapOnlineRoles_DelegationRole_PrivateKeyNotFound(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)
 	defer cleanup()
-	// Use a key ID that does not exist on disk (not the timestamp key we wrote)
-	fakeKeyID := "nonexistent-delegation-key-id"
-	pub, _, _ := ed25519.GenerateKey(nil)
+	pub, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	delegationKey, err := tuf_metadata.KeyFromPublicKey(pub)
+	require.NoError(t, err)
+	fakeKeyID, err := delegationKey.ID()
+	require.NoError(t, err)
 	hexPub := hex.EncodeToString(pub)
 	payload.Settings.Roles.Delegations = &models.TUFDelegations{
 		Keys: map[string]models.TUFKey{
@@ -334,10 +419,204 @@ func TestBootstrapOnlineRoles_DelegationRole_PrivateKeyNotFound(t *testing.T) {
 	defer mr.Close()
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
-	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+	err = BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load delegation private key")
+}
+
+// To verify: In BootstrapOnlineRoles skip "not enough distinct keys" check for threshold; test will fail (no error or wrong message).
+func TestBootstrapOnlineRoles_DelegationRole_NotEnoughDistinctKeys(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	tsKeyID := ""
+	for id := range payload.Metadata["root"].Signed.Keys {
+		tsKeyID = id
+		break
+	}
+	require.NotEmpty(t, tsKeyID)
+	k := payload.Metadata["root"].Signed.Keys[tsKeyID]
+
+	payload.Settings.Roles.Delegations = &models.TUFDelegations{
+		Keys: map[string]models.TUFKey{
+			tsKeyID: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: k.KeyVal.Public}},
+		},
+		Roles: []models.TUFDelegatedRole{
+			{Name: "delegated", KeyIDs: []string{tsKeyID}, Threshold: 2, Paths: []string{"*"}, Terminating: false},
+		},
+	}
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role")
+	assert.Contains(t, err.Error(), "delegated")
+	assert.Contains(t, err.Error(), "need 2, got 1")
+}
+
+// To verify: In BootstrapOnlineRoles delegated role with threshold 2 must be signed with 2 distinct keys; remove loop or distinct check and test fails.
+func TestBootstrapOnlineRoles_DelegationRole_ThresholdTwo_Success(t *testing.T) {
+	payload, keyDir, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+
+	// Create two delegation keys and add both to payload.
+	_, priv1, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	_, priv2, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	key1, err := tuf_metadata.KeyFromPublicKey(priv1.Public())
+	require.NoError(t, err)
+	key2, err := tuf_metadata.KeyFromPublicKey(priv2.Public())
+	require.NoError(t, err)
+	id1, err := key1.ID()
+	require.NoError(t, err)
+	id2, err := key2.ID()
+	require.NoError(t, err)
+
+	hexPub1 := hex.EncodeToString(priv1.Public().(ed25519.PublicKey))
+	hexPub2 := hex.EncodeToString(priv2.Public().(ed25519.PublicKey))
+	payload.Settings.Roles.Delegations = &models.TUFDelegations{
+		Keys: map[string]models.TUFKey{
+			id1: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: hexPub1}},
+			id2: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: hexPub2}},
+		},
+		Roles: []models.TUFDelegatedRole{
+			{Name: "delegated", KeyIDs: []string{id1, id2}, Threshold: 2, Paths: []string{"*"}, Terminating: false},
+		},
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(keyDir, id1), priv1.Seed(), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(keyDir, id2), priv2.Seed(), 0600))
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err = BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.NoError(t, err)
+}
+
+// To verify: In BootstrapOnlineRoles ignore snapshot upload error and continue; test will fail (error expected).
+func TestBootstrapOnlineRoles_SnapshotUploadFails_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	payload.Settings.Roles.Delegations = nil
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{client: &uploadFailOnSuffixMockClient{
+			failSuffix: ".snapshot.json",
+			err:        fmt.Errorf("forced snapshot upload failure"),
+		}}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to upload snapshot metadata to S3")
+}
+
+// To verify: In BootstrapOnlineRoles ignore timestamp upload error and continue; test will fail (error expected).
+func TestBootstrapOnlineRoles_TimestampUploadFails_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	payload.Settings.Roles.Delegations = nil
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{client: &uploadFailOnSuffixMockClient{
+			failSuffix: "timestamp.json",
+			err:        fmt.Errorf("forced timestamp upload failure"),
+		}}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to upload timestamp metadata to S3")
+}
+
+// To verify: In BootstrapOnlineRoles ignore delegated role upload error and continue; test will fail (error expected).
+func TestBootstrapOnlineRoles_DelegatedUploadFails_ReturnsError(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+
+	timestampRole, ok := payload.Metadata["root"].Signed.Roles["timestamp"]
+	require.True(t, ok, "timestamp role must be present in root metadata")
+	require.NotEmpty(t, timestampRole.KeyIDs, "timestamp role must include at least one key id")
+	tsKeyID := timestampRole.KeyIDs[0]
+	k := payload.Metadata["root"].Signed.Keys[tsKeyID]
+	payload.Settings.Roles.Delegations = &models.TUFDelegations{
+		Keys: map[string]models.TUFKey{
+			tsKeyID: {KeyType: "ed25519", Scheme: "ed25519", KeyVal: models.TUFKeyVal{Public: k.KeyVal.Public}},
+		},
+		Roles: []models.TUFDelegatedRole{
+			{Name: "delegated", KeyIDs: []string{tsKeyID}, Threshold: 1, Paths: []string{"*"}, Terminating: false},
+		},
+	}
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{client: &uploadFailOnSuffixMockClient{
+			failSuffix: "1.delegated.json",
+			err:        fmt.Errorf("forced delegated upload failure"),
+		}}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to upload delegated role metadata delegated to S3")
 }
 
 // makeValidRolesForValidateRoot creates a fully signed repository (root, targets, snapshot, timestamp).
@@ -1284,11 +1563,11 @@ func TestPostMetadataSign_UnsupportedMetadataType_ReturnsBadRequest(t *testing.T
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Contains(t, body["error"], "Unsupported metadata type")
+	assert.Contains(t, body["error"], "signature validation not supported for metadata type")
 }
 
-// To verify: In PostMetadataSign change error response when root FromFile fails; test will fail (wrong status).
-func TestPostMetadataSign_Root_LoadFromFileFails_ReturnsBadRequest(t *testing.T) {
+// To verify: In PostMetadataSign remove pre-append signature authorization/verification; test will fail (signature must be rejected before loading root).
+func TestPostMetadataSign_Root_InvalidRoleAuthorization_RejectedBeforeLoad(t *testing.T) {
 	payload := models.MetadataSignPostPayload{Role: "root", Signature: models.Signature{KeyID: "k1", Sig: "sig"}}
 	c, w := makePostMetadataSignContext("admin", "myapp", payload)
 	mr := miniredis.RunT(t)
@@ -1302,7 +1581,8 @@ func TestPostMetadataSign_Root_LoadFromFileFails_ReturnsBadRequest(t *testing.T)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Contains(t, body["error"], "Failed to load root metadata")
+	assert.Equal(t, "Signature Failed", body["message"])
+	assert.Contains(t, body["error"], "role root not found in metadata")
 }
 
 // To verify: In PostMetadataSign remove bootstrap root validation or finalize; test will fail (wrong status or message).
@@ -1374,6 +1654,42 @@ func TestPostMetadataSign_RootBootstrapSigning_ThresholdNotReached_ReturnsBadReq
 	assert.Contains(t, body["error"], "threshold not reached")
 }
 
+// To verify: In PostMetadataSign re-introduce self-validation fallback when trusted root is unavailable; test will fail (must reject root rotation).
+func TestPostMetadataSign_RootRotation_TrustedRootUnavailable_ReturnsBadRequest(t *testing.T) {
+	rootJSON, keyID := makeValidRootJSONForSign(t)
+	payload := models.MetadataSignPostPayload{Role: "root", Signature: models.Signature{KeyID: keyID, Sig: hex.EncodeToString(make([]byte, 32))}}
+	c, w := makePostMetadataSignContext("admin", "myapp", payload)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_admin_myapp", "done")
+	mr.Set("ROOT_SIGNING_admin_myapp", rootJSON)
+
+	savedList := tuf_storage.ListMetadataForLatest
+	savedFactory := tuf_storage.StorageFactoryForDownload
+	savedViper := tuf_storage.GetViperForDownload
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return nil, fmt.Errorf("s3 unavailable")
+	}
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &downloadMockFactory{err: fmt.Errorf("s3 unavailable")}
+	}
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return viper.New() }
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.StorageFactoryForDownload = savedFactory
+		tuf_storage.GetViperForDownload = savedViper
+	}()
+
+	PostMetadataSign(c, client)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Signature Failed", body["message"])
+	assert.Contains(t, body["error"], "trusted root is required for root rotation")
+}
+
 // To verify: In PostMetadataSign change error response when finalize fails; test will fail (wrong status).
 func TestPostMetadataSign_Root_FinalizeFails_ReturnsInternalServerError(t *testing.T) {
 	rootJSON, keyID := makeValidRootJSONForSign(t)
@@ -1428,8 +1744,8 @@ func TestPostMetadataSign_Targets_LoadFromFileFails_ReturnsBadRequest(t *testing
 	assert.Contains(t, body["error"], "Failed to load targets metadata")
 }
 
-// To verify: In PostMetadataSign change response when targets threshold not reached; test will fail (wrong message).
-func TestPostMetadataSign_Targets_ThresholdNotReached_ReturnsOKWithPending(t *testing.T) {
+// To verify: In PostMetadataSign remove trusted-root key authorization for targets signatures; test will fail (must reject unauthorized signature flow).
+func TestPostMetadataSign_Targets_WithoutTrustedRoot_RejectsSignature(t *testing.T) {
 	targetsJSON := makeValidTargetsJSONForSign(t)
 	payload := models.MetadataSignPostPayload{Role: "targets", Signature: models.Signature{KeyID: "k1", Sig: hex.EncodeToString(make([]byte, 32))}}
 	c, w := makePostMetadataSignContext("admin", "myapp", payload)
@@ -1447,10 +1763,11 @@ func TestPostMetadataSign_Targets_ThresholdNotReached_ReturnsOKWithPending(t *te
 
 	PostMetadataSign(c, client)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Contains(t, body["message"], "pending signatures")
+	assert.Equal(t, "Signature Failed", body["message"])
+	assert.Contains(t, body["error"], "trusted root is required for signature authorization")
 }
 
 type uploadMockClient struct{}
@@ -1476,6 +1793,42 @@ func (u *uploadMockClient) DownloadObject(ctx context.Context, bucketName, objec
 }
 
 func (u *uploadMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	panic("not used")
+}
+
+type uploadCaptureMockClient struct {
+	objects map[string][]byte
+}
+
+func (u *uploadCaptureMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	body, err := io.ReadAll(fileReader)
+	if err != nil {
+		return "", err
+	}
+	if u.objects == nil {
+		u.objects = map[string][]byte{}
+	}
+	u.objects[objectKey] = append([]byte(nil), body...)
+	return "https://mock/" + bucketName + "/" + objectKey, nil
+}
+
+func (u *uploadCaptureMockClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) DownloadObject(ctx context.Context, bucketName, objectKey, filePath string) error {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
 	panic("not used")
 }
 
@@ -1524,6 +1877,42 @@ func (u *uploadFailingMockClient) DownloadObject(ctx context.Context, bucketName
 }
 
 func (u *uploadFailingMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	panic("not used")
+}
+
+// uploadFailOnSuffixMockClient fails uploads only for object keys ending with failSuffix.
+type uploadFailOnSuffixMockClient struct {
+	failSuffix string
+	err        error
+}
+
+func (u *uploadFailOnSuffixMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	if strings.HasSuffix(objectKey, u.failSuffix) {
+		if u.err != nil {
+			return "", u.err
+		}
+		return "", fmt.Errorf("forced upload failure for %s", objectKey)
+	}
+	return "https://mock/" + bucketName + "/" + objectKey, nil
+}
+
+func (u *uploadFailOnSuffixMockClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) DownloadObject(ctx context.Context, bucketName, objectKey string, filePath string) error {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
 	panic("not used")
 }
 
@@ -1755,7 +2144,7 @@ func TestFinalizeTargetsMetadataUpdate_TargetsNil_ReturnsError(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
 
 	require.Error(t, err, "Expected error when targets metadata is not loaded")
 	assert.Contains(t, err.Error(), "targets metadata not loaded for role targets")
@@ -1782,7 +2171,7 @@ func TestFinalizeTargetsMetadataUpdate_ToFileFails_ReturnsError(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", fileAsDir)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", fileAsDir, nil)
 
 	require.Error(t, err, "Expected error when saving targets metadata fails")
 	assert.Contains(t, err.Error(), "failed to save targets metadata")
@@ -1808,14 +2197,14 @@ func TestFinalizeTargetsMetadataUpdate_UploadToS3Fails_ReturnsError(t *testing.T
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
 
 	require.Error(t, err, "Expected error when S3 upload fails")
 	assert.Contains(t, err.Error(), "failed to upload targets metadata to S3")
 }
 
-// To verify: In finalizeTargetsMetadataUpdate change targets filename format or skip upload; test will fail (wrong file or no upload).
-func TestFinalizeTargetsMetadataUpdate_Success_NoSnapshotUpdate(t *testing.T) {
+// To verify: In finalizeTargetsMetadataUpdate remove root metadata loading; test will fail (no error when root not found).
+func TestFinalizeTargetsMetadataUpdate_RootNotFound_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 	repo := makeValidRolesForValidateRoot(t)
 	tmpDir := t.TempDir()
@@ -1824,7 +2213,7 @@ func TestFinalizeTargetsMetadataUpdate_Success_NoSnapshotUpdate(t *testing.T) {
 	savedViper := tuf_storage.GetViperForUpload
 	savedFactory := tuf_storage.StorageFactoryForUpload
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, nil // no snapshot file
+		return nil, nil // no metadata files found — root lookup will fail
 	}
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
@@ -1838,23 +2227,122 @@ func TestFinalizeTargetsMetadataUpdate_Success_NoSnapshotUpdate(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
 
-	require.NoError(t, err)
-	targetsFilename := fmt.Sprintf("%d.targets.json", repo.Targets("targets").Signed.Version)
-	assert.FileExists(t, filepath.Join(tmpDir, targetsFilename), "Targets metadata file should be written to tmpDir")
+	require.Error(t, err, "Expected error when root metadata cannot be found")
+	assert.Contains(t, err.Error(), "failed to find root metadata version")
 }
 
-// To verify: In finalizeTargetsMetadataUpdate skip snapshot load/update block (FindLatestMetadataVersion or Download); test would not exercise snapshot path.
-func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotUpdate(t *testing.T) {
+// multiFileDownloadMockClient dispatches downloads by matching the object key suffix.
+type multiFileDownloadMockClient struct {
+	files map[string][]byte // filename suffix -> body
+}
+
+func (d *multiFileDownloadMockClient) DownloadObject(ctx context.Context, bucketName, objectKey, filePath string) error {
+	for suffix, body := range d.files {
+		if strings.HasSuffix(objectKey, suffix) {
+			return os.WriteFile(filePath, body, 0644)
+		}
+	}
+	return fmt.Errorf("file not found in mock: %s", objectKey)
+}
+
+func (d *multiFileDownloadMockClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	panic("not used")
+}
+
+func (d *multiFileDownloadMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	panic("not used")
+}
+
+func (d *multiFileDownloadMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (d *multiFileDownloadMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
+	panic("not used")
+}
+
+func (d *multiFileDownloadMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	panic("not used")
+}
+
+// makeValidRolesWithKeys creates a valid TUF repo and returns it together with the
+// generated private keys (keyed by role name) and a map of role name → computed keyID.
+func makeValidRolesWithKeys(t *testing.T) (*repository.Type, map[string]ed25519.PrivateKey, map[string]string) {
+	t.Helper()
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	roles := repository.New()
+	keys := map[string]ed25519.PrivateKey{}
+	keyIDs := map[string]string{}
+
+	roles.SetRoot(tuf_metadata.Root(expires))
+	roles.SetTargets("targets", tuf_metadata.Targets(expires))
+	roles.SetSnapshot(tuf_metadata.Snapshot(expires))
+	roles.SetTimestamp(tuf_metadata.Timestamp(expires))
+
+	for _, name := range []string{"root", "targets", "snapshot", "timestamp"} {
+		_, private, err := ed25519.GenerateKey(nil)
+		require.NoError(t, err)
+		keys[name] = private
+		key, err := tuf_metadata.KeyFromPublicKey(private.Public())
+		require.NoError(t, err)
+		kid, err := key.ID()
+		require.NoError(t, err)
+		keyIDs[name] = kid
+		err = roles.Root().Signed.AddKey(key, name)
+		require.NoError(t, err)
+	}
+
+	for _, name := range []string{"root", "targets", "snapshot", "timestamp"} {
+		signer, err := signature.LoadSigner(keys[name], crypto.Hash(0))
+		require.NoError(t, err)
+		switch name {
+		case "root":
+			_, err = roles.Root().Sign(signer)
+		case "targets":
+			_, err = roles.Targets("targets").Sign(signer)
+		case "snapshot":
+			_, err = roles.Snapshot().Sign(signer)
+		case "timestamp":
+			_, err = roles.Timestamp().Sign(signer)
+		}
+		require.NoError(t, err)
+	}
+	return roles, keys, keyIDs
+}
+
+// To verify: In finalizeTargetsMetadataUpdate skip snapshot/timestamp signing; test will fail (snapshot has stale signatures).
+func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotAndTimestampSigning(t *testing.T) {
 	ctx := context.Background()
-	repo := makeValidRolesForValidateRoot(t)
+	repo, keys, keyIDs := makeValidRolesWithKeys(t)
 	tmpDir := t.TempDir()
 
-	snapshotTmp := t.TempDir()
-	snapshotPath := filepath.Join(snapshotTmp, "1.snapshot.json")
+	keyDir := t.TempDir()
+	for _, role := range []string{"snapshot", "timestamp"} {
+		keyPath := filepath.Join(keyDir, keyIDs[role])
+		seed := keys[role].Seed()
+		require.NoError(t, os.WriteFile(keyPath, seed, 0600))
+	}
+	oldKeyDir := viper.GetString("ONLINE_KEY_DIR")
+	viper.Set("ONLINE_KEY_DIR", keyDir)
+	defer viper.Set("ONLINE_KEY_DIR", oldKeyDir)
+
+	serializeTmp := t.TempDir()
+
+	rootPath := filepath.Join(serializeTmp, "1.root.json")
+	require.NoError(t, repo.Root().ToFile(rootPath, true))
+	rootBody, err := os.ReadFile(rootPath)
+	require.NoError(t, err)
+
+	snapshotPath := filepath.Join(serializeTmp, "1.snapshot.json")
 	require.NoError(t, repo.Snapshot().ToFile(snapshotPath, true))
 	snapshotBody, err := os.ReadFile(snapshotPath)
+	require.NoError(t, err)
+
+	timestampPath := filepath.Join(serializeTmp, "timestamp.json")
+	require.NoError(t, repo.Timestamp().ToFile(timestampPath, true))
+	timestampBody, err := os.ReadFile(timestampPath)
 	require.NoError(t, err)
 
 	savedList := tuf_storage.ListMetadataForLatest
@@ -1864,7 +2352,7 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotUpdate(t *testing.T) 
 	savedFactoryDownload := tuf_storage.StorageFactoryForDownload
 
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"1.snapshot.json"}, nil
+		return []string{"1.root.json", "1.snapshot.json", "1.targets.json"}, nil
 	}
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
@@ -1874,7 +2362,13 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotUpdate(t *testing.T) 
 	}
 	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &downloadMockFactory{client: &downloadMockClient{body: snapshotBody}}
+		return &downloadMockFactory{client: &multiFileDownloadMockClient{
+			files: map[string][]byte{
+				"1.root.json":     rootBody,
+				"1.snapshot.json": snapshotBody,
+				"timestamp.json":  timestampBody,
+			},
+		}}
 	}
 	defer func() {
 		tuf_storage.ListMetadataForLatest = savedList
@@ -1884,13 +2378,24 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotUpdate(t *testing.T) 
 		tuf_storage.StorageFactoryForDownload = savedFactoryDownload
 	}()
 
-	err = finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir)
+	err = finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
 
 	require.NoError(t, err)
+
 	targetsFilename := fmt.Sprintf("%d.targets.json", repo.Targets("targets").Signed.Version)
-	assert.FileExists(t, filepath.Join(tmpDir, targetsFilename), "Targets metadata file should be written to tmpDir")
+	assert.FileExists(t, filepath.Join(tmpDir, targetsFilename), "Targets metadata file should be written")
+
 	newSnapshotFilename := fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
-	assert.FileExists(t, filepath.Join(tmpDir, newSnapshotFilename), "New snapshot metadata file should be written when snapshot path runs")
+	assert.FileExists(t, filepath.Join(tmpDir, newSnapshotFilename), "New snapshot metadata file should be written")
+	assert.Greater(t, repo.Snapshot().Signed.Version, int64(1), "Snapshot version should be bumped")
+
+	assert.NotEmpty(t, repo.Snapshot().Signatures, "Snapshot must have signatures after re-signing")
+
+	assert.FileExists(t, filepath.Join(tmpDir, "timestamp.json"), "Timestamp metadata file should be written")
+	assert.NotEmpty(t, repo.Timestamp().Signatures, "Timestamp must have signatures after re-signing")
+	tsMeta := repo.Timestamp().Signed.Meta["snapshot.json"]
+	require.NotNil(t, tsMeta, "Timestamp must reference snapshot.json in its meta")
+	assert.Equal(t, repo.Snapshot().Signed.Version, tsMeta.Version, "Timestamp must reference the new snapshot version")
 }
 
 // --- loadTrustedRootFromS3 tests ---
