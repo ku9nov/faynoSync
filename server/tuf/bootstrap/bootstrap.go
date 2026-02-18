@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/models"
+	tuf_storage "faynoSync/server/tuf/storage"
 	"faynoSync/server/tuf/tasks"
 	"faynoSync/server/utils"
 	"fmt"
@@ -16,8 +17,24 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
-	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
 )
+
+var listMetadataForBootstrap = tuf_storage.ListMetadataFromS3
+
+func hasPersistedRootMetadata(ctx context.Context, adminName, appName string) (bool, error) {
+	filenames, err := listMetadataForBootstrap(ctx, adminName, appName, "")
+	if err != nil {
+		return false, fmt.Errorf("failed to list metadata from storage: %w", err)
+	}
+
+	for _, filename := range filenames {
+		if filename == "root.json" || strings.HasSuffix(filename, ".root.json") {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
 
 func GetBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
 
@@ -36,11 +53,14 @@ func GetBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
-	repo := repository.New()
-
-	// Check if repository is initialized by checking if root metadata exists
-	root := repo.Root()
-	isInitialized := root != nil
+	isInitialized, err := hasPersistedRootMetadata(context.Background(), adminName, appName)
+	if err != nil {
+		logrus.Errorf("Failed to determine bootstrap state from persistent metadata for admin %s, app %s: %v", adminName, appName, err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Failed to determine bootstrap state from persistent metadata",
+		})
+		return
+	}
 
 	// Check Redis locks
 	var bootstrapLock string
@@ -337,13 +357,19 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 		logrus.Debugf("No existing bootstrap lock or in-progress bootstrap found for admin %s, app %s", adminName, payload.AppName)
 	}
 
-	logrus.Debug("Checking bootstrap state")
-	repo := repository.New()
-	root := repo.Root()
-	if root != nil {
-		logrus.Warn("System already has metadata. Bootstrap already completed")
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "System already has a Metadata. Bootstrap already completed.",
+	logrus.Debug("Checking bootstrap state using persistent metadata")
+	isInitialized, err := hasPersistedRootMetadata(context.Background(), adminName, payload.AppName)
+	if err != nil {
+		logrus.Errorf("Failed to determine bootstrap state from persistent metadata for admin %s, app %s: %v", adminName, payload.AppName, err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Failed to determine bootstrap state from persistent metadata",
+		})
+		return
+	}
+	if isInitialized {
+		logrus.Warnf("Persistent root metadata already exists for admin %s, app %s. Bootstrap already completed", adminName, payload.AppName)
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "System already has root metadata. Bootstrap already completed.",
 		})
 		return
 	}

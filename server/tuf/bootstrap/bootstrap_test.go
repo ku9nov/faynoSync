@@ -2,9 +2,11 @@ package bootstrap
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"faynoSync/server/tuf/models"
@@ -16,6 +18,28 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	originalListMetadataForBootstrap := listMetadataForBootstrap
+	listMetadataForBootstrap = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		return []string{}, nil
+	}
+
+	code := m.Run()
+	listMetadataForBootstrap = originalListMetadataForBootstrap
+	os.Exit(code)
+}
+
+func mockListMetadataForBootstrap(t *testing.T, files []string, err error) {
+	t.Helper()
+	originalListMetadataForBootstrap := listMetadataForBootstrap
+	listMetadataForBootstrap = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		return files, err
+	}
+	t.Cleanup(func() {
+		listMetadataForBootstrap = originalListMetadataForBootstrap
+	})
+}
 
 // To verify: Change c.Query("appName") in GetBootstrapStatus to c.Query("app") to make appName-related tests fail.
 func makeGetBootstrapStatusContext(username string, appName string) (*gin.Context, *httptest.ResponseRecorder) {
@@ -186,6 +210,39 @@ func TestGetBootstrapStatus_WithRedis_BootstrapKeyFormat_AdminAndAppName(t *test
 	require.True(t, ok)
 	assert.Equal(t, true, data["bootstrap"])
 	assert.Equal(t, "completed", data["id"])
+}
+
+func TestGetBootstrapStatus_WithPersistedRootMetadata_ReturnsAlreadyCompleted(t *testing.T) {
+	mockListMetadataForBootstrap(t, []string{"1.root.json"}, nil)
+	c, w := makeGetBootstrapStatusContext("admin", "myapp")
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	GetBootstrapStatus(c, client)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	data, ok := body["data"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, data["bootstrap"])
+	assert.Equal(t, "Bootstrap already completed for this admin.", body["message"])
+}
+
+func TestGetBootstrapStatus_PersistentMetadataCheckFails_ReturnsServiceUnavailable(t *testing.T) {
+	mockListMetadataForBootstrap(t, nil, assert.AnError)
+	c, w := makeGetBootstrapStatusContext("admin", "myapp")
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	GetBootstrapStatus(c, client)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Failed to determine bootstrap state from persistent metadata", body["error"])
 }
 
 // --- PostBootstrap helpers and tests ---
@@ -457,6 +514,38 @@ func TestPostBootstrap_RedisPreLockWithSettingsForSameAdminApp_ReturnsConflict(t
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, "Bootstrap already in progress for this admin and app", body["error"])
+}
+
+func TestPostBootstrap_PersistedRootMetadataExists_ReturnsConflict(t *testing.T) {
+	mockListMetadataForBootstrap(t, []string{"2.root.json", "timestamp.json"}, nil)
+	payload := validMinimalBootstrapPayload()
+	c, w := makePostBootstrapContext("admin", payload)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	PostBootstrap(c, client)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "System already has root metadata. Bootstrap already completed.", body["error"])
+}
+
+func TestPostBootstrap_PersistentMetadataCheckFails_ReturnsServiceUnavailable(t *testing.T) {
+	mockListMetadataForBootstrap(t, nil, assert.AnError)
+	payload := validMinimalBootstrapPayload()
+	c, w := makePostBootstrapContext("admin", payload)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	PostBootstrap(c, client)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Failed to determine bootstrap state from persistent metadata", body["error"])
 }
 
 // To verify: In PostBootstrap change StatusAccepted to StatusOK or change message; test will fail (wrong code or message).
