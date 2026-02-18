@@ -1886,7 +1886,7 @@ func TestFinalizeTargetsMetadataUpdate_TargetsNil_ReturnsError(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
 
 	require.Error(t, err, "Expected error when targets metadata is not loaded")
 	assert.Contains(t, err.Error(), "targets metadata not loaded for role targets")
@@ -1913,7 +1913,7 @@ func TestFinalizeTargetsMetadataUpdate_ToFileFails_ReturnsError(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", fileAsDir)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", fileAsDir, nil)
 
 	require.Error(t, err, "Expected error when saving targets metadata fails")
 	assert.Contains(t, err.Error(), "failed to save targets metadata")
@@ -1939,14 +1939,14 @@ func TestFinalizeTargetsMetadataUpdate_UploadToS3Fails_ReturnsError(t *testing.T
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
 
 	require.Error(t, err, "Expected error when S3 upload fails")
 	assert.Contains(t, err.Error(), "failed to upload targets metadata to S3")
 }
 
-// To verify: In finalizeTargetsMetadataUpdate change targets filename format or skip upload; test will fail (wrong file or no upload).
-func TestFinalizeTargetsMetadataUpdate_Success_NoSnapshotUpdate(t *testing.T) {
+// To verify: In finalizeTargetsMetadataUpdate remove root metadata loading; test will fail (no error when root not found).
+func TestFinalizeTargetsMetadataUpdate_RootNotFound_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 	repo := makeValidRolesForValidateRoot(t)
 	tmpDir := t.TempDir()
@@ -1955,7 +1955,7 @@ func TestFinalizeTargetsMetadataUpdate_Success_NoSnapshotUpdate(t *testing.T) {
 	savedViper := tuf_storage.GetViperForUpload
 	savedFactory := tuf_storage.StorageFactoryForUpload
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, nil // no snapshot file
+		return nil, nil // no metadata files found — root lookup will fail
 	}
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
@@ -1969,23 +1969,122 @@ func TestFinalizeTargetsMetadataUpdate_Success_NoSnapshotUpdate(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
 
-	require.NoError(t, err)
-	targetsFilename := fmt.Sprintf("%d.targets.json", repo.Targets("targets").Signed.Version)
-	assert.FileExists(t, filepath.Join(tmpDir, targetsFilename), "Targets metadata file should be written to tmpDir")
+	require.Error(t, err, "Expected error when root metadata cannot be found")
+	assert.Contains(t, err.Error(), "failed to find root metadata version")
 }
 
-// To verify: In finalizeTargetsMetadataUpdate skip snapshot load/update block (FindLatestMetadataVersion or Download); test would not exercise snapshot path.
-func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotUpdate(t *testing.T) {
+// multiFileDownloadMockClient dispatches downloads by matching the object key suffix.
+type multiFileDownloadMockClient struct {
+	files map[string][]byte // filename suffix -> body
+}
+
+func (d *multiFileDownloadMockClient) DownloadObject(ctx context.Context, bucketName, objectKey, filePath string) error {
+	for suffix, body := range d.files {
+		if strings.HasSuffix(objectKey, suffix) {
+			return os.WriteFile(filePath, body, 0644)
+		}
+	}
+	return fmt.Errorf("file not found in mock: %s", objectKey)
+}
+
+func (d *multiFileDownloadMockClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
+	panic("not used")
+}
+
+func (d *multiFileDownloadMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
+	panic("not used")
+}
+
+func (d *multiFileDownloadMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (d *multiFileDownloadMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
+	panic("not used")
+}
+
+func (d *multiFileDownloadMockClient) ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error) {
+	panic("not used")
+}
+
+// makeValidRolesWithKeys creates a valid TUF repo and returns it together with the
+// generated private keys (keyed by role name) and a map of role name → computed keyID.
+func makeValidRolesWithKeys(t *testing.T) (*repository.Type, map[string]ed25519.PrivateKey, map[string]string) {
+	t.Helper()
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	roles := repository.New()
+	keys := map[string]ed25519.PrivateKey{}
+	keyIDs := map[string]string{}
+
+	roles.SetRoot(tuf_metadata.Root(expires))
+	roles.SetTargets("targets", tuf_metadata.Targets(expires))
+	roles.SetSnapshot(tuf_metadata.Snapshot(expires))
+	roles.SetTimestamp(tuf_metadata.Timestamp(expires))
+
+	for _, name := range []string{"root", "targets", "snapshot", "timestamp"} {
+		_, private, err := ed25519.GenerateKey(nil)
+		require.NoError(t, err)
+		keys[name] = private
+		key, err := tuf_metadata.KeyFromPublicKey(private.Public())
+		require.NoError(t, err)
+		kid, err := key.ID()
+		require.NoError(t, err)
+		keyIDs[name] = kid
+		err = roles.Root().Signed.AddKey(key, name)
+		require.NoError(t, err)
+	}
+
+	for _, name := range []string{"root", "targets", "snapshot", "timestamp"} {
+		signer, err := signature.LoadSigner(keys[name], crypto.Hash(0))
+		require.NoError(t, err)
+		switch name {
+		case "root":
+			_, err = roles.Root().Sign(signer)
+		case "targets":
+			_, err = roles.Targets("targets").Sign(signer)
+		case "snapshot":
+			_, err = roles.Snapshot().Sign(signer)
+		case "timestamp":
+			_, err = roles.Timestamp().Sign(signer)
+		}
+		require.NoError(t, err)
+	}
+	return roles, keys, keyIDs
+}
+
+// To verify: In finalizeTargetsMetadataUpdate skip snapshot/timestamp signing; test will fail (snapshot has stale signatures).
+func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotAndTimestampSigning(t *testing.T) {
 	ctx := context.Background()
-	repo := makeValidRolesForValidateRoot(t)
+	repo, keys, keyIDs := makeValidRolesWithKeys(t)
 	tmpDir := t.TempDir()
 
-	snapshotTmp := t.TempDir()
-	snapshotPath := filepath.Join(snapshotTmp, "1.snapshot.json")
+	keyDir := t.TempDir()
+	for _, role := range []string{"snapshot", "timestamp"} {
+		keyPath := filepath.Join(keyDir, keyIDs[role])
+		seed := keys[role].Seed()
+		require.NoError(t, os.WriteFile(keyPath, seed, 0600))
+	}
+	oldKeyDir := viper.GetString("ONLINE_KEY_DIR")
+	viper.Set("ONLINE_KEY_DIR", keyDir)
+	defer viper.Set("ONLINE_KEY_DIR", oldKeyDir)
+
+	serializeTmp := t.TempDir()
+
+	rootPath := filepath.Join(serializeTmp, "1.root.json")
+	require.NoError(t, repo.Root().ToFile(rootPath, true))
+	rootBody, err := os.ReadFile(rootPath)
+	require.NoError(t, err)
+
+	snapshotPath := filepath.Join(serializeTmp, "1.snapshot.json")
 	require.NoError(t, repo.Snapshot().ToFile(snapshotPath, true))
 	snapshotBody, err := os.ReadFile(snapshotPath)
+	require.NoError(t, err)
+
+	timestampPath := filepath.Join(serializeTmp, "timestamp.json")
+	require.NoError(t, repo.Timestamp().ToFile(timestampPath, true))
+	timestampBody, err := os.ReadFile(timestampPath)
 	require.NoError(t, err)
 
 	savedList := tuf_storage.ListMetadataForLatest
@@ -1995,7 +2094,7 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotUpdate(t *testing.T) 
 	savedFactoryDownload := tuf_storage.StorageFactoryForDownload
 
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"1.snapshot.json"}, nil
+		return []string{"1.root.json", "1.snapshot.json", "1.targets.json"}, nil
 	}
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
@@ -2005,7 +2104,13 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotUpdate(t *testing.T) 
 	}
 	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &downloadMockFactory{client: &downloadMockClient{body: snapshotBody}}
+		return &downloadMockFactory{client: &multiFileDownloadMockClient{
+			files: map[string][]byte{
+				"1.root.json":     rootBody,
+				"1.snapshot.json": snapshotBody,
+				"timestamp.json":  timestampBody,
+			},
+		}}
 	}
 	defer func() {
 		tuf_storage.ListMetadataForLatest = savedList
@@ -2015,13 +2120,24 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotUpdate(t *testing.T) 
 		tuf_storage.StorageFactoryForDownload = savedFactoryDownload
 	}()
 
-	err = finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir)
+	err = finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
 
 	require.NoError(t, err)
+
 	targetsFilename := fmt.Sprintf("%d.targets.json", repo.Targets("targets").Signed.Version)
-	assert.FileExists(t, filepath.Join(tmpDir, targetsFilename), "Targets metadata file should be written to tmpDir")
+	assert.FileExists(t, filepath.Join(tmpDir, targetsFilename), "Targets metadata file should be written")
+
 	newSnapshotFilename := fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
-	assert.FileExists(t, filepath.Join(tmpDir, newSnapshotFilename), "New snapshot metadata file should be written when snapshot path runs")
+	assert.FileExists(t, filepath.Join(tmpDir, newSnapshotFilename), "New snapshot metadata file should be written")
+	assert.Greater(t, repo.Snapshot().Signed.Version, int64(1), "Snapshot version should be bumped")
+
+	assert.NotEmpty(t, repo.Snapshot().Signatures, "Snapshot must have signatures after re-signing")
+
+	assert.FileExists(t, filepath.Join(tmpDir, "timestamp.json"), "Timestamp metadata file should be written")
+	assert.NotEmpty(t, repo.Timestamp().Signatures, "Timestamp must have signatures after re-signing")
+	tsMeta := repo.Timestamp().Signed.Meta["snapshot.json"]
+	require.NotNil(t, tsMeta, "Timestamp must reference snapshot.json in its meta")
+	assert.Equal(t, repo.Snapshot().Signed.Version, tsMeta.Version, "Timestamp must reference the new snapshot version")
 }
 
 // --- loadTrustedRootFromS3 tests ---

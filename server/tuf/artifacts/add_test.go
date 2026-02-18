@@ -351,7 +351,7 @@ func TestAddArtifacts_DownloadRootFails_ReturnsError(t *testing.T) {
 	}, false, testTaskID)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to download root metadata")
+	assert.Contains(t, err.Error(), "failed to download latest root metadata")
 }
 
 type failDownloadClient struct{}

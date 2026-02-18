@@ -56,9 +56,16 @@ func AddArtifacts(
 	repo := repository.New()
 
 	rootPath := filepath.Join(tmpDir, "root.json")
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err != nil {
-		if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err2 != nil {
-			return fmt.Errorf("failed to download root metadata: %w", err)
+	_, latestRootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
+	if err != nil {
+		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err != nil {
+			if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err2 != nil {
+				return fmt.Errorf("failed to download latest root metadata: %w", err)
+			}
+		}
+	} else {
+		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, latestRootFilename, rootPath); err != nil {
+			return fmt.Errorf("failed to download latest root metadata: %w", err)
 		}
 	}
 

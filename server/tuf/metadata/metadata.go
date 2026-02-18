@@ -174,7 +174,7 @@ func BootstrapOnlineRoles(
 
 		delegationKeys := make(map[string]*metadata.Key)
 		for keyID, tufKey := range customDelegations.Keys {
-			var delegationKey *metadata.Key 
+			var delegationKey *metadata.Key
 
 			if tufKey.KeyType == "ed25519" {
 				publicKeyBytes, err := hex.DecodeString(tufKey.KeyVal.Public)
@@ -1185,7 +1185,7 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 		}
 
 		if thresholdReached {
-			if err := finalizeTargetsMetadataUpdate(ctx, repo, payload.Role, adminName, appName, tmpDir); err != nil {
+			if err := finalizeTargetsMetadataUpdate(ctx, repo, payload.Role, adminName, appName, tmpDir, redisClient); err != nil {
 				logrus.Errorf("Failed to finalize targets metadata: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"error": fmt.Sprintf("Failed to finalize metadata: %v", err),
@@ -1449,7 +1449,9 @@ func finalizeTargetsMetadataUpdate(
 	adminName string,
 	appName string,
 	tmpDir string,
+	redisClient *redis.Client,
 ) error {
+	logrus.Debugf("Finalizing targets metadata update for role %s", roleName)
 	targets := repo.Targets(roleName)
 	if targets == nil {
 		return fmt.Errorf("targets metadata not loaded for role %s", roleName)
@@ -1465,27 +1467,136 @@ func finalizeTargetsMetadataUpdate(
 		return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
 	}
 
-	// Update snapshot and timestamp
-	// Load current snapshot
+	// Load root metadata to obtain snapshot and timestamp key IDs for re-signing.
+	rootPath := filepath.Join(tmpDir, "finalize_root.json")
+	_, rootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
+	if err != nil {
+		return fmt.Errorf("failed to find root metadata version: %w", err)
+	}
+	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
+		return fmt.Errorf("failed to download root metadata: %w", err)
+	}
+
+	rootData, err := os.ReadFile(rootPath)
+	if err != nil {
+		return fmt.Errorf("failed to read root metadata: %w", err)
+	}
+
+	var rootMetadata models.RootMetadata
+	if err := json.Unmarshal(rootData, &rootMetadata); err != nil {
+		return fmt.Errorf("failed to parse root metadata: %w", err)
+	}
+
+	// Build snapshot signers from root-declared keys.
+	snapshotRole, ok := rootMetadata.Signed.Roles["snapshot"]
+	if !ok || len(snapshotRole.KeyIDs) == 0 {
+		return fmt.Errorf("snapshot role not found in root metadata")
+	}
+	snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
+	if err != nil {
+		return fmt.Errorf("failed to build snapshot signers: %w", err)
+	}
+
+	// Build timestamp signers from root-declared keys.
+	timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]
+	if !ok || len(timestampRole.KeyIDs) == 0 {
+		return fmt.Errorf("timestamp role not found in root metadata")
+	}
+	timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
+	if err != nil {
+		return fmt.Errorf("failed to build timestamp signers: %w", err)
+	}
+
+	keySuffix := adminName + "_" + appName
+
+	// --- Update and re-sign snapshot ---
 	_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
-	if err == nil {
-		snapshotPath := filepath.Join(tmpDir, snapshotFilename)
-		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err == nil {
-			snapshot := metadata.Snapshot(time.Now().Add(365 * 24 * time.Hour))
-			repo.SetSnapshot(snapshot)
-			if _, err := repo.Snapshot().FromFile(snapshotPath); err == nil {
+	if err != nil {
+		return fmt.Errorf("failed to find latest snapshot version: %w", err)
+	}
 
-				repo.Snapshot().Signed.Meta[fmt.Sprintf("%s.json", roleName)] = metadata.MetaFile(int64(targets.Signed.Version))
-				repo.Snapshot().Signed.Version++
+	snapshotPath := filepath.Join(tmpDir, snapshotFilename)
+	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
+		return fmt.Errorf("failed to download snapshot metadata: %w", err)
+	}
 
-				newSnapshotFilename := fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
-				newSnapshotPath := filepath.Join(tmpDir, newSnapshotFilename)
-				if err := repo.Snapshot().ToFile(newSnapshotPath, true); err == nil {
-					tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newSnapshotFilename, newSnapshotPath)
-				}
-			}
+	snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, 7)
+	snapshot := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
+	repo.SetSnapshot(snapshot)
+	if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
+		return fmt.Errorf("failed to load snapshot metadata: %w", err)
+	}
+
+	repo.Snapshot().Signed.Meta[fmt.Sprintf("%s.json", roleName)] = metadata.MetaFile(int64(targets.Signed.Version))
+	repo.Snapshot().Signed.Version++
+	repo.Snapshot().Signed.Expires = tuf_utils.HelperExpireIn(snapshotExpiration)
+	repo.Snapshot().ClearSignatures()
+
+	for i, s := range snapshotSigners {
+		if _, err := repo.Snapshot().Sign(s); err != nil {
+			return fmt.Errorf("failed to sign snapshot metadata with key %d: %w", i+1, err)
 		}
 	}
+
+	newSnapshotFilename := fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
+	newSnapshotPath := filepath.Join(tmpDir, newSnapshotFilename)
+	if err := repo.Snapshot().ToFile(newSnapshotPath, true); err != nil {
+		return fmt.Errorf("failed to save snapshot metadata: %w", err)
+	}
+
+	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newSnapshotFilename, newSnapshotPath); err != nil {
+		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
+	}
+
+	logrus.Infof("Successfully updated and signed snapshot to version %d", repo.Snapshot().Signed.Version)
+
+	// --- Update and re-sign timestamp to reference new snapshot ---
+	timestampPath := filepath.Join(tmpDir, "timestamp.json")
+	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
+		logrus.Debugf("Timestamp metadata not found in storage, will create new: %v", err)
+	}
+
+	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, 1)
+	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
+	repo.SetTimestamp(timestamp)
+	loadedTimestamp := false
+	if _, statErr := os.Stat(timestampPath); statErr == nil {
+		if _, loadErr := repo.Timestamp().FromFile(timestampPath); loadErr != nil {
+			logrus.Warnf("Failed to load timestamp metadata: %v, creating new one", loadErr)
+		} else {
+			loadedTimestamp = true
+		}
+	}
+
+	timestampMeta := repo.Timestamp().Signed.Meta
+	if timestampMeta == nil {
+		timestampMeta = make(map[string]*metadata.MetaFiles)
+		repo.Timestamp().Signed.Meta = timestampMeta
+	}
+	timestampMeta["snapshot.json"] = metadata.MetaFile(int64(repo.Snapshot().Signed.Version))
+
+	if loadedTimestamp {
+		repo.Timestamp().Signed.Version++
+	}
+	repo.Timestamp().Signed.Expires = tuf_utils.HelperExpireIn(timestampExpiration)
+	repo.Timestamp().ClearSignatures()
+
+	for i, s := range timestampSigners {
+		if _, err := repo.Timestamp().Sign(s); err != nil {
+			return fmt.Errorf("failed to sign timestamp metadata with key %d: %w", i+1, err)
+		}
+	}
+
+	timestampOutPath := filepath.Join(tmpDir, "timestamp.json")
+	if err := repo.Timestamp().ToFile(timestampOutPath, true); err != nil {
+		return fmt.Errorf("failed to save timestamp metadata: %w", err)
+	}
+
+	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampOutPath); err != nil {
+		return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
+	}
+
+	logrus.Debugf("Successfully updated and signed timestamp referencing snapshot version %d", repo.Snapshot().Signed.Version)
 
 	logrus.Infof("Successfully finalized targets metadata update: %s", targetsFilename)
 	return nil
