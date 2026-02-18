@@ -3,10 +3,12 @@ package artifacts
 import (
 	"context"
 	"crypto"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -288,23 +290,49 @@ func matchesRole(artifactPath string, role *metadata.DelegatedRole) bool {
 	}
 
 	if len(role.Paths) > 0 {
-		for _, path := range role.Paths {
-			if strings.HasPrefix(artifactPath, path) {
+		for _, pattern := range role.Paths {
+			matched, err := matchDelegatedPathPattern(pattern, artifactPath)
+			if err != nil {
+				logrus.WithError(err).Warnf("Invalid delegation path pattern %q for artifact %q", pattern, artifactPath)
+				continue
+			}
+			if matched {
 				return true
 			}
 		}
 	}
 
 	if len(role.PathHashPrefixes) > 0 {
-		hash := fmt.Sprintf("%x", artifactPath)
+		digest := sha256.Sum256([]byte(artifactPath))
+		hashHex := hex.EncodeToString(digest[:])
 		for _, prefix := range role.PathHashPrefixes {
-			if strings.HasPrefix(hash, prefix) {
+			if strings.HasPrefix(hashHex, prefix) {
 				return true
 			}
 		}
 	}
 
 	return false
+}
+
+func matchDelegatedPathPattern(pattern string, artifactPath string) (bool, error) {
+	matched, err := path.Match(pattern, artifactPath)
+	if err != nil {
+		return false, err
+	}
+	if matched {
+		return true, nil
+	}
+
+	// Preserve legacy delegation semantics where "prefix/*" is used as recursive prefix.
+	if strings.HasSuffix(pattern, "/*") {
+		prefix := strings.TrimSuffix(pattern, "*")
+		if strings.HasPrefix(artifactPath, prefix) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func updateDelegatedRoleWithArtifacts(
@@ -404,42 +432,15 @@ func updateDelegatedRoleWithArtifacts(
 	if len(roleKeyIDs) == 0 {
 		return false, fmt.Errorf("no key IDs found for delegated role %s", roleName)
 	}
-	if roleThreshold < 1 {
-		roleThreshold = 1
+	delegationSigners, err := buildSignersFromKeyIDsAndThreshold(roleKeyIDs, roleThreshold, roleName)
+	if err != nil {
+		return false, err
 	}
-	seenKeyID := make(map[string]bool)
-	keysToSign := make([]string, 0, roleThreshold)
-	for _, keyID := range roleKeyIDs {
-		if seenKeyID[keyID] {
-			continue
-		}
-		seenKeyID[keyID] = true
-		keysToSign = append(keysToSign, keyID)
-		if len(keysToSign) == roleThreshold {
-			break
+	for i, s := range delegationSigners {
+		if _, err := repo.Targets(roleName).Sign(s); err != nil {
+			return false, fmt.Errorf("failed to sign %s metadata with key %d: %w", roleName, i+1, err)
 		}
 	}
-	if len(keysToSign) < roleThreshold {
-		return false, fmt.Errorf("not enough distinct keys for delegated role %s: need %d, got %d", roleName, roleThreshold, len(keysToSign))
-	}
-
-	for _, delegationKeyID := range keysToSign {
-		delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
-		if err != nil {
-			return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
-		}
-
-		delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
-		if err != nil {
-			return false, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
-		}
-
-		if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
-			return false, fmt.Errorf("failed to sign %s metadata with key %s: %w", roleName, delegationKeyID, err)
-		}
-		logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, delegationKeyID)
-	}
-
 	newDelegationFilename := fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName)
 	delegationPath := filepath.Join(tmpDir, newDelegationFilename)
 	if err := repo.Targets(roleName).ToFile(delegationPath, true); err != nil {

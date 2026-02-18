@@ -838,7 +838,7 @@ func loadTrustedRootFromS3(ctx context.Context, adminName string, appName string
 	_, filename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
 	if err != nil {
 		if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err2 != nil {
-			return nil, fmt.Errorf("failed to download root metadata: %w", err)
+			return nil, fmt.Errorf("failed to download root metadata: %w", err2)
 		}
 	} else {
 		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, filename, rootPath); err != nil {

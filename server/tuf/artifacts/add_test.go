@@ -168,7 +168,7 @@ func makeAddArtifactsTestEnv(t *testing.T, adminName, appName string) (storeDir,
 	targets := tuf_metadata.Targets(exp)
 	targets.Signed.Delegations = &tuf_metadata.Delegations{
 		Keys:  map[string]*tuf_metadata.Key{targetsKeyID: targetsKey},
-		Roles: []tuf_metadata.DelegatedRole{{Name: "updates", KeyIDs: []string{targetsKeyID}, Threshold: 1, Paths: []string{"updates/"}}},
+		Roles: []tuf_metadata.DelegatedRole{{Name: "updates", KeyIDs: []string{targetsKeyID}, Threshold: 1, Paths: []string{"updates/*"}}},
 	}
 	roles.SetTargets("targets", targets)
 	targetsSigner, err := signature.LoadSigner(keys["targets"], crypto.Hash(0))
@@ -572,7 +572,7 @@ func TestGetRoleForArtifactPath_DelegationsRolesEmpty_ReturnsError(t *testing.T)
 
 // To verify: In getRoleForArtifactPath change path matching so non-matching path is accepted; test will fail (wrong role or no error).
 func TestGetRoleForArtifactPath_NoMatchingPath_ReturnsError(t *testing.T) {
-	repo := repoWithTargetsAndOneRoleForGetRole("updates", []string{"updates/"})
+	repo := repoWithTargetsAndOneRoleForGetRole("updates", []string{"updates/*"})
 
 	roleName, err := getRoleForArtifactPath(repo, "other/unknown.exe")
 
@@ -583,7 +583,7 @@ func TestGetRoleForArtifactPath_NoMatchingPath_ReturnsError(t *testing.T) {
 
 // To verify: In getRoleForArtifactPath change path matching (e.g. use exact match instead of prefix) or role return; test will fail (wrong role name).
 func TestGetRoleForArtifactPath_PathMatchesByPrefix_ReturnsRoleName(t *testing.T) {
-	repo := repoWithTargetsAndOneRoleForGetRole("updates", []string{"updates/"})
+	repo := repoWithTargetsAndOneRoleForGetRole("updates", []string{"updates/*"})
 
 	roleName, err := getRoleForArtifactPath(repo, "updates/app-1.0.0.tar")
 
@@ -594,7 +594,7 @@ func TestGetRoleForArtifactPath_PathMatchesByPrefix_ReturnsRoleName(t *testing.T
 // To verify: In getRoleForArtifactPath change PathHashPrefixes matching; test will fail (wrong role or no match).
 // Path "a" has hex representation "61"; prefix "6" matches.
 func TestGetRoleForArtifactPath_PathMatchesByPathHashPrefix_ReturnsRoleName(t *testing.T) {
-	repo := repoWithTargetsAndRolePathHashPrefixesForGetRole("hashed-role", []string{"61"})
+	repo := repoWithTargetsAndRolePathHashPrefixesForGetRole("hashed-role", []string{"ca"})
 
 	roleName, err := getRoleForArtifactPath(repo, "a")
 
@@ -608,8 +608,8 @@ func TestGetRoleForArtifactPath_MultipleRoles_ReturnsFirstMatchingRole(t *testin
 		Name  string
 		Paths []string
 	}{
-		{Name: "other", Paths: []string{"other/"}},
-		{Name: "updates", Paths: []string{"updates/"}},
+		{Name: "other", Paths: []string{"other/*"}},
+		{Name: "updates", Paths: []string{"updates/*"}},
 	})
 
 	roleName, err := getRoleForArtifactPath(repo, "updates/app.tar")
@@ -624,14 +624,23 @@ func TestGetRoleForArtifactPath_MultipleRoles_FirstRoleMatches_ReturnsFirst(t *t
 		Name  string
 		Paths []string
 	}{
-		{Name: "updates", Paths: []string{"updates/"}},
-		{Name: "releases", Paths: []string{"releases/"}},
+		{Name: "updates", Paths: []string{"updates/*"}},
+		{Name: "releases", Paths: []string{"releases/*"}},
 	})
 
 	roleName, err := getRoleForArtifactPath(repo, "updates/foo.zip")
 
 	require.NoError(t, err)
 	assert.Equal(t, "updates", roleName)
+}
+
+func TestGetRoleForArtifactPath_SingleWildcardPatternMatchesNestedPath_ReturnsRoleName(t *testing.T) {
+	repo := repoWithTargetsAndOneRoleForGetRole("default", []string{"tuf-ku9n/*"})
+
+	roleName, err := getRoleForArtifactPath(repo, "tuf-ku9n/nightly/linux/amd64/tuf-0.0.0.1.js")
+
+	require.NoError(t, err)
+	assert.Equal(t, "default", roleName)
 }
 
 // --- matchesRole tests ---
@@ -651,14 +660,14 @@ func TestMatchesRole_EmptyPathsAndPathHashPrefixes_ReturnsFalse(t *testing.T) {
 
 // To verify: In matchesRole use exact match instead of HasPrefix for Paths; test will fail (false instead of true).
 func TestMatchesRole_PathPrefixMatches_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "updates", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/"}}
+	role := &tuf_metadata.DelegatedRole{Name: "updates", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/*"}}
 	got := matchesRole("updates/app-1.0.0.tar", role)
 	assert.True(t, got)
 }
 
 // To verify: In matchesRole when path does not match any Paths prefix, return false; change to true and test will fail.
 func TestMatchesRole_PathPrefixNoMatch_ReturnsFalse(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "updates", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/"}}
+	role := &tuf_metadata.DelegatedRole{Name: "updates", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/*"}}
 	got := matchesRole("other/file.exe", role)
 	assert.False(t, got)
 }
@@ -672,21 +681,27 @@ func TestMatchesRole_PathEqualsRolePath_ReturnsTrue(t *testing.T) {
 
 // To verify: In matchesRole iterate over all Paths; if only first path is checked, test will fail (false instead of true).
 func TestMatchesRole_SecondPathMatches_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "r", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"a/", "b/"}}
+	role := &tuf_metadata.DelegatedRole{Name: "r", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"a/*", "b/*"}}
 	got := matchesRole("b/file.zip", role)
+	assert.True(t, got)
+}
+
+func TestMatchesRole_SingleWildcardPatternMatchesNestedPath_ReturnsTrue(t *testing.T) {
+	role := &tuf_metadata.DelegatedRole{Name: "default", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"tuf-ku9n/*"}}
+	got := matchesRole("tuf-ku9n/nightly/linux/amd64/tuf-0.0.0.1.js", role)
 	assert.True(t, got)
 }
 
 // To verify: In matchesRole hash is fmt.Sprintf("%x", artifactPath); path "a" gives hex "61"; change hash and test will fail.
 func TestMatchesRole_PathHashPrefixMatches_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, PathHashPrefixes: []string{"61"}}
+	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, PathHashPrefixes: []string{"ca"}}
 	got := matchesRole("a", role)
 	assert.True(t, got)
 }
 
 // To verify: In matchesRole PathHashPrefixes use prefix match on hash; prefix "6" matches hash "61" of "a".
 func TestMatchesRole_PathHashPrefixPartialMatch_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, PathHashPrefixes: []string{"6"}}
+	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, PathHashPrefixes: []string{"c"}}
 	got := matchesRole("a", role)
 	assert.True(t, got)
 }
@@ -700,14 +715,14 @@ func TestMatchesRole_PathHashPrefixNoMatch_ReturnsFalse(t *testing.T) {
 
 // To verify: In matchesRole Paths are checked before PathHashPrefixes; if order is reversed or only hash is used, test may fail.
 func TestMatchesRole_PathsCheckedFirst_PathMatchReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "r", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/"}, PathHashPrefixes: []string{"xx"}}
+	role := &tuf_metadata.DelegatedRole{Name: "r", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"updates/*"}, PathHashPrefixes: []string{"xx"}}
 	got := matchesRole("updates/app.tar", role)
 	assert.True(t, got)
 }
 
 // To verify: In matchesRole when Paths do not match but PathHashPrefixes match, return true; skip PathHashPrefixes branch and test will fail.
 func TestMatchesRole_OnlyPathHashPrefixMatches_ReturnsTrue(t *testing.T) {
-	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"other/"}, PathHashPrefixes: []string{"61"}}
+	role := &tuf_metadata.DelegatedRole{Name: "hashed", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"other/*"}, PathHashPrefixes: []string{"ca"}}
 	got := matchesRole("a", role)
 	assert.True(t, got)
 }
@@ -732,7 +747,7 @@ func makeRepoAndKeyForUpdateDelegatedRole(t *testing.T, roleName string) (repo *
 	targets := tuf_metadata.Targets(expires)
 	targets.Signed.Delegations = &tuf_metadata.Delegations{
 		Keys:  map[string]*tuf_metadata.Key{keyID: key},
-		Roles: []tuf_metadata.DelegatedRole{{Name: roleName, KeyIDs: []string{keyID}, Threshold: 1, Paths: []string{"updates/"}}},
+		Roles: []tuf_metadata.DelegatedRole{{Name: roleName, KeyIDs: []string{keyID}, Threshold: 1, Paths: []string{"updates/*"}}},
 	}
 	repo.SetTargets("targets", targets)
 
@@ -794,7 +809,7 @@ func TestUpdateDelegatedRoleWithArtifacts_NotEnoughDistinctKeys_ReturnsError(t *
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role updates")
+	assert.Contains(t, err.Error(), "not enough distinct keys for updates role")
 	assert.Contains(t, err.Error(), "need 2, got 1")
 }
 
@@ -847,7 +862,7 @@ func TestUpdateDelegatedRoleWithArtifacts_LoadDelegationKeyFails_ReturnsError(t 
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load delegation private key")
+	assert.Contains(t, err.Error(), "failed to load updates private key")
 }
 
 // To verify: In updateDelegatedRoleWithArtifacts when !isNewDelegation, skip DownloadMetadataFromS3 error handling; test will fail (no error or wrong message).

@@ -92,7 +92,7 @@ func makeRemoveArtifactsTestEnv(t *testing.T, adminName, appName string) (storeD
 	targets := tuf_metadata.Targets(exp)
 	targets.Signed.Delegations = &tuf_metadata.Delegations{
 		Keys:  map[string]*tuf_metadata.Key{targetsKeyID: targetsKey},
-		Roles: []tuf_metadata.DelegatedRole{{Name: "updates", KeyIDs: []string{targetsKeyID}, Threshold: 1, Paths: []string{"updates/"}}},
+		Roles: []tuf_metadata.DelegatedRole{{Name: "updates", KeyIDs: []string{targetsKeyID}, Threshold: 1, Paths: []string{"updates/*"}}},
 	}
 	roles.SetTargets("targets", targets)
 	targetsSigner, err := signature.LoadSigner(keys["targets"], crypto.Hash(0))
@@ -470,7 +470,7 @@ func makeRemoveArtifactsFromDelegatedRoleEnv(t *testing.T, adminName, appName st
 	targets := tuf_metadata.Targets(exp)
 	targets.Signed.Delegations = &tuf_metadata.Delegations{
 		Keys:  map[string]*tuf_metadata.Key{targetsKeyID: targetsKey},
-		Roles: []tuf_metadata.DelegatedRole{{Name: "updates", KeyIDs: []string{targetsKeyID}, Threshold: 1, Paths: []string{"updates/"}}},
+		Roles: []tuf_metadata.DelegatedRole{{Name: "updates", KeyIDs: []string{targetsKeyID}, Threshold: 1, Paths: []string{"updates/*"}}},
 	}
 	repo.SetTargets("targets", targets)
 
