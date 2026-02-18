@@ -585,7 +585,9 @@ func TestPostBootstrap_NilRedis_ValidPayload_ReturnsAccepted(t *testing.T) {
 
 // To verify: In preLockBootstrap remove nil redisClient check; test will panic when client is nil.
 func TestPreLockBootstrap_NilRedis_NoPanic(t *testing.T) {
-	preLockBootstrap(nil, "task-1", "admin", "myapp")
+	acquired, existing := preLockBootstrap(nil, "task-1", "admin", "myapp")
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 }
 
 // To verify: In preLockBootstrap change pre-lock key format "pre-" + taskID; test will fail (wrong key or value).
@@ -597,7 +599,9 @@ func TestPreLockBootstrap_WithRedis_SetsPreLockKey(t *testing.T) {
 	adminName := "admin"
 	appName := "myapp"
 
-	preLockBootstrap(client, taskID, adminName, appName)
+	acquired, existing := preLockBootstrap(client, taskID, adminName, appName)
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 
 	preLockKey := "pre-" + taskID
 	val, err := client.Get(client.Context(), preLockKey).Result()
@@ -614,7 +618,9 @@ func TestPreLockBootstrap_WithRedis_SetsBootstrapKey(t *testing.T) {
 	adminName := "owner"
 	appName := "app1"
 
-	preLockBootstrap(client, taskID, adminName, appName)
+	acquired, existing := preLockBootstrap(client, taskID, adminName, appName)
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 
 	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
 	val, err := client.Get(client.Context(), bootstrapKey).Result()
@@ -627,11 +633,35 @@ func TestPreLockBootstrap_WithRedis_BootstrapKeyFormat(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	preLockBootstrap(client, "tid", "user1", "myApp")
+	acquired, existing := preLockBootstrap(client, "tid", "user1", "myApp")
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 
 	val, err := client.Get(client.Context(), "BOOTSTRAP_user1_myApp").Result()
 	require.NoError(t, err)
 	assert.Equal(t, "pre-tid", val)
+}
+
+// To verify: In preLockBootstrap replace SetNX with Set; test will fail (second call overwrites lock).
+func TestPreLockBootstrap_WithRedis_BootstrapKeyAlreadyExists_ReturnsNotAcquired(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	adminName := "admin"
+	appName := "myapp"
+	existingValue := "pre-existing-task"
+	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
+	mr.Set(bootstrapKey, existingValue)
+
+	acquired, existing := preLockBootstrap(client, "new-task", adminName, appName)
+
+	assert.False(t, acquired)
+	assert.Equal(t, existingValue, existing)
+	val, err := client.Get(client.Context(), bootstrapKey).Result()
+	require.NoError(t, err)
+	assert.Equal(t, existingValue, val, "existing lock value must not be overwritten")
+	_, err = client.Get(client.Context(), "pre-new-task").Result()
+	require.Error(t, err, "pre-lock key should not be created when lock acquisition fails")
 }
 
 // --- bootstrap (internal) tests ---
@@ -650,7 +680,9 @@ func TestBootstrap_FinalizeFails_ReleasesLock(t *testing.T) {
 	taskID := "task-fail"
 	adminName := "admin"
 	appName := "myapp"
-	preLockBootstrap(client, taskID, adminName, appName)
+	acquired, existing := preLockBootstrap(client, taskID, adminName, appName)
+	assert.True(t, acquired)
+	assert.Equal(t, "", existing)
 	payload := validMinimalBootstrapPayload()
 	// Minimal payload causes BootstrapOnlineRoles to fail, so bootstrapFinalize returns false
 
