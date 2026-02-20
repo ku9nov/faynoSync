@@ -69,7 +69,7 @@ func CreateToken(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusCreated, gin.H{
 		"id":           tokenDoc.ID,
 		"name":         tokenDoc.Name,
 		"token":        rawToken,
