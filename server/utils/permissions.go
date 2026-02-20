@@ -34,7 +34,6 @@ const (
 // CheckPermission creates a middleware that checks if the user has the required permission
 // This function should be called with the database connection
 func CheckPermission(permissionType PermissionType, resourceType ResourceType, database *mongo.Database) gin.HandlerFunc {
-	logrus.Debugf("CheckPermission: permissionType: %v, resourceType: %v", permissionType, resourceType)
 	return func(c *gin.Context) {
 		username, err := GetUsernameFromContext(c)
 		if err != nil {

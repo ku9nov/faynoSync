@@ -86,7 +86,7 @@ func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 		}
 
 		tokenCollection := database.Collection("api_tokens")
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
 
 		var apiToken model.APIToken

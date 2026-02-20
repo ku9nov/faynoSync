@@ -82,18 +82,29 @@ func CreateToken(c *gin.Context, database *mongo.Database) {
 func validateAllowedApps(ctx context.Context, database *mongo.Database, owner string, appIDs []string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	objectIDs := make([]primitive.ObjectID, 0, len(appIDs))
+
+	uniqueAppIDs := make([]string, 0, len(appIDs))
+	seenAppIDs := make(map[string]struct{}, len(appIDs))
 	for _, appID := range appIDs {
+		if _, exists := seenAppIDs[appID]; exists {
+			continue
+		}
+		seenAppIDs[appID] = struct{}{}
+		uniqueAppIDs = append(uniqueAppIDs, appID)
+	}
+
+	uniqueObjectIDs := make([]primitive.ObjectID, 0, len(uniqueAppIDs))
+	for _, appID := range uniqueAppIDs {
 		objID, err := primitive.ObjectIDFromHex(appID)
 		if err != nil {
 			return nil, err
 		}
-		objectIDs = append(objectIDs, objID)
+		uniqueObjectIDs = append(uniqueObjectIDs, objID)
 	}
 
 	metaCollection := database.Collection("apps_meta")
 	count, err := metaCollection.CountDocuments(ctx, bson.M{
-		"_id":   bson.M{"$in": objectIDs},
+		"_id":   bson.M{"$in": uniqueObjectIDs},
 		"owner": owner,
 		"app_name": bson.M{
 			"$exists": true,
@@ -104,9 +115,9 @@ func validateAllowedApps(ctx context.Context, database *mongo.Database, owner st
 		return nil, err
 	}
 
-	if count != int64(len(objectIDs)) {
+	if count != int64(len(uniqueObjectIDs)) {
 		return nil, errors.New("one or more allowed_apps are invalid or not owned by the admin")
 	}
 
-	return appIDs, nil
+	return uniqueAppIDs, nil
 }
