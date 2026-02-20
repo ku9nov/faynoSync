@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.5.3
+
+### Features
+
+- **API Tokens**: Added API tokens for secure and scoped access to the API.
+
+### Testing
+
+- **API Tokens integration tests**: Added integration tests for creating, listing, and deleting API tokens.
+
 ## v1.5.2
 
 * **New Features**

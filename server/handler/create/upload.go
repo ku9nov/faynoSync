@@ -15,6 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -79,6 +80,16 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	// Add intermediate field to ctxQueryMap if it exists in the request
 	if intermediate := c.PostForm("intermediate"); intermediate != "" {
 		ctxQueryMap["intermediate"] = intermediate
+	}
+
+	appName, ok := ctxQueryMap["app_name"].(string)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "app_name is required"})
+		return
+	}
+	if err := validateAPITokenAppScope(c, db, owner, appName); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
 	}
 
 	form, err := c.MultipartForm()
@@ -216,4 +227,49 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid result type"})
 	}
+}
+
+func validateAPITokenAppScope(c *gin.Context, database *mongo.Database, owner, appName string) error {
+	isAPIToken, exists := c.Get("is_api_token")
+	if !exists {
+		return nil
+	}
+
+	apiTokenBool, ok := isAPIToken.(bool)
+	if !ok || !apiTokenBool {
+		return nil
+	}
+
+	allowedAppsRaw, exists := c.Get("allowed_apps")
+	if !exists {
+		return fmt.Errorf("api token scope is missing")
+	}
+
+	allowedApps, ok := allowedAppsRaw.([]string)
+	if !ok || len(allowedApps) == 0 {
+		return fmt.Errorf("api token has no allowed applications")
+	}
+
+	allowedSet := make(map[string]struct{}, len(allowedApps))
+	for _, appID := range allowedApps {
+		allowedSet[appID] = struct{}{}
+	}
+
+	var appMeta struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+
+	metaCollection := database.Collection("apps_meta")
+	if err := metaCollection.FindOne(
+		c.Request.Context(),
+		bson.M{"app_name": appName, "owner": owner},
+	).Decode(&appMeta); err != nil {
+		return fmt.Errorf("app_name not found in apps_meta collection or you don't have permission to access it")
+	}
+
+	if _, hasAccess := allowedSet[appMeta.ID.Hex()]; !hasAccess {
+		return fmt.Errorf("api token has no access to this app")
+	}
+
+	return nil
 }

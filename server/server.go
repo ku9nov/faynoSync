@@ -43,7 +43,7 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
 	os.Setenv("ENABLE_PRIVATE_APP_DOWNLOADING", config.GetString("ENABLE_PRIVATE_APP_DOWNLOADING"))
 	// Add authentication middleware to required paths
-	authMiddleware := utils.AuthMiddleware()
+	authMiddleware := utils.AuthMiddleware(mongoDatabase)
 
 	router.GET("/health", handler.HealthCheck)
 
@@ -110,6 +110,11 @@ func StartServer(config *viper.Viper, flags map[string]interface{}) {
 
 	// Telemetry endpoint
 	router.GET("/telemetry", authMiddleware, telemetryMiddleware(config), handler.GetTelemetry)
+
+	// Token routes
+	router.POST("/token/create", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.CreateToken)
+	router.GET("/token/list", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.ListTokens)
+	router.DELETE("/token/delete", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.DeleteToken)
 
 	if config.GetBool("TUF_ENABLED") {
 		tuf.SetupRoutes(router, authMiddleware, mongoDatabase, redisClient, db)

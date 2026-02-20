@@ -397,6 +397,13 @@ The tests verify the implemented API using a test database and an existing S3 bu
   <li>tuf/metadata (Unit)</li>
   <li>tuf/bootstrap (Unit)</li>
   <li>tuf/artifacts (Unit)</li>
+  <li>TestTokenFlow01Create</li>
+  <li>TestTokenCreateWithPastExpirationDate</li>
+  <li>TestTokenExpiresImmediatelyAndReturnsUnauthorized</li>
+  <li>TestTokenMiddlewareFlowForBothTokens</li>
+  <li>TestTokenFlow02List</li>
+  <li>TestTokenFlow03Delete</li>
+
 
 </details>
 

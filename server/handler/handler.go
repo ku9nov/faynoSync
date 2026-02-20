@@ -9,6 +9,7 @@ import (
 	"faynoSync/server/handler/info"
 	"faynoSync/server/handler/sign"
 	"faynoSync/server/handler/team"
+	"faynoSync/server/handler/token"
 	"faynoSync/server/handler/update"
 
 	"github.com/gin-gonic/gin"
@@ -53,6 +54,9 @@ type AppHandler interface {
 	UpdateAdmin(*gin.Context)
 	GetTelemetry(*gin.Context)
 	SquirrelReleases(*gin.Context)
+	CreateToken(*gin.Context)
+	ListTokens(*gin.Context)
+	DeleteToken(*gin.Context)
 }
 
 type appHandler struct {
@@ -251,4 +255,16 @@ func (ch *appHandler) SquirrelReleases(c *gin.Context) {
 	c.Request.URL.RawQuery = q.Encode()
 
 	info.FindLatestVersion(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
+}
+
+func (ch *appHandler) CreateToken(c *gin.Context) {
+	token.CreateToken(c, ch.database)
+}
+
+func (ch *appHandler) ListTokens(c *gin.Context) {
+	token.ListTokens(c, ch.database)
+}
+
+func (ch *appHandler) DeleteToken(c *gin.Context) {
+	token.DeleteToken(c, ch.database)
 }
