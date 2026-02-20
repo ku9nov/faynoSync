@@ -1,0 +1,23 @@
+[
+  {
+    "createIndexes": "api_tokens",
+    "indexes": [
+      {
+        "key": {
+          "token_hash": 1
+        },
+        "name": "token_hash_unique",
+        "unique": true,
+        "background": true
+      },
+      {
+        "key": {
+          "owner": 1,
+          "created_at": -1
+        },
+        "name": "owner_sort_by_created_desc",
+        "background": true
+      }
+    ]
+  }
+]

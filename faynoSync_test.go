@@ -28,6 +28,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
@@ -2702,6 +2703,391 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 // 		})
 // 	}
 // }
+
+var cicdToken string
+var cicdTokenID string
+var cicdTokenSecondUserID string
+var cicdTokenAdminAppID string
+var cicdTokenSecondAdminAppID string
+
+func TestTokenFlow01Create(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/token/create", utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
+		appHandler.CreateToken(c)
+	})
+
+	adminAppID := primitive.NewObjectID()
+	secondAdminAppID := primitive.NewObjectID()
+	collection := mongoDatabase.Collection("apps_meta")
+
+	_, err := collection.InsertMany(context.TODO(), []interface{}{
+		bson.M{"_id": adminAppID, "owner": "admin", "app_name": "token-flow-admin-app"},
+		bson.M{"_id": secondAdminAppID, "owner": "administrator", "app_name": "token-flow-admin-second-app"},
+	})
+	assert.NoError(t, err)
+
+	cicdTokenAdminAppID = adminAppID.Hex()
+	cicdTokenSecondAdminAppID = secondAdminAppID.Hex()
+
+	adminPayload := fmt.Sprintf(`{"name":"cicd-token-admin","allowed_apps":["%s"]}`, cicdTokenAdminAppID)
+	adminReq, err := http.NewRequest("POST", "/token/create", bytes.NewBufferString(adminPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminReq.Header.Set("Content-Type", "application/json")
+	adminReq.Header.Set("Authorization", "Bearer "+authToken)
+	adminW := httptest.NewRecorder()
+	router.ServeHTTP(adminW, adminReq)
+	assert.Equal(t, http.StatusOK, adminW.Code)
+
+	var adminResponse map[string]interface{}
+	err = json.Unmarshal(adminW.Body.Bytes(), &adminResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokenValue, tokenExists := adminResponse["token"]
+	assert.True(t, tokenExists)
+	cicdToken = tokenValue.(string)
+	assert.NotEmpty(t, cicdToken)
+
+	tokenIDValue, tokenIDExists := adminResponse["id"]
+	assert.True(t, tokenIDExists)
+	cicdTokenID = tokenIDValue.(string)
+	assert.NotEmpty(t, cicdTokenID)
+
+	secondPayload := fmt.Sprintf(`{"name":"cicd-token-second-admin","allowed_apps":["%s"]}`, cicdTokenSecondAdminAppID)
+	secondReq, err := http.NewRequest("POST", "/token/create", bytes.NewBufferString(secondPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondReq.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
+	secondW := httptest.NewRecorder()
+	router.ServeHTTP(secondW, secondReq)
+	assert.Equal(t, http.StatusOK, secondW.Code)
+
+	var secondResponse map[string]interface{}
+	err = json.Unmarshal(secondW.Body.Bytes(), &secondResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondTokenValue, secondTokenExists := secondResponse["token"]
+	assert.True(t, secondTokenExists)
+	secondToken := secondTokenValue.(string)
+	assert.NotEmpty(t, secondToken)
+	assert.NoError(t, os.Setenv("cicdTokenSecondUser", secondToken))
+
+	secondTokenIDValue, secondTokenIDExists := secondResponse["id"]
+	assert.True(t, secondTokenIDExists)
+	cicdTokenSecondUserID = secondTokenIDValue.(string)
+	assert.NotEmpty(t, cicdTokenSecondUserID)
+}
+
+func TestTokenCreateWithPastExpirationDate(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware(mongoDatabase))
+
+	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/token/create", utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
+		appHandler.CreateToken(c)
+	})
+
+	adminPastExpiryAppID := primitive.NewObjectID()
+	_, err := mongoDatabase.Collection("apps_meta").InsertOne(context.TODO(), bson.M{
+		"_id":      adminPastExpiryAppID,
+		"owner":    "admin",
+		"app_name": "token-past-expiry-app",
+	})
+	assert.NoError(t, err)
+	defer func() {
+		_, cleanupErr := mongoDatabase.Collection("apps_meta").DeleteOne(context.TODO(), bson.M{"_id": adminPastExpiryAppID})
+		assert.NoError(t, cleanupErr)
+	}()
+
+	pastTime := time.Now().Add(-1 * time.Minute).UTC().Format(time.RFC3339Nano)
+	payload := fmt.Sprintf(`{"name":"token-with-past-expiry","allowed_apps":["%s"],"expires_at":"%s"}`, adminPastExpiryAppID.Hex(), pastTime)
+	req, err := http.NewRequest("POST", "/token/create", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, `{"error":"expires_at must be in the future"}`, w.Body.String())
+}
+
+func TestTokenExpiresImmediatelyAndReturnsUnauthorized(t *testing.T) {
+	createRouter := gin.Default()
+	createRouter.Use(utils.AuthMiddleware(mongoDatabase))
+
+	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	createRouter.POST("/token/create", utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
+		appHandler.CreateToken(c)
+	})
+
+	adminShortExpiryAppID := primitive.NewObjectID()
+	_, err := mongoDatabase.Collection("apps_meta").InsertOne(context.TODO(), bson.M{
+		"_id":      adminShortExpiryAppID,
+		"owner":    "admin",
+		"app_name": "token-short-expiry-app",
+	})
+	assert.NoError(t, err)
+	defer func() {
+		_, cleanupErr := mongoDatabase.Collection("apps_meta").DeleteOne(context.TODO(), bson.M{"_id": adminShortExpiryAppID})
+		assert.NoError(t, cleanupErr)
+	}()
+
+	expiresSoon := time.Now().Add(250 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+	createPayload := fmt.Sprintf(`{"name":"token-short-expiry","allowed_apps":["%s"],"expires_at":"%s"}`, adminShortExpiryAppID.Hex(), expiresSoon)
+	createReq, err := http.NewRequest("POST", "/token/create", bytes.NewBufferString(createPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Authorization", "Bearer "+authToken)
+
+	createW := httptest.NewRecorder()
+	createRouter.ServeHTTP(createW, createReq)
+	assert.Equal(t, http.StatusOK, createW.Code)
+
+	var createResponse map[string]interface{}
+	err = json.Unmarshal(createW.Body.Bytes(), &createResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortLivedToken, ok := createResponse["token"].(string)
+	assert.True(t, ok)
+	assert.NotEmpty(t, shortLivedToken)
+
+	time.Sleep(500 * time.Millisecond)
+	useRouter := gin.Default()
+	useRouter.Use(utils.AuthMiddleware(mongoDatabase))
+	useRouter.POST("/test/upload", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"result": "ok"})
+	})
+
+	useReq, err := http.NewRequest("POST", "/test/upload", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	useReq.Header.Set("Authorization", "Bearer "+shortLivedToken)
+
+	useW := httptest.NewRecorder()
+	useRouter.ServeHTTP(useW, useReq)
+
+	assert.Equal(t, http.StatusUnauthorized, useW.Code)
+	assert.Equal(t, `{"error":"token expired"}`, useW.Body.String())
+}
+
+func TestTokenMiddlewareFlowForBothTokens(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware(mongoDatabase))
+
+	router.POST("/test/app/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"result": "ok"})
+	})
+	router.POST("/test/upload", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"result": "ok"})
+	})
+	router.GET("/test/token/list", utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"result": "ok"})
+	})
+
+	secondToken := os.Getenv("cicdTokenSecondUser")
+	assert.NotEmpty(t, cicdToken)
+	assert.NotEmpty(t, secondToken)
+
+	testTokens := []struct {
+		name  string
+		token string
+	}{
+		{name: "first api token", token: cicdToken},
+		{name: "second api token", token: secondToken},
+	}
+
+	for _, tokenCase := range testTokens {
+		t.Run(tokenCase.name, func(t *testing.T) {
+			createReq, err := http.NewRequest("POST", "/test/app/create", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			createReq.Header.Set("Authorization", "Bearer "+tokenCase.token)
+			createW := httptest.NewRecorder()
+			router.ServeHTTP(createW, createReq)
+			assert.Equal(t, http.StatusForbidden, createW.Code)
+			var createResponse map[string]interface{}
+			err = json.Unmarshal(createW.Body.Bytes(), &createResponse)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, "API tokens are restricted to app upload", createResponse["error"])
+
+			uploadReq, err := http.NewRequest("POST", "/test/upload", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			uploadReq.Header.Set("Authorization", "Bearer "+tokenCase.token)
+			uploadW := httptest.NewRecorder()
+			router.ServeHTTP(uploadW, uploadReq)
+			assert.Equal(t, http.StatusOK, uploadW.Code)
+
+			adminOnlyReq, err := http.NewRequest("GET", "/test/token/list", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			adminOnlyReq.Header.Set("Authorization", "Bearer "+tokenCase.token)
+			adminOnlyW := httptest.NewRecorder()
+			router.ServeHTTP(adminOnlyW, adminOnlyReq)
+			assert.Equal(t, http.StatusForbidden, adminOnlyW.Code)
+			var adminOnlyResponse map[string]interface{}
+			err = json.Unmarshal(adminOnlyW.Body.Bytes(), &adminOnlyResponse)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, "Admin JWT is required", adminOnlyResponse["error"])
+		})
+	}
+}
+
+func TestTokenFlow02List(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/token/list", utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
+		appHandler.ListTokens(c)
+	})
+
+	adminReq, err := http.NewRequest("GET", "/token/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminReq.Header.Set("Authorization", "Bearer "+authToken)
+	adminW := httptest.NewRecorder()
+	router.ServeHTTP(adminW, adminReq)
+	assert.Equal(t, http.StatusOK, adminW.Code)
+
+	var adminResponse map[string]interface{}
+	err = json.Unmarshal(adminW.Body.Bytes(), &adminResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adminTokens, ok := adminResponse["tokens"].([]interface{})
+	assert.True(t, ok)
+	adminTokenFound := false
+	secondUserTokenVisibleForAdmin := false
+	for _, token := range adminTokens {
+		tokenMap, mapOk := token.(map[string]interface{})
+		if !mapOk {
+			continue
+		}
+		if tokenMap["id"] == cicdTokenID {
+			adminTokenFound = true
+		}
+		if tokenMap["id"] == cicdTokenSecondUserID {
+			secondUserTokenVisibleForAdmin = true
+		}
+	}
+	assert.True(t, adminTokenFound)
+	assert.False(t, secondUserTokenVisibleForAdmin)
+
+	secondReq, err := http.NewRequest("GET", "/token/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondReq.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
+	secondW := httptest.NewRecorder()
+	router.ServeHTTP(secondW, secondReq)
+	assert.Equal(t, http.StatusOK, secondW.Code)
+
+	var secondResponse map[string]interface{}
+	err = json.Unmarshal(secondW.Body.Bytes(), &secondResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondTokens, ok := secondResponse["tokens"].([]interface{})
+	assert.True(t, ok)
+	secondTokenFound := false
+	adminTokenVisibleForSecondUser := false
+	for _, token := range secondTokens {
+		tokenMap, mapOk := token.(map[string]interface{})
+		if !mapOk {
+			continue
+		}
+		if tokenMap["id"] == cicdTokenSecondUserID {
+			secondTokenFound = true
+		}
+		if tokenMap["id"] == cicdTokenID {
+			adminTokenVisibleForSecondUser = true
+		}
+	}
+	assert.True(t, secondTokenFound)
+	assert.False(t, adminTokenVisibleForSecondUser)
+	assert.NotEmpty(t, os.Getenv("cicdTokenSecondUser"))
+}
+
+func TestTokenFlow03Delete(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+
+	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/token/delete", utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
+		appHandler.DeleteToken(c)
+	})
+
+	adminPayload := fmt.Sprintf(`{"id":"%s"}`, cicdTokenID)
+	adminReq, err := http.NewRequest("DELETE", "/token/delete", bytes.NewBufferString(adminPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminReq.Header.Set("Content-Type", "application/json")
+	adminReq.Header.Set("Authorization", "Bearer "+authToken)
+	adminW := httptest.NewRecorder()
+	router.ServeHTTP(adminW, adminReq)
+	assert.Equal(t, http.StatusOK, adminW.Code)
+
+	secondPayload := fmt.Sprintf(`{"id":"%s"}`, cicdTokenSecondUserID)
+	secondReq, err := http.NewRequest("DELETE", "/token/delete", bytes.NewBufferString(secondPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondReq.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
+	secondW := httptest.NewRecorder()
+	router.ServeHTTP(secondW, secondReq)
+	assert.Equal(t, http.StatusOK, secondW.Code)
+
+	idsForCleanup := []primitive.ObjectID{}
+	if cicdTokenAdminAppID != "" {
+		appID, parseErr := primitive.ObjectIDFromHex(cicdTokenAdminAppID)
+		assert.NoError(t, parseErr)
+		if parseErr == nil {
+			idsForCleanup = append(idsForCleanup, appID)
+		}
+	}
+	if cicdTokenSecondAdminAppID != "" {
+		appID, parseErr := primitive.ObjectIDFromHex(cicdTokenSecondAdminAppID)
+		assert.NoError(t, parseErr)
+		if parseErr == nil {
+			idsForCleanup = append(idsForCleanup, appID)
+		}
+	}
+	if len(idsForCleanup) > 0 {
+		_, err = mongoDatabase.Collection("apps_meta").DeleteMany(context.TODO(), bson.M{"_id": bson.M{"$in": idsForCleanup}})
+		assert.NoError(t, err)
+	}
+}
 
 func TestUpdateSpecificAppWithSecondUser(t *testing.T) {
 

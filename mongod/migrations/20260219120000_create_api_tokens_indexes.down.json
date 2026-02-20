@@ -1,0 +1,10 @@
+[
+  {
+    "dropIndexes": "api_tokens",
+    "index": "token_hash_unique"
+  },
+  {
+    "dropIndexes": "api_tokens",
+    "index": "owner_sort_by_created_desc"
+  }
+]

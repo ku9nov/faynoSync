@@ -34,12 +34,42 @@ const (
 // CheckPermission creates a middleware that checks if the user has the required permission
 // This function should be called with the database connection
 func CheckPermission(permissionType PermissionType, resourceType ResourceType, database *mongo.Database) gin.HandlerFunc {
+	logrus.Debugf("CheckPermission: permissionType: %v, resourceType: %v", permissionType, resourceType)
 	return func(c *gin.Context) {
 		username, err := GetUsernameFromContext(c)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 			c.Abort()
 			return
+		}
+
+		if isAPIToken, exists := c.Get("is_api_token"); exists {
+			logrus.Debugf("is_api_token: %v, permissionType: %v, resourceType: %v", isAPIToken, permissionType, resourceType)
+			if apiTokenValue, ok := isAPIToken.(bool); ok && apiTokenValue {
+				if permissionType != PermissionUpload || resourceType != ResourceApps {
+					c.JSON(http.StatusForbidden, gin.H{"error": "API tokens are restricted to app upload"})
+					c.Abort()
+					return
+				}
+
+				allowedAppsRaw, ok := c.Get("allowed_apps")
+				if !ok {
+					c.JSON(http.StatusForbidden, gin.H{"error": "API token scope is missing"})
+					c.Abort()
+					return
+				}
+
+				allowedApps, ok := allowedAppsRaw.([]string)
+				if !ok || len(allowedApps) == 0 {
+					c.JSON(http.StatusForbidden, gin.H{"error": "API token has no allowed applications"})
+					c.Abort()
+					return
+				}
+
+				c.Set("allowed_apps", allowedApps)
+				c.Next()
+				return
+			}
 		}
 
 		// First check if user is an admin
@@ -137,6 +167,14 @@ func CheckPermission(permissionType PermissionType, resourceType ResourceType, d
 // This function should be called with the database connection
 func AdminOnlyMiddleware(database *mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if isAPIToken, exists := c.Get("is_api_token"); exists {
+			if apiTokenValue, ok := isAPIToken.(bool); ok && apiTokenValue {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Admin JWT is required"})
+				c.Abort()
+				return
+			}
+		}
+
 		username, err := GetUsernameFromContext(c)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})

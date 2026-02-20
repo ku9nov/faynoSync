@@ -1269,6 +1269,108 @@
       "response": []
     },
     {
+      "name": "Create CI/CD token",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"name\": \"GitHub Actions - MyApp\", \"allowed_apps\": [\"69259667351f660c2fd62d39\", \"692ed1272b2c3bb989ac29a5\"], \"expires_at\": \"2026-12-31T00:00:00Z\" }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/token/create",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "token",
+            "create"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List CI/CD token",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/token/list",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "token",
+            "list"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Delete CI/CD token",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "DELETE",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"id\": \"69972c0c93be639a3a718e6b\" }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/token/delete",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "token",
+            "delete"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Check TUF bootstrap",
       "request": {
         "auth": {

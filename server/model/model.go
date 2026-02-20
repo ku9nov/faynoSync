@@ -1,6 +1,10 @@
 package model
 
-import "go.mongodb.org/mongo-driver/bson/primitive"
+import (
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 type Artifact struct {
 	Link      string             `bson:"link"`
@@ -127,6 +131,38 @@ type TeamUser struct {
 	Owner       string             `bson:"owner"`
 	Permissions Permissions        `bson:"permissions"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`
+}
+
+type APIToken struct {
+	ID          primitive.ObjectID `bson:"_id"`
+	Name        string             `bson:"name"`
+	TokenHash   string             `bson:"token_hash"`
+	TokenPrefix string             `bson:"token_prefix"`
+	Owner       string             `bson:"owner"`
+	AllowedApps []string           `bson:"allowed_apps,omitempty"`
+	ExpiresAt   *time.Time         `bson:"expires_at,omitempty"`
+	CreatedAt   time.Time          `bson:"created_at"`
+	LastUsedAt  *time.Time         `bson:"last_used_at,omitempty"`
+}
+
+type CreateAPITokenRequest struct {
+	Name        string     `json:"name" binding:"required"`
+	AllowedApps []string   `json:"allowed_apps" binding:"required,min=1"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+}
+
+type DeleteAPITokenRequest struct {
+	TokenID string `json:"id" binding:"required"`
+}
+
+type APITokenResponse struct {
+	ID          primitive.ObjectID `json:"id"`
+	Name        string             `json:"name"`
+	TokenPrefix string             `json:"token_prefix"`
+	AllowedApps []string           `json:"allowed_apps"`
+	ExpiresAt   *time.Time         `json:"expires_at,omitempty"`
+	CreatedAt   time.Time          `json:"created_at"`
+	LastUsedAt  *time.Time         `json:"last_used_at,omitempty"`
 }
 
 type Permissions struct {
