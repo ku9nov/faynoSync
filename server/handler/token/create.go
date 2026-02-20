@@ -35,7 +35,8 @@ func CreateToken(c *gin.Context, database *mongo.Database) {
 
 	allowedApps, err := validateAllowedApps(c.Request.Context(), database, owner, req.AllowedApps)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		logrus.Debugf("validateAllowedApps failed for owner %s: %v", owner, err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "one or more allowed_apps are invalid"})
 		return
 	}
 
