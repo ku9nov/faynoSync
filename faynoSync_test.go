@@ -2741,7 +2741,7 @@ func TestTokenFlow01Create(t *testing.T) {
 	adminReq.Header.Set("Authorization", "Bearer "+authToken)
 	adminW := httptest.NewRecorder()
 	router.ServeHTTP(adminW, adminReq)
-	assert.Equal(t, http.StatusOK, adminW.Code)
+	assert.Equal(t, http.StatusCreated, adminW.Code)
 
 	var adminResponse map[string]interface{}
 	err = json.Unmarshal(adminW.Body.Bytes(), &adminResponse)
@@ -2768,7 +2768,7 @@ func TestTokenFlow01Create(t *testing.T) {
 	secondReq.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
 	secondW := httptest.NewRecorder()
 	router.ServeHTTP(secondW, secondReq)
-	assert.Equal(t, http.StatusOK, secondW.Code)
+	assert.Equal(t, http.StatusCreated, secondW.Code)
 
 	var secondResponse map[string]interface{}
 	err = json.Unmarshal(secondW.Body.Bytes(), &secondResponse)
@@ -2857,7 +2857,7 @@ func TestTokenExpiresImmediatelyAndReturnsUnauthorized(t *testing.T) {
 
 	createW := httptest.NewRecorder()
 	createRouter.ServeHTTP(createW, createReq)
-	assert.Equal(t, http.StatusOK, createW.Code)
+	assert.Equal(t, http.StatusCreated, createW.Code)
 
 	var createResponse map[string]interface{}
 	err = json.Unmarshal(createW.Body.Bytes(), &createResponse)
