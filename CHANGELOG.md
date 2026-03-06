@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.5.4
+
+### Dependencies
+
+- Upgraded `go.opentelemetry.io/otel/sdk` to v1.40.0.
+
+### Improvements
+
+- Token create endpoint: changed response status code for token creation.
+
 ## v1.5.3
 
 ### Features
