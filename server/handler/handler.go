@@ -160,7 +160,7 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 
 func (ch *appHandler) DeleteSpecificVersionOfApp(c *gin.Context) {
 	// Call the DeleteSpecificVersionOfApp function from the delete package
-	delete.DeleteSpecificVersionOfApp(c, ch.repository, ch.database)
+	delete.DeleteSpecificVersionOfApp(c, ch.repository, ch.database, ch.redisClient)
 }
 
 func (ch *appHandler) DeleteChannel(c *gin.Context) {
@@ -199,7 +199,7 @@ func (ch *appHandler) UpdateArch(c *gin.Context) {
 }
 func (ch *appHandler) DeleteSpecificArtifactOfApp(c *gin.Context) {
 	// Call the DeleteSpecificArtifactOfApp function from the delete package
-	delete.DeleteSpecificArtifactOfApp(c, ch.repository, ch.database)
+	delete.DeleteSpecificArtifactOfApp(c, ch.repository, ch.database, ch.redisClient)
 }
 
 func (ch *appHandler) DownloadArtifact(c *gin.Context) {

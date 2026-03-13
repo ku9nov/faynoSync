@@ -9,6 +9,7 @@ import (
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -272,5 +273,56 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 		}
 	}
+
+	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			humanReadableData, err := repository.FetchAppByID(objID, ctx)
+			if err != nil {
+				logrus.Error("Error fetching human-readable data for Slack notification: ", err)
+				return
+			}
+			if len(humanReadableData) == 0 {
+				logrus.Warn("No app data found for Slack notification, app ID: ", objID.Hex())
+				return
+			}
+
+			slackData := humanReadableData[0]
+
+			var platforms, arches, artifacts, pkgs []string
+			for _, artifact := range slackData.Artifacts {
+				platforms = append(platforms, artifact.Platform)
+				arches = append(arches, artifact.Arch)
+				artifacts = append(artifacts, artifact.Link)
+				pkgs = append(pkgs, artifact.Package)
+			}
+
+			var changelog []string
+			for _, change := range slackData.Changelog {
+				if strings.TrimSpace(change.Changes) == "" {
+					continue
+				}
+				changelog = append(changelog, change.Changes)
+			}
+
+			utils.SendSlackNotification(
+				slackData.AppName,
+				slackData.Channel,
+				slackData.Version,
+				platforms,
+				arches,
+				artifacts,
+				changelog,
+				pkgs,
+				viper.GetViper(),
+				rdb,
+				slackData.Published,
+				slackData.Critical,
+			)
+		}()
+	}
+
 	c.JSON(http.StatusOK, gin.H{"updatedResult.Updated": result})
 }

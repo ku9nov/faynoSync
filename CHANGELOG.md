@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.5
+
+### Features
+
+- Slack notifications now reuse a single mutable message per app version across artifact create, update, and delete flows, with Redis-backed state, configurable TTL, and cleanup when a version is deleted.
+
 ## v1.5.4
 
 ### Dependencies

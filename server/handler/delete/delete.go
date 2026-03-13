@@ -5,9 +5,11 @@ import (
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -16,7 +18,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
+func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client) {
 	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
@@ -30,6 +32,17 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	var slackAppName, slackVersion string
+	if viper.GetBool("SLACK_ENABLE") && rdb != nil {
+		humanReadableData, fetchErr := repository.FetchAppByID(objID, ctx)
+		if fetchErr != nil {
+			logrus.Error("Error fetching app data before version deletion for Slack cleanup: ", fetchErr)
+		} else if len(humanReadableData) > 0 {
+			slackAppName = humanReadableData[0].AppName
+			slackVersion = humanReadableData[0].Version
+		}
 	}
 
 	//request on repository
@@ -55,10 +68,17 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 		}
 		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
 	}
+
+	if slackAppName != "" && slackVersion != "" {
+		if err := utils.DeleteSlackNotificationState(slackAppName, slackVersion, rdb); err != nil {
+			logrus.Error("Error cleaning Slack notification state after version deletion: ", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
 }
 
-func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database) {
+func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client) {
 	env := viper.GetViper()
 	ctxQueryMap, err := utils.ValidateUpdateParams(c, db)
 	if err != nil {
@@ -97,6 +117,53 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		}
 		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
 	}
+
+	if result && len(links) > 0 && viper.GetBool("SLACK_ENABLE") && rdb != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			humanReadableData, err := repository.FetchAppByID(objID, ctx)
+			if err != nil || len(humanReadableData) == 0 {
+				logrus.Error("Error fetching human-readable data for Slack notification: ", err)
+				return
+			}
+
+			slackData := humanReadableData[0]
+
+			var platforms, arches, artifacts, pkgs []string
+			for _, artifact := range slackData.Artifacts {
+				platforms = append(platforms, artifact.Platform)
+				arches = append(arches, artifact.Arch)
+				artifacts = append(artifacts, artifact.Link)
+				pkgs = append(pkgs, artifact.Package)
+			}
+
+			var changelog []string
+			for _, change := range slackData.Changelog {
+				if strings.TrimSpace(change.Changes) == "" {
+					continue
+				}
+				changelog = append(changelog, change.Changes)
+			}
+
+			utils.UpdateSlackNotificationIfExists(
+				slackData.AppName,
+				slackData.Channel,
+				slackData.Version,
+				platforms,
+				arches,
+				artifacts,
+				changelog,
+				pkgs,
+				viper.GetViper(),
+				rdb,
+				slackData.Published,
+				slackData.Critical,
+			)
+		}()
+	}
+
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificArtifactResult": result})
 }
 
