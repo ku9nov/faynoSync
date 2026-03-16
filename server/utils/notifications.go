@@ -135,7 +135,7 @@ func buildSlackNotificationBlocks(appName, channel, version string, platforms, a
 	}
 
 	for i, artifact := range artifactItems {
-		logrus.Debugf("Adding artifact #%d: %s", i+1, artifact.Link)
+		logrus.Debugf("Adding artifact #%d for platform=%s arch=%s", i+1, artifact.Platform, artifact.Arch)
 
 		downloadText := fmt.Sprintf("*Download for %s (architecture: %s):*", artifact.Platform, artifact.Arch)
 		blocks = append(blocks, slack.NewSectionBlock(
