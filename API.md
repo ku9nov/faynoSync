@@ -1,5 +1,7 @@
 # API Reference
 
+**This file is no longer maintained.** For up-to-date documentation, see [FaynoSync Documentation](https://faynosync.com/docs/intro).
+
 You can find `Postman` collection [here](examples/faynoSync.postman_collection.json).
 
 ### Check Health Status
