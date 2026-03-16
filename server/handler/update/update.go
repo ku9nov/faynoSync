@@ -308,6 +308,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 
 			utils.SendSlackNotification(
+				owner,
 				slackData.AppName,
 				slackData.Channel,
 				slackData.Version,

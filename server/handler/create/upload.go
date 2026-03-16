@@ -219,6 +219,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 				}
 
 				utils.SendSlackNotification(
+					owner,
 					slackData.AppName,
 					slackData.Channel,
 					slackData.Version,

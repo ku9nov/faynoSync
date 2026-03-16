@@ -32,7 +32,7 @@ type slackArtifactItem struct {
 	Arch      string
 }
 
-func SendSlackNotification(appName, channel, version string, platforms, arches, artifacts, changelog, extensions []string, env *viper.Viper, rdb *redis.Client, publish, critical bool) {
+func SendSlackNotification(owner, appName, channel, version string, platforms, arches, artifacts, changelog, extensions []string, env *viper.Viper, rdb *redis.Client, publish, critical bool) {
 	token := env.GetString("SLACK_BOT_TOKEN")
 	channelID := env.GetString("SLACK_CHANNEL")
 	if token == "" || channelID == "" {
@@ -63,15 +63,14 @@ func SendSlackNotification(appName, channel, version string, platforms, arches, 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	stateKey := fmt.Sprintf("slack_notification:%s:%s", appName, version)
 	ttl := getSlackNotificationTTL(env)
 
-	if err := upsertSlackNotification(ctx, rdb, api, stateKey, channelID, blocks, ttl); err != nil {
+	if err := upsertSlackNotification(ctx, rdb, api, owner, channel, appName, version, channelID, blocks, ttl); err != nil {
 		logrus.Errorf("Error upserting Slack message: %s", err)
 	}
 }
 
-func UpdateSlackNotificationIfExists(appName, channel, version string, platforms, arches, artifacts, changelog, extensions []string, env *viper.Viper, rdb *redis.Client, publish, critical bool) {
+func UpdateSlackNotificationIfExists(owner, appName, channel, version string, platforms, arches, artifacts, changelog, extensions []string, env *viper.Viper, rdb *redis.Client, publish, critical bool) {
 	if rdb == nil {
 		return
 	}
@@ -89,13 +88,12 @@ func UpdateSlackNotificationIfExists(appName, channel, version string, platforms
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stateKey := fmt.Sprintf("slack_notification:%s:%s", appName, version)
-	if err := updateExistingSlackNotification(ctx, rdb, api, stateKey, blocks); err != nil {
+	if err := updateExistingSlackNotification(ctx, rdb, api, owner, channel, appName, version, blocks); err != nil {
 		logrus.Errorf("Error updating existing Slack message: %s", err)
 	}
 }
 
-func DeleteSlackNotificationState(appName, version string, rdb *redis.Client) error {
+func DeleteSlackNotificationState(owner, channel, appName, version string, rdb *redis.Client) error {
 	if rdb == nil {
 		return nil
 	}
@@ -103,7 +101,7 @@ func DeleteSlackNotificationState(appName, version string, rdb *redis.Client) er
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stateKey := fmt.Sprintf("slack_notification:%s:%s", appName, version)
+	stateKey := buildSlackNotificationStateKey(owner, channel, appName, version)
 	if err := rdb.Del(ctx, stateKey).Err(); err != nil {
 		return fmt.Errorf("failed to delete Slack notification state for key %s: %w", stateKey, err)
 	}
@@ -218,11 +216,16 @@ func getSlackNotificationTTL(env *viper.Viper) time.Duration {
 	return ttl
 }
 
-func upsertSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.Client, stateKey, fallbackChannel string, blocks []slack.Block, ttl time.Duration) error {
+func buildSlackNotificationStateKey(owner, channel, appName, version string) string {
+	return fmt.Sprintf("slack_notification:%s:%s:%s:%s", owner, channel, appName, version)
+}
+
+func upsertSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.Client, owner, channel, appName, version, fallbackChannel string, blocks []slack.Block, ttl time.Duration) error {
+	stateKey := buildSlackNotificationStateKey(owner, channel, appName, version)
 	lockKey := stateKey + ":lock"
 
 	for attempt := 0; attempt < maxSlackNotificationRetries; attempt++ {
-		state, err := getSlackNotificationState(ctx, rdb, stateKey)
+		state, err := getSlackNotificationState(ctx, rdb, owner, channel, appName, version)
 		if err == nil {
 			return updateSlackNotification(api, state, blocks)
 		}
@@ -241,7 +244,7 @@ func upsertSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.
 				}
 			}()
 
-			state, err = getSlackNotificationState(ctx, rdb, stateKey)
+			state, err = getSlackNotificationState(ctx, rdb, owner, channel, appName, version)
 			if err == nil {
 				return updateSlackNotification(api, state, blocks)
 			}
@@ -283,8 +286,9 @@ func upsertSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.
 	return fmt.Errorf("failed to obtain Slack notification state for key %s", stateKey)
 }
 
-func updateExistingSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.Client, stateKey string, blocks []slack.Block) error {
-	state, err := getSlackNotificationState(ctx, rdb, stateKey)
+func updateExistingSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.Client, owner, channel, appName, version string, blocks []slack.Block) error {
+	stateKey := buildSlackNotificationStateKey(owner, channel, appName, version)
+	state, err := getSlackNotificationState(ctx, rdb, owner, channel, appName, version)
 	if err == redis.Nil {
 		logrus.Debugf("Slack notification state not found for key %s, skipping update", stateKey)
 		return nil
@@ -296,7 +300,8 @@ func updateExistingSlackNotification(ctx context.Context, rdb *redis.Client, api
 	return updateSlackNotification(api, state, blocks)
 }
 
-func getSlackNotificationState(ctx context.Context, rdb *redis.Client, stateKey string) (*slackNotificationState, error) {
+func getSlackNotificationState(ctx context.Context, rdb *redis.Client, owner, channel, appName, version string) (*slackNotificationState, error) {
+	stateKey := buildSlackNotificationStateKey(owner, channel, appName, version)
 	payload, err := rdb.Get(ctx, stateKey).Result()
 	if err != nil {
 		return nil, err

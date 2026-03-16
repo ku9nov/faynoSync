@@ -114,11 +114,12 @@ func TestGetSlackNotificationTTL_FallsBackOnInvalidValue(t *testing.T) {
 func TestGetSlackNotificationState_Success(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	stateKey := buildSlackNotificationStateKey("alice", "stable", "demo", "1.2.3")
 
-	err := client.Set(context.Background(), "slack_notification:demo:1.2.3", `{"channel":"C123","ts":"1712345678.000100"}`, 0).Err()
+	err := client.Set(context.Background(), stateKey, `{"channel":"C123","ts":"1712345678.000100"}`, 0).Err()
 	require.NoError(t, err)
 
-	state, err := getSlackNotificationState(context.Background(), client, "slack_notification:demo:1.2.3")
+	state, err := getSlackNotificationState(context.Background(), client, "alice", "stable", "demo", "1.2.3")
 	require.NoError(t, err)
 	assert.Equal(t, "C123", state.Channel)
 	assert.Equal(t, "1712345678.000100", state.TS)
@@ -127,11 +128,12 @@ func TestGetSlackNotificationState_Success(t *testing.T) {
 func TestGetSlackNotificationState_ErrorsOnInvalidJSON(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	stateKey := buildSlackNotificationStateKey("alice", "stable", "demo", "1.2.3")
 
-	err := client.Set(context.Background(), "slack_notification:demo:1.2.3", `{"channel":`, 0).Err()
+	err := client.Set(context.Background(), stateKey, `{"channel":`, 0).Err()
 	require.NoError(t, err)
 
-	_, err = getSlackNotificationState(context.Background(), client, "slack_notification:demo:1.2.3")
+	_, err = getSlackNotificationState(context.Background(), client, "alice", "stable", "demo", "1.2.3")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to decode Slack notification state")
 }
@@ -139,11 +141,12 @@ func TestGetSlackNotificationState_ErrorsOnInvalidJSON(t *testing.T) {
 func TestGetSlackNotificationState_ErrorsOnIncompleteState(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	stateKey := buildSlackNotificationStateKey("alice", "stable", "demo", "1.2.3")
 
-	err := client.Set(context.Background(), "slack_notification:demo:1.2.3", `{"channel":"C123","ts":""}`, 0).Err()
+	err := client.Set(context.Background(), stateKey, `{"channel":"C123","ts":""}`, 0).Err()
 	require.NoError(t, err)
 
-	_, err = getSlackNotificationState(context.Background(), client, "slack_notification:demo:1.2.3")
+	_, err = getSlackNotificationState(context.Background(), client, "alice", "stable", "demo", "1.2.3")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Slack notification state is incomplete")
 }
@@ -152,20 +155,21 @@ func TestUpdateExistingSlackNotification_ReturnsNilWhenStateMissing(t *testing.T
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
-	err := updateExistingSlackNotification(context.Background(), client, nil, "slack_notification:demo:1.2.3", nil)
+	err := updateExistingSlackNotification(context.Background(), client, nil, "alice", "stable", "demo", "1.2.3", nil)
 	require.NoError(t, err)
 }
 
 func TestDeleteSlackNotificationState_RemovesKey(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	stateKey := buildSlackNotificationStateKey("alice", "stable", "demo", "1.2.3")
 
-	err := client.Set(context.Background(), "slack_notification:demo:1.2.3", `{"channel":"C123","ts":"1712345678.000100"}`, 0).Err()
+	err := client.Set(context.Background(), stateKey, `{"channel":"C123","ts":"1712345678.000100"}`, 0).Err()
 	require.NoError(t, err)
 
-	err = DeleteSlackNotificationState("demo", "1.2.3", client)
+	err = DeleteSlackNotificationState("alice", "stable", "demo", "1.2.3", client)
 	require.NoError(t, err)
 
-	_, err = client.Get(context.Background(), "slack_notification:demo:1.2.3").Result()
+	_, err = client.Get(context.Background(), stateKey).Result()
 	assert.Equal(t, redis.Nil, err)
 }

@@ -34,13 +34,14 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 		return
 	}
 
-	var slackAppName, slackVersion string
+	var slackAppName, slackChannel, slackVersion string
 	if viper.GetBool("SLACK_ENABLE") && rdb != nil {
 		humanReadableData, fetchErr := repository.FetchAppByID(objID, ctx)
 		if fetchErr != nil {
 			logrus.Error("Error fetching app data before version deletion for Slack cleanup: ", fetchErr)
 		} else if len(humanReadableData) > 0 {
 			slackAppName = humanReadableData[0].AppName
+			slackChannel = humanReadableData[0].Channel
 			slackVersion = humanReadableData[0].Version
 		}
 	}
@@ -70,7 +71,7 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	}
 
 	if slackAppName != "" && slackVersion != "" {
-		if err := utils.DeleteSlackNotificationState(slackAppName, slackVersion, rdb); err != nil {
+		if err := utils.DeleteSlackNotificationState(owner, slackChannel, slackAppName, slackVersion, rdb); err != nil {
 			logrus.Error("Error cleaning Slack notification state after version deletion: ", err)
 		}
 	}
@@ -148,6 +149,7 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 			}
 
 			utils.UpdateSlackNotificationIfExists(
+				owner,
 				slackData.AppName,
 				slackData.Channel,
 				slackData.Version,
