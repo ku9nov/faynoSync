@@ -8,6 +8,7 @@ import (
 	"faynoSync/server/utils/updaters"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -187,8 +188,6 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 
 	if appData, ok := results[0].(model.SpecificApp); ok {
 		c.JSON(http.StatusOK, gin.H{"uploadResult.Uploaded": appData.ID.Hex()})
-		artifacts := utils.ExtractArtifactLinks(results)
-		changelog := utils.ExtractChangelog(results)
 
 		go func() {
 			if viper.GetBool("SLACK_ENABLE") {
@@ -203,13 +202,24 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 
 				slackData := humanReadableData[0]
 
-				var platforms, arches, pkgs []string
+				var platforms, arches, artifacts, pkgs []string
 				for _, artifact := range slackData.Artifacts {
 					platforms = append(platforms, artifact.Platform)
 					arches = append(arches, artifact.Arch)
+					artifacts = append(artifacts, artifact.Link)
 					pkgs = append(pkgs, artifact.Package)
 				}
+
+				var changelog []string
+				for _, change := range slackData.Changelog {
+					if strings.TrimSpace(change.Changes) == "" {
+						continue
+					}
+					changelog = append(changelog, change.Changes)
+				}
+
 				utils.SendSlackNotification(
+					owner,
 					slackData.AppName,
 					slackData.Channel,
 					slackData.Version,
@@ -219,6 +229,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 					changelog,
 					pkgs,
 					viper.GetViper(),
+					rdb,
 					slackData.Published,
 					slackData.Critical,
 				)
