@@ -132,7 +132,7 @@ func TestGetSlackNotificationState_Success(t *testing.T) {
 	assert.Equal(t, "1712345678.000100", state.TS)
 }
 
-func TestGetSlackNotificationState_ErrorsOnInvalidJSON(t *testing.T) {
+func TestGetSlackNotificationState_DeletesInvalidJSONAndTreatsItAsMissing(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	stateKey := buildSlackNotificationStateKey("alice", "stable", "demo", "1.2.3")
@@ -140,12 +140,15 @@ func TestGetSlackNotificationState_ErrorsOnInvalidJSON(t *testing.T) {
 	err := client.Set(context.Background(), stateKey, `{"channel":`, 0).Err()
 	require.NoError(t, err)
 
-	_, err = getSlackNotificationState(context.Background(), client, "alice", "stable", "demo", "1.2.3")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to decode Slack notification state")
+	state, err := getSlackNotificationState(context.Background(), client, "alice", "stable", "demo", "1.2.3")
+	assert.Nil(t, state)
+	assert.Equal(t, redis.Nil, err)
+
+	_, err = client.Get(context.Background(), stateKey).Result()
+	assert.Equal(t, redis.Nil, err)
 }
 
-func TestGetSlackNotificationState_ErrorsOnIncompleteState(t *testing.T) {
+func TestGetSlackNotificationState_DeletesIncompleteStateAndTreatsItAsMissing(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	stateKey := buildSlackNotificationStateKey("alice", "stable", "demo", "1.2.3")
@@ -153,9 +156,12 @@ func TestGetSlackNotificationState_ErrorsOnIncompleteState(t *testing.T) {
 	err := client.Set(context.Background(), stateKey, `{"channel":"C123","ts":""}`, 0).Err()
 	require.NoError(t, err)
 
-	_, err = getSlackNotificationState(context.Background(), client, "alice", "stable", "demo", "1.2.3")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Slack notification state is incomplete")
+	state, err := getSlackNotificationState(context.Background(), client, "alice", "stable", "demo", "1.2.3")
+	assert.Nil(t, state)
+	assert.Equal(t, redis.Nil, err)
+
+	_, err = client.Get(context.Background(), stateKey).Result()
+	assert.Equal(t, redis.Nil, err)
 }
 
 func TestGetSlackNotificationState_FallsBackToLegacyKey(t *testing.T) {

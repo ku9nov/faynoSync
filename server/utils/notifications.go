@@ -18,7 +18,7 @@ const (
 	defaultSlackNotificationTTL   = 24 * time.Hour
 	defaultSlackNotificationLock  = 20 * time.Second
 	defaultSlackNotificationRetry = 250 * time.Millisecond
-	maxSlackNotificationRetries   = 5
+	maxSlackNotificationRetries   = int(defaultSlackNotificationLock/defaultSlackNotificationRetry) + 1
 )
 
 type slackNotificationState struct {
@@ -345,12 +345,29 @@ func getSlackNotificationState(ctx context.Context, rdb *redis.Client, owner, ch
 		return nil, redis.Nil
 	}
 
+	resetInvalidState := func(reason string, cause error) error {
+		if err := rdb.Del(ctx, stateKey).Err(); err != nil {
+			if cause != nil {
+				return fmt.Errorf("failed to delete invalid Slack notification state for key %s after %s: %v: %w", stateKey, reason, cause, err)
+			}
+			return fmt.Errorf("failed to delete invalid Slack notification state for key %s: %w", stateKey, err)
+		}
+
+		entry := logrus.WithField("state_key", stateKey)
+		if cause != nil {
+			entry = entry.WithError(cause)
+		}
+		entry.Warnf("Deleted invalid Slack notification state: %s", reason)
+
+		return redis.Nil
+	}
+
 	var state slackNotificationState
 	if err := json.Unmarshal([]byte(payload), &state); err != nil {
-		return nil, fmt.Errorf("failed to decode Slack notification state: %w", err)
+		return nil, resetInvalidState("failed to decode payload", err)
 	}
 	if state.Channel == "" || state.TS == "" {
-		return nil, fmt.Errorf("Slack notification state is incomplete for key %s", stateKey)
+		return nil, resetInvalidState("payload is incomplete", nil)
 	}
 
 	return &state, nil
