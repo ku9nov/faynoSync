@@ -40,6 +40,9 @@ func SendSlackNotification(owner, appName, channel, version string, platforms, a
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	api := slack.New(token)
 	blocks := buildSlackNotificationBlocks(appName, channel, version, platforms, arches, artifacts, changelog, extensions, publish, critical)
 
@@ -54,14 +57,11 @@ func SendSlackNotification(owner, appName, channel, version string, platforms, a
 	}).Debug("Preparing Slack message with the following details")
 
 	if rdb == nil {
-		if err := postSlackNotification(api, channelID, blocks); err != nil {
+		if err := postSlackNotification(ctx, api, channelID, blocks); err != nil {
 			logrus.Errorf("Error sending Slack message: %s", err)
 		}
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	ttl := getSlackNotificationTTL(env)
 
@@ -227,7 +227,7 @@ func upsertSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.
 	for attempt := 0; attempt < maxSlackNotificationRetries; attempt++ {
 		state, err := getSlackNotificationState(ctx, rdb, owner, channel, appName, version)
 		if err == nil {
-			return updateSlackNotification(api, state, blocks)
+			return updateSlackNotification(ctx, api, state, blocks)
 		}
 		if err != redis.Nil {
 			return err
@@ -246,13 +246,14 @@ func upsertSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.
 
 			state, err = getSlackNotificationState(ctx, rdb, owner, channel, appName, version)
 			if err == nil {
-				return updateSlackNotification(api, state, blocks)
+				return updateSlackNotification(ctx, api, state, blocks)
 			}
 			if err != redis.Nil {
 				return err
 			}
 
-			channelID, timestamp, err := api.PostMessage(
+			channelID, timestamp, err := api.PostMessageContext(
+				ctx,
 				fallbackChannel,
 				slack.MsgOptionBlocks(blocks...),
 			)
@@ -297,7 +298,7 @@ func updateExistingSlackNotification(ctx context.Context, rdb *redis.Client, api
 		return err
 	}
 
-	return updateSlackNotification(api, state, blocks)
+	return updateSlackNotification(ctx, api, state, blocks)
 }
 
 func getSlackNotificationState(ctx context.Context, rdb *redis.Client, owner, channel, appName, version string) (*slackNotificationState, error) {
@@ -318,8 +319,9 @@ func getSlackNotificationState(ctx context.Context, rdb *redis.Client, owner, ch
 	return &state, nil
 }
 
-func updateSlackNotification(api *slack.Client, state *slackNotificationState, blocks []slack.Block) error {
-	_, _, _, err := api.UpdateMessage(
+func updateSlackNotification(ctx context.Context, api *slack.Client, state *slackNotificationState, blocks []slack.Block) error {
+	_, _, _, err := api.UpdateMessageContext(
+		ctx,
 		state.Channel,
 		state.TS,
 		slack.MsgOptionBlocks(blocks...),
@@ -332,8 +334,9 @@ func updateSlackNotification(api *slack.Client, state *slackNotificationState, b
 	return nil
 }
 
-func postSlackNotification(api *slack.Client, channelID string, blocks []slack.Block) error {
-	_, timestamp, err := api.PostMessage(
+func postSlackNotification(ctx context.Context, api *slack.Client, channelID string, blocks []slack.Block) error {
+	_, timestamp, err := api.PostMessageContext(
+		ctx,
 		channelID,
 		slack.MsgOptionBlocks(blocks...),
 	)
