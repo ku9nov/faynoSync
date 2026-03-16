@@ -111,6 +111,13 @@ func TestGetSlackNotificationTTL_FallsBackOnInvalidValue(t *testing.T) {
 	assert.Equal(t, defaultSlackNotificationTTL, getSlackNotificationTTL(env))
 }
 
+func TestBuildSlackNotificationStateKey_AvoidsColonAmbiguity(t *testing.T) {
+	keyWithChannelColon := buildSlackNotificationStateKey("alice", "stable:beta", "demo", "1")
+	keyWithOwnerColon := buildSlackNotificationStateKey("alice:stable", "beta", "demo", "1")
+
+	assert.NotEqual(t, keyWithChannelColon, keyWithOwnerColon)
+}
+
 func TestGetSlackNotificationState_Success(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
@@ -151,6 +158,20 @@ func TestGetSlackNotificationState_ErrorsOnIncompleteState(t *testing.T) {
 	assert.Contains(t, err.Error(), "Slack notification state is incomplete")
 }
 
+func TestGetSlackNotificationState_FallsBackToLegacyKey(t *testing.T) {
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	stateKey := buildLegacySlackNotificationStateKey("alice:team", "stable", "demo", "1.2.3")
+
+	err := client.Set(context.Background(), stateKey, `{"channel":"C123","ts":"1712345678.000100"}`, 0).Err()
+	require.NoError(t, err)
+
+	state, err := getSlackNotificationState(context.Background(), client, "alice:team", "stable", "demo", "1.2.3")
+	require.NoError(t, err)
+	assert.Equal(t, "C123", state.Channel)
+	assert.Equal(t, "1712345678.000100", state.TS)
+}
+
 func TestUpdateExistingSlackNotification_ReturnsNilWhenStateMissing(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
@@ -168,6 +189,21 @@ func TestDeleteSlackNotificationState_RemovesKey(t *testing.T) {
 	require.NoError(t, err)
 
 	err = DeleteSlackNotificationState("alice", "stable", "demo", "1.2.3", client)
+	require.NoError(t, err)
+
+	_, err = client.Get(context.Background(), stateKey).Result()
+	assert.Equal(t, redis.Nil, err)
+}
+
+func TestDeleteSlackNotificationState_RemovesLegacyKey(t *testing.T) {
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	stateKey := buildLegacySlackNotificationStateKey("alice:team", "stable", "demo", "1.2.3")
+
+	err := client.Set(context.Background(), stateKey, `{"channel":"C123","ts":"1712345678.000100"}`, 0).Err()
+	require.NoError(t, err)
+
+	err = DeleteSlackNotificationState("alice:team", "stable", "demo", "1.2.3", client)
 	require.NoError(t, err)
 
 	_, err = client.Get(context.Background(), stateKey).Result()

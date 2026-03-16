@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -101,9 +102,9 @@ func DeleteSlackNotificationState(owner, channel, appName, version string, rdb *
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stateKey := buildSlackNotificationStateKey(owner, channel, appName, version)
-	if err := rdb.Del(ctx, stateKey).Err(); err != nil {
-		return fmt.Errorf("failed to delete Slack notification state for key %s: %w", stateKey, err)
+	stateKeys := buildSlackNotificationStateKeys(owner, channel, appName, version)
+	if err := rdb.Del(ctx, stateKeys...).Err(); err != nil {
+		return fmt.Errorf("failed to delete Slack notification state for key %s: %w", stateKeys[0], err)
 	}
 
 	return nil
@@ -217,7 +218,27 @@ func getSlackNotificationTTL(env *viper.Viper) time.Duration {
 }
 
 func buildSlackNotificationStateKey(owner, channel, appName, version string) string {
+	parts := []string{owner, channel, appName, version}
+	encodedParts := make([]string, len(parts))
+	for i, part := range parts {
+		encodedParts[i] = base64.RawURLEncoding.EncodeToString([]byte(part))
+	}
+
+	return "slack_notification:" + strings.Join(encodedParts, ":")
+}
+
+func buildLegacySlackNotificationStateKey(owner, channel, appName, version string) string {
 	return fmt.Sprintf("slack_notification:%s:%s:%s:%s", owner, channel, appName, version)
+}
+
+func buildSlackNotificationStateKeys(owner, channel, appName, version string) []string {
+	stateKey := buildSlackNotificationStateKey(owner, channel, appName, version)
+	legacyKey := buildLegacySlackNotificationStateKey(owner, channel, appName, version)
+	if legacyKey == stateKey {
+		return []string{stateKey}
+	}
+
+	return []string{stateKey, legacyKey}
 }
 
 func upsertSlackNotification(ctx context.Context, rdb *redis.Client, api *slack.Client, owner, channel, appName, version, fallbackChannel string, blocks []slack.Block, ttl time.Duration) error {
@@ -302,10 +323,26 @@ func updateExistingSlackNotification(ctx context.Context, rdb *redis.Client, api
 }
 
 func getSlackNotificationState(ctx context.Context, rdb *redis.Client, owner, channel, appName, version string) (*slackNotificationState, error) {
-	stateKey := buildSlackNotificationStateKey(owner, channel, appName, version)
-	payload, err := rdb.Get(ctx, stateKey).Result()
-	if err != nil {
-		return nil, err
+	var (
+		payload  string
+		err      error
+		stateKey string
+	)
+
+	for _, candidateKey := range buildSlackNotificationStateKeys(owner, channel, appName, version) {
+		payload, err = rdb.Get(ctx, candidateKey).Result()
+		if err == redis.Nil {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		stateKey = candidateKey
+		break
+	}
+	if stateKey == "" {
+		return nil, redis.Nil
 	}
 
 	var state slackNotificationState
