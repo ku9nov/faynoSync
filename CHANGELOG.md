@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.6
+
+### Maintenance
+
+- Migrated from MinIO to Garage for default local S3 storage.
+
 ## v1.5.5
 
 ### Features

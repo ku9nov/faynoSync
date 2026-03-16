@@ -106,14 +106,14 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	var bucketName string
 	if ctxQuery["type"] == "logo" || checkAppVisibility == false {
 		bucketName = env.GetString("S3_BUCKET_NAME")
-		logrus.Debugf("Uploading logo to public bucket: %s", bucketName)
+		logrus.Debugf("Uploading file to public bucket: %s", bucketName)
 		publicLink, err := storageClient.UploadPublicObject(c.Request.Context(), bucketName, s3Key, fileReader, contentType)
 		if err != nil {
-			logrus.Errorf("Failed to upload logo to storage: %v", err)
+			logrus.Errorf("Failed to upload file to storage: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to storage"})
 			return "", "", err
 		}
-		logrus.Debugf("Logo uploaded successfully, public link: %s", publicLink)
+		logrus.Debugf("File uploaded successfully, public link: %s", publicLink)
 		link = publicLink
 	} else {
 		// Use private bucket for regular uploads

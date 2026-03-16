@@ -1,0 +1,42 @@
+# Garage Configuration File - Development/Single-Node Setup
+
+# Core storage paths
+metadata_dir = "/var/lib/garage/meta"  # Fast storage preferred
+data_dir = "/var/lib/garage/data"      # High capacity storage
+
+# Database engine selection
+db_engine = "lmdb"  # Fastest option, use "sqlite" for ARM or 32-bit systems
+
+# Automatic backup for metadata
+metadata_auto_snapshot_interval = "6h"  # Regular snapshots for recovery
+
+# Cluster configuration
+replication_factor = 1  # Use 3 for production clusters
+compression_level = 2   # Balance between CPU usage and storage efficiency
+
+# Network configuration
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"  # Change to actual IP for clustering
+rpc_secret = "4dcf0ea5de46bca5d6cf4d1555f2b9d99f5936d17a0f5d6cc7300f2458862f72"  # 64-character hex string
+
+# S3 API endpoint configuration
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+#root_domain = ".s3.garage.localhost"
+
+# Static website hosting
+[s3_web]
+bind_addr = "[::]:3902"
+root_domain = ".web.garage.localhost"
+index = "index.html"
+
+# Key-Value store API (optional but powerful)
+[k2v_api]
+api_bind_addr = "[::]:3904"
+
+# Administrative interface
+[admin]
+api_bind_addr = "[::]:3903"
+admin_token = "ee3dbd6f6ce0ae8ffcd189896f48fbf120c613dd20fcdab654fdf2f359d2b5da"
+metrics_token = "4060a628d54b0aabc74cb2dc70c524bdacc4f3b0ced71c4d26051a2db87ec737"
