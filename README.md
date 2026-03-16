@@ -36,7 +36,8 @@ It’s ideal for managing updates in Electron apps, native desktop applications,
 | **Cache & Performance** | Redis | Used for performance mode and statistics caching |
 | **Storage** | S3-Compatible | Supports multiple cloud storage providers: |
 | | AWS S3 | Amazon Web Services Simple Storage Service |
-| | MinIO | Self-hosted S3-compatible object storage |
+| | Garage | Recommended local S3-compatible storage, used via the AWS SDK |
+| | MinIO | Deprecated local S3-compatible storage option that still works but is no longer maintained |
 | | Google Cloud Storage | Google Cloud Platform storage service |
 | | DigitalOcean Spaces | DigitalOcean's S3-compatible object storage |
 
@@ -92,14 +93,17 @@ To configure the `faynoSync`, you will need to set the following environment var
 ```bash
 # Storage Configuration
 STORAGE_DRIVER (`minio`, `aws`, `gcp` or `digitalocean`)
-S3_ACCESS_KEY (Your AWS or Minio access key ID.)
-S3_SECRET_KEY (Your AWS or Minio secret access key.)
-S3_REGION (The AWS region in which your S3 bucket is located. For Minio this value should be empty.)
-MINIO_SECURE (Set to `true` to use HTTPS with Minio endpoint or `false` to use HTTP. Default: `false`)
+S3_ACCESS_KEY (Your AWS or S3-compatible access key ID.)
+S3_SECRET_KEY (Your AWS or S3-compatible secret access key.)
+S3_REGION (The AWS region in which your S3 bucket is located. For local Garage use `garage`.)
+MINIO_SECURE (Deprecated MinIO-only setting. Set to `true` to use HTTPS with MinIO or `false` to use HTTP. Default: `false`)
 S3_BUCKET_NAME_PRIVATE (The name of your private S3 bucket.)
-S3_ENDPOINT_PRIVATE (s3 endpoint, check documentation of your cloud provider)
+S3_ENDPOINT_PRIVATE (Public/private bucket URL used by the application when storing links or resolving keys)
 S3_BUCKET_NAME (The name of your public S3 bucket. Artifacts will be uploaded here by default.)
-S3_ENDPOINT (The public bucket endpoint for S3. Check the documentation of your cloud provider. Artifacts will be uploaded here by default.)
+S3_ENDPOINT (The public bucket URL used for public artifact links. Artifacts will be uploaded here by default.)
+S3_API_ENDPOINT (Optional custom S3 API endpoint for S3-compatible providers such as local Garage. Leave empty for managed AWS S3.)
+S3_FORCE_PATH_STYLE (Optional. Set to `true` for providers that require path-style requests, such as local Garage.)
+S3_DISABLE_OBJECT_ACL (Optional. Set to `true` for providers that do not support `public-read` object ACLs, such as local Garage.)
 
 # Server Configuration
 ALLOWED_CORS (urls to allow CORS configuration)
@@ -142,6 +146,33 @@ ONLINE_KEY_DIR=/private_keys (Directory path where online signing keys are store
 
 You can set these environment variables in a `.env` file in the root directory of the application. You can use the `.env.local` file, which contains all filled variables.
 
+### 🧪 Recommended Local Storage Setup
+
+For local development, the recommended setup is Garage with the `aws` storage driver. Garage is used as an S3-compatible backend, while uploads and downloads go through the AWS SDK.
+
+When you use the provided Docker Compose setup, these credentials are imported automatically into Garage during container bootstrap.
+
+Garage admin UI is available at `http://localhost:3909/` (user: `admin`, password: `BjjctVsoSg4FKkT81VKt18`).
+
+```bash
+STORAGE_DRIVER=aws
+MINIO_SECURE=false
+S3_ACCESS_KEY=GK8fcbbed327a9ff97f250eb4e
+S3_SECRET_KEY=8a59fe92499699d139fcee6998343dad2ac73fb2b5dffafa0a7d0b0d4e305db9
+S3_BUCKET_NAME_PRIVATE=cb-faynosync-s3-private
+S3_BUCKET_NAME=cb-faynosync-s3-public
+S3_ENDPOINT_PRIVATE=http://cb-faynosync-s3-private.web.garage.localhost:3902
+S3_ENDPOINT=http://cb-faynosync-s3-public.web.garage.localhost:3902
+S3_API_ENDPOINT=http://127.0.0.1:3900
+S3_FORCE_PATH_STYLE=true
+S3_DISABLE_OBJECT_ACL=true
+S3_REGION=garage
+```
+
+### ⚠️ MinIO Status
+
+MinIO is now considered deprecated in this project. Existing MinIO-based setups should continue to work, but new local deployments should use Garage through the `aws` storage driver instead.
+
 ---
 
 ## 🐳 Docker Configuration
@@ -154,7 +185,7 @@ docker compose up --build
 
 ### 🧪 Running Tests
 
-You can now run tests using this command (please wait until the `s3-service` successfully creates the bucket):
+You can now run tests using this command after `docker compose up --build` finishes and the storage service becomes healthy:
 
 ```bash
 docker exec -it faynoSync_backend "/usr/bin/faynoSync_tests"

@@ -2398,7 +2398,7 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			ExpectedJSON: map[string]interface{}{
 				"critical":         false,
 				"update_available": true,
-				"url":              fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "updaters-admin/nightly/macosSquirrel/universalArch/updaters-0.0.2.137.zip"),
+				"url":              fmt.Sprintf("%s/%s", s3Endpoint, "updaters-admin/nightly/macosSquirrel/universalArch/updaters-0.0.2.137.zip"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "macosSquirrel",
@@ -2426,7 +2426,7 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			ExpectedJSON: map[string]interface{}{
 				"signature": "dW50cnVzdGVkU2lnbmF0dXJlVGhhdExvb2tzTGlrZUFsb25nU3RyaW5n==",
 				"version":   "0.0.2.137",
-				"url":       fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "updaters-admin/nightly/macosTauri/universalArch/updaters-0.0.2.137.zip"),
+				"url":       fmt.Sprintf("%s/%s", s3Endpoint, "updaters-admin/nightly/macosTauri/universalArch/updaters-0.0.2.137.zip"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "macosTauri",
@@ -2455,7 +2455,7 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			ExpectedJSON: map[string]interface{}{
 				"critical":         false,
 				"update_available": true,
-				"update_url_yml":   fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "electron-builder/updaters-admin/0.0.4.137/nightly/macos/universalArch/latest-mac.yml"),
+				"update_url_yml":   fmt.Sprintf("%s/%s", s3Endpoint, "electron-builder/updaters-admin/0.0.4.137/nightly/macos/universalArch/latest-mac.yml"),
 			},
 			ExpectedCode: http.StatusFound,
 			// Published:    false,
@@ -2485,7 +2485,7 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			ChannelName: "stable",
 			ExpectedJSON: map[string]interface{}{
 				"status": "redirect",
-				"url":    fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "electron-builder/updaters-admin/0.0.8.137/stable/windows/universalArch/latest.yml"),
+				"url":    fmt.Sprintf("%s/%s", s3Endpoint, "electron-builder/updaters-admin/0.0.8.137/stable/windows/universalArch/latest.yml"),
 			},
 			ExpectedCode: http.StatusFound,
 			// Published:    false,
@@ -4746,9 +4746,9 @@ func TestCheckVersion(t *testing.T) {
 				"update_available":  false,
 				"critical":          false,
 				"possible_rollback": false,
-				"update_url_dmg":    fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "public%20testapp-admin/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137.dmg"),
-				"update_url_pkg":    fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "public%20testapp-admin/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137.pkg"),
-				"update_url":        fmt.Sprintf("http://%s/%s/%s", s3Endpoint, s3Bucket, "public%20testapp-admin/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137"),
+				"update_url_dmg":    fmt.Sprintf("%s/%s", s3Endpoint, "public%20testapp-admin/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137.dmg"),
+				"update_url_pkg":    fmt.Sprintf("%s/%s", s3Endpoint, "public%20testapp-admin/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137.pkg"),
+				"update_url":        fmt.Sprintf("%s/%s", s3Endpoint, "public%20testapp-admin/nightly/universalPlatform/universalArch/public%20testapp-0.0.1.137"),
 			},
 			ExpectedCode: http.StatusOK,
 			Platform:     "universalPlatform",

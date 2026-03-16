@@ -1,45 +1,70 @@
-version: "3.8"
-
 services:
-  s3:
-    image: minio/minio
-    networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.2
-    container_name: "faynoSync_s3"
-    ports:
-      - "9011:9001"
-      - "9010:9000"
-    volumes:
-      - data-s3:/data
-    environment:
-      MINIO_ROOT_USER: MdnaDEXKy9nOc4beIvNcgy
-      MINIO_ROOT_PASSWORD: BjjctVsoSg4FKkT81VKt18
-    command: server --address 0.0.0.0:9000 --console-address :9001 /data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-    env_file:
-      - ../envs/backend.env
 
-  s3-service:
-    image: minio/mc
+  s3:
+    build:
+      context: ../..
+      dockerfile: docker-compose/images/garage/Dockerfile
+    image: faynosync-garage:local
+    container_name: garage
+    restart: unless-stopped
     networks:
       faynosync_network:
-        ipv4_address: 172.25.0.3
-    container_name: "faynoSync_s3_service"
+        aliases:
+          - cb-faynosync-s3-public.web.garage.localhost
+          - cb-faynosync-s3-private.web.garage.localhost
+
+    ports:
+      - "3900:3900"  # S3 API
+      - "3901:3901"  # RPC (internal communication)
+      - "3902:3902"  # S3 Web (static website hosting)
+      - "3903:3903"  # Admin API
+      - "3904:3904"  # K2V API (optional key-value store)
+    
+    volumes:
+      - ../configs/garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    
+    environment:
+      - RUST_LOG=garage=info
+      - GARAGE_LAYOUT_ZONE=dc1
+      - GARAGE_LAYOUT_CAPACITY=1G
+      - GARAGE_LAYOUT_VERSION=1
+      - GARAGE_PRIVATE_BUCKET=cb-faynosync-s3-private
+      - GARAGE_PUBLIC_BUCKET=cb-faynosync-s3-public
+      - GARAGE_KEY_NAME=faynosync-local-app-key
+      - GARAGE_ACCESS_KEY=GK8fcbbed327a9ff97f250eb4e
+      - GARAGE_SECRET_KEY=8a59fe92499699d139fcee6998343dad2ac73fb2b5dffafa0a7d0b0d4e305db9
+
+    healthcheck:
+      test: ["CMD", "garage", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  webui:
+    image: khairul169/garage-webui:latest
+    container_name: garage-webui
+    restart: unless-stopped
     depends_on:
       s3:
         condition: service_healthy
-    restart: on-failure
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set faynoSync http://s3:9000 MdnaDEXKy9nOc4beIvNcgy BjjctVsoSg4FKkT81VKt18;
-      /usr/bin/mc mb faynoSync/cb-faynosync-s3-private;
-      /usr/bin/mc mb faynoSync/cb-faynosync-s3-public;
-      /usr/bin/mc anonymous set download faynoSync/cb-faynosync-s3-public;
-      "
-    env_file:
-      - ../envs/backend.env
+    networks:
+      - faynosync_network
+    volumes:
+      - ../configs/garage.toml:/etc/garage.toml:ro
+    ports:
+      - 3909:3909
+    environment:
+      API_BASE_URL: "http://s3:3903"
+      S3_ENDPOINT_URL: "http://s3:3900"
+      AUTH_USER_PASS: "admin:$$2y$$10$$VoflX0ZOfqrBeCQpCwwU9eq4UrMwW3ciCYmZ/DJ16hS1Iz60gocIC"
+
+volumes:
+  garage_meta:
+    driver: local
+
+  
+  garage_data:
+    driver: local

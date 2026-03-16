@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,10 +27,11 @@ type BaseS3Client struct {
 
 // S3Config holds configuration for S3-compatible storage
 type S3Config struct {
-	AccessKey string
-	SecretKey string
-	Region    string
-	Endpoint  string
+	AccessKey      string
+	SecretKey      string
+	Region         string
+	Endpoint       string
+	ForcePathStyle bool
 }
 
 // NewBaseS3Client creates a new base S3 client with custom configuration
@@ -43,34 +45,24 @@ func NewBaseS3Client(env *viper.Viper, providerName string, s3Config S3Config) (
 	var cfg aws.Config
 	var err error
 
-	// If endpoint is provided, use custom endpoint resolver (for DigitalOcean Spaces, MinIO, etc.)
-	if s3Config.Endpoint != "" {
-		customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-			return aws.Endpoint{
-				URL: fmt.Sprintf("https://%s", s3Config.Endpoint),
-			}, nil
-		})
-
-		cfg, err = config.LoadDefaultConfig(
-			context.TODO(),
-			config.WithCredentialsProvider(creds),
-			config.WithRegion(s3Config.Region),
-			config.WithEndpointResolverWithOptions(customResolver),
-		)
-	} else {
-
-		cfg, err = config.LoadDefaultConfig(
-			context.TODO(),
-			config.WithCredentialsProvider(creds),
-			config.WithRegion(s3Config.Region),
-		)
-	}
+	cfg, err = config.LoadDefaultConfig(
+		context.TODO(),
+		config.WithCredentialsProvider(creds),
+		config.WithRegion(s3Config.Region),
+	)
 
 	if err != nil {
 		return nil, &StorageError{Message: fmt.Sprintf("failed to create %s client", providerName), Err: err}
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client := s3.NewFromConfig(cfg, func(options *s3.Options) {
+		if s3Config.Endpoint == "" {
+			return
+		}
+
+		options.BaseEndpoint = aws.String(normalizeEndpointURL(s3Config.Endpoint))
+		options.UsePathStyle = s3Config.ForcePathStyle
+	})
 	presignClient := s3.NewPresignClient(client)
 
 	return &BaseS3Client{
@@ -79,6 +71,14 @@ func NewBaseS3Client(env *viper.Viper, providerName string, s3Config S3Config) (
 		env:           env,
 		providerName:  providerName,
 	}, nil
+}
+
+func normalizeEndpointURL(endpoint string) string {
+	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+		return endpoint
+	}
+
+	return fmt.Sprintf("https://%s", endpoint)
 }
 
 // UploadObject uploads a file to S3-compatible storage
