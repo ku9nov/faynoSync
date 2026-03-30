@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.5.7
+
+### Dependencies
+
+- Upgraded Go to v1.26.1.
+- Upgraded `google.golang.org/grpc` to v1.79.3.
+
 ## v1.5.6
 
 ### Maintenance

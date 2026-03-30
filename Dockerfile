@@ -1,4 +1,4 @@
-FROM golang:1.25.5 AS builder
+FROM golang:1.26.1 AS builder
 
 WORKDIR /go/src/app
 
@@ -7,7 +7,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o faynoSync .
 RUN CGO_ENABLED=0 GOOS=linux go test -c -o faynoSync_tests
 
-FROM golang:1.25.5-alpine3.22
+FROM golang:1.26.1-alpine3.22
 
 WORKDIR /app
 
