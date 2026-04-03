@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.8
+
+### Dependencies
+
+- Upgraded `github.com/go-jose/go-jose/v4` to `v4.1.4`.
+
 ## v1.5.7
 
 ### Dependencies
