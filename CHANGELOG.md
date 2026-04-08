@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.5.9
+
+### Dependencies
+
+- Upgraded `github.com/aws/aws-sdk-go-v2/service/s3` to `v1.97.3`.
+- Upgraded `github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream` to `v1.7.8`.
+
 ## v1.5.8
 
 ### Dependencies
