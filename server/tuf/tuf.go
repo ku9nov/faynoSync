@@ -23,12 +23,6 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 	router.POST("/tuf/v1/bootstrap", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		bootstrap.PostBootstrap(c, redisClient)
 	})
-	router.GET("/tuf/v1/bootstrap/locks", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		bootstrap.GetBootstrapLocks(c, redisClient)
-	})
-	router.POST("/tuf/v1/bootstrap/generate", authMiddleware, adminMiddleware, func(c *gin.Context) {
-		bootstrap.GenerateRootKeys(c, mongoDatabase, redisClient, appRepository)
-	})
 	router.GET("/tuf/v1/task", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		tasks.GetTask(c, redisClient)
 	})
