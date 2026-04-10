@@ -457,35 +457,20 @@ func bumpDelegatedRoles(
 			roleThreshold = 1
 		}
 
-		seenKeyID := make(map[string]bool)
-		keysToSign := make([]string, 0, roleThreshold)
-		for _, keyID := range roleKeyIDs {
-			if seenKeyID[keyID] {
-				continue
-			}
-			seenKeyID[keyID] = true
-			keysToSign = append(keysToSign, keyID)
-			if len(keysToSign) == roleThreshold {
-				break
-			}
-		}
-		if len(keysToSign) < roleThreshold {
-			return nil, fmt.Errorf("not enough distinct keys for delegated role %s: need %d, got %d", roleName, roleThreshold, len(keysToSign))
-		}
-
 		repo.Targets(roleName).Signed.Version++
 		repo.Targets(roleName).Signed.Expires = tuf_utils.HelperExpireIn(rolesExpiration)
 		repo.Targets(roleName).ClearSignatures()
 
-		for _, delegationKeyID := range keysToSign {
-			delegationSigner, err := signing.BuildSignerFromPrivateKeyFile(delegationKeyID, delegationKeyID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
-			}
-
-			if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
-				return nil, fmt.Errorf("failed to sign delegation %s with key %s: %w", roleName, delegationKeyID, err)
-			}
+		if _, err := signing.LoadAndSignDelegation(
+			roleName,
+			roleKeyIDs,
+			roleThreshold,
+			func(s signature.Signer, _ string) error {
+				_, err := repo.Targets(roleName).Sign(s)
+				return err
+			},
+		); err != nil {
+			return nil, fmt.Errorf("failed to sign delegation role %s with keys %v: %w", roleName, roleKeyIDs, err)
 		}
 
 		newDelegationFilename := fmt.Sprintf("%d.%s.json", repo.Targets(roleName).Signed.Version, roleName)

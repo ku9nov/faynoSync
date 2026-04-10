@@ -62,18 +62,39 @@ func LoadPrivateKeyAnyFromFilesystem(keyID string, keyURI string) (crypto.Privat
 
 	logrus.Debugf("Loading private key from filesystem: %s (keyID: %s)", keyPath, keyID)
 
+	fileInfo, err := os.Lstat(keyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read private key file %s: %w", keyPath, err)
+		}
+		return nil, fmt.Errorf("failed to stat private key file %s: %w", keyPath, err)
+	}
+	if fileInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("refusing to load private key from symlink path %s", keyPath)
+	}
+	if fileInfo.IsDir() {
+		return nil, fmt.Errorf("private key path %s is a directory", keyPath)
+	}
+
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key file %s: %w", keyPath, err)
 	}
 
-	block, _ := pem.Decode(keyData)
-	if block != nil {
+	for rest := keyData; ; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+
 		if privateKey, parseErr := x509.ParsePKCS8PrivateKey(block.Bytes); parseErr == nil {
 			switch typed := privateKey.(type) {
 			case ed25519.PrivateKey, *rsa.PrivateKey, *ecdsa.PrivateKey:
 				logrus.Debugf("Successfully loaded private key from PKCS8 PEM file: %s", keyPath)
 				return typed, nil
+			default:
+				logrus.Debugf("Parsed unsupported private key type from PKCS8 PEM file: type=%s path=%s", fmt.Sprintf("%T", typed), keyPath)
 			}
 		}
 		if privateKey, parseErr := x509.ParsePKCS1PrivateKey(block.Bytes); parseErr == nil {
@@ -167,14 +188,14 @@ func BuildVerifierForPublicKey(publicKey crypto.PublicKey) (signature.Verifier, 
 	}
 }
 
-func SignatureHashForKey(key interface{}) crypto.Hash {
+func SignatureHashForKey(key interface{}) (crypto.Hash, error) {
 	switch key.(type) {
 	case ed25519.PrivateKey, ed25519.PublicKey:
-		return crypto.Hash(0)
+		return crypto.Hash(0), nil
 	case *rsa.PrivateKey, *rsa.PublicKey, *ecdsa.PrivateKey, *ecdsa.PublicKey:
-		return crypto.SHA256
+		return crypto.SHA256, nil
 	default:
-		return crypto.Hash(0)
+		return 0, fmt.Errorf("unsupported key type: %T", key)
 	}
 }
 
