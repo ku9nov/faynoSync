@@ -8,10 +8,13 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sirupsen/logrus"
@@ -76,7 +79,27 @@ func LoadPrivateKeyAnyFromFilesystem(keyID string, keyURI string) (crypto.Privat
 		return nil, fmt.Errorf("private key path %s is a directory", keyPath)
 	}
 
-	keyData, err := os.ReadFile(keyPath)
+	fd, err := syscall.Open(keyPath, syscall.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return nil, fmt.Errorf("refusing to open private key file %s: symlink following is not allowed", keyPath)
+		}
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read private key file %s: %w", keyPath, err)
+		}
+		return nil, fmt.Errorf("failed to securely open private key file %s: %w", keyPath, err)
+	}
+
+	keyFile := os.NewFile(uintptr(fd), keyPath)
+	if keyFile == nil {
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf("failed to create file handle for private key file %s", keyPath)
+	}
+	defer func() {
+		_ = keyFile.Close()
+	}()
+
+	keyData, err := io.ReadAll(keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key file %s: %w", keyPath, err)
 	}
