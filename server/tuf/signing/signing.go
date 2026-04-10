@@ -35,7 +35,31 @@ func LoadPrivateKeyAnyFromFilesystem(keyID string, keyURI string) (crypto.Privat
 		fileName = keyID
 	}
 
+	fileName = strings.TrimSpace(fileName)
+	if fileName == "" {
+		return nil, fmt.Errorf("private key filename is empty for keyID %s", keyID)
+	}
+	if fileName != filepath.Base(fileName) || fileName == "." || fileName == ".." {
+		return nil, fmt.Errorf("invalid private key filename %q for keyID %s", fileName, keyID)
+	}
+
 	keyPath := filepath.Join(keyDir, fileName)
+	absKeyDir, err := filepath.Abs(keyDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve absolute key directory path %s: %w", keyDir, err)
+	}
+	absKeyPath, err := filepath.Abs(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve absolute key path %s: %w", keyPath, err)
+	}
+	relPath, err := filepath.Rel(absKeyDir, absKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate private key path %s: %w", keyPath, err)
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
+		return nil, fmt.Errorf("private key path %s escapes key directory %s", keyPath, keyDir)
+	}
+
 	logrus.Debugf("Loading private key from filesystem: %s (keyID: %s)", keyPath, keyID)
 
 	keyData, err := os.ReadFile(keyPath)
