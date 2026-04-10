@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.5.10
+
+### Dependencies
+
+- Upgraded `go.opentelemetry.io/otel`, `go.opentelemetry.io/otel/metric`, `go.opentelemetry.io/otel/sdk`, `go.opentelemetry.io/otel/sdk/metric`, and `go.opentelemetry.io/otel/trace` to `v1.43.0`.
+
+### Security & Signing Improvements
+
+- Extended TUF online signing to support multiple key types (Ed25519, ECDSA, and RSA-PSS) loaded from filesystem private keys.
+- Added signer/verifier construction by key type with explicit keyid-to-key-material validation to prevent mismatched key usage.
+
+### Maintenance
+
+- Removed legacy bootstrap generation API surface (`/tuf/v1/bootstrap/generate` and `/tuf/v1/bootstrap/locks`) and deleted obsolete generate handlers/tests.
+
 ## v1.5.9
 
 ### Dependencies

@@ -85,6 +85,20 @@ func waitForOnlineTaskTerminalState(t *testing.T, redisClient *redis.Client, tas
 	t.Fatalf("timeout waiting for task %s to reach terminal state", taskID)
 }
 
+func loadEd25519PrivateKeyFromFilesystem(t *testing.T, keyID string, keyURI string) (ed25519.PrivateKey, error) {
+	t.Helper()
+	privateKey, err := signing.LoadPrivateKeyAnyFromFilesystem(keyID, keyURI)
+	if err != nil {
+		return nil, err
+	}
+
+	ed25519Key, ok := privateKey.(ed25519.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("loaded key %s is not an ed25519 private key", keyID)
+	}
+	return ed25519Key, nil
+}
+
 // To verify: In PostMetadataOnline remove the root-role check or return 200; test will fail (wrong status).
 func TestPostMetadataOnline_RootRoleInPayload_ReturnsBadRequest(t *testing.T) {
 	c, w := makePostMetadataOnlineContext("admin", "myapp", models.MetadataOnlinePostPayload{Roles: []string{"root"}})
@@ -681,7 +695,7 @@ func makeRepoWithRootAndTargetsSigner(t *testing.T) (repo *repository.Type, sign
 	require.NotEmpty(t, targetsRole.KeyIDs)
 	targetsKeyID := targetsRole.KeyIDs[0]
 
-	priv, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyID)
+	priv, err := loadEd25519PrivateKeyFromFilesystem(t, targetsKeyID, targetsKeyID)
 	require.NoError(t, err)
 	signer, err = signature.LoadSigner(priv, crypto.Hash(0))
 	require.NoError(t, err)
@@ -931,7 +945,7 @@ func makeTargetsAndDelegationForBumpDelegated(t *testing.T, delegationRoleName s
 	var rootMeta models.RootMetadata
 	require.NoError(t, json.Unmarshal(rootJSON, &rootMeta))
 	targetsKeyID := rootMeta.Signed.Roles["targets"].KeyIDs[0]
-	targetsPriv, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyID)
+	targetsPriv, err := loadEd25519PrivateKeyFromFilesystem(t, targetsKeyID, targetsKeyID)
 	require.NoError(t, err)
 	targetsSigner, err := signature.LoadSigner(targetsPriv, crypto.Hash(0))
 	require.NoError(t, err)
@@ -989,7 +1003,7 @@ func makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t *testing.T, dele
 	var rootMeta models.RootMetadata
 	require.NoError(t, json.Unmarshal(rootJSON, &rootMeta))
 	targetsKeyID := rootMeta.Signed.Roles["targets"].KeyIDs[0]
-	targetsPriv, err := signing.LoadPrivateKeyFromFilesystem(targetsKeyID, targetsKeyID)
+	targetsPriv, err := loadEd25519PrivateKeyFromFilesystem(t, targetsKeyID, targetsKeyID)
 	require.NoError(t, err)
 	targetsSigner, err := signature.LoadSigner(targetsPriv, crypto.Hash(0))
 	require.NoError(t, err)
@@ -1065,7 +1079,7 @@ func TestBumpDelegatedRoles_NotEnoughDistinctKeys(t *testing.T) {
 	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role my-role")
+	assert.Contains(t, err.Error(), "not enough distinct keys for my-role role")
 	assert.Contains(t, err.Error(), "need 2, got 1")
 }
 
@@ -1314,7 +1328,7 @@ func TestBumpDelegatedRoles_LoadDelegationKeyFails(t *testing.T) {
 	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load delegation private key")
+	assert.Contains(t, err.Error(), "failed to load my-role private key")
 }
 
 // To verify: In bumpDelegatedRoles remove the Upload error handling; test will fail (no error or wrong message).
@@ -1432,7 +1446,7 @@ func makeRepoWithRootAndSnapshotSigner(t *testing.T) (repo *repository.Type, sig
 	require.NotEmpty(t, snapshotRole.KeyIDs)
 	snapshotKeyID := snapshotRole.KeyIDs[0]
 
-	priv, err := signing.LoadPrivateKeyFromFilesystem(snapshotKeyID, snapshotKeyID)
+	priv, err := loadEd25519PrivateKeyFromFilesystem(t, snapshotKeyID, snapshotKeyID)
 	require.NoError(t, err)
 	signer, err = signature.LoadSigner(priv, crypto.Hash(0))
 	require.NoError(t, err)
@@ -1699,7 +1713,7 @@ func makeRepoWithRootAndTimestampSigner(t *testing.T) (repo *repository.Type, si
 	require.NotEmpty(t, timestampRole.KeyIDs)
 	timestampKeyID := timestampRole.KeyIDs[0]
 
-	priv, err := signing.LoadPrivateKeyFromFilesystem(timestampKeyID, timestampKeyID)
+	priv, err := loadEd25519PrivateKeyFromFilesystem(t, timestampKeyID, timestampKeyID)
 	require.NoError(t, err)
 	signer, err = signature.LoadSigner(priv, crypto.Hash(0))
 	require.NoError(t, err)
