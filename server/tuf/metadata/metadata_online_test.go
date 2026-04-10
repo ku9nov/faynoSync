@@ -1079,7 +1079,7 @@ func TestBumpDelegatedRoles_NotEnoughDistinctKeys(t *testing.T) {
 	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role my-role")
+	assert.Contains(t, err.Error(), "not enough distinct keys for my-role role")
 	assert.Contains(t, err.Error(), "need 2, got 1")
 }
 
@@ -1328,7 +1328,7 @@ func TestBumpDelegatedRoles_LoadDelegationKeyFails(t *testing.T) {
 	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load delegation private key")
+	assert.Contains(t, err.Error(), "failed to load my-role private key")
 }
 
 // To verify: In bumpDelegatedRoles remove the Upload error handling; test will fail (no error or wrong message).
