@@ -395,6 +395,36 @@ func TestBootstrapOnlineRoles_DelegationRole_NoKeyIDs(t *testing.T) {
 	assert.Contains(t, err.Error(), "delegated")
 }
 
+// To verify: In BootstrapOnlineRoles remove delegated role keyids presence check in delegations.keys; test will fail (no error or wrong error source).
+func TestBootstrapOnlineRoles_DelegationRole_KeyIDNotPresentInDelegationsKeys(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+
+	pub, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	delegationKey, err := tuf_metadata.KeyFromPublicKey(pub)
+	require.NoError(t, err)
+	missingKeyID, err := delegationKey.ID()
+	require.NoError(t, err)
+
+	payload.Settings.Roles.Delegations = &models.TUFDelegations{
+		Keys: map[string]models.TUFKey{},
+		Roles: []models.TUFDelegatedRole{
+			{Name: "delegated", KeyIDs: []string{missingKeyID}, Threshold: 1, Paths: []string{"*"}, Terminating: false},
+		},
+	}
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err = BootstrapOnlineRoles(client, "task-1", "admin", "app", payload)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "delegated role delegated references key")
+	assert.Contains(t, err.Error(), "not present in delegations.keys")
+}
+
 // To verify: In BootstrapOnlineRoles skip loading delegation private key and use a dummy signer; test will fail (no error or wrong signature).
 func TestBootstrapOnlineRoles_DelegationRole_PrivateKeyNotFound(t *testing.T) {
 	payload, _, cleanup := makeValidRootAndPayload(t)

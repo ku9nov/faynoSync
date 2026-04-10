@@ -203,6 +203,12 @@ func BootstrapOnlineRolesWithContext(
 			roleExpiration := 90
 
 			// add role-specific expiration logic here?
+			for _, roleKeyID := range tufRole.KeyIDs {
+				if _, exists := delegationKeys[roleKeyID]; !exists {
+					logrus.Errorf("Delegated role %s references missing key %s in delegations.keys", tufRole.Name, roleKeyID)
+					return fmt.Errorf("delegated role %s references key %s that is not present in delegations.keys", tufRole.Name, roleKeyID)
+				}
+			}
 
 			delegatedRole := metadata.DelegatedRole{
 				Name:        tufRole.Name,
