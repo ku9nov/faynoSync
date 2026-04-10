@@ -1,111 +1,25 @@
 package signing
 
 import (
-	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rsa"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
-	"faynoSync/server/tuf/models"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
+	tufmetadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
 
-func SavePrivateKeysToMongoDB(database *mongo.Database, adminName string, appName string, keys map[string]ed25519.PrivateKey, publicKeyIDs map[string]string, ctx context.Context) error {
-	collection := database.Collection("tuf_private_keys")
-	now := time.Now()
-
-	// Delete existing keys for this admin and app combination
-	deleteFilter := bson.M{"admin_name": adminName}
-	if appName != "" {
-		deleteFilter["app_name"] = appName
-	} else {
-		// If appName is empty, delete keys where app_name is empty or doesn't exist
-		deleteFilter["$or"] = []bson.M{
-			{"app_name": ""},
-			{"app_name": bson.M{"$exists": false}},
-		}
-	}
-	_, err := collection.DeleteMany(ctx, deleteFilter)
-	if err != nil {
-		logrus.Warnf("Failed to delete existing keys for admin %s, app %s: %v", adminName, appName, err)
-	}
-
-	for roleName, privateKey := range keys {
-		keyID, exists := publicKeyIDs[roleName]
-		if !exists {
-			logrus.Warnf("No key ID found for role %s, skipping", roleName)
-			continue
-		}
-
-		privateKeyBytes := privateKey.Seed()
-		privateKeyBase64 := base64.StdEncoding.EncodeToString(privateKeyBytes)
-
-		keyDoc := models.TUFPrivateKey{
-			AdminName:  adminName,
-			AppName:    appName,
-			RoleName:   roleName,
-			KeyID:      keyID,
-			PrivateKey: privateKeyBase64,
-			KeyType:    "ed25519",
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		}
-
-		_, err := collection.InsertOne(ctx, keyDoc)
-		if err != nil {
-			logrus.Errorf("Failed to save private key for role %s, admin %s, app %s: %v", roleName, adminName, appName, err)
-			return fmt.Errorf("failed to save private key for role %s: %w", roleName, err)
-		}
-		logrus.Debugf("Successfully saved private key for role %s, admin %s, app %s, key_id: %s", roleName, adminName, appName, keyID)
-	}
-
-	return nil
-}
-
-func LoadPrivateKeyFromMongoDB(database *mongo.Database, adminName string, keyID string, ctx context.Context) (ed25519.PrivateKey, error) {
-	collection := database.Collection("tuf_private_keys")
-
-	var keyDoc struct {
-		PrivateKey string `bson:"private_key"`
-		KeyType    string `bson:"key_type"`
-	}
-
-	err := collection.FindOne(ctx, bson.M{
-		"admin_name": adminName,
-		"key_id":     keyID,
-	}).Decode(&keyDoc)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to find private key for key_id %s, admin %s: %w", keyID, adminName, err)
-	}
-
-	privateKeyBytes, err := base64.StdEncoding.DecodeString(keyDoc.PrivateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode private key: %w", err)
-	}
-
-	if keyDoc.KeyType != "ed25519" {
-		return nil, fmt.Errorf("unsupported key type: %s", keyDoc.KeyType)
-	}
-
-	privateKey := ed25519.NewKeyFromSeed(privateKeyBytes)
-
-	return privateKey, nil
-}
-
-func LoadPrivateKeyFromFilesystem(keyID string, keyURI string) (ed25519.PrivateKey, error) {
+func LoadPrivateKeyAnyFromFilesystem(keyID string, keyURI string) (crypto.PrivateKey, error) {
 	env := viper.GetViper()
 	keyDir := env.GetString("ONLINE_KEY_DIR")
 	if keyDir == "" {
@@ -131,12 +45,20 @@ func LoadPrivateKeyFromFilesystem(keyID string, keyURI string) (ed25519.PrivateK
 
 	block, _ := pem.Decode(keyData)
 	if block != nil {
-		privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-		if err == nil {
-			if ed25519Key, ok := privateKey.(ed25519.PrivateKey); ok {
-				logrus.Debugf("Successfully loaded Ed25519 private key from PEM file: %s", keyPath)
-				return ed25519Key, nil
+		if privateKey, parseErr := x509.ParsePKCS8PrivateKey(block.Bytes); parseErr == nil {
+			switch typed := privateKey.(type) {
+			case ed25519.PrivateKey, *rsa.PrivateKey, *ecdsa.PrivateKey:
+				logrus.Debugf("Successfully loaded private key from PKCS8 PEM file: %s", keyPath)
+				return typed, nil
 			}
+		}
+		if privateKey, parseErr := x509.ParsePKCS1PrivateKey(block.Bytes); parseErr == nil {
+			logrus.Debugf("Successfully loaded RSA private key from PKCS1 PEM file: %s", keyPath)
+			return privateKey, nil
+		}
+		if privateKey, parseErr := x509.ParseECPrivateKey(block.Bytes); parseErr == nil {
+			logrus.Debugf("Successfully loaded ECDSA private key from SEC1 PEM file: %s", keyPath)
+			return privateKey, nil
 		}
 		if len(block.Bytes) == 32 {
 			ed25519Key := ed25519.NewKeyFromSeed(block.Bytes)
@@ -162,6 +84,74 @@ func LoadPrivateKeyFromFilesystem(keyID string, keyURI string) (ed25519.PrivateK
 	}
 
 	return nil, fmt.Errorf("could not load private key from %s: expected PEM format, raw 32 bytes, or hex-encoded seed", keyPath)
+}
+
+func BuildSignerFromPrivateKeyFile(keyID string, keyURI string) (signature.Signer, error) {
+	privateKey, err := LoadPrivateKeyAnyFromFilesystem(keyID, keyURI)
+	if err != nil {
+		return nil, err
+	}
+
+	pubProvider, ok := privateKey.(interface {
+		Public() crypto.PublicKey
+	})
+	if !ok {
+		return nil, fmt.Errorf("private key for %s does not expose public key", keyID)
+	}
+	tufKey, err := tufmetadata.KeyFromPublicKey(pubProvider.Public())
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive TUF key from private key %s: %w", keyID, err)
+	}
+	computedKeyID, err := tufKey.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute key ID for private key %s: %w", keyID, err)
+	}
+	if computedKeyID != keyID {
+		return nil, fmt.Errorf("keyid mismatch for loaded private key: expected %s, got %s", keyID, computedKeyID)
+	}
+
+	var signer signature.Signer
+	switch key := privateKey.(type) {
+	case ed25519.PrivateKey:
+		signer, err = signature.LoadED25519Signer(key)
+	case *ecdsa.PrivateKey:
+		signer, err = signature.LoadECDSASigner(key, crypto.SHA256)
+	case *rsa.PrivateKey:
+		pssOpts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256}
+		signer, err = signature.LoadRSAPSSSigner(key, crypto.SHA256, pssOpts)
+	default:
+		return nil, fmt.Errorf("unsupported private key type for key %s", keyID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer for key %s: %w", keyID, err)
+	}
+
+	return signer, nil
+}
+
+func BuildVerifierForPublicKey(publicKey crypto.PublicKey) (signature.Verifier, error) {
+	switch key := publicKey.(type) {
+	case ed25519.PublicKey:
+		return signature.LoadED25519Verifier(key)
+	case *ecdsa.PublicKey:
+		return signature.LoadECDSAVerifier(key, crypto.SHA256)
+	case *rsa.PublicKey:
+		pssOpts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256}
+		return signature.LoadRSAPSSVerifier(key, crypto.SHA256, pssOpts)
+	default:
+		return nil, fmt.Errorf("unsupported public key type for verifier")
+	}
+}
+
+func SignatureHashForKey(key interface{}) crypto.Hash {
+	switch key.(type) {
+	case ed25519.PrivateKey, ed25519.PublicKey:
+		return crypto.Hash(0)
+	case *rsa.PrivateKey, *rsa.PublicKey, *ecdsa.PrivateKey, *ecdsa.PublicKey:
+		return crypto.SHA256
+	default:
+		return crypto.Hash(0)
+	}
 }
 
 func LoadAndSignDelegation(
@@ -195,14 +185,9 @@ func LoadAndSignDelegation(
 
 	usedKeyIDs := make([]string, 0, len(keysToUse))
 	for _, keyID := range keysToUse {
-		privateKey, err := LoadPrivateKeyFromFilesystem(keyID, keyID)
+		signer, err := BuildSignerFromPrivateKeyFile(keyID, keyID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load %s private key %s: %w", roleName, keyID, err)
-		}
-
-		signer, err := signature.LoadSigner(privateKey, crypto.Hash(0))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create %s signer for key %s: %w", roleName, keyID, err)
 		}
 
 		if err := signWithSigner(signer, keyID); err != nil {

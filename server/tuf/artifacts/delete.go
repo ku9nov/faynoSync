@@ -2,7 +2,6 @@ package artifacts
 
 import (
 	"context"
-	"crypto"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sirupsen/logrus"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
 	"github.com/theupdateframework/go-tuf/v2/metadata"
@@ -351,14 +349,9 @@ func removeArtifactsFromDelegatedRole(
 	}
 
 	for _, delegationKeyID := range keysToSign {
-		delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
+		delegationSigner, err := signing.BuildSignerFromPrivateKeyFile(delegationKeyID, delegationKeyID)
 		if err != nil {
 			return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
-		}
-
-		delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
-		if err != nil {
-			return false, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
 		}
 
 		if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {

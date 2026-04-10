@@ -3,8 +3,6 @@ package metadata
 import (
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"faynoSync/server/tuf/models"
@@ -190,37 +188,10 @@ func BootstrapOnlineRolesWithContext(
 
 		delegationKeys := make(map[string]*metadata.Key)
 		for keyID, tufKey := range customDelegations.Keys {
-			var delegationKey *metadata.Key
-
-			if tufKey.KeyType == "ed25519" {
-				publicKeyBytes, err := hex.DecodeString(tufKey.KeyVal.Public)
-				if err != nil {
-					logrus.Errorf("Failed to decode public key hex string for key %s: %v", keyID, err)
-					continue
-				}
-				if len(publicKeyBytes) != ed25519.PublicKeySize {
-					logrus.Errorf("Invalid public key length for key %s: expected %d, got %d", keyID, ed25519.PublicKeySize, len(publicKeyBytes))
-					continue
-				}
-				var publicKey ed25519.PublicKey = publicKeyBytes
-				delegationKey, err = metadata.KeyFromPublicKey(publicKey)
-				if err != nil {
-					logrus.Errorf("Failed to create metadata key from public key for key %s: %v", keyID, err)
-					continue
-				}
-
-				computedKeyID, err := delegationKey.ID()
-				if err != nil {
-					logrus.Errorf("Failed to compute key ID from public key for key %s: %v", keyID, err)
-					return fmt.Errorf("failed to compute key ID for delegation key %s: %w", keyID, err)
-				}
-				if computedKeyID != keyID {
-					logrus.Errorf("Delegation key ID mismatch: provided %s, computed %s", keyID, computedKeyID)
-					return fmt.Errorf("delegation key ID mismatch for key %s: computed %s", keyID, computedKeyID)
-				}
-			} else {
-				logrus.Errorf("Unsupported key type for delegations: %s", tufKey.KeyType)
-				continue
+			delegationKey, err := decodeAndValidateMetadataKey(tufKey, keyID)
+			if err != nil {
+				logrus.Errorf("Invalid delegation key %s: %v", keyID, err)
+				return fmt.Errorf("invalid delegation key %s: %w", keyID, err)
 			}
 
 			delegationKeys[keyID] = delegationKey
@@ -1013,7 +984,7 @@ func verifySignatureOverSignedPayload(signedData map[string]interface{}, key *me
 	if err != nil {
 		return fmt.Errorf("failed to parse public key for verification: %w", err)
 	}
-	verifier, err := signature.LoadVerifier(publicKey, crypto.Hash(0))
+	verifier, err := signing.BuildVerifierForPublicKey(publicKey)
 	if err != nil {
 		return fmt.Errorf("failed to initialize verifier: %w", err)
 	}

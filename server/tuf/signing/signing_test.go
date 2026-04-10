@@ -1,18 +1,24 @@
 package signing
 
 import (
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rsa"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	tuf_metadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
 
 // mustGenerateEd25519Seed returns a 32-byte seed for testing. Panics on error.
@@ -34,6 +40,20 @@ func mustMarshalPKCS8PEM(t *testing.T, seed []byte) []byte {
 	return pem.EncodeToMemory(block)
 }
 
+func loadEd25519PrivateKeyFromFilesystem(t *testing.T, keyID string, keyURI string) (ed25519.PrivateKey, error) {
+	t.Helper()
+	privateKey, err := LoadPrivateKeyAnyFromFilesystem(keyID, keyURI)
+	if err != nil {
+		return nil, err
+	}
+
+	ed25519Key, ok := privateKey.(ed25519.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("loaded key %s is not an ed25519 private key", keyID)
+	}
+	return ed25519Key, nil
+}
+
 // To verify: In LoadPrivateKeyFromFilesystem set keyDir to "fallback" when env is empty; test will fail (no error).
 func TestLoadPrivateKeyFromFilesystem_ONLINE_KEY_DIR_Empty(t *testing.T) {
 	env := viper.GetViper()
@@ -41,7 +61,7 @@ func TestLoadPrivateKeyFromFilesystem_ONLINE_KEY_DIR_Empty(t *testing.T) {
 	env.Set("ONLINE_KEY_DIR", "")
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id-1", "some-file")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id-1", "some-file")
 
 	require.Error(t, err)
 	assert.Nil(t, key)
@@ -56,7 +76,7 @@ func TestLoadPrivateKeyFromFilesystem_FileNotFound(t *testing.T) {
 	env.Set("ONLINE_KEY_DIR", dir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id", "nonexistent.pem")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "nonexistent.pem")
 
 	require.Error(t, err)
 	assert.Nil(t, key)
@@ -75,7 +95,7 @@ func TestLoadPrivateKeyFromFilesystem_Raw32Bytes(t *testing.T) {
 	keyPath := filepath.Join(dir, "raw32.key")
 	require.NoError(t, os.WriteFile(keyPath, seed, 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id", "raw32.key")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "raw32.key")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
@@ -96,7 +116,7 @@ func TestLoadPrivateKeyFromFilesystem_Hex64Chars(t *testing.T) {
 	keyPath := filepath.Join(dir, "hex.key")
 	require.NoError(t, os.WriteFile(keyPath, []byte(hexStr), 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id", "hex.key")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "hex.key")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
@@ -116,7 +136,7 @@ func TestLoadPrivateKeyFromFilesystem_PEM_PKCS8_Ed25519(t *testing.T) {
 	keyPath := filepath.Join(dir, "pkcs8.pem")
 	require.NoError(t, os.WriteFile(keyPath, pemBytes, 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id", "pkcs8.pem")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "pkcs8.pem")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
@@ -137,7 +157,7 @@ func TestLoadPrivateKeyFromFilesystem_PEM_Raw32InBlock(t *testing.T) {
 	keyPath := filepath.Join(dir, "pem_raw32.pem")
 	require.NoError(t, os.WriteFile(keyPath, pemBytes, 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id", "pem_raw32.pem")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "pem_raw32.pem")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
@@ -157,7 +177,7 @@ func TestLoadPrivateKeyFromFilesystem_KeyURI_FnPrefix(t *testing.T) {
 	keyPath := filepath.Join(dir, "targets.key")
 	require.NoError(t, os.WriteFile(keyPath, seed, 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("some-key-id", "fn:targets.key")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "some-key-id", "fn:targets.key")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
@@ -176,7 +196,7 @@ func TestLoadPrivateKeyFromFilesystem_KeyURI_Empty_UsesKeyID(t *testing.T) {
 	keyPath := filepath.Join(dir, "my-key-id")
 	require.NoError(t, os.WriteFile(keyPath, seed, 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("my-key-id", "")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "my-key-id", "")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
@@ -195,7 +215,7 @@ func TestLoadPrivateKeyFromFilesystem_KeyURI_NonFn_UsesKeyURI(t *testing.T) {
 	keyPath := filepath.Join(dir, "custom_name.key")
 	require.NoError(t, os.WriteFile(keyPath, seed, 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id-ignored", "custom_name.key")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id-ignored", "custom_name.key")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
@@ -218,7 +238,7 @@ func TestLoadPrivateKeyFromFilesystem_InvalidFormat_Unrecognized(t *testing.T) {
 	keyPath := filepath.Join(dir, "bad.key")
 	require.NoError(t, os.WriteFile(keyPath, badContent, 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id", "bad.key")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "bad.key")
 
 	require.Error(t, err)
 	assert.Nil(t, key)
@@ -239,7 +259,7 @@ func TestLoadPrivateKeyFromFilesystem_Hex64_InvalidHex(t *testing.T) {
 	keyPath := filepath.Join(dir, "badhex.key")
 	require.NoError(t, os.WriteFile(keyPath, []byte(invalidHex), 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id", "badhex.key")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "badhex.key")
 
 	require.Error(t, err)
 	assert.Nil(t, key)
@@ -259,9 +279,108 @@ func TestLoadPrivateKeyFromFilesystem_Hex64_WithWhitespace(t *testing.T) {
 	keyPath := filepath.Join(dir, "hex_newline.key")
 	require.NoError(t, os.WriteFile(keyPath, []byte(hexStr), 0600))
 
-	key, err := LoadPrivateKeyFromFilesystem("key-id", "hex_newline.key")
+	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "hex_newline.key")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
 	assert.Equal(t, seed, key.Seed())
+}
+
+func TestLoadPrivateKeyAnyFromFilesystem_RSA_PKCS8(t *testing.T) {
+	dir := t.TempDir()
+	env := viper.GetViper()
+	oldDir := env.GetString("ONLINE_KEY_DIR")
+	env.Set("ONLINE_KEY_DIR", dir)
+	defer env.Set("ONLINE_KEY_DIR", oldDir)
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	require.NoError(t, err)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	keyPath := filepath.Join(dir, "rsa-pkcs8.pem")
+	require.NoError(t, os.WriteFile(keyPath, pemBytes, 0600))
+
+	loadedKey, err := LoadPrivateKeyAnyFromFilesystem("rsa-key", "rsa-pkcs8.pem")
+	require.NoError(t, err)
+	require.NotNil(t, loadedKey)
+	_, ok := loadedKey.(*rsa.PrivateKey)
+	assert.True(t, ok, "expected RSA private key")
+}
+
+func TestLoadPrivateKeyAnyFromFilesystem_ECDSA_SEC1(t *testing.T) {
+	dir := t.TempDir()
+	env := viper.GetViper()
+	oldDir := env.GetString("ONLINE_KEY_DIR")
+	env.Set("ONLINE_KEY_DIR", dir)
+	defer env.Set("ONLINE_KEY_DIR", oldDir)
+
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalECPrivateKey(privateKey)
+	require.NoError(t, err)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
+	keyPath := filepath.Join(dir, "ecdsa-sec1.pem")
+	require.NoError(t, os.WriteFile(keyPath, pemBytes, 0600))
+
+	loadedKey, err := LoadPrivateKeyAnyFromFilesystem("ecdsa-key", "ecdsa-sec1.pem")
+	require.NoError(t, err)
+	require.NotNil(t, loadedKey)
+	_, ok := loadedKey.(*ecdsa.PrivateKey)
+	assert.True(t, ok, "expected ECDSA private key")
+}
+
+func TestBuildSignerFromPrivateKeyFile_KeyIDMismatch(t *testing.T) {
+	dir := t.TempDir()
+	env := viper.GetViper()
+	oldDir := env.GetString("ONLINE_KEY_DIR")
+	env.Set("ONLINE_KEY_DIR", dir)
+	defer env.Set("ONLINE_KEY_DIR", oldDir)
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	tufKey, err := tuf_metadata.KeyFromPublicKey(privateKey.Public())
+	require.NoError(t, err)
+	realKeyID, err := tufKey.ID()
+	require.NoError(t, err)
+
+	der, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, realKeyID), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0600))
+
+	_, err = BuildSignerFromPrivateKeyFile("wrong-key-id", realKeyID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "keyid mismatch")
+}
+
+func TestBuildSignerFromPrivateKeyFile_RSA_PSS_CompatibleWithTUFVerifyDelegate(t *testing.T) {
+	dir := t.TempDir()
+	env := viper.GetViper()
+	oldDir := env.GetString("ONLINE_KEY_DIR")
+	env.Set("ONLINE_KEY_DIR", dir)
+	defer env.Set("ONLINE_KEY_DIR", oldDir)
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	tufKey, err := tuf_metadata.KeyFromPublicKey(privateKey.Public())
+	require.NoError(t, err)
+	keyID, err := tufKey.ID()
+	require.NoError(t, err)
+
+	der, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, keyID), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0600))
+
+	root := tuf_metadata.Root(time.Now().Add(24 * time.Hour))
+	require.NoError(t, root.Signed.AddKey(tufKey, "timestamp"))
+
+	timestamp := tuf_metadata.Timestamp(time.Now().Add(24 * time.Hour))
+	signer, err := BuildSignerFromPrivateKeyFile(keyID, keyID)
+	require.NoError(t, err)
+	_, err = timestamp.Sign(signer)
+	require.NoError(t, err)
+
+	err = root.VerifyDelegate("timestamp", timestamp)
+	require.NoError(t, err)
 }

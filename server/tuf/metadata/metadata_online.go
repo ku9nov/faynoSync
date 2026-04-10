@@ -2,7 +2,6 @@ package metadata
 
 import (
 	"context"
-	"crypto"
 	"encoding/json"
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/signing"
@@ -479,14 +478,9 @@ func bumpDelegatedRoles(
 		repo.Targets(roleName).ClearSignatures()
 
 		for _, delegationKeyID := range keysToSign {
-			delegationPrivateKey, err := signing.LoadPrivateKeyFromFilesystem(delegationKeyID, delegationKeyID)
+			delegationSigner, err := signing.BuildSignerFromPrivateKeyFile(delegationKeyID, delegationKeyID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
-			}
-
-			delegationSigner, err := signature.LoadSigner(delegationPrivateKey, crypto.Hash(0))
-			if err != nil {
-				return nil, fmt.Errorf("failed to create delegation signer for role %s: %w", roleName, err)
 			}
 
 			if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
@@ -697,13 +691,9 @@ func buildOnlineRoleSigners(keyIDs []string, threshold int, roleName string) ([]
 	}
 	signers := make([]signature.Signer, 0, len(keysToSign))
 	for _, keyID := range keysToSign {
-		priv, err := signing.LoadPrivateKeyFromFilesystem(keyID, keyID)
+		sig, err := signing.BuildSignerFromPrivateKeyFile(keyID, keyID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load %s private key %s: %w", roleName, keyID, err)
-		}
-		sig, err := signature.LoadSigner(priv, crypto.Hash(0))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create %s signer for key %s: %w", roleName, keyID, err)
 		}
 		signers = append(signers, sig)
 	}
