@@ -27,6 +27,7 @@ const (
 	TaskNameAddArtifacts              TaskName = "add_artifacts"
 	TaskNameRemoveArtifacts           TaskName = "remove_artifacts"
 	TaskNameBootstrap                 TaskName = "bootstrap"
+	TaskNameBootstrapRecovery         TaskName = "bootstrap_recovery"
 	TaskNameUpdateSettings            TaskName = "update_settings"
 	TaskNamePublishArtifacts          TaskName = "publish_artifacts"
 	TaskNameMetadataUpdate            TaskName = "metadata_update"

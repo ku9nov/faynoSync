@@ -3,13 +3,16 @@ package bootstrap
 import (
 	"context"
 	"encoding/json"
-	"faynoSync/server/tuf/metadata"
+	tuf_metadata "faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/models"
 	tuf_storage "faynoSync/server/tuf/storage"
 	"faynoSync/server/tuf/tasks"
 	"faynoSync/server/utils"
 	"fmt"
+	"math"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,9 +20,17 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
+	gotufmetadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
 
-var listMetadataForBootstrap = tuf_storage.ListMetadataFromS3
+var (
+	listMetadataForBootstrap        = tuf_storage.ListMetadataFromS3
+	findLatestMetadataBootstrap     = tuf_storage.FindLatestMetadataVersion
+	downloadMetadataForBootstrap    = tuf_storage.DownloadMetadataFromS3
+	getAllDelegatedRolesForRecovery = tuf_storage.GetAllDelegatedRoles
+	recoverSettingsFromStorageFn    = recoverSettingsFromStorage
+)
 
 func scanKeys(ctx context.Context, redisClient *redis.Client, pattern string) ([]string, error) {
 	if redisClient == nil {
@@ -655,7 +666,7 @@ func bootstrapFinalizeWithContext(
 	logrus.Debugf("Starting bootstrap finalization for admin: %s, app: %s", adminName, appName)
 
 	logrus.Debug("Calling bootstrap_online_roles")
-	if err := metadata.BootstrapOnlineRolesWithContext(ctx, redisClient, taskID, adminName, appName, payload); err != nil {
+	if err := tuf_metadata.BootstrapOnlineRolesWithContext(ctx, redisClient, taskID, adminName, appName, payload); err != nil {
 		logrus.Errorf("Bootstrap online roles failed: %v", err)
 		return false
 	}
@@ -768,4 +779,497 @@ func getTaskStatusFromRedis(
 	}
 
 	return taskStatus.State
+}
+
+type bootstrapRecoveryPayload struct {
+	AppName string `json:"appName" binding:"required"`
+	Timeout *int   `json:"timeout,omitempty"`
+}
+
+type minimalTargetsMetadata struct {
+	Signed struct {
+		Expires     string `json:"expires"`
+		Delegations struct {
+			Roles []struct {
+				Name string `json:"name"`
+			} `json:"roles"`
+		} `json:"delegations"`
+	} `json:"signed"`
+}
+
+const bootstrapRecoveryLockTTL = 5 * time.Minute
+
+func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
+	adminName, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		logrus.Errorf("Failed to get admin name from context: %v", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	if redisClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Redis client is not available",
+		})
+		return
+	}
+
+	var payload bootstrapRecoveryPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid payload format: %v", err),
+		})
+		return
+	}
+	if payload.AppName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Missing required field: appName",
+		})
+		return
+	}
+
+	timeout := 300
+	if payload.Timeout != nil && *payload.Timeout > 0 {
+		timeout = *payload.Timeout
+		logrus.Debugf("Timeout: %d", timeout)
+	} else if payload.Timeout != nil {
+		logrus.Warnf("Invalid bootstrap recovery timeout %d seconds for admin %s, app %s. Falling back to default %d seconds", *payload.Timeout, adminName, payload.AppName, timeout)
+	}
+
+	isInitialized, err := hasPersistedRootMetadata(context.Background(), adminName, payload.AppName)
+	if err != nil {
+		logrus.Errorf("Failed to determine bootstrap state from persistent metadata for admin %s, app %s: %v", adminName, payload.AppName, err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Failed to determine bootstrap state from persistent metadata",
+		})
+		return
+	}
+	if !isInitialized {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "No persisted root metadata found. Bootstrap must be completed before recovery.",
+		})
+		return
+	}
+
+	taskID := uuid.New().String()
+	lockKey := "RECOVERY_LOCK_" + adminName + "_" + payload.AppName
+	lockAcquired, err := redisClient.SetNX(context.Background(), lockKey, taskID, bootstrapRecoveryLockTTL).Result()
+	if err != nil {
+		logrus.Errorf("Failed to acquire bootstrap recovery lock: admin=%s app=%s err=%v", adminName, payload.AppName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to acquire recovery lock",
+		})
+		return
+	}
+	if !lockAcquired {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "Recovery already in progress for this admin and app",
+		})
+		return
+	}
+
+	required, reason, err := isRecoveryRequired(context.Background(), redisClient, adminName, payload.AppName)
+	if err != nil {
+		releaseRecoveryLock(context.Background(), redisClient, lockKey, taskID)
+		logrus.Errorf("Failed to evaluate recovery precheck: admin=%s app=%s err=%v", adminName, payload.AppName, err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Failed to evaluate recovery precheck",
+		})
+		return
+	}
+	if !required {
+		releaseRecoveryLock(context.Background(), redisClient, lockKey, taskID)
+		c.JSON(http.StatusConflict, gin.H{
+			"error": reason,
+		})
+		return
+	}
+
+	taskName := tasks.TaskNameBootstrapRecovery
+	_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStatePending, &tasks.TaskResult{
+		Task: &taskName,
+	})
+	go func() {
+		recoveryCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+		defer cancel()
+		runBootstrapRecovery(recoveryCtx, redisClient, taskID, adminName, payload.AppName, lockKey)
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"data": gin.H{
+			"task_id":     taskID,
+			"last_update": time.Now().Format(time.RFC3339),
+		},
+		"message": "Bootstrap recovery accepted and started in background",
+	})
+}
+
+func runBootstrapRecovery(ctx context.Context, redisClient *redis.Client, taskID, adminName, appName, lockKey string) {
+	logrus.Infof("Starting bootstrap recovery: admin=%s app=%s task_id=%s", adminName, appName, taskID)
+	defer releaseRecoveryLock(ctx, redisClient, lockKey, taskID)
+	_ = tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateStarted)
+	_ = tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateRunning)
+	recovered, err := recoverSettingsFromStorageFn(ctx, adminName, appName)
+	if err != nil {
+		logrus.Errorf("Bootstrap recovery failed during metadata reconstruction: admin=%s app=%s task_id=%s err=%v", adminName, appName, taskID, err)
+		taskName := tasks.TaskNameBootstrapRecovery
+		success := false
+		errMsg := fmt.Sprintf("Bootstrap recovery failed: %v", err)
+		_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &success,
+			Error:  &errMsg,
+		})
+		return
+	}
+
+	if err := saveRecoveredSettings(redisClient, adminName, appName, recovered); err != nil {
+		logrus.Errorf("Bootstrap recovery failed during Redis write: admin=%s app=%s task_id=%s err=%v", adminName, appName, taskID, err)
+		taskName := tasks.TaskNameBootstrapRecovery
+		success := false
+		errMsg := fmt.Sprintf("Bootstrap recovery failed to save Redis keys: %v", err)
+		_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &success,
+			Error:  &errMsg,
+		})
+		return
+	}
+
+	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
+	if err := redisClient.Set(ctx, bootstrapKey, taskID, 0).Err(); err != nil {
+		logrus.Errorf("Bootstrap recovery failed while setting BOOTSTRAP key: admin=%s app=%s task_id=%s key=%s err=%v", adminName, appName, taskID, bootstrapKey, err)
+		taskName := tasks.TaskNameBootstrapRecovery
+		success := false
+		errMsg := fmt.Sprintf("Bootstrap recovery failed to set BOOTSTRAP key: %v", err)
+		_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &success,
+			Error:  &errMsg,
+		})
+		return
+	}
+
+	taskName := tasks.TaskNameBootstrapRecovery
+	success := true
+	msg := "Bootstrap recovery completed successfully"
+	_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateSuccess, &tasks.TaskResult{
+		Task:    &taskName,
+		Status:  &success,
+		Message: &msg,
+	})
+	logrus.Infof(
+		"Bootstrap recovery completed: admin=%s app=%s task_id=%s delegated_roles=%d root_exp=%d targets_exp=%d snapshot_exp=%d timestamp_exp=%d",
+		adminName,
+		appName,
+		taskID,
+		len(recovered.DelegatedExpiration),
+		recovered.RootExpiration,
+		recovered.TargetsExpiration,
+		recovered.SnapshotExpiration,
+		recovered.TimestampExpiration,
+	)
+}
+
+func releaseRecoveryLock(ctx context.Context, redisClient *redis.Client, lockKey, taskID string) {
+	if redisClient == nil {
+		return
+	}
+
+	current, err := redisClient.Get(ctx, lockKey).Result()
+	if err == redis.Nil {
+		return
+	}
+	if err != nil {
+		logrus.Warnf("Failed to read recovery lock %s: %v", lockKey, err)
+		return
+	}
+
+	if current != taskID {
+		return
+	}
+
+	if err := redisClient.Del(ctx, lockKey).Err(); err != nil {
+		logrus.Warnf("Failed to release recovery lock %s: %v", lockKey, err)
+	}
+}
+
+func isRecoveryRequired(ctx context.Context, redisClient *redis.Client, adminName, appName string) (bool, string, error) {
+	if redisClient == nil {
+		return true, "", fmt.Errorf("redis client is nil")
+	}
+
+	delegatedRoles, err := getAllDelegatedRolesForRecovery(ctx, adminName, appName)
+	if err != nil {
+		return false, "", err
+	}
+
+	keySuffix := adminName + "_" + appName
+	requiredKeys := []string{
+		"BOOTSTRAP_" + keySuffix,
+		"ROOT_EXPIRATION_" + keySuffix,
+		"ROOT_THRESHOLD_" + keySuffix,
+		"ROOT_NUM_KEYS_" + keySuffix,
+		"TARGETS_EXPIRATION_" + keySuffix,
+		"TARGETS_THRESHOLD_" + keySuffix,
+		"TARGETS_NUM_KEYS_" + keySuffix,
+		"TARGETS_ONLINE_KEY_" + keySuffix,
+		"SNAPSHOT_EXPIRATION_" + keySuffix,
+		"SNAPSHOT_THRESHOLD_" + keySuffix,
+		"SNAPSHOT_NUM_KEYS_" + keySuffix,
+		"TIMESTAMP_EXPIRATION_" + keySuffix,
+		"TIMESTAMP_THRESHOLD_" + keySuffix,
+		"TIMESTAMP_NUM_KEYS_" + keySuffix,
+		"ROOT_SIGNING_" + keySuffix,
+	}
+	for _, roleName := range delegatedRoles {
+		requiredKeys = append(requiredKeys, roleName+"_EXPIRATION_"+keySuffix)
+	}
+
+	for _, key := range requiredKeys {
+		val, err := redisClient.Get(ctx, key).Result()
+		if err == redis.Nil {
+			return true, "", nil
+		}
+		if err != nil {
+			return false, "", fmt.Errorf("failed to read key %s: %w", key, err)
+		}
+		if key != "ROOT_SIGNING_"+keySuffix && strings.TrimSpace(val) == "" {
+			return true, "", nil
+		}
+	}
+
+	bootstrapValue, _ := redisClient.Get(ctx, "BOOTSTRAP_"+keySuffix).Result()
+	if strings.HasPrefix(bootstrapValue, "pre-") {
+		return true, "", nil
+	}
+	rootSigningValue, _ := redisClient.Get(ctx, "ROOT_SIGNING_"+keySuffix).Result()
+	if strings.TrimSpace(rootSigningValue) != "" {
+		return true, "", nil
+	}
+	targetsOnlineValue, _ := redisClient.Get(ctx, "TARGETS_ONLINE_KEY_"+keySuffix).Result()
+	if targetsOnlineValue != "1" && strings.ToLower(targetsOnlineValue) != "true" {
+		return true, "", nil
+	}
+
+	return false, "Recovery not required: Redis state is already complete and consistent", nil
+}
+
+func recoverSettingsFromStorage(ctx context.Context, adminName, appName string) (recoveredBootstrapSettings, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+	tmpDir, err := os.MkdirTemp(cwd, "tmp-recovery-*")
+	if err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	now := time.Now().UTC()
+	repo := repository.New()
+
+	rootPath, rootFilename, err := downloadLatestRoleMetadata(ctx, adminName, appName, "root", tmpDir)
+	if err != nil {
+		return recoveredBootstrapSettings{}, err
+	}
+	targetsPath, targetsFilename, err := downloadLatestRoleMetadata(ctx, adminName, appName, "targets", tmpDir)
+	if err != nil {
+		return recoveredBootstrapSettings{}, err
+	}
+	snapshotPath, _, err := downloadLatestRoleMetadata(ctx, adminName, appName, "snapshot", tmpDir)
+	if err != nil {
+		return recoveredBootstrapSettings{}, err
+	}
+	timestampPath := filepath.Join(tmpDir, "timestamp.json")
+	if err := downloadMetadataForBootstrap(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to download timestamp metadata: %w", err)
+	}
+
+	root := gotufmetadata.Root(now.Add(365 * 24 * time.Hour))
+	repo.SetRoot(root)
+	if _, err := repo.Root().FromFile(rootPath); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to load root metadata: %w", err)
+	}
+	if err := repo.Root().VerifyDelegate("root", repo.Root()); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to verify root metadata signatures: %w", err)
+	}
+	if !repo.Root().Signed.Expires.After(now) {
+		return recoveredBootstrapSettings{}, fmt.Errorf("root metadata is expired at %s", repo.Root().Signed.Expires.UTC().Format(time.RFC3339))
+	}
+
+	targets := gotufmetadata.Targets(now.Add(365 * 24 * time.Hour))
+	repo.SetTargets("targets", targets)
+	if _, err := repo.Targets("targets").FromFile(targetsPath); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to load targets metadata: %w", err)
+	}
+	if err := repo.Root().VerifyDelegate("targets", repo.Targets("targets")); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to verify targets metadata signatures: %w", err)
+	}
+	if !repo.Targets("targets").Signed.Expires.After(now) {
+		return recoveredBootstrapSettings{}, fmt.Errorf("targets metadata is expired at %s", repo.Targets("targets").Signed.Expires.UTC().Format(time.RFC3339))
+	}
+
+	snapshot := gotufmetadata.Snapshot(now.Add(365 * 24 * time.Hour))
+	repo.SetSnapshot(snapshot)
+	if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to load snapshot metadata: %w", err)
+	}
+	if err := repo.Root().VerifyDelegate("snapshot", repo.Snapshot()); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to verify snapshot metadata signatures: %w", err)
+	}
+	if !repo.Snapshot().Signed.Expires.After(now) {
+		return recoveredBootstrapSettings{}, fmt.Errorf("snapshot metadata is expired at %s", repo.Snapshot().Signed.Expires.UTC().Format(time.RFC3339))
+	}
+
+	timestamp := gotufmetadata.Timestamp(now.Add(365 * 24 * time.Hour))
+	repo.SetTimestamp(timestamp)
+	if _, err := repo.Timestamp().FromFile(timestampPath); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to load timestamp metadata: %w", err)
+	}
+	if err := repo.Root().VerifyDelegate("timestamp", repo.Timestamp()); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to verify timestamp metadata signatures: %w", err)
+	}
+	if !repo.Timestamp().Signed.Expires.After(now) {
+		return recoveredBootstrapSettings{}, fmt.Errorf("timestamp metadata is expired at %s", repo.Timestamp().Signed.Expires.UTC().Format(time.RFC3339))
+	}
+
+	rootData, err := os.ReadFile(rootPath)
+	if err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to read root metadata file %s: %w", rootFilename, err)
+	}
+	var rootMetadata models.RootMetadata
+	if err := json.Unmarshal(rootData, &rootMetadata); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to parse root metadata: %w", err)
+	}
+
+	targetsData, err := os.ReadFile(targetsPath)
+	if err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to read targets metadata file %s: %w", targetsFilename, err)
+	}
+	var targetsMetadata minimalTargetsMetadata
+	if err := json.Unmarshal(targetsData, &targetsMetadata); err != nil {
+		return recoveredBootstrapSettings{}, fmt.Errorf("failed to parse targets metadata for delegations: %w", err)
+	}
+
+	rootExpirationDays, err := expirationDaysFromTime(repo.Root().Signed.Expires, now)
+	if err != nil {
+		return recoveredBootstrapSettings{}, err
+	}
+	targetsExpirationDays, err := expirationDaysFromTime(repo.Targets("targets").Signed.Expires, now)
+	if err != nil {
+		return recoveredBootstrapSettings{}, err
+	}
+	snapshotExpirationDays, err := expirationDaysFromTime(repo.Snapshot().Signed.Expires, now)
+	if err != nil {
+		return recoveredBootstrapSettings{}, err
+	}
+	timestampExpirationDays, err := expirationDaysFromTime(repo.Timestamp().Signed.Expires, now)
+	if err != nil {
+		return recoveredBootstrapSettings{}, err
+	}
+
+	roleThreshold := func(role string) int {
+		r, ok := rootMetadata.Signed.Roles[role]
+		if !ok || r.Threshold < 1 {
+			return 1
+		}
+		return r.Threshold
+	}
+	roleNumKeys := func(role string) int {
+		r, ok := rootMetadata.Signed.Roles[role]
+		if !ok || len(r.KeyIDs) < 1 {
+			return 1
+		}
+		return len(r.KeyIDs)
+	}
+
+	delegatedExpiration := map[string]int{}
+	for _, delegated := range targetsMetadata.Signed.Delegations.Roles {
+		roleName := strings.TrimSpace(delegated.Name)
+		if roleName == "" {
+			continue
+		}
+
+		delegatedPath, _, err := downloadLatestRoleMetadata(ctx, adminName, appName, roleName, tmpDir)
+		if err != nil {
+			logrus.Warnf("Skipping delegated role %s during recovery: %v", roleName, err)
+			continue
+		}
+
+		roleTargets := gotufmetadata.Targets(now.Add(365 * 24 * time.Hour))
+		repo.SetTargets(roleName, roleTargets)
+		if _, err := repo.Targets(roleName).FromFile(delegatedPath); err != nil {
+			logrus.Warnf("Skipping delegated role %s due to parse error: %v", roleName, err)
+			continue
+		}
+		if err := repo.Targets("targets").VerifyDelegate(roleName, repo.Targets(roleName)); err != nil {
+			logrus.Warnf("Skipping delegated role %s due to signature verification error: %v", roleName, err)
+			continue
+		}
+		if !repo.Targets(roleName).Signed.Expires.After(now) {
+			logrus.Warnf("Skipping delegated role %s because metadata is expired", roleName)
+			continue
+		}
+
+		days, err := expirationDaysFromTime(repo.Targets(roleName).Signed.Expires, now)
+		if err != nil {
+			logrus.Warnf("Skipping delegated role %s due to expiration conversion error: %v", roleName, err)
+			continue
+		}
+		delegatedExpiration[roleName] = days
+	}
+
+	return recoveredBootstrapSettings{
+		RootExpiration:      rootExpirationDays,
+		RootThreshold:       roleThreshold("root"),
+		RootNumKeys:         roleNumKeys("root"),
+		TargetsExpiration:   targetsExpirationDays,
+		TargetsThreshold:    roleThreshold("targets"),
+		TargetsNumKeys:      roleNumKeys("targets"),
+		SnapshotExpiration:  snapshotExpirationDays,
+		SnapshotThreshold:   roleThreshold("snapshot"),
+		SnapshotNumKeys:     roleNumKeys("snapshot"),
+		TimestampExpiration: timestampExpirationDays,
+		TimestampThreshold:  roleThreshold("timestamp"),
+		TimestampNumKeys:    roleNumKeys("timestamp"),
+		TargetsOnlineKey:    true,
+		DelegatedExpiration: delegatedExpiration,
+	}, nil
+}
+
+func downloadLatestRoleMetadata(ctx context.Context, adminName, appName, roleName, tmpDir string) (string, string, error) {
+	_, filename, err := findLatestMetadataBootstrap(ctx, adminName, appName, roleName)
+	if err != nil {
+		if roleName == "root" {
+			path := filepath.Join(tmpDir, "root.json")
+			if err := downloadMetadataForBootstrap(ctx, adminName, appName, "root.json", path); err == nil {
+				return path, "root.json", nil
+			}
+
+			path = filepath.Join(tmpDir, "1.root.json")
+			if err := downloadMetadataForBootstrap(ctx, adminName, appName, "1.root.json", path); err == nil {
+				return path, "1.root.json", nil
+			}
+		}
+		return "", "", fmt.Errorf("failed to find latest %s metadata version: %w", roleName, err)
+	}
+
+	path := filepath.Join(tmpDir, filename)
+	if err := downloadMetadataForBootstrap(ctx, adminName, appName, filename, path); err != nil {
+		return "", "", fmt.Errorf("failed to download %s metadata %s: %w", roleName, filename, err)
+	}
+	return path, filename, nil
+}
+
+func expirationDaysFromTime(expiresAt, now time.Time) (int, error) {
+	if !expiresAt.After(now) {
+		return 0, fmt.Errorf("metadata is expired at %s", expiresAt.UTC().Format(time.RFC3339))
+	}
+
+	days := int(math.Ceil(expiresAt.Sub(now).Hours() / 24))
+	if days < 1 {
+		days = 1
+	}
+	return days, nil
 }

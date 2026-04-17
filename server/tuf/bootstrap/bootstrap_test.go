@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"faynoSync/server/tuf/models"
+	tuf_storage "faynoSync/server/tuf/storage"
 	"faynoSync/server/tuf/tasks"
 
 	"github.com/alicebob/miniredis/v2"
@@ -21,12 +24,24 @@ import (
 
 func TestMain(m *testing.M) {
 	originalListMetadataForBootstrap := listMetadataForBootstrap
+	originalFindLatestMetadataBootstrap := findLatestMetadataBootstrap
+	originalDownloadMetadataForBootstrap := downloadMetadataForBootstrap
+	originalGetAllDelegatedRolesForRecovery := getAllDelegatedRolesForRecovery
+	originalRecoverSettingsFromStorageFn := recoverSettingsFromStorageFn
 	listMetadataForBootstrap = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
 		return []string{}, nil
 	}
+	findLatestMetadataBootstrap = tuf_storage.FindLatestMetadataVersion
+	downloadMetadataForBootstrap = tuf_storage.DownloadMetadataFromS3
+	getAllDelegatedRolesForRecovery = tuf_storage.GetAllDelegatedRoles
+	recoverSettingsFromStorageFn = recoverSettingsFromStorage
 
 	code := m.Run()
 	listMetadataForBootstrap = originalListMetadataForBootstrap
+	findLatestMetadataBootstrap = originalFindLatestMetadataBootstrap
+	downloadMetadataForBootstrap = originalDownloadMetadataForBootstrap
+	getAllDelegatedRolesForRecovery = originalGetAllDelegatedRolesForRecovery
+	recoverSettingsFromStorageFn = originalRecoverSettingsFromStorageFn
 	os.Exit(code)
 }
 
@@ -925,4 +940,201 @@ func TestGetTaskStatusFromRedis_WithRedis_ReturnsStoredState(t *testing.T) {
 	got := getTaskStatusFromRedis(client, taskID)
 
 	assert.Equal(t, tasks.TaskStateFailure, got)
+}
+
+func makePostBootstrapRecoveryContext(username string, payload interface{}) (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	raw, _ := json.Marshal(payload)
+	c.Request = httptest.NewRequest(http.MethodPost, "/tuf/v1/bootstrap/recovery", bytes.NewReader(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+	if username != "" {
+		c.Set("username", username)
+	}
+
+	return c, w
+}
+
+func mockRecoverySettingsFunc(t *testing.T, settings recoveredBootstrapSettings, err error) {
+	t.Helper()
+
+	original := recoverSettingsFromStorageFn
+	recoverSettingsFromStorageFn = func(ctx context.Context, adminName, appName string) (recoveredBootstrapSettings, error) {
+		return settings, err
+	}
+
+	t.Cleanup(func() {
+		recoverSettingsFromStorageFn = original
+	})
+}
+
+func mockGetAllDelegatedRolesForRecovery(t *testing.T, roles []string, err error) {
+	t.Helper()
+	original := getAllDelegatedRolesForRecovery
+	getAllDelegatedRolesForRecovery = func(ctx context.Context, adminName, appName string) ([]string, error) {
+		return roles, err
+	}
+	t.Cleanup(func() {
+		getAllDelegatedRolesForRecovery = original
+	})
+}
+
+func TestPostBootstrapRecovery_NilRedis_ReturnsServiceUnavailable(t *testing.T) {
+	c, w := makePostBootstrapRecoveryContext("admin", map[string]interface{}{"appName": "myapp"})
+	PostBootstrapRecovery(c, nil)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+func TestPostBootstrapRecovery_MissingAppName_ReturnsBadRequest(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	c, w := makePostBootstrapRecoveryContext("admin", map[string]interface{}{})
+	PostBootstrapRecovery(c, client)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestPostBootstrapRecovery_RecoversRedisKeysAndSetsTask(t *testing.T) {
+	mockListMetadataForBootstrap(t, []string{"1.root.json"}, nil)
+	mockGetAllDelegatedRolesForRecovery(t, []string{"custom-role"}, nil)
+	mockRecoverySettingsFunc(t, recoveredBootstrapSettings{
+		RootExpiration:      364,
+		RootThreshold:       2,
+		RootNumKeys:         2,
+		TargetsExpiration:   6,
+		TargetsThreshold:    1,
+		TargetsNumKeys:      1,
+		SnapshotExpiration:  6,
+		SnapshotThreshold:   1,
+		SnapshotNumKeys:     1,
+		TimestampExpiration: 1,
+		TimestampThreshold:  1,
+		TimestampNumKeys:    1,
+		TargetsOnlineKey:    true,
+		DelegatedExpiration: map[string]int{"custom-role": 90},
+	}, nil)
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	c, w := makePostBootstrapRecoveryContext("admin", map[string]interface{}{"appName": "myapp"})
+
+	PostBootstrapRecovery(c, client)
+	assert.Equal(t, http.StatusAccepted, w.Code)
+
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	data := body["data"].(map[string]interface{})
+	taskID := data["task_id"].(string)
+	require.NotEmpty(t, taskID)
+
+	require.Eventually(t, func() bool {
+		taskData, err := client.Get(context.Background(), "task:"+taskID).Result()
+		if err != nil {
+			return false
+		}
+		var st tasks.TaskStatus
+		if err := json.Unmarshal([]byte(taskData), &st); err != nil {
+			return false
+		}
+		return st.State == tasks.TaskStateSuccess
+	}, 2*time.Second, 25*time.Millisecond)
+
+	bootstrapVal, err := client.Get(context.Background(), "BOOTSTRAP_admin_myapp").Result()
+	require.NoError(t, err)
+	assert.Equal(t, taskID, bootstrapVal)
+
+	requiredKeys := []string{
+		"ROOT_EXPIRATION_admin_myapp",
+		"ROOT_THRESHOLD_admin_myapp",
+		"ROOT_NUM_KEYS_admin_myapp",
+		"TARGETS_EXPIRATION_admin_myapp",
+		"TARGETS_THRESHOLD_admin_myapp",
+		"TARGETS_NUM_KEYS_admin_myapp",
+		"TARGETS_ONLINE_KEY_admin_myapp",
+		"SNAPSHOT_EXPIRATION_admin_myapp",
+		"SNAPSHOT_THRESHOLD_admin_myapp",
+		"SNAPSHOT_NUM_KEYS_admin_myapp",
+		"TIMESTAMP_EXPIRATION_admin_myapp",
+		"TIMESTAMP_THRESHOLD_admin_myapp",
+		"TIMESTAMP_NUM_KEYS_admin_myapp",
+		"custom-role_EXPIRATION_admin_myapp",
+		"ROOT_SIGNING_admin_myapp",
+	}
+	for _, key := range requiredKeys {
+		_, err := client.Get(context.Background(), key).Result()
+		require.NoError(t, err, "expected key %s", key)
+	}
+	recoveredTaskData, err := client.Get(context.Background(), "task:"+taskID).Result()
+	require.NoError(t, err)
+	var recoveredTask tasks.TaskStatus
+	require.NoError(t, json.Unmarshal([]byte(recoveredTaskData), &recoveredTask))
+	require.NotNil(t, recoveredTask.Result)
+	require.NotNil(t, recoveredTask.Result.Task)
+	assert.Equal(t, tasks.TaskNameBootstrapRecovery, *recoveredTask.Result.Task)
+}
+
+func TestPostBootstrapRecovery_WhenLockExists_ReturnsConflict(t *testing.T) {
+	mockListMetadataForBootstrap(t, []string{"1.root.json"}, nil)
+	mockGetAllDelegatedRolesForRecovery(t, []string{}, nil)
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	mr.Set("RECOVERY_LOCK_admin_myapp", "other-task")
+	c, w := makePostBootstrapRecoveryContext("admin", map[string]interface{}{"appName": "myapp"})
+	PostBootstrapRecovery(c, client)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Recovery already in progress for this admin and app", body["error"])
+}
+
+func TestPostBootstrapRecovery_WhenAlreadyRecovered_ReturnsConflictNoTask(t *testing.T) {
+	mockListMetadataForBootstrap(t, []string{"1.root.json"}, nil)
+	mockGetAllDelegatedRolesForRecovery(t, []string{"custom-role"}, nil)
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	keys := map[string]string{
+		"BOOTSTRAP_admin_myapp":              "done-task",
+		"ROOT_EXPIRATION_admin_myapp":        "364",
+		"ROOT_THRESHOLD_admin_myapp":         "2",
+		"ROOT_NUM_KEYS_admin_myapp":          "2",
+		"TARGETS_EXPIRATION_admin_myapp":     "6",
+		"TARGETS_THRESHOLD_admin_myapp":      "1",
+		"TARGETS_NUM_KEYS_admin_myapp":       "1",
+		"TARGETS_ONLINE_KEY_admin_myapp":     "1",
+		"SNAPSHOT_EXPIRATION_admin_myapp":    "6",
+		"SNAPSHOT_THRESHOLD_admin_myapp":     "1",
+		"SNAPSHOT_NUM_KEYS_admin_myapp":      "1",
+		"TIMESTAMP_EXPIRATION_admin_myapp":   "1",
+		"TIMESTAMP_THRESHOLD_admin_myapp":    "1",
+		"TIMESTAMP_NUM_KEYS_admin_myapp":     "1",
+		"ROOT_SIGNING_admin_myapp":           "",
+		"custom-role_EXPIRATION_admin_myapp": "90",
+	}
+	for key, val := range keys {
+		mr.Set(key, val)
+	}
+
+	c, w := makePostBootstrapRecoveryContext("admin", map[string]interface{}{"appName": "myapp"})
+	PostBootstrapRecovery(c, client)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Recovery not required: Redis state is already complete and consistent", body["error"])
+
+	allKeys := mr.Keys()
+	for _, key := range allKeys {
+		assert.False(t, strings.HasPrefix(key, "task:"), "no recovery task should be created")
+	}
 }
