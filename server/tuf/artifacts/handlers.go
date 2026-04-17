@@ -27,7 +27,7 @@ type PublishArtifactsPayload struct {
 }
 
 func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
-	owner, err := utils.GetUsernameFromContext(c)
+	owner, err := utils.GetOwnerFromContext(c)
 	if err != nil {
 		logrus.Errorf("Failed to get username from context: %v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -274,7 +274,7 @@ func updateAllArtifactsTUFStatus(
 }
 
 func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
-	owner, err := utils.GetUsernameFromContext(c)
+	owner, err := utils.GetOwnerFromContext(c)
 	if err != nil {
 		logrus.Errorf("Failed to get username from context: %v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
