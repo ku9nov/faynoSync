@@ -17,8 +17,6 @@
 - ~~**Electron Builder**~~
 - **Sparkle** 
 - ~~**Tauri**~~
-- **[go-update](https://github.com/inconshreveable/go-update)**
-- **[self_update](https://github.com/jaemk/self_update)** 
 - ~~**[go-tuf](https://github.com/theupdateframework/go-tuf)**~~ (Partially implemented - pilot version)
 - **etc...**
 
@@ -28,18 +26,17 @@
 - ✅ **Pilot version implemented** - Core functionality is operational but requires additional work before production deployment
 
 ### Testing & Quality
-- [ ] Add comprehensive unit tests for TUF functionality
+- [x] Add comprehensive unit tests for TUF functionality
 
 ### Delegations Management
-- [ ] **POST /tuf/v1/delegations** - Create new delegation
-- [ ] **PUT /tuf/v1/delegations** - Update existing delegation
-- [ ] **POST /tuf/v1/delegations/delete** - Delete delegation
-- [ ] Evaluate if delegations make sense for faynoSync use case
+- [ ] **POST /tuf/v1/delegations** - Create new delegation (?)
+- [ ] **PUT /tuf/v1/delegations** - Update existing delegation (?)
+- [ ] **POST /tuf/v1/delegations/delete** - Delete delegation (?)
+- [ ] Evaluate if delegations make sense for faynoSync use case (?)
 
 ### Metadata Management Enhancements
 - [x] **POST /tuf/v1/metadata/sign/delete** - Delete metadata in signing process
 - [x] **POST /tuf/v1/metadata/online** - Force new version of online metadata
-- [ ] Evaluate and implement full online signing functionality through MongoDB (partial functionality exists)
 
 ### Documentation & Tooling
 - [x] Update Postman template with TUF endpoints
@@ -48,11 +45,11 @@
 - [ ] Document TUF configuration and setup process
 
 ### Security & Key Management
-- [ ] Add support for key types other than ed25519 (e.g., RSA, ECDSA)
+- [x] Add support for key types other than ed25519 (e.g., RSA, ECDSA)
 
 ### Future Improvements
 - [ ] Performance optimizations for large repositories
-- [ ] Enhanced error handling and recovery mechanisms
+- [x] Enhanced error handling and recovery mechanisms
 - [ ] Metadata versioning and rollback capabilities
 - [ ] Support for additional hash algorithms
-- [ ] Refactor or remove unused endpoints (e.g., `/tuf/v1/bootstrap/locks`, `/tuf/v1/bootstrap/generate`) 
+- [x] Refactor or remove unused endpoints (e.g., `/tuf/v1/bootstrap/locks`, `/tuf/v1/bootstrap/generate`) 
