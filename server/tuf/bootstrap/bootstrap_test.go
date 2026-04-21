@@ -874,6 +874,24 @@ func TestReleaseBootstrapLock_WithRedis_SettingsKeyFormats(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestReleaseBootstrapLock_DoesNotDeleteForeignBootstrapMarker(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	taskID := "task-a"
+	adminName := "admin"
+	appName := "myapp"
+	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
+	mr.Set("pre-"+taskID, taskID)
+	mr.Set(bootstrapKey, "pre-task-b")
+
+	releaseBootstrapLock(client, taskID, adminName, appName)
+
+	val, err := client.Get(client.Context(), bootstrapKey).Result()
+	require.NoError(t, err)
+	assert.Equal(t, "pre-task-b", val, "cleanup must not delete marker for another task")
+}
+
 // To verify: In releaseBootstrapLock return early on Del error; test would still pass (miniredis Del succeeds).
 // Missing keys: Del on non-existent key returns no error in go-redis, so releaseBootstrapLock completes.
 func TestReleaseBootstrapLock_WithRedis_MissingKeys_NoError(t *testing.T) {
@@ -1095,6 +1113,30 @@ func TestPostBootstrapRecovery_WhenLockExists_ReturnsConflict(t *testing.T) {
 	assert.Equal(t, "Recovery already in progress for this admin and app", body["error"])
 }
 
+func TestPostBootstrapRecovery_WhenBootstrapActive_ReturnsConflict(t *testing.T) {
+	mockListMetadataForBootstrap(t, []string{"1.root.json"}, nil)
+	mockGetAllDelegatedRolesForRecovery(t, []string{}, nil)
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	mr.Set("BOOTSTRAP_admin_myapp", "pre-bootstrap-task")
+	mr.Set("pre-bootstrap-task", "bootstrap-task")
+	c, w := makePostBootstrapRecoveryContext("admin", map[string]interface{}{"appName": "myapp"})
+
+	PostBootstrapRecovery(c, client)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Contains(t, body["error"], "Bootstrap already in progress")
+	for _, key := range mr.Keys() {
+		assert.False(t, strings.HasPrefix(key, "task:"), "no recovery task should be created while bootstrap is active")
+		assert.False(t, strings.HasPrefix(key, "RECOVERY_LOCK_admin_myapp"), "temporary recovery lock must be released on precheck conflict")
+	}
+}
+
 func TestPostBootstrapRecovery_WhenAlreadyRecovered_ReturnsConflictNoTask(t *testing.T) {
 	mockListMetadataForBootstrap(t, []string{"1.root.json"}, nil)
 	mockGetAllDelegatedRolesForRecovery(t, []string{"custom-role"}, nil)
@@ -1137,4 +1179,50 @@ func TestPostBootstrapRecovery_WhenAlreadyRecovered_ReturnsConflictNoTask(t *tes
 	for _, key := range allKeys {
 		assert.False(t, strings.HasPrefix(key, "task:"), "no recovery task should be created")
 	}
+}
+
+func TestRunBootstrapRecovery_AbortsWhenBootstrapMarkerChanged(t *testing.T) {
+	mockRecoverySettingsFunc(t, recoveredBootstrapSettings{
+		RootExpiration:      364,
+		RootThreshold:       2,
+		RootNumKeys:         2,
+		TargetsExpiration:   6,
+		TargetsThreshold:    1,
+		TargetsNumKeys:      1,
+		SnapshotExpiration:  6,
+		SnapshotThreshold:   1,
+		SnapshotNumKeys:     1,
+		TimestampExpiration: 1,
+		TimestampThreshold:  1,
+		TimestampNumKeys:    1,
+		TargetsOnlineKey:    true,
+		DelegatedExpiration: map[string]int{},
+	}, nil)
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	adminName := "admin"
+	appName := "myapp"
+	taskID := "recovery-task"
+	lockKey := "RECOVERY_LOCK_" + adminName + "_" + appName
+	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
+	mr.Set(lockKey, taskID)
+	mr.Set(bootstrapKey, "pre-other-task")
+
+	runBootstrapRecovery(context.Background(), client, taskID, adminName, appName, lockKey, 30*time.Second, "pre-expected-task")
+
+	bootstrapValue, err := client.Get(context.Background(), bootstrapKey).Result()
+	require.NoError(t, err)
+	assert.Equal(t, "pre-other-task", bootstrapValue, "recovery must not clobber changed bootstrap marker")
+
+	taskData, err := client.Get(context.Background(), "task:"+taskID).Result()
+	require.NoError(t, err)
+	var taskStatus tasks.TaskStatus
+	require.NoError(t, json.Unmarshal([]byte(taskData), &taskStatus))
+	assert.Equal(t, tasks.TaskStateFailure, taskStatus.State)
+	require.NotNil(t, taskStatus.Result)
+	require.NotNil(t, taskStatus.Result.Error)
+	assert.Contains(t, *taskStatus.Result.Error, "bootstrap marker changed")
 }

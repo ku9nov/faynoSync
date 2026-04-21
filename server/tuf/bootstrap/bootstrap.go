@@ -2,7 +2,9 @@ package bootstrap
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
+	"errors"
 	tuf_metadata "faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/models"
 	tuf_storage "faynoSync/server/tuf/storage"
@@ -30,7 +32,53 @@ var (
 	downloadMetadataForBootstrap    = tuf_storage.DownloadMetadataFromS3
 	getAllDelegatedRolesForRecovery = tuf_storage.GetAllDelegatedRoles
 	recoverSettingsFromStorageFn    = recoverSettingsFromStorage
+
+	errBootstrapInProgress = errors.New("bootstrap in progress")
 )
+
+//go:embed bootstrap_recovery_finalize.lua
+var bootstrapRecoveryFinalizeLua string
+
+var bootstrapRecoveryFinalizeScript = redis.NewScript(bootstrapRecoveryFinalizeLua)
+
+func isTerminalTaskState(state tasks.TaskState) bool {
+	switch state {
+	case tasks.TaskStateSuccess, tasks.TaskStateFailure, tasks.TaskStateRevoked, tasks.TaskStateRejected, tasks.TaskStateIgnored, tasks.TaskStateErrored:
+		return true
+	default:
+		return false
+	}
+}
+
+func isBootstrapTaskActive(ctx context.Context, redisClient *redis.Client, bootstrapValue string) (bool, string, error) {
+	if !strings.HasPrefix(bootstrapValue, "pre-") {
+		return false, "", nil
+	}
+	bootstrapTaskID := strings.TrimPrefix(bootstrapValue, "pre-")
+	preLockExists, err := redisClient.Exists(ctx, bootstrapValue).Result()
+	if err != nil {
+		return false, bootstrapTaskID, fmt.Errorf("failed to check bootstrap pre-lock %s: %w", bootstrapValue, err)
+	}
+	taskState := getTaskStatusFromRedis(redisClient, bootstrapTaskID)
+	if preLockExists > 0 || !isTerminalTaskState(taskState) {
+		return true, bootstrapTaskID, nil
+	}
+	return false, bootstrapTaskID, nil
+}
+
+func finalizeRecoveredBootstrapMarker(
+	ctx context.Context,
+	redisClient *redis.Client,
+	bootstrapKey string,
+	expectedBootstrapMarker string,
+	recoveryTaskID string,
+) (bool, error) {
+	result, err := bootstrapRecoveryFinalizeScript.Run(ctx, redisClient, []string{bootstrapKey}, expectedBootstrapMarker, recoveryTaskID).Int()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
+}
 
 func scanKeys(ctx context.Context, redisClient *redis.Client, pattern string) ([]string, error) {
 	if redisClient == nil {
@@ -742,11 +790,26 @@ func releaseBootstrapLock(
 	}
 
 	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
-	err = redisClient.Del(ctx, bootstrapKey).Err()
-	if err != nil {
-		logrus.Warnf("Failed to delete BOOTSTRAP key %s: %v", bootstrapKey, err)
+	bootstrapValue, getErr := redisClient.Get(ctx, bootstrapKey).Result()
+	if getErr == redis.Nil {
+		logrus.Debugf("BOOTSTRAP key %s already absent", bootstrapKey)
+	} else if getErr != nil {
+		logrus.Warnf("Failed to read BOOTSTRAP key %s during cleanup: %v", bootstrapKey, getErr)
 	} else {
-		logrus.Debugf("Successfully deleted BOOTSTRAP key: %s", bootstrapKey)
+		expectedPre := "pre-" + taskID
+		if bootstrapValue != expectedPre && bootstrapValue != taskID {
+			logrus.Warnf(
+				"Skipping BOOTSTRAP key cleanup for admin=%s app=%s task_id=%s because current marker belongs to another task: %s",
+				adminName,
+				appName,
+				taskID,
+				bootstrapValue,
+			)
+		} else if err = redisClient.Del(ctx, bootstrapKey).Err(); err != nil {
+			logrus.Warnf("Failed to delete BOOTSTRAP key %s: %v", bootstrapKey, err)
+		} else {
+			logrus.Debugf("Successfully deleted BOOTSTRAP key: %s", bootstrapKey)
+		}
 	}
 
 	logrus.Debugf("Bootstrap lock cleanup completed for admin: %s, app: %s, task_id: %s", adminName, appName, taskID)
@@ -862,9 +925,15 @@ func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
-	required, reason, err := isRecoveryRequired(context.Background(), redisClient, adminName, payload.AppName)
+	required, reason, expectedBootstrapMarker, err := isRecoveryRequired(context.Background(), redisClient, adminName, payload.AppName)
 	if err != nil {
 		releaseRecoveryLock(context.Background(), redisClient, lockKey, taskID)
+		if errors.Is(err, errBootstrapInProgress) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": reason,
+			})
+			return
+		}
 		logrus.Errorf("Failed to evaluate recovery precheck: admin=%s app=%s err=%v", adminName, payload.AppName, err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": "Failed to evaluate recovery precheck",
@@ -886,7 +955,7 @@ func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 	go func() {
 		recoveryCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		runBootstrapRecovery(recoveryCtx, redisClient, taskID, adminName, payload.AppName, lockKey, lockTTL)
+		runBootstrapRecovery(recoveryCtx, redisClient, taskID, adminName, payload.AppName, lockKey, lockTTL, expectedBootstrapMarker)
 	}()
 
 	c.JSON(http.StatusAccepted, gin.H{
@@ -898,7 +967,16 @@ func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 	})
 }
 
-func runBootstrapRecovery(ctx context.Context, redisClient *redis.Client, taskID, adminName, appName, lockKey string, lockTTL time.Duration) {
+func runBootstrapRecovery(
+	ctx context.Context,
+	redisClient *redis.Client,
+	taskID,
+	adminName,
+	appName,
+	lockKey string,
+	lockTTL time.Duration,
+	expectedBootstrapMarker string,
+) {
 	logrus.Infof("Starting bootstrap recovery: admin=%s app=%s task_id=%s", adminName, appName, taskID)
 	defer releaseRecoveryLock(ctx, redisClient, lockKey, taskID)
 	if err := redisClient.Expire(ctx, lockKey, lockTTL).Err(); err != nil {
@@ -934,11 +1012,38 @@ func runBootstrapRecovery(ctx context.Context, redisClient *redis.Client, taskID
 	}
 
 	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
-	if err := redisClient.Set(ctx, bootstrapKey, taskID, 0).Err(); err != nil {
+	updated, err := finalizeRecoveredBootstrapMarker(ctx, redisClient, bootstrapKey, expectedBootstrapMarker, taskID)
+	if err != nil {
 		logrus.Errorf("Bootstrap recovery failed while setting BOOTSTRAP key: admin=%s app=%s task_id=%s key=%s err=%v", adminName, appName, taskID, bootstrapKey, err)
 		taskName := tasks.TaskNameBootstrapRecovery
 		success := false
 		errMsg := fmt.Sprintf("Bootstrap recovery failed to set BOOTSTRAP key: %v", err)
+		_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &success,
+			Error:  &errMsg,
+		})
+		return
+	}
+	if !updated {
+		currentBootstrapMarker, readErr := redisClient.Get(ctx, bootstrapKey).Result()
+		if readErr == redis.Nil {
+			currentBootstrapMarker = "<missing>"
+		} else if readErr != nil {
+			currentBootstrapMarker = "<unreadable>"
+		}
+		logrus.Warnf(
+			"Bootstrap recovery aborted due to BOOTSTRAP marker mismatch: admin=%s app=%s task_id=%s key=%s expected=%s current=%s",
+			adminName,
+			appName,
+			taskID,
+			bootstrapKey,
+			expectedBootstrapMarker,
+			currentBootstrapMarker,
+		)
+		taskName := tasks.TaskNameBootstrapRecovery
+		success := false
+		errMsg := fmt.Sprintf("Bootstrap recovery aborted: bootstrap marker changed (expected=%s current=%s)", expectedBootstrapMarker, currentBootstrapMarker)
 		_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
 			Task:   &taskName,
 			Status: &success,
@@ -991,19 +1096,37 @@ func releaseRecoveryLock(ctx context.Context, redisClient *redis.Client, lockKey
 	}
 }
 
-func isRecoveryRequired(ctx context.Context, redisClient *redis.Client, adminName, appName string) (bool, string, error) {
+func isRecoveryRequired(ctx context.Context, redisClient *redis.Client, adminName, appName string) (bool, string, string, error) {
 	if redisClient == nil {
-		return true, "", fmt.Errorf("redis client is nil")
+		return true, "", "", fmt.Errorf("redis client is nil")
 	}
 
 	delegatedRoles, err := getAllDelegatedRolesForRecovery(ctx, adminName, appName)
 	if err != nil {
-		return false, "", err
+		return false, "", "", err
 	}
 
 	keySuffix := adminName + "_" + appName
+	expectedBootstrapMarker := ""
+	bootstrapKey := "BOOTSTRAP_" + keySuffix
+	bootstrapValue, bootstrapErr := redisClient.Get(ctx, bootstrapKey).Result()
+	if bootstrapErr != nil && bootstrapErr != redis.Nil {
+		return false, "", "", fmt.Errorf("failed to read key %s: %w", bootstrapKey, bootstrapErr)
+	}
+	if bootstrapErr == nil && strings.HasPrefix(bootstrapValue, "pre-") {
+		expectedBootstrapMarker = bootstrapValue
+		active, bootstrapTaskID, err := isBootstrapTaskActive(ctx, redisClient, bootstrapValue)
+		if err != nil {
+			return false, "", "", err
+		}
+		if active {
+			reason := fmt.Sprintf("Bootstrap already in progress for this admin and app (task_id=%s)", bootstrapTaskID)
+			return false, reason, expectedBootstrapMarker, errBootstrapInProgress
+		}
+	}
+
 	requiredKeys := []string{
-		"BOOTSTRAP_" + keySuffix,
+		bootstrapKey,
 		"ROOT_EXPIRATION_" + keySuffix,
 		"ROOT_THRESHOLD_" + keySuffix,
 		"ROOT_NUM_KEYS_" + keySuffix,
@@ -1026,30 +1149,26 @@ func isRecoveryRequired(ctx context.Context, redisClient *redis.Client, adminNam
 	for _, key := range requiredKeys {
 		val, err := redisClient.Get(ctx, key).Result()
 		if err == redis.Nil {
-			return true, "", nil
+			return true, "", expectedBootstrapMarker, nil
 		}
 		if err != nil {
-			return false, "", fmt.Errorf("failed to read key %s: %w", key, err)
+			return false, "", "", fmt.Errorf("failed to read key %s: %w", key, err)
 		}
 		if key != "ROOT_SIGNING_"+keySuffix && strings.TrimSpace(val) == "" {
-			return true, "", nil
+			return true, "", expectedBootstrapMarker, nil
 		}
 	}
 
-	bootstrapValue, _ := redisClient.Get(ctx, "BOOTSTRAP_"+keySuffix).Result()
-	if strings.HasPrefix(bootstrapValue, "pre-") {
-		return true, "", nil
-	}
 	rootSigningValue, _ := redisClient.Get(ctx, "ROOT_SIGNING_"+keySuffix).Result()
 	if strings.TrimSpace(rootSigningValue) != "" {
-		return true, "", nil
+		return true, "", expectedBootstrapMarker, nil
 	}
 	targetsOnlineValue, _ := redisClient.Get(ctx, "TARGETS_ONLINE_KEY_"+keySuffix).Result()
 	if targetsOnlineValue != "1" && strings.ToLower(targetsOnlineValue) != "true" {
-		return true, "", nil
+		return true, "", expectedBootstrapMarker, nil
 	}
 
-	return false, "Recovery not required: Redis state is already complete and consistent", nil
+	return false, "Recovery not required: Redis state is already complete and consistent", expectedBootstrapMarker, nil
 }
 
 func recoverSettingsFromStorage(ctx context.Context, adminName, appName string) (recoveredBootstrapSettings, error) {
