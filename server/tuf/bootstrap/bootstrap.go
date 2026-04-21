@@ -80,6 +80,45 @@ func finalizeRecoveredBootstrapMarker(
 	return result == 1, nil
 }
 
+func rollbackRecoveredBootstrapMarker(
+	ctx context.Context,
+	redisClient *redis.Client,
+	bootstrapKey string,
+	recoveryMarker string,
+	restoreValue string,
+) error {
+	const maxRetries = 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := redisClient.Watch(ctx, func(tx *redis.Tx) error {
+			current, err := tx.Get(ctx, bootstrapKey).Result()
+			if err == redis.Nil {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if current != recoveryMarker {
+				return nil
+			}
+
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				if restoreValue == "" {
+					pipe.Del(ctx, bootstrapKey)
+				} else {
+					pipe.Set(ctx, bootstrapKey, restoreValue, 0)
+				}
+				return nil
+			})
+			return err
+		}, bootstrapKey)
+		if err == redis.TxFailedErr {
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("failed to rollback BOOTSTRAP marker %s after %d retries", bootstrapKey, maxRetries)
+}
+
 func scanKeys(ctx context.Context, redisClient *redis.Client, pattern string) ([]string, error) {
 	if redisClient == nil {
 		return nil, fmt.Errorf("redis client is nil")
@@ -995,6 +1034,8 @@ func runBootstrapRecovery(
 	}
 	_ = tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateStarted)
 	_ = tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateRunning)
+	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
+	recoveryMarker := "RECOVERING_" + taskID
 	recovered, err := recoverSettingsFromStorageFn(ctx, adminName, appName)
 	if err != nil {
 		logrus.Errorf("Bootstrap recovery failed during metadata reconstruction: admin=%s app=%s task_id=%s err=%v", adminName, appName, taskID, err)
@@ -1009,8 +1050,51 @@ func runBootstrapRecovery(
 		return
 	}
 
+	claimed, err := finalizeRecoveredBootstrapMarker(ctx, redisClient, bootstrapKey, expectedBootstrapMarker, recoveryMarker)
+	if err != nil {
+		logrus.Errorf("Bootstrap recovery failed while claiming BOOTSTRAP key: admin=%s app=%s task_id=%s key=%s err=%v", adminName, appName, taskID, bootstrapKey, err)
+		taskName := tasks.TaskNameBootstrapRecovery
+		success := false
+		errMsg := fmt.Sprintf("Bootstrap recovery failed to claim BOOTSTRAP key: %v", err)
+		_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &success,
+			Error:  &errMsg,
+		})
+		return
+	}
+	if !claimed {
+		currentBootstrapMarker, readErr := redisClient.Get(ctx, bootstrapKey).Result()
+		if readErr == redis.Nil {
+			currentBootstrapMarker = "<missing>"
+		} else if readErr != nil {
+			currentBootstrapMarker = "<unreadable>"
+		}
+		logrus.Warnf(
+			"Bootstrap recovery aborted due to BOOTSTRAP marker mismatch while claiming: admin=%s app=%s task_id=%s key=%s expected=%s current=%s",
+			adminName,
+			appName,
+			taskID,
+			bootstrapKey,
+			expectedBootstrapMarker,
+			currentBootstrapMarker,
+		)
+		taskName := tasks.TaskNameBootstrapRecovery
+		success := false
+		errMsg := fmt.Sprintf("Bootstrap recovery aborted: bootstrap marker changed before claiming (expected=%s current=%s)", expectedBootstrapMarker, currentBootstrapMarker)
+		_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &success,
+			Error:  &errMsg,
+		})
+		return
+	}
+
 	if err := saveRecoveredSettings(redisClient, adminName, appName, recovered); err != nil {
 		logrus.Errorf("Bootstrap recovery failed during Redis write: admin=%s app=%s task_id=%s err=%v", adminName, appName, taskID, err)
+		if rollbackErr := rollbackRecoveredBootstrapMarker(ctx, redisClient, bootstrapKey, recoveryMarker, expectedBootstrapMarker); rollbackErr != nil {
+			logrus.Warnf("Failed to rollback in-progress BOOTSTRAP marker after Redis write failure: admin=%s app=%s task_id=%s key=%s err=%v", adminName, appName, taskID, bootstrapKey, rollbackErr)
+		}
 		taskName := tasks.TaskNameBootstrapRecovery
 		success := false
 		errMsg := fmt.Sprintf("Bootstrap recovery failed to save Redis keys: %v", err)
@@ -1022,10 +1106,12 @@ func runBootstrapRecovery(
 		return
 	}
 
-	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
-	updated, err := finalizeRecoveredBootstrapMarker(ctx, redisClient, bootstrapKey, expectedBootstrapMarker, taskID)
+	updated, err := finalizeRecoveredBootstrapMarker(ctx, redisClient, bootstrapKey, recoveryMarker, taskID)
 	if err != nil {
 		logrus.Errorf("Bootstrap recovery failed while setting BOOTSTRAP key: admin=%s app=%s task_id=%s key=%s err=%v", adminName, appName, taskID, bootstrapKey, err)
+		if rollbackErr := rollbackRecoveredBootstrapMarker(ctx, redisClient, bootstrapKey, recoveryMarker, expectedBootstrapMarker); rollbackErr != nil {
+			logrus.Warnf("Failed to rollback in-progress BOOTSTRAP marker after finalize error: admin=%s app=%s task_id=%s key=%s err=%v", adminName, appName, taskID, bootstrapKey, rollbackErr)
+		}
 		taskName := tasks.TaskNameBootstrapRecovery
 		success := false
 		errMsg := fmt.Sprintf("Bootstrap recovery failed to set BOOTSTRAP key: %v", err)
