@@ -978,7 +978,11 @@ func runBootstrapRecovery(
 	expectedBootstrapMarker string,
 ) {
 	logrus.Infof("Starting bootstrap recovery: admin=%s app=%s task_id=%s", adminName, appName, taskID)
-	defer releaseRecoveryLock(ctx, redisClient, lockKey, taskID)
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), recoveryLockReleaseTimeout)
+		releaseRecoveryLock(releaseCtx, redisClient, lockKey, taskID)
+		cancel()
+	}()
 	if err := redisClient.Expire(ctx, lockKey, lockTTL).Err(); err != nil {
 		logrus.Warnf("Failed to extend bootstrap recovery lock TTL: admin=%s app=%s task_id=%s ttl=%s err=%v", adminName, appName, taskID, lockTTL, err)
 	}
@@ -1391,9 +1395,10 @@ func expirationDaysFromTime(expiresAt, now time.Time) (int, error) {
 }
 
 const (
-	bootstrapRecoveryLockTTL = 5 * time.Minute
-	maxBootstrapTimeout      = 5 * time.Minute
-	lockBuffer               = 30 * time.Second
+	bootstrapRecoveryLockTTL   = 5 * time.Minute
+	maxBootstrapTimeout        = 5 * time.Minute
+	recoveryLockReleaseTimeout = 5 * time.Second
+	lockBuffer                 = 30 * time.Second
 )
 
 func resolveBootstrapRecoveryTimeoutSeconds(payloadTimeout *int, adminName, appName string) int {
