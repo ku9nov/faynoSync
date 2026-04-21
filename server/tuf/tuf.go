@@ -16,6 +16,8 @@ import (
 
 func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDatabase *mongo.Database, redisClient *redis.Client, appRepository mongod.AppRepository) {
 	adminMiddleware := utils.AdminOnlyMiddleware(mongoDatabase)
+	appEditPermissionMiddleware := utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase)
+	resolveOwnerMiddleware := utils.ResolveOwnerMiddleware(mongoDatabase)
 
 	router.GET("/tuf/v1/bootstrap", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		bootstrap.GetBootstrapStatus(c, redisClient)
@@ -23,13 +25,16 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 	router.POST("/tuf/v1/bootstrap", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		bootstrap.PostBootstrap(c, redisClient)
 	})
-	router.GET("/tuf/v1/task", authMiddleware, adminMiddleware, func(c *gin.Context) {
+	router.POST("/tuf/v1/bootstrap/recovery", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		bootstrap.PostBootstrapRecovery(c, redisClient)
+	})
+	router.GET("/tuf/v1/task", authMiddleware, appEditPermissionMiddleware, resolveOwnerMiddleware, func(c *gin.Context) {
 		tasks.GetTask(c, redisClient)
 	})
-	router.POST("/tuf/v1/artifacts/publish", authMiddleware, adminMiddleware, func(c *gin.Context) {
+	router.POST("/tuf/v1/artifacts/publish", authMiddleware, appEditPermissionMiddleware, resolveOwnerMiddleware, func(c *gin.Context) {
 		artifacts.PostPublishArtifacts(c, redisClient, mongoDatabase)
 	})
-	router.POST("/tuf/v1/artifacts/delete", authMiddleware, adminMiddleware, func(c *gin.Context) {
+	router.POST("/tuf/v1/artifacts/delete", authMiddleware, appEditPermissionMiddleware, resolveOwnerMiddleware, func(c *gin.Context) {
 		artifacts.PostDeleteArtifacts(c, redisClient, mongoDatabase)
 	})
 	router.GET("/tuf/v1/config", authMiddleware, adminMiddleware, func(c *gin.Context) {

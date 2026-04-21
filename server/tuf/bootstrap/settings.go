@@ -3,10 +3,81 @@ package bootstrap
 import (
 	"context"
 	"faynoSync/server/tuf/models"
+	"fmt"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 )
+
+type recoveredBootstrapSettings struct {
+	RootExpiration      int
+	RootThreshold       int
+	RootNumKeys         int
+	TargetsExpiration   int
+	TargetsThreshold    int
+	TargetsNumKeys      int
+	SnapshotExpiration  int
+	SnapshotThreshold   int
+	SnapshotNumKeys     int
+	TimestampExpiration int
+	TimestampThreshold  int
+	TimestampNumKeys    int
+	TargetsOnlineKey    bool
+	DelegatedExpiration map[string]int
+}
+
+func saveRecoveredSettings(
+	redisClient *redis.Client,
+	adminName string,
+	appName string,
+	settings recoveredBootstrapSettings,
+) error {
+	if redisClient == nil {
+		return fmt.Errorf("redis client is nil")
+	}
+
+	ctx := context.Background()
+	keySuffix := adminName
+	if appName != "" {
+		keySuffix = adminName + "_" + appName
+	}
+
+	writeKey := func(key string, value interface{}) error {
+		return redisClient.Set(ctx, key, value, 0).Err()
+	}
+
+	coreSettings := map[string]interface{}{
+		"ROOT_EXPIRATION_" + keySuffix:      settings.RootExpiration,
+		"ROOT_THRESHOLD_" + keySuffix:       settings.RootThreshold,
+		"ROOT_NUM_KEYS_" + keySuffix:        settings.RootNumKeys,
+		"TARGETS_EXPIRATION_" + keySuffix:   settings.TargetsExpiration,
+		"TARGETS_THRESHOLD_" + keySuffix:    settings.TargetsThreshold,
+		"TARGETS_NUM_KEYS_" + keySuffix:     settings.TargetsNumKeys,
+		"TARGETS_ONLINE_KEY_" + keySuffix:   settings.TargetsOnlineKey,
+		"SNAPSHOT_EXPIRATION_" + keySuffix:  settings.SnapshotExpiration,
+		"SNAPSHOT_THRESHOLD_" + keySuffix:   settings.SnapshotThreshold,
+		"SNAPSHOT_NUM_KEYS_" + keySuffix:    settings.SnapshotNumKeys,
+		"TIMESTAMP_EXPIRATION_" + keySuffix: settings.TimestampExpiration,
+		"TIMESTAMP_THRESHOLD_" + keySuffix:  settings.TimestampThreshold,
+		"TIMESTAMP_NUM_KEYS_" + keySuffix:   settings.TimestampNumKeys,
+		"ROOT_SIGNING_" + keySuffix:         "",
+	}
+
+	for key, value := range coreSettings {
+		if err := writeKey(key, value); err != nil {
+			return fmt.Errorf("failed to save %s: %w", key, err)
+		}
+	}
+
+	for roleName, expiration := range settings.DelegatedExpiration {
+		key := fmt.Sprintf("%s_EXPIRATION_%s", roleName, keySuffix)
+		if err := writeKey(key, expiration); err != nil {
+			return fmt.Errorf("failed to save delegated expiration %s: %w", key, err)
+		}
+	}
+
+	return nil
+}
 
 // saveSettings saves bootstrap settings to Redis
 func saveSettings(redisClient *redis.Client, adminName string, appName string, payload *models.BootstrapPayload) {
@@ -16,7 +87,6 @@ func saveSettings(redisClient *redis.Client, adminName string, appName string, p
 		return
 	}
 
-	ctx := context.Background()
 	roles := payload.Settings.Roles
 
 	rootMetadata, exists := payload.Metadata["root"]
@@ -60,57 +130,26 @@ func saveSettings(redisClient *redis.Client, adminName string, appName string, p
 		}
 	}
 
-	// Build key suffix: adminName_appName if appName is provided, otherwise just adminName
-	keySuffix := adminName
-	if appName != "" {
-		keySuffix = adminName + "_" + appName
+	recovered := recoveredBootstrapSettings{
+		RootExpiration:      roles.Root.Expiration,
+		RootThreshold:       rootThreshold,
+		RootNumKeys:         rootNumKeys,
+		TargetsExpiration:   roles.Targets.Expiration,
+		TargetsThreshold:    targetsThreshold,
+		TargetsNumKeys:      targetsNumKeys,
+		SnapshotExpiration:  roles.Snapshot.Expiration,
+		SnapshotThreshold:   snapshotThreshold,
+		SnapshotNumKeys:     snapshotNumKeys,
+		TimestampExpiration: roles.Timestamp.Expiration,
+		TimestampThreshold:  timestampThreshold,
+		TimestampNumKeys:    timestampNumKeys,
+		TargetsOnlineKey:    true,
+		DelegatedExpiration: map[string]int{},
 	}
 
-	// Save ROOT settings (with admin name and app name suffix)
-	if err := redisClient.Set(ctx, "ROOT_EXPIRATION_"+keySuffix, roles.Root.Expiration, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save ROOT_EXPIRATION for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "ROOT_THRESHOLD_"+keySuffix, rootThreshold, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save ROOT_THRESHOLD for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "ROOT_NUM_KEYS_"+keySuffix, rootNumKeys, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save ROOT_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
-	}
-
-	// Save TARGETS settings (from root metadata roles)
-	if err := redisClient.Set(ctx, "TARGETS_EXPIRATION_"+keySuffix, roles.Targets.Expiration, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save TARGETS_EXPIRATION for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "TARGETS_THRESHOLD_"+keySuffix, targetsThreshold, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save TARGETS_THRESHOLD for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "TARGETS_NUM_KEYS_"+keySuffix, targetsNumKeys, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save TARGETS_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "TARGETS_ONLINE_KEY_"+keySuffix, true, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save TARGETS_ONLINE_KEY for admin %s, app %s: %v", adminName, appName, err)
-	}
-
-	// Save SNAPSHOT settings (from root metadata roles)
-	if err := redisClient.Set(ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, roles.Snapshot.Expiration, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save SNAPSHOT_EXPIRATION for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "SNAPSHOT_THRESHOLD_"+keySuffix, snapshotThreshold, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save SNAPSHOT_THRESHOLD for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "SNAPSHOT_NUM_KEYS_"+keySuffix, snapshotNumKeys, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save SNAPSHOT_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
-	}
-
-	// Save TIMESTAMP settings (from root metadata roles)
-	if err := redisClient.Set(ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, roles.Timestamp.Expiration, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save TIMESTAMP_EXPIRATION for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "TIMESTAMP_THRESHOLD_"+keySuffix, timestampThreshold, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save TIMESTAMP_THRESHOLD for admin %s, app %s: %v", adminName, appName, err)
-	}
-	if err := redisClient.Set(ctx, "TIMESTAMP_NUM_KEYS_"+keySuffix, timestampNumKeys, 0).Err(); err != nil {
-		logrus.Errorf("Failed to save TIMESTAMP_NUM_KEYS for admin %s, app %s: %v", adminName, appName, err)
+	if err := saveRecoveredSettings(redisClient, adminName, appName, recovered); err != nil {
+		logrus.Errorf("Failed to save bootstrap settings for admin %s, app %s: %v", adminName, appName, err)
+		return
 	}
 
 	logrus.Debug("Successfully saved all bootstrap settings to Redis")

@@ -1921,6 +1921,45 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Bootstrap recovery",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"appName\": \"tuf\",\n    \"timeout\": 2\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/tuf/v1/bootstrap/recovery",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "tuf",
+            "v1",
+            "bootstrap",
+            "recovery"
+          ]
+        }
+      },
+      "response": []
     }
   ],
   "auth": {

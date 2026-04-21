@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.5.11
+
+### Features
+
+- Added `POST /tuf/v1/bootstrap/recovery` to rebuild bootstrap Redis settings from persisted TUF metadata for already initialized repositories.
+- Added asynchronous `bootstrap_recovery` task flow with lock protection, recovery prechecks, timeout support, and task status reporting.
+
+### Security & Access Control
+
+- Added RBAC edit permission checks for TUF task status, artifact publish, and artifact delete endpoints.
+- Added owner resolution middleware for team users so TUF artifact operations run under resolved owner context.
+
+### Reliability
+
+- Unified bootstrap settings persistence and recovery via a shared Redis save path, including delegated role expirations and `ROOT_SIGNING` initialization.
+
+### API Tooling
+
+- Updated Postman collection with bootstrap recovery API request examples.
+
 ## v1.5.10
 
 ### Dependencies
