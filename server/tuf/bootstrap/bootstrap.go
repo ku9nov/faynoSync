@@ -1406,29 +1406,28 @@ func recoverSettingsFromStorage(ctx context.Context, adminName, appName string) 
 
 		delegatedPath, _, err := downloadLatestRoleMetadata(ctx, adminName, appName, roleName, tmpDir)
 		if err != nil {
-			logrus.Warnf("Skipping delegated role %s during recovery: %v", roleName, err)
-			continue
+			return recoveredBootstrapSettings{}, fmt.Errorf("failed to download delegated role metadata for %s: %w", roleName, err)
 		}
 
 		roleTargets := gotufmetadata.Targets(now.Add(365 * 24 * time.Hour))
 		repo.SetTargets(roleName, roleTargets)
 		if _, err := repo.Targets(roleName).FromFile(delegatedPath); err != nil {
-			logrus.Warnf("Skipping delegated role %s due to parse error: %v", roleName, err)
-			continue
+			return recoveredBootstrapSettings{}, fmt.Errorf("failed to load delegated role metadata for %s: %w", roleName, err)
 		}
 		if err := repo.Targets("targets").VerifyDelegate(roleName, repo.Targets(roleName)); err != nil {
-			logrus.Warnf("Skipping delegated role %s due to signature verification error: %v", roleName, err)
-			continue
+			return recoveredBootstrapSettings{}, fmt.Errorf("failed to verify delegated role metadata signatures for %s: %w", roleName, err)
 		}
 		if !repo.Targets(roleName).Signed.Expires.After(now) {
-			logrus.Warnf("Skipping delegated role %s because metadata is expired", roleName)
-			continue
+			return recoveredBootstrapSettings{}, fmt.Errorf(
+				"delegated role %s metadata is expired at %s",
+				roleName,
+				repo.Targets(roleName).Signed.Expires.UTC().Format(time.RFC3339),
+			)
 		}
 
 		days, err := expirationDaysFromTime(repo.Targets(roleName).Signed.Expires, now)
 		if err != nil {
-			logrus.Warnf("Skipping delegated role %s due to expiration conversion error: %v", roleName, err)
-			continue
+			return recoveredBootstrapSettings{}, fmt.Errorf("failed to derive delegated role expiration days for %s: %w", roleName, err)
 		}
 		delegatedExpiration[roleName] = days
 	}
