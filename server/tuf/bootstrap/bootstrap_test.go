@@ -960,6 +960,43 @@ func TestGetTaskStatusFromRedis_WithRedis_ReturnsStoredState(t *testing.T) {
 	assert.Equal(t, tasks.TaskStateFailure, got)
 }
 
+func TestGetTaskStatusFromRedisWithFound_KeyNotFound_ReturnsPendingAndNotFound(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	state, exists := getTaskStatusFromRedisWithFound(client, "nonexistent-task")
+
+	assert.Equal(t, tasks.TaskStatePending, state)
+	assert.False(t, exists)
+}
+
+func TestGetTaskStatusFromRedisWithFound_WithRedis_ReturnsStoredStateAndFound(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	taskID := "task-success"
+	taskStatusJSON, _ := json.Marshal(tasks.TaskStatus{State: tasks.TaskStateSuccess})
+	mr.Set("task:"+taskID, string(taskStatusJSON))
+
+	state, exists := getTaskStatusFromRedisWithFound(client, taskID)
+
+	assert.Equal(t, tasks.TaskStateSuccess, state)
+	assert.True(t, exists)
+}
+
+func TestIsBootstrapTaskActive_PreMarkerWithoutPreLockAndWithoutTaskRecord_ReturnsInactive(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	active, taskID, err := isBootstrapTaskActive(context.Background(), client, "pre-missing-task")
+
+	require.NoError(t, err)
+	assert.False(t, active)
+	assert.Equal(t, "missing-task", taskID)
+}
+
 func makePostBootstrapRecoveryContext(username string, payload interface{}) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

@@ -59,8 +59,8 @@ func isBootstrapTaskActive(ctx context.Context, redisClient *redis.Client, boots
 	if err != nil {
 		return false, bootstrapTaskID, fmt.Errorf("failed to check bootstrap pre-lock %s: %w", bootstrapValue, err)
 	}
-	taskState := getTaskStatusFromRedis(redisClient, bootstrapTaskID)
-	if preLockExists > 0 || !isTerminalTaskState(taskState) {
+	taskState, taskExists := getTaskStatusFromRedisWithFound(redisClient, bootstrapTaskID)
+	if preLockExists > 0 || (taskExists && !isTerminalTaskState(taskState)) {
 		return true, bootstrapTaskID, nil
 	}
 	return false, bootstrapTaskID, nil
@@ -819,8 +819,16 @@ func getTaskStatusFromRedis(
 	redisClient *redis.Client,
 	taskID string,
 ) tasks.TaskState {
+	taskState, _ := getTaskStatusFromRedisWithFound(redisClient, taskID)
+	return taskState
+}
+
+func getTaskStatusFromRedisWithFound(
+	redisClient *redis.Client,
+	taskID string,
+) (tasks.TaskState, bool) {
 	if redisClient == nil {
-		return tasks.TaskStatePending
+		return tasks.TaskStatePending, false
 	}
 
 	ctx := context.Background()
@@ -828,20 +836,19 @@ func getTaskStatusFromRedis(
 
 	taskData, err := redisClient.Get(ctx, taskKey).Result()
 	if err == redis.Nil {
-
-		return tasks.TaskStatePending
+		return tasks.TaskStatePending, false
 	} else if err != nil {
 		logrus.Warnf("Failed to get task status from Redis for task_id %s: %v", taskID, err)
-		return tasks.TaskStatePending
+		return tasks.TaskStatePending, false
 	}
 
 	var taskStatus tasks.TaskStatus
 	if err := json.Unmarshal([]byte(taskData), &taskStatus); err != nil {
 		logrus.Warnf("Failed to unmarshal task status for task_id %s: %v", taskID, err)
-		return tasks.TaskStatePending
+		return tasks.TaskStatePending, false
 	}
 
-	return taskStatus.State
+	return taskStatus.State, true
 }
 
 type bootstrapRecoveryPayload struct {
