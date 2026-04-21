@@ -797,8 +797,6 @@ type minimalTargetsMetadata struct {
 	} `json:"signed"`
 }
 
-const bootstrapRecoveryLockTTL = 5 * time.Minute
-
 func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -828,13 +826,9 @@ func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
-	timeout := 300
-	if payload.Timeout != nil && *payload.Timeout > 0 {
-		timeout = *payload.Timeout
-		logrus.Debugf("Timeout: %d", timeout)
-	} else if payload.Timeout != nil {
-		logrus.Warnf("Invalid bootstrap recovery timeout %d seconds for admin %s, app %s. Falling back to default %d seconds", *payload.Timeout, adminName, payload.AppName, timeout)
-	}
+	timeoutSeconds := resolveBootstrapRecoveryTimeoutSeconds(payload.Timeout, adminName, payload.AppName)
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	lockTTL := calculateBootstrapRecoveryLockTTL(timeout)
 
 	isInitialized, err := hasPersistedRootMetadata(context.Background(), adminName, payload.AppName)
 	if err != nil {
@@ -853,7 +847,7 @@ func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 
 	taskID := uuid.New().String()
 	lockKey := "RECOVERY_LOCK_" + adminName + "_" + payload.AppName
-	lockAcquired, err := redisClient.SetNX(context.Background(), lockKey, taskID, bootstrapRecoveryLockTTL).Result()
+	lockAcquired, err := redisClient.SetNX(context.Background(), lockKey, taskID, lockTTL).Result()
 	if err != nil {
 		logrus.Errorf("Failed to acquire bootstrap recovery lock: admin=%s app=%s err=%v", adminName, payload.AppName, err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -890,9 +884,9 @@ func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 		Task: &taskName,
 	})
 	go func() {
-		recoveryCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+		recoveryCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		runBootstrapRecovery(recoveryCtx, redisClient, taskID, adminName, payload.AppName, lockKey)
+		runBootstrapRecovery(recoveryCtx, redisClient, taskID, adminName, payload.AppName, lockKey, lockTTL)
 	}()
 
 	c.JSON(http.StatusAccepted, gin.H{
@@ -904,9 +898,12 @@ func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 	})
 }
 
-func runBootstrapRecovery(ctx context.Context, redisClient *redis.Client, taskID, adminName, appName, lockKey string) {
+func runBootstrapRecovery(ctx context.Context, redisClient *redis.Client, taskID, adminName, appName, lockKey string, lockTTL time.Duration) {
 	logrus.Infof("Starting bootstrap recovery: admin=%s app=%s task_id=%s", adminName, appName, taskID)
 	defer releaseRecoveryLock(ctx, redisClient, lockKey, taskID)
+	if err := redisClient.Expire(ctx, lockKey, lockTTL).Err(); err != nil {
+		logrus.Warnf("Failed to extend bootstrap recovery lock TTL: admin=%s app=%s task_id=%s ttl=%s err=%v", adminName, appName, taskID, lockTTL, err)
+	}
 	_ = tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateStarted)
 	_ = tasks.UpdateTaskState(redisClient, taskID, tasks.TaskStateRunning)
 	recovered, err := recoverSettingsFromStorageFn(ctx, adminName, appName)
@@ -1272,4 +1269,42 @@ func expirationDaysFromTime(expiresAt, now time.Time) (int, error) {
 		days = 1
 	}
 	return days, nil
+}
+
+const (
+	bootstrapRecoveryLockTTL = 5 * time.Minute
+	maxBootstrapTimeout      = 5 * time.Minute
+	lockBuffer               = 30 * time.Second
+)
+
+func resolveBootstrapRecoveryTimeoutSeconds(payloadTimeout *int, adminName, appName string) int {
+	timeout := 300
+	if payloadTimeout != nil && *payloadTimeout > 0 {
+		timeout = *payloadTimeout
+		logrus.Debugf("Timeout: %d", timeout)
+	} else if payloadTimeout != nil {
+		logrus.Warnf("Invalid bootstrap recovery timeout %d seconds for admin %s, app %s. Falling back to default %d seconds", *payloadTimeout, adminName, appName, timeout)
+	}
+
+	maxTimeoutSeconds := int(maxBootstrapTimeout / time.Second)
+	if timeout > maxTimeoutSeconds {
+		logrus.Warnf(
+			"Bootstrap recovery timeout %d seconds exceeds max %d seconds for admin %s, app %s. Capping timeout.",
+			timeout,
+			maxTimeoutSeconds,
+			adminName,
+			appName,
+		)
+		timeout = maxTimeoutSeconds
+	}
+
+	return timeout
+}
+
+func calculateBootstrapRecoveryLockTTL(timeout time.Duration) time.Duration {
+	lockTTL := timeout + lockBuffer
+	if lockTTL < bootstrapRecoveryLockTTL {
+		return bootstrapRecoveryLockTTL
+	}
+	return lockTTL
 }
