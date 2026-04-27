@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.12
+
+### Improvements
+
+- Decoupled MongoDB migrations from API startup: the server now starts with `./faynoSync` only, and migrations run explicitly via `./faynoSync migrate up` or `./faynoSync migrate down`.
+
 ## v1.5.11
 
 ### Features

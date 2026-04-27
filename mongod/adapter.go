@@ -9,7 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
-func ConnectToDatabase(mongoUrl string, flags map[string]interface{}) (*mongo.Client, connstring.ConnString) {
+func ConnectToDatabase(mongoUrl string) (*mongo.Client, connstring.ConnString) {
 	uriOptions, err := connstring.Parse(mongoUrl)
 	if err != nil {
 		panic(err)
@@ -30,8 +30,5 @@ func ConnectToDatabase(mongoUrl string, flags map[string]interface{}) (*mongo.Cl
 	}
 
 	logrus.Infoln("Connected to MongoDB!")
-	if flags["migration"].(bool) {
-		RunMigrations(client, uriOptions.Database, flags)
-	}
 	return client, *uriOptions
 }

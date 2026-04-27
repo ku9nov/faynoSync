@@ -183,8 +183,7 @@ func mongoTestDB(t *testing.T) *mongo.Database {
 	if mongoURL == "" {
 		t.Skip("MONGODB_URL_TESTS not set, skipping Mongo-dependent test")
 	}
-	flagMap := map[string]interface{}{"migration": false, "rollback": false}
-	client, configDB := mongod.ConnectToDatabase(mongoURL, flagMap)
+	client, configDB := mongod.ConnectToDatabase(mongoURL)
 	t.Cleanup(func() {
 		_ = client.Disconnect(context.Background())
 	})

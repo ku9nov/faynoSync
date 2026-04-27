@@ -15,12 +15,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-func StartServer(config *viper.Viper, flags map[string]interface{}) {
+func StartServer(config *viper.Viper) {
 	mongoUrl := config.GetString("MONGODB_URL")
 
 	router := gin.Default()
 
-	client, configDB := db.ConnectToDatabase(mongoUrl, flags)
+	client, configDB := db.ConnectToDatabase(mongoUrl)
 
 	db := db.NewAppRepository(&configDB, client)
 

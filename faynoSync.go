@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"faynoSync/mongod"
 	"faynoSync/server"
 	"flag"
 	"os"
@@ -10,14 +12,10 @@ import (
 )
 
 var (
-	migration bool
-	rollback  bool
 	logLevel  string
 )
 
 func init() {
-	flag.BoolVar(&migration, "migration", false, "Set true to run migrations.")
-	flag.BoolVar(&rollback, "rollback", false, "Set true to rollback migrations.")
 	flag.StringVar(&logLevel, "loglevel", "info", "log level (debug, info, warn, error, fatal, panic)")
 
 	logrus.New()
@@ -50,11 +48,33 @@ func main() {
 	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
 
-	flagMap := map[string]interface{}{
-		"migration": migration,
-		"rollback":  rollback,
+	args := flag.Args()
+	if len(args) == 0 {
+		server.StartServer(viper.GetViper())
+		return
 	}
 
-	// Pass the config to another function
-	server.StartServer(viper.GetViper(), flagMap)
+	if args[0] != "migrate" {
+		logrus.Errorf("Unknown command %q. Supported commands: migrate up|down", args[0])
+		os.Exit(1)
+	}
+
+	if len(args) != 2 || (args[1] != "up" && args[1] != "down") {
+		logrus.Errorln("Usage: go run faynoSync.go [--loglevel=<level>] migrate <up|down>")
+		os.Exit(1)
+	}
+
+	client, configDB := mongod.ConnectToDatabase(viper.GetString("MONGODB_URL"))
+	defer client.Disconnect(context.Background())
+
+	var migrationErr error
+	if args[1] == "up" {
+		migrationErr = mongod.RunMigrationsUp(client, configDB.Database)
+	} else {
+		migrationErr = mongod.RunMigrationsDown(client, configDB.Database)
+	}
+	if migrationErr != nil {
+		logrus.Errorf("Migration command failed: %v", migrationErr)
+		os.Exit(1)
+	}
 }

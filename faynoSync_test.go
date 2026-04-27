@@ -115,14 +115,13 @@ func setup() {
 		panic(err)
 	}
 	// Create a single database connection
-	flagMap := map[string]interface{}{
-		"migration": true,
-		"rollback":  false,
-	}
 	s3Endpoint = viper.GetString("S3_ENDPOINT")
 	s3Bucket = viper.GetString("S3_BUCKET_NAME")
 	apiUrl = viper.GetString("API_URL")
-	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
+	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"))
+	if err := mongod.RunMigrationsUp(client, configDB.Database); err != nil {
+		panic(err)
+	}
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
 	if viper.GetBool("ENABLE_TELEMETRY") {
