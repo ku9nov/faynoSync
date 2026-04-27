@@ -32,3 +32,5 @@ faynoSync_tests
 .DS_Store
 
 tmp*
+
+tuf_keys/
