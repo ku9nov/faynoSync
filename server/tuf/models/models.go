@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -178,4 +179,10 @@ type MetadataOnlinePostResponse struct {
 type MetadataOnlinePostData struct {
 	TaskID     string    `json:"task_id"`
 	LastUpdate time.Time `json:"last_update"`
+}
+
+type MetadataRotateKeysPayload struct {
+	Role     string          `json:"role" binding:"required"`
+	Rotate   json.RawMessage `json:"rotate" binding:"required"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }

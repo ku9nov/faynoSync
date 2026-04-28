@@ -35,6 +35,7 @@ const (
 	TaskNameSignMetadata              TaskName = "sign_metadata"
 	TaskNameDeleteSignMetadata        TaskName = "delete_sign_metadata"
 	TaskNameForceOnlineMetadataUpdate TaskName = "force_online_metadata_update"
+	TaskNameRotateKeys                TaskName = "rotate_keys"
 )
 
 // TaskResult contains the result of a task execution

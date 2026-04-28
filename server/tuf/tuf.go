@@ -46,6 +46,9 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 	router.POST("/tuf/v1/metadata", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		metadata.PostMetadataRotate(c, redisClient)
 	})
+	router.POST("/tuf/v1/metadata/rotate-keys", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		metadata.PostMetadataRotateKeys(c, redisClient)
+	})
 	router.GET("/tuf/v1/metadata/sign", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		metadata.GetMetadataSign(c, redisClient)
 	})

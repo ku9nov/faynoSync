@@ -1065,6 +1065,26 @@ func validateIncomingMetadataSignature(
 				return err
 			}
 		}
+	case "rotate":
+		rotateRole, ok := signedData["role"].(string)
+		if !ok || rotateRole == "" {
+			return fmt.Errorf("invalid rotate metadata: missing role")
+		}
+		if roleName != rotateRole {
+			if normalizedRole, ok := roleNameFromRotateSigningRole(roleName); !ok || normalizedRole != rotateRole {
+				return fmt.Errorf("rotate signing role %s does not match rotate metadata role %s", roleName, rotateRole)
+			}
+		}
+		tmpDir, tmpErr := os.MkdirTemp("", "tuf-rotate-sign-*")
+		if tmpErr != nil {
+			return fmt.Errorf("failed to create temporary directory for rotate verification: %w", tmpErr)
+		}
+		defer os.RemoveAll(tmpDir)
+		state, stateErr := loadVerifiedRoleState(ctx, adminName, appName, rotateRole, tmpDir)
+		if stateErr != nil {
+			return stateErr
+		}
+		allowedKeys = state.CurrentTrust.Keys
 	default:
 		return fmt.Errorf("signature validation not supported for metadata type %q", metadataType)
 	}
@@ -1402,6 +1422,43 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 
 			updatedJSON, _ := json.Marshal(metadataJSON)
 			redisClient.Set(ctx, signingKey, string(updatedJSON), 0)
+		}
+	case "rotate":
+		rotateRole, _ := signedData["role"].(string)
+		tmpDirForRotate := tmpDir
+		state, err := loadVerifiedRoleState(ctx, adminName, appName, rotateRole, tmpDirForRotate)
+		if err != nil {
+			validationError = err
+			thresholdReached = false
+		} else {
+			updatedJSON, _ := json.Marshal(metadataJSON)
+			currentSignatures = len(signatures)
+			requiredThreshold = state.CurrentTrust.Threshold
+			requiredKeyIDs = state.CurrentTrust.KeyIDs
+			signedKeyIDs = make([]string, 0, len(signatures))
+			for _, sig := range signatures {
+				if sigMap, ok := sig.(map[string]interface{}); ok {
+					if keyID, ok := sigMap["keyid"].(string); ok {
+						signedKeyIDs = append(signedKeyIDs, keyID)
+					}
+				}
+			}
+
+			if _, _, err := verifyRotateMetadataBytes(updatedJSON, rotateRole, state.LastRotateVersion+1, state.CurrentTrust); err != nil {
+				thresholdReached = false
+				if strings.Contains(err.Error(), "threshold not reached") {
+					validationError = nil
+				} else {
+					validationError = err
+				}
+				redisClient.Set(ctx, signingKey, string(updatedJSON), 0)
+			} else {
+				thresholdReached = true
+				signedKey := fmt.Sprintf("%s_SIGNED_%s", strings.ToUpper(rotateSigningRoleName(rotateRole)), keySuffix)
+				redisClient.Set(ctx, signedKey, string(updatedJSON), 0)
+				redisClient.Set(ctx, signingKey, string(updatedJSON), 0)
+				redisClient.Del(ctx, taskKey)
+			}
 		}
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
