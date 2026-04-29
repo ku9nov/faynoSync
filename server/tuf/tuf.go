@@ -61,4 +61,10 @@ func SetupRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc, mongoDataba
 	router.GET("/tuf/v1/metadata/root", authMiddleware, adminMiddleware, func(c *gin.Context) {
 		metadata.GetMetadataRoot(c)
 	})
+	router.GET("/tuf/v1/metadata/targets", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		metadata.GetMetadataTargets(c)
+	})
+	router.GET("/tuf/v1/metadata/delegated", authMiddleware, adminMiddleware, func(c *gin.Context) {
+		metadata.GetMetadataDelegated(c)
+	})
 }

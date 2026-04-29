@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"context"
+	"errors"
 	"faynoSync/server/utils"
 	"net/http"
 
@@ -10,6 +11,34 @@ import (
 )
 
 func GetMetadataRoot(c *gin.Context) {
+	getTrustedMetadata(c, "trusted_root", func(ctx context.Context, adminName string, appName string) (map[string]interface{}, error) {
+		return loadTrustedRootFromS3(ctx, adminName, appName)
+	})
+}
+
+func GetMetadataTargets(c *gin.Context) {
+	getTrustedMetadata(c, "trusted_targets", func(ctx context.Context, adminName string, appName string) (map[string]interface{}, error) {
+		return loadTrustedTargetsFromS3(ctx, adminName, appName)
+	})
+}
+
+func GetMetadataDelegated(c *gin.Context) {
+	getTrustedMetadata(c, "trusted_delegated", func(ctx context.Context, adminName string, appName string) (map[string]interface{}, error) {
+		roleName := c.Query("roleName")
+		if roleName == "" {
+			return nil, errRoleNameRequired
+		}
+		return loadTrustedDelegatedFromS3(ctx, adminName, appName, roleName)
+	})
+}
+
+var errRoleNameRequired = errors.New("roleName query parameter is required")
+
+func getTrustedMetadata(
+	c *gin.Context,
+	responseKey string,
+	loader func(ctx context.Context, adminName string, appName string) (map[string]interface{}, error),
+) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		logrus.Errorf("Failed to get admin name from context: %v", err)
@@ -25,15 +54,21 @@ func GetMetadataRoot(c *gin.Context) {
 		return
 	}
 	ctx := context.Background()
-	trustedRoot, err := loadTrustedRootFromS3(ctx, adminName, appName)
-	if err == nil && trustedRoot != nil {
-		logrus.Debug("Added trusted_root to response")
+	trustedMetadata, err := loader(ctx, adminName, appName)
+	if err == errRoleNameRequired {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "roleName query parameter is required",
+		})
+		return
+	}
+	if err == nil && trustedMetadata != nil {
+		logrus.Debugf("Added %s to response", responseKey)
 	} else {
-		logrus.Debugf("Could not load trusted_root: %v", err)
+		logrus.Debugf("Could not load %s: %v", responseKey, err)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"trusted_root": trustedRoot,
+			responseKey: trustedMetadata,
 		},
 	})
 }

@@ -849,6 +849,40 @@ func loadTrustedTargetsFromS3(ctx context.Context, adminName string, appName str
 	return targetsJSON, nil
 }
 
+func loadTrustedDelegatedFromS3(ctx context.Context, adminName string, appName string, roleName string) (map[string]interface{}, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+	tmpDir, err := os.MkdirTemp(cwd, "tmp-trusted-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	rolePath := filepath.Join(tmpDir, roleName+".json")
+	_, filename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, roleName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find %s metadata: %w", roleName, err)
+	}
+
+	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, filename, rolePath); err != nil {
+		return nil, fmt.Errorf("failed to download %s metadata: %w", roleName, err)
+	}
+
+	roleData, err := os.ReadFile(rolePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s metadata: %w", roleName, err)
+	}
+
+	var roleJSON map[string]interface{}
+	if err := json.Unmarshal(roleData, &roleJSON); err != nil {
+		return nil, fmt.Errorf("failed to parse %s metadata: %w", roleName, err)
+	}
+
+	return roleJSON, nil
+}
+
 func extractSignedSection(metadataJSON map[string]interface{}) (map[string]interface{}, error) {
 	signedData, ok := metadataJSON["signed"].(map[string]interface{})
 	if !ok {

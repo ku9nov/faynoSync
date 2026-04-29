@@ -1751,7 +1751,7 @@
       "response": []
     },
     {
-      "name": "Post unsigned TUF root metadata Copy",
+      "name": "Post unsigned TUF root metadata",
       "request": {
         "auth": {
           "type": "bearer",
@@ -1923,6 +1923,83 @@
       "response": []
     },
     {
+      "name": "Get current TUF targets metadata",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/tuf/v1/metadata/targets?appName=tuf",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "tuf",
+            "v1",
+            "metadata",
+            "targets"
+          ],
+          "query": [
+            {
+              "key": "appName",
+              "value": "tuf"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get current TUF delegated metadata",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/tuf/v1/metadata/delegated?appName=tuf&roleName=default",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "tuf",
+            "v1",
+            "metadata",
+            "delegated"
+          ],
+          "query": [
+            {
+              "key": "appName",
+              "value": "tuf"
+            },
+            {
+              "key": "roleName",
+              "value": "default",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Bootstrap recovery",
       "request": {
         "auth": {
@@ -1956,6 +2033,52 @@
             "v1",
             "bootstrap",
             "recovery"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Rotate keys(TAP-8, in progress, not implemented yet)",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"metadata\": {\n    \"signatures\": [\n      {\n        \"keyid\": \"af9ede9cd1ba854a4b84c2264d83dcd0b1829fea10a329f8c9d72f390d9f47cc\",\n        \"sig\": \"61d310d6d114a4e095b9ce881172f45b1799c11959d670fcee4023da84fb81088959f1e0d63d7f6b67d47331a1723d07a34aef55c058ea76f5a438307b70720b\"\n      },\n      {\n        \"keyid\": \"e077227a0722e1bec9b56f17a116bd639169701ae602f98f7f8df49b283f9ccc\",\n        \"sig\": \"4e9715f25172c18ba28593bcd8e9a6e619ab3ba70e7c73f9dba7457ee1c8b48bd9c320772a0de2cb43e84f514fbd9dc2d2d001131883c78385cfc3875093260c\"\n      }\n    ],\n    \"signed\": {\n      \"_type\": \"targets\",\n      \"delegations\": {\n        \"keys\": {\n          \"0d226519c91dd1f4b4f888855d8c6307bcc02547168609c2bdda1c6ce064eb49\": {\n            \"keytype\": \"ed25519\",\n            \"keyval\": {\n              \"public\": \"4dc3f6969d733cb282ab8d71ad5d12ef9b49646e5ca900ca78836b89e76d9c4e\"\n            },\n            \"scheme\": \"ed25519\"\n          }\n        },\n        \"roles\": [\n          {\n            \"keyids\": [\n              \"0d226519c91dd1f4b4f888855d8c6307bcc02547168609c2bdda1c6ce064eb49\"\n            ],\n            \"name\": \"default\",\n            \"paths\": [\n              \"admin/tuf/*\",\n              \"tuf-admin/*\",\n              \"electron-builder/tuf-admin/*\",\n              \"squirrel_windows/tuf-admin/*\",\n              \"tuf-admin/tuf-0.0.0.1\"\n            ],\n            \"terminating\": false,\n            \"threshold\": 1\n          }\n        ]\n      },\n      \"expires\": \"2026-05-04T10:11:30Z\",\n      \"spec_version\": \"1.0.31\",\n      \"targets\": {},\n      \"version\": 3\n    }\n  },\n  \"role\": \"targets\",\n  \"rotate\": {\n    \"signatures\": [\n      {\n        \"keyid\": \"0edf529e846ba22021b1648796589469f8020dbaeaa325dcb4df1baf3a4d66f1\",\n        \"sig\": \"a14ece85914de7686256f8002e558dbbaa16815f8359ac8aadaf27a21017a7daeb3973a0b45b970776707fc07adc85eb6133200e8fe81bcf90cdbad12b6b2c0c\"\n      },\n      {\n        \"keyid\": \"45499c143100d19be5efc26aad3621bf04392069e4b551320e0d45e0dfd45d7f\",\n        \"sig\": \"fea20824c24dcb6a01ad49634e98aa67b62e1f05a7d1b8b38522c73d0f8a6787af1e1cf013bf7720b09e2511a15a4b3fd4f1b751752450216a4d7f8cd82d300a\"\n      }\n    ],\n    \"signed\": {\n      \"_type\": \"rotate\",\n      \"keys\": {\n        \"af9ede9cd1ba854a4b84c2264d83dcd0b1829fea10a329f8c9d72f390d9f47cc\": {\n          \"keytype\": \"ed25519\",\n          \"keyval\": {\n            \"public\": \"cb8fd2b9f15a99a3d447764bb4d9b291f29957fdd673be8b386ea5cfedbb2a38\"\n          },\n          \"scheme\": \"ed25519\"\n        },\n        \"e077227a0722e1bec9b56f17a116bd639169701ae602f98f7f8df49b283f9ccc\": {\n          \"keytype\": \"ed25519\",\n          \"keyval\": {\n            \"public\": \"05f07d56194774063e7a5fc758f5ed00e168d4d5b6fabc8a2c25eca8dd21d977\"\n          },\n          \"scheme\": \"ed25519\"\n        }\n      },\n      \"role\": \"targets\",\n      \"threshold\": 2,\n      \"version\": 1\n    }\n  }\n}"
+        },
+        "url": {
+          "raw": "{{URL}}/tuf/v1/metadata/rotate-keys?appName=tuf",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "tuf",
+            "v1",
+            "metadata",
+            "rotate-keys"
+          ],
+          "query": [
+            {
+              "key": "appName",
+              "value": "tuf"
+            }
           ]
         }
       },
