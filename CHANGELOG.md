@@ -6,6 +6,10 @@
 
 - Decoupled MongoDB migrations from API startup: the server now starts with `./faynoSync` only, and migrations run explicitly via `./faynoSync migrate up` or `./faynoSync migrate down`.
 
+### Features
+
+- Added `GET /tuf/v1/metadata/targets` and `GET /tuf/v1/metadata/delegated` endpoints to retrieve TUF metadata for targets and delegated roles.
+
 ## v1.5.11
 
 ### Features
