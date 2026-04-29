@@ -33,11 +33,12 @@ import (
 	"github.com/theupdateframework/go-tuf/v2/metadata/updater"
 )
 
-// The following config is used to fetch a target from Jussi's GitHub repository example
+// Adapted from the upstream go-tuf client example.
+// The values below are overridden for faynoSync endpoints and target layout.
 const (
 	metadataURL          = "http://cb-faynosync-s3-public.web.garage.localhost:3902/tuf_metadata/admin/tuf/"
 	targetsURL           = "http://cb-faynosync-s3-public.web.garage.localhost:3902/"
-	targetName           = "tuf-admin/tuf-0.0.0.1"
+	targetName           = "tuf-admin/nightly/darwin/arm64/tuf-0.0.0.2"
 	verbosity            = 4
 	generateRandomFolder = false
 )
@@ -153,6 +154,7 @@ func DownloadTarget(localMetadataDir, target string) error {
 	cfg.LocalMetadataDir = localMetadataDir
 	cfg.LocalTargetsDir = filepath.Join(localMetadataDir, "download")
 	cfg.RemoteTargetsURL = targetsURL
+	// faynoSync serves targets without the consistent-snapshot hash prefix in the path.
 	cfg.PrefixTargetsWithHash = false
 
 	// create a new Updater instance
