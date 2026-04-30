@@ -183,6 +183,14 @@ To build and run the API with all dependencies, you can use the following comman
 docker compose up --build
 ```
 
+### 📦 Running Migrations
+
+You can run migrations using this command after `docker compose up --build` finishes:
+
+```bash
+docker compose exec -T backend /usr/bin/faynoSync migrate up
+```
+
 ### 🧪 Running Tests
 
 You can now run tests using this command after `docker compose up --build` finishes and the storage service becomes healthy:

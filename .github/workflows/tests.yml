@@ -35,6 +35,10 @@ jobs:
       - name: Build and Start Services
         run: docker compose up --build -d
 
+      - name: Run migrations
+        run: docker compose exec -T backend /usr/bin/faynoSync migrate up
+        continue-on-error: false
+
       - name: Run Tests
         run: docker compose exec -T backend "/usr/bin/faynoSync_tests" -test.skip "TestCheckVersionWithUpdaters"
         continue-on-error: false
