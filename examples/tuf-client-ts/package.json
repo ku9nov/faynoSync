@@ -1,0 +1,16 @@
+{
+  "name": "tuf-client-ts-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx client.ts"
+  },
+  "dependencies": {
+    "tuf-js": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
