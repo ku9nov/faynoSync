@@ -76,26 +76,28 @@ local function version_exists(versions, version)
     return false
 end
 
--- Helper function to update or add to usage array
-local function update_usage(usage_array, key, count)
-    for i, item in ipairs(usage_array) do
-        if item.version == key then
-            item.client_count = item.client_count + count
-            return
-        end
+-- Helper function to count items in a set-like table
+local function count_set_items(set_table)
+    local count = 0
+    for _ in pairs(set_table) do
+        count = count + 1
     end
-    table.insert(usage_array, {version = key, client_count = count})
+    return count
 end
 
--- Helper function to update or add to platform/arch/channel array
-local function update_usage_array(usage_array, key, count)
-    for i, item in ipairs(usage_array) do
-        if item.platform == key then
-            item.client_count = item.client_count + count
-            return
-        end
+-- Helper function to merge one set into another
+local function merge_sets(target_set, source_set)
+    for item, _ in pairs(source_set) do
+        target_set[item] = true
     end
-    table.insert(usage_array, {platform = key, client_count = count})
+end
+
+-- Helper function to ensure nested set exists
+local function ensure_nested_set(container, key)
+    if not container[key] then
+        container[key] = {}
+    end
+    return container[key]
 end
 
 -- Get all apps if app_name is '*'
@@ -238,6 +240,16 @@ local function get_filtered_clients(admin, app, date, filter_channels, filter_pl
     return filtered_clients
 end
 
+-- Aggregation sets for period-level deduplication
+local period_unique_clients = {}
+local period_latest_clients = {}
+local period_outdated_clients = {}
+local daily_stats_map = {}
+local version_client_sets = {}
+local platform_client_sets = {}
+local arch_client_sets = {}
+local channel_client_sets = {}
+
 -- Process each app
 for _, app in ipairs(apps) do
     -- Debug: Log current app and date range
@@ -263,67 +275,54 @@ for _, app in ipairs(apps) do
         local requests_key = base_pattern .. ":requests:" .. date
         local requests = tonumber(redis.call('GET', requests_key)) or 0
         result.total_requests = result.total_requests + requests
+
+        -- Ensure daily bucket exists
+        if not daily_stats_map[date] then
+            daily_stats_map[date] = {
+                total_requests = 0,
+                unique_clients = {},
+                clients_using_latest_version = {},
+                clients_outdated = {}
+            }
+        end
+        daily_stats_map[date].total_requests = daily_stats_map[date].total_requests + requests
         
         -- Count filtered unique clients
-        local filtered_unique_count = 0
-        for _ in pairs(filtered_clients) do
-            filtered_unique_count = filtered_unique_count + 1
-        end
-        result.unique_clients = result.unique_clients + filtered_unique_count
+        local filtered_unique_count = count_set_items(filtered_clients)
+        merge_sets(period_unique_clients, filtered_clients)
+        merge_sets(daily_stats_map[date].unique_clients, filtered_clients)
         
         -- Count filtered latest version clients
         local latest_key = base_pattern .. ":clients_using_latest_version:" .. date
         local latest_clients = redis.call('SMEMBERS', latest_key)
-        local filtered_latest_count = 0
+        local latest_clients_for_scope = {}
         for _, client_id in ipairs(latest_clients) do
             if filtered_clients[client_id] then
-                filtered_latest_count = filtered_latest_count + 1
+                latest_clients_for_scope[client_id] = true
             end
         end
-        result.clients_using_latest_version = result.clients_using_latest_version + filtered_latest_count
+        local filtered_latest_count = count_set_items(latest_clients_for_scope)
+        merge_sets(period_latest_clients, latest_clients_for_scope)
+        merge_sets(daily_stats_map[date].clients_using_latest_version, latest_clients_for_scope)
         
         -- Count filtered outdated clients
         local outdated_key = base_pattern .. ":clients_outdated:" .. date
         local outdated_clients = redis.call('SMEMBERS', outdated_key)
-        local filtered_outdated_count = 0
+        local outdated_clients_for_scope = {}
         for _, client_id in ipairs(outdated_clients) do
             if filtered_clients[client_id] then
-                filtered_outdated_count = filtered_outdated_count + 1
+                outdated_clients_for_scope[client_id] = true
             end
         end
-        result.clients_outdated = result.clients_outdated + filtered_outdated_count
+        local filtered_outdated_count = count_set_items(outdated_clients_for_scope)
+        merge_sets(period_outdated_clients, outdated_clients_for_scope)
+        merge_sets(daily_stats_map[date].clients_outdated, outdated_clients_for_scope)
 
         -- Debug: Log daily stats before update
-        debug_log('debug:daily_stats_before_' .. app .. '_' .. date, cjson.encode(result.daily_stats))
-
-        -- Update daily stats with filtered counts
-        local found_daily = false
-        for _, daily in ipairs(result.daily_stats) do
-            if daily.date == date then
-                daily.total_requests = daily.total_requests + requests
-                daily.unique_clients = daily.unique_clients + filtered_unique_count
-                daily.clients_using_latest_version = daily.clients_using_latest_version + filtered_latest_count
-                daily.clients_outdated = daily.clients_outdated + filtered_outdated_count
-                found_daily = true
-                break
-            end
-        end
-        
-        if not found_daily then
-            local new_daily = {
-                date = date,
-                total_requests = requests,
-                unique_clients = filtered_unique_count,
-                clients_using_latest_version = filtered_latest_count,
-                clients_outdated = filtered_outdated_count
-            }
-            table.insert(result.daily_stats, new_daily)
-            -- Debug: Log new daily stats entry
-            debug_log('debug:new_daily_stats_' .. app .. '_' .. date, cjson.encode(new_daily))
-        end
+        debug_log('debug:daily_stats_before_' .. app .. '_' .. date, cjson.encode(daily_stats_map[date]))
 
         -- Debug: Log daily stats after update
-        debug_log('debug:daily_stats_after_' .. app .. '_' .. date, cjson.encode(result.daily_stats))
+        debug_log('debug:daily_stats_after_' .. app .. '_' .. date, cjson.encode(daily_stats_map[date]))
         
         -- Debug: Log requests for this date
         debug_log('debug:requests_' .. app .. '_' .. date, tostring(requests))
@@ -341,14 +340,14 @@ for _, app in ipairs(apps) do
         for _, version in ipairs(result.versions.known_versions) do
             local version_key = base_pattern .. ":version_usage:" .. date .. ":" .. version
             local version_clients = redis.call('SMEMBERS', version_key)
-            local filtered_version_count = 0
+            local version_set = ensure_nested_set(version_client_sets, version)
             for _, client_id in ipairs(version_clients) do
                 if filtered_clients[client_id] then
-                    filtered_version_count = filtered_version_count + 1
+                    version_set[client_id] = true
                 end
             end
+            local filtered_version_count = count_set_items(version_set)
             if filtered_version_count > 0 then
-                update_usage(result.versions.usage, version, filtered_version_count)
                 -- Debug: Log version usage for this date
                 debug_log('debug:version_usage_' .. app .. '_' .. date .. '_' .. version, tostring(filtered_version_count))
             end
@@ -361,14 +360,14 @@ for _, app in ipairs(apps) do
             local platform = string.match(key, ":([^:]+)$")
             if in_array(filter_platforms, platform) then
                 local platform_clients = redis.call('SMEMBERS', key)
-                local filtered_platform_count = 0
+                local platform_set = ensure_nested_set(platform_client_sets, platform)
                 for _, client_id in ipairs(platform_clients) do
                     if filtered_clients[client_id] then
-                        filtered_platform_count = filtered_platform_count + 1
+                        platform_set[client_id] = true
                     end
                 end
+                local filtered_platform_count = count_set_items(platform_set)
                 if filtered_platform_count > 0 then
-                    update_usage_array(result.platforms, platform, filtered_platform_count)
                     -- Debug: Log platform usage for this date
                     debug_log('debug:platform_usage_' .. app .. '_' .. date .. '_' .. platform, tostring(filtered_platform_count))
                 end
@@ -382,14 +381,14 @@ for _, app in ipairs(apps) do
             local arch = string.match(key, ":([^:]+)$")
             if in_array(filter_architectures, arch) then
                 local arch_clients = redis.call('SMEMBERS', key)
-                local filtered_arch_count = 0
+                local arch_set = ensure_nested_set(arch_client_sets, arch)
                 for _, client_id in ipairs(arch_clients) do
                     if filtered_clients[client_id] then
-                        filtered_arch_count = filtered_arch_count + 1
+                        arch_set[client_id] = true
                     end
                 end
+                local filtered_arch_count = count_set_items(arch_set)
                 if filtered_arch_count > 0 then
-                    update_usage_array(result.architectures, arch, filtered_arch_count)
                     -- Debug: Log architecture usage for this date
                     debug_log('debug:arch_usage_' .. app .. '_' .. date .. '_' .. arch, tostring(filtered_arch_count))
                 end
@@ -403,19 +402,74 @@ for _, app in ipairs(apps) do
             local channel = string.match(key, ":([^:]+)$")
             if in_array(filter_channels, channel) then
                 local channel_clients = redis.call('SMEMBERS', key)
-                local filtered_channel_count = 0
+                local channel_set = ensure_nested_set(channel_client_sets, channel)
                 for _, client_id in ipairs(channel_clients) do
                     if filtered_clients[client_id] then
-                        filtered_channel_count = filtered_channel_count + 1
+                        channel_set[client_id] = true
                     end
                 end
+                local filtered_channel_count = count_set_items(channel_set)
                 if filtered_channel_count > 0 then
-                    update_usage_array(result.channels, channel, filtered_channel_count)
                     -- Debug: Log channel usage for this date
                     debug_log('debug:channel_usage_' .. app .. '_' .. date .. '_' .. channel, tostring(filtered_channel_count))
                 end
             end
         end
+    end
+end
+
+-- Build final period-level unique counters
+result.unique_clients = count_set_items(period_unique_clients)
+result.clients_using_latest_version = count_set_items(period_latest_clients)
+result.clients_outdated = count_set_items(period_outdated_clients)
+
+-- Build daily stats with per-day deduplicated clients
+for date, daily in pairs(daily_stats_map) do
+    table.insert(result.daily_stats, {
+        date = date,
+        total_requests = daily.total_requests,
+        unique_clients = count_set_items(daily.unique_clients),
+        clients_using_latest_version = count_set_items(daily.clients_using_latest_version),
+        clients_outdated = count_set_items(daily.clients_outdated)
+    })
+end
+
+-- Rebuild version usage with period-level deduplicated clients
+result.versions.usage = {}
+for _, version in ipairs(result.versions.known_versions) do
+    local version_set = version_client_sets[version]
+    if version_set then
+        local version_count = count_set_items(version_set)
+        if version_count > 0 then
+            table.insert(result.versions.usage, {version = version, client_count = version_count})
+        end
+    end
+end
+
+-- Rebuild platform usage with period-level deduplicated clients
+result.platforms = {}
+for platform, platform_set in pairs(platform_client_sets) do
+    local platform_count = count_set_items(platform_set)
+    if platform_count > 0 then
+        table.insert(result.platforms, {platform = platform, client_count = platform_count})
+    end
+end
+
+-- Rebuild architecture usage with period-level deduplicated clients
+result.architectures = {}
+for arch, arch_set in pairs(arch_client_sets) do
+    local arch_count = count_set_items(arch_set)
+    if arch_count > 0 then
+        table.insert(result.architectures, {platform = arch, client_count = arch_count})
+    end
+end
+
+-- Rebuild channel usage with period-level deduplicated clients
+result.channels = {}
+for channel, channel_set in pairs(channel_client_sets) do
+    local channel_count = count_set_items(channel_set)
+    if channel_count > 0 then
+        table.insert(result.channels, {platform = channel, client_count = channel_count})
     end
 end
 
