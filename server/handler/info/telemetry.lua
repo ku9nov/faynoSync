@@ -460,7 +460,7 @@ result.architectures = {}
 for arch, arch_set in pairs(arch_client_sets) do
     local arch_count = count_set_items(arch_set)
     if arch_count > 0 then
-        table.insert(result.architectures, {platform = arch, client_count = arch_count})
+        table.insert(result.architectures, {arch = arch, client_count = arch_count})
     end
 end
 
@@ -469,7 +469,7 @@ result.channels = {}
 for channel, channel_set in pairs(channel_client_sets) do
     local channel_count = count_set_items(channel_set)
     if channel_count > 0 then
-        table.insert(result.channels, {platform = channel, client_count = channel_count})
+        table.insert(result.channels, {channel = channel, client_count = channel_count})
     end
 end
 

@@ -5535,6 +5535,89 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 	})
 }
 
+func TestTelemetryLuaEmitsArchAndChannelKeys(t *testing.T) {
+	if redisClient == nil {
+		t.Skip("redis telemetry backend is not configured")
+	}
+
+	ctx := context.Background()
+	admin := "admin"
+	testApp := fmt.Sprintf("telemetry-raw-keys-%d", time.Now().UTC().UnixNano())
+	clientID := "lua-key-client-1"
+	testDate := time.Now().UTC().Format("2006-01-02")
+	baseKey := fmt.Sprintf("stats:%s:%s", admin, testApp)
+
+	keysToCleanup := []string{
+		fmt.Sprintf("%s:requests:%s", baseKey, testDate),
+		fmt.Sprintf("%s:unique_clients:%s", baseKey, testDate),
+		fmt.Sprintf("%s:architectures:%s:arm64", baseKey, testDate),
+		fmt.Sprintf("%s:channels:%s:stable", baseKey, testDate),
+	}
+	t.Cleanup(func() {
+		_ = redisClient.Del(ctx, keysToCleanup...).Err()
+	})
+
+	assert.NoError(t, redisClient.Set(ctx, keysToCleanup[0], 1, 0).Err())
+	assert.NoError(t, redisClient.SAdd(ctx, keysToCleanup[1], clientID).Err())
+	assert.NoError(t, redisClient.SAdd(ctx, keysToCleanup[2], clientID).Err())
+	assert.NoError(t, redisClient.SAdd(ctx, keysToCleanup[3], clientID).Err())
+
+	luaScriptBytes, err := os.ReadFile("server/handler/info/telemetry.lua")
+	if err != nil {
+		t.Fatalf("failed to read telemetry lua script: %v", err)
+	}
+
+	dateRangeJSON, _ := json.Marshal([]string{testDate})
+	emptyFiltersJSON := "[]"
+
+	raw, err := redisClient.Eval(ctx, string(luaScriptBytes), []string{},
+		admin,
+		string(dateRangeJSON),
+		testApp,
+		emptyFiltersJSON,
+		emptyFiltersJSON,
+		emptyFiltersJSON,
+		"false",
+	).Result()
+	if err != nil {
+		t.Fatalf("failed to execute telemetry lua script: %v", err)
+	}
+
+	resultStr, ok := raw.(string)
+	if !ok {
+		t.Fatalf("unexpected lua result type: %T", raw)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(resultStr), &result); err != nil {
+		t.Fatalf("failed to parse lua result: %v", err)
+	}
+
+	architectures, ok := result["architectures"].([]interface{})
+	if !ok || len(architectures) != 1 {
+		t.Fatalf("unexpected architectures payload: %v", result["architectures"])
+	}
+	archEntry, ok := architectures[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected architectures[0] payload: %v", architectures[0])
+	}
+	assert.Equal(t, "arm64", archEntry["arch"])
+	_, hasArchPlatformKey := archEntry["platform"]
+	assert.False(t, hasArchPlatformKey)
+
+	channels, ok := result["channels"].([]interface{})
+	if !ok || len(channels) != 1 {
+		t.Fatalf("unexpected channels payload: %v", result["channels"])
+	}
+	channelEntry, ok := channels[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected channels[0] payload: %v", channels[0])
+	}
+	assert.Equal(t, "stable", channelEntry["channel"])
+	_, hasChannelPlatformKey := channelEntry["platform"]
+	assert.False(t, hasChannelPlatformKey)
+}
+
 func TestListAppsWithSecondUser(t *testing.T) {
 
 	router := gin.Default()

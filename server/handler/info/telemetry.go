@@ -356,7 +356,7 @@ func mergeResults(response *TelemetryResponse, appResult map[string]interface{})
 	if architectures, ok := appResult["architectures"].([]interface{}); ok {
 		for _, a := range architectures {
 			if arch, ok := a.(map[string]interface{}); ok {
-				if name, ok := arch["platform"].(string); ok {
+				if name, ok := arch["arch"].(string); ok {
 					if count, ok := arch["client_count"].(float64); ok {
 						found := false
 						for i, existing := range response.Architectures {
@@ -382,7 +382,7 @@ func mergeResults(response *TelemetryResponse, appResult map[string]interface{})
 	if channels, ok := appResult["channels"].([]interface{}); ok {
 		for _, ch := range channels {
 			if channel, ok := ch.(map[string]interface{}); ok {
-				if name, ok := channel["platform"].(string); ok {
+				if name, ok := channel["channel"].(string); ok {
 					if count, ok := channel["client_count"].(float64); ok {
 						found := false
 						for i, existing := range response.Channels {
