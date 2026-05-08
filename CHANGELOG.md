@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.5.12
+
+### Improvements
+
+- Decoupled MongoDB migrations from API startup: the server now starts with `./faynoSync` only, and migrations run explicitly via `./faynoSync migrate up` or `./faynoSync migrate down`.
+
+### Features
+
+- Added `GET /tuf/v1/metadata/targets` and `GET /tuf/v1/metadata/delegated` endpoints to retrieve TUF metadata for targets and delegated roles.
+- Added tuf typescript example.
+
+### Fixes
+
+- Fixed telemetry period aggregation for `range=week` and `range=month` to deduplicate repeated `client_id` values across days instead of summing daily set sizes.
+- Updated telemetry integration coverage to validate that `unique_clients`, `clients_using_latest_version`, and `clients_outdated` remain deduplicated at period level.
+
+
 ## v1.5.11
 
 ### Features

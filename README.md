@@ -183,6 +183,14 @@ To build and run the API with all dependencies, you can use the following comman
 docker compose up --build
 ```
 
+### 📦 Running Migrations
+
+You can run migrations using this command after `docker compose up --build` finishes:
+
+```bash
+docker compose exec -T backend /usr/bin/faynoSync migrate up
+```
+
 ### 🧪 Running Tests
 
 You can now run tests using this command after `docker compose up --build` finishes and the storage service becomes healthy:
@@ -213,14 +221,19 @@ go build -o faynoSync faynoSync.go
 
 ### 🚀 Start the Service
 
-1. **Start with Migrations**:
+1. **Start API Server**:
 ```bash
-./faynoSync --migration
+./faynoSync
 ```
 
-2. **Rollback Migrations** (if needed):
+2. **Run Migrations** (after API health check):
 ```bash
-./faynoSync --migration --rollback
+./faynoSync migrate up
+```
+
+3. **Rollback Migrations** (if needed):
+```bash
+./faynoSync migrate down
 ```
 
 ### 📤 Upload Your Application
@@ -462,7 +475,11 @@ cd mongod/migrations
 migrate create -ext json name_of_migration
 ```
 
-Then run the migrations again.
+Then run migrations with the built-in command:
+
+```bash
+./faynoSync migrate up
+```
 
 ### 🔗 Migration Tool Link
 - **Migration Tool**: [golang-migrate](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md) - Database migration utility

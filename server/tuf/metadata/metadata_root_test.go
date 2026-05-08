@@ -18,20 +18,46 @@ import (
 
 // --- GetMetadataRoot handler tests ---
 
-// To verify: Change URL or c.Query("appName") in GetMetadataRoot; test will fail (wrong status/body).
-func makeGetMetadataRootContext(username string, appName string) (*gin.Context, *httptest.ResponseRecorder) {
+// To verify: Change URL builder or query parsing in metadata GET handlers; tests will fail (wrong status/body).
+func makeGetMetadataContext(username string, endpoint string, appName string, extraQuery string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	url := "/tuf/v1/metadata/root"
+	url := endpoint
+	query := ""
 	if appName != "" {
-		url += "?appName=" + appName
+		query = "appName=" + appName
+	}
+	if extraQuery != "" {
+		if query != "" {
+			query += "&"
+		}
+		query += extraQuery
+	}
+	if query != "" {
+		url += "?" + query
 	}
 	c.Request = httptest.NewRequest(http.MethodGet, url, nil)
 	if username != "" {
 		c.Set("username", username)
 	}
 	return c, w
+}
+
+func makeGetMetadataRootContext(username string, appName string) (*gin.Context, *httptest.ResponseRecorder) {
+	return makeGetMetadataContext(username, "/tuf/v1/metadata/root", appName, "")
+}
+
+func makeGetMetadataTargetsContext(username string, appName string) (*gin.Context, *httptest.ResponseRecorder) {
+	return makeGetMetadataContext(username, "/tuf/v1/metadata/targets", appName, "")
+}
+
+func makeGetMetadataDelegatedContext(username string, appName string, roleName string) (*gin.Context, *httptest.ResponseRecorder) {
+	extra := ""
+	if roleName != "" {
+		extra = "roleName=" + roleName
+	}
+	return makeGetMetadataContext(username, "/tuf/v1/metadata/delegated", appName, extra)
 }
 
 // To verify: In GetMetadataRoot remove GetUsernameFromContext check or return 200 on error; test will fail (wrong status).
@@ -118,4 +144,89 @@ func TestGetMetadataRoot_Success_WithoutTrustedRoot(t *testing.T) {
 	data, ok := body["data"].(map[string]interface{})
 	require.True(t, ok, "response should have data object")
 	assert.Nil(t, data["trusted_root"], "trusted_root should be nil when load fails")
+}
+
+// To verify: In GetMetadataTargets change response key or status; test will fail.
+func TestGetMetadataTargets_Success_WithTrustedTargets(t *testing.T) {
+	targetsJSON := []byte(`{"signed":{"_type":"targets","version":2,"expires":"2030-01-01T00:00:00Z"},"signatures":[]}`)
+	savedList := tuf_storage.ListMetadataForLatest
+	savedViper := tuf_storage.GetViperForDownload
+	savedFactory := tuf_storage.StorageFactoryForDownload
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"2.targets.json"}, nil
+	}
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &downloadMockFactory{client: &downloadMockClient{body: targetsJSON}}
+	}
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedViper
+		tuf_storage.StorageFactoryForDownload = savedFactory
+	}()
+
+	c, w := makeGetMetadataTargetsContext("admin", "myapp")
+	GetMetadataTargets(c)
+
+	require.Equal(t, http.StatusOK, w.Code, "Expected 200 when trusted_targets is loaded")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	data, ok := body["data"].(map[string]interface{})
+	require.True(t, ok, "response should have data object")
+	trustedTargets, ok := data["trusted_targets"].(map[string]interface{})
+	require.True(t, ok, "data should have trusted_targets")
+	signed, ok := trustedTargets["signed"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "targets", signed["_type"])
+	assert.Equal(t, float64(2), signed["version"])
+}
+
+// To verify: In GetMetadataDelegated remove roleName requirement; test will fail.
+func TestGetMetadataDelegated_MissingRoleName_ReturnsBadRequest(t *testing.T) {
+	c, w := makeGetMetadataDelegatedContext("admin", "myapp", "")
+	GetMetadataDelegated(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "Expected 400 when roleName is missing")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "roleName query parameter is required", body["error"])
+}
+
+// To verify: In GetMetadataDelegated change response key or delegated loading behavior; test will fail.
+func TestGetMetadataDelegated_Success_WithTrustedDelegated(t *testing.T) {
+	delegatedJSON := []byte(`{"signed":{"_type":"targets","version":3,"expires":"2030-01-01T00:00:00Z"},"signatures":[]}`)
+	savedList := tuf_storage.ListMetadataForLatest
+	savedViper := tuf_storage.GetViperForDownload
+	savedFactory := tuf_storage.StorageFactoryForDownload
+	tuf_storage.ListMetadataForLatest = func(_ context.Context, _ string, _ string, _ string) ([]string, error) {
+		return []string{"3.myrole.json"}, nil
+	}
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &downloadMockFactory{client: &downloadMockClient{body: delegatedJSON}}
+	}
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedViper
+		tuf_storage.StorageFactoryForDownload = savedFactory
+	}()
+
+	c, w := makeGetMetadataDelegatedContext("admin", "myapp", "myrole")
+	GetMetadataDelegated(c)
+
+	require.Equal(t, http.StatusOK, w.Code, "Expected 200 when trusted_delegated is loaded")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	data, ok := body["data"].(map[string]interface{})
+	require.True(t, ok, "response should have data object")
+	trustedDelegated, ok := data["trusted_delegated"].(map[string]interface{})
+	require.True(t, ok, "data should have trusted_delegated")
+	signed, ok := trustedDelegated["signed"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "targets", signed["_type"])
+	assert.Equal(t, float64(3), signed["version"])
 }

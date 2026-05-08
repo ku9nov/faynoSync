@@ -115,14 +115,13 @@ func setup() {
 		panic(err)
 	}
 	// Create a single database connection
-	flagMap := map[string]interface{}{
-		"migration": true,
-		"rollback":  false,
-	}
 	s3Endpoint = viper.GetString("S3_ENDPOINT")
 	s3Bucket = viper.GetString("S3_BUCKET_NAME")
 	apiUrl = viper.GetString("API_URL")
-	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"), flagMap)
+	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"))
+	if err := mongod.RunMigrationsUp(client, configDB.Database); err != nil {
+		panic(err)
+	}
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
 	if viper.GetBool("ENABLE_TELEMETRY") {
@@ -5172,6 +5171,10 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 }
 
 func TestTelemetryWithVariousParams(t *testing.T) {
+	if !viper.GetBool("ENABLE_TELEMETRY") || redisClient == nil {
+		t.Skip("telemetry integration tests require ENABLE_TELEMETRY=true and Redis connection")
+	}
+
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 
@@ -5441,6 +5444,176 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 			assert.Equal(t, s.ExpectedJSON, actual)
 		})
 	}
+
+	t.Run("Deduplicates repeated client IDs across week and month ranges", func(t *testing.T) {
+		if !viper.GetBool("ENABLE_TELEMETRY") || redisClient == nil {
+			t.Skip("redis telemetry backend is not configured")
+		}
+		ctx := context.Background()
+		dedupApp := fmt.Sprintf("testapp-dedup-%d", time.Now().UTC().UnixNano())
+		dedupClientID := "dedup-client-001"
+		dedupVersion := "9.9.9"
+		dateA := startDate.AddDate(0, 0, 1).Format("2006-01-02")
+		dateB := startDate.AddDate(0, 0, 2).Format("2006-01-02")
+
+		baseKey := fmt.Sprintf("stats:admin:%s", dedupApp)
+		seededKeys := []string{
+			fmt.Sprintf("%s:requests:%s", baseKey, dateA),
+			fmt.Sprintf("%s:requests:%s", baseKey, dateB),
+			fmt.Sprintf("%s:unique_clients:%s", baseKey, dateA),
+			fmt.Sprintf("%s:unique_clients:%s", baseKey, dateB),
+			fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateA),
+			fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateB),
+			fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateA),
+			fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateB),
+			fmt.Sprintf("%s:version_usage:%s:%s", baseKey, dateA, dedupVersion),
+			fmt.Sprintf("%s:version_usage:%s:%s", baseKey, dateB, dedupVersion),
+			fmt.Sprintf("%s:known_versions", baseKey),
+		}
+
+		t.Cleanup(func() {
+			if len(seededKeys) > 0 {
+				_ = redisClient.Del(ctx, seededKeys...).Err()
+			}
+		})
+
+		assert.NoError(t, redisClient.Set(ctx, seededKeys[0], 3, 0).Err())
+		assert.NoError(t, redisClient.Set(ctx, seededKeys[1], 2, 0).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[2], dedupClientID).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[3], dedupClientID).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[4], dedupClientID).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[5], dedupClientID).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[6], dedupClientID).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[7], dedupClientID).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[8], dedupClientID).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[9], dedupClientID).Err())
+		assert.NoError(t, redisClient.SAdd(ctx, seededKeys[10], dedupVersion).Err())
+
+		queryScenarios := []string{
+			fmt.Sprintf("range=week&apps=%s", dedupApp),
+			fmt.Sprintf("range=month&apps=%s", dedupApp),
+		}
+
+		for _, query := range queryScenarios {
+			w := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "/telemetry?"+query, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+authToken)
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			var actual map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &actual)
+			if err != nil {
+				t.Fatalf("failed to parse response JSON: %v\nBody: %s", err, w.Body.String())
+			}
+
+			summary, ok := actual["summary"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("summary is missing or invalid: %v", actual["summary"])
+			}
+
+			assert.Equal(t, float64(5), summary["total_requests"])
+			assert.Equal(t, float64(1), summary["unique_clients"])
+			assert.Equal(t, float64(1), summary["clients_using_latest_version"])
+			assert.Equal(t, float64(1), summary["clients_outdated"])
+			assert.Equal(t, float64(1), summary["total_active_apps"])
+
+			versions, ok := actual["versions"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("versions is missing or invalid: %v", actual["versions"])
+			}
+
+			assert.Equal(t, float64(1), versions["used_versions_count"])
+			usage, ok := versions["usage"].([]interface{})
+			if !ok || len(usage) != 1 {
+				t.Fatalf("versions.usage is invalid: %v", versions["usage"])
+			}
+			usageEntry, ok := usage[0].(map[string]interface{})
+			if !ok {
+				t.Fatalf("versions.usage[0] is invalid: %v", usage[0])
+			}
+			assert.Equal(t, dedupVersion, usageEntry["version"])
+			assert.Equal(t, float64(1), usageEntry["client_count"])
+		}
+	})
+}
+
+func TestTelemetryLuaEmitsArchAndChannelKeys(t *testing.T) {
+	if !viper.GetBool("ENABLE_TELEMETRY") || redisClient == nil {
+		t.Skip("redis telemetry backend is not configured")
+	}
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/telemetry", func(c *gin.Context) {
+		appHandler.GetTelemetry(c)
+	})
+
+	ctx := context.Background()
+	admin := "admin"
+	testApp := fmt.Sprintf("telemetry-raw-keys-%d", time.Now().UTC().UnixNano())
+	clientID := "lua-key-client-1"
+	testDate := time.Now().UTC().Format("2006-01-02")
+	baseKey := fmt.Sprintf("stats:%s:%s", admin, testApp)
+
+	keysToCleanup := []string{
+		fmt.Sprintf("%s:requests:%s", baseKey, testDate),
+		fmt.Sprintf("%s:unique_clients:%s", baseKey, testDate),
+		fmt.Sprintf("%s:architectures:%s:arm64", baseKey, testDate),
+		fmt.Sprintf("%s:channels:%s:stable", baseKey, testDate),
+	}
+	t.Cleanup(func() {
+		_ = redisClient.Del(ctx, keysToCleanup...).Err()
+	})
+
+	assert.NoError(t, redisClient.Set(ctx, keysToCleanup[0], 1, 0).Err())
+	assert.NoError(t, redisClient.SAdd(ctx, keysToCleanup[1], clientID).Err())
+	assert.NoError(t, redisClient.SAdd(ctx, keysToCleanup[2], clientID).Err())
+	assert.NoError(t, redisClient.SAdd(ctx, keysToCleanup[3], clientID).Err())
+
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest("GET", fmt.Sprintf("/telemetry?date=%s&apps=%s", testDate, testApp), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse telemetry response: %v\nBody: %s", err, w.Body.String())
+	}
+
+	architectures, ok := result["architectures"].([]interface{})
+	if !ok || len(architectures) != 1 {
+		t.Fatalf("unexpected architectures payload: %v", result["architectures"])
+	}
+	archEntry, ok := architectures[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected architectures[0] payload: %v", architectures[0])
+	}
+	assert.Equal(t, "arm64", archEntry["arch"])
+	_, hasArchPlatformKey := archEntry["platform"]
+	assert.False(t, hasArchPlatformKey)
+
+	channels, ok := result["channels"].([]interface{})
+	if !ok || len(channels) != 1 {
+		t.Fatalf("unexpected channels payload: %v", result["channels"])
+	}
+	channelEntry, ok := channels[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected channels[0] payload: %v", channels[0])
+	}
+	assert.Equal(t, "stable", channelEntry["channel"])
+	_, hasChannelPlatformKey := channelEntry["platform"]
+	assert.False(t, hasChannelPlatformKey)
 }
 
 func TestListAppsWithSecondUser(t *testing.T) {

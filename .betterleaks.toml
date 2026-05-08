@@ -1,0 +1,6 @@
+[allowlist]
+description = "Ignore local development env file with non-production placeholder secrets"
+paths = [
+  '''^\.env\.local$''',
+  '''^docker-compose/envs/backend\.env$''',
+]

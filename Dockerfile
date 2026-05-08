@@ -22,4 +22,4 @@ RUN chown -R faynosync:faynosync /app /usr/bin/faynoSync /usr/bin/faynoSync_test
 
 USER faynosync
 
-CMD ["faynoSync", "--migration"]
+CMD ["faynoSync"]

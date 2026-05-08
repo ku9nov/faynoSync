@@ -1,6 +1,8 @@
 package mongod
 
 import (
+	"errors"
+
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/mongodb"
 	"github.com/golang-migrate/migrate/v4/source/file"
@@ -8,40 +10,52 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func RunMigrations(client *mongo.Client, dbName string, flags map[string]interface{}) {
-	// Create a new MongoDB migration instance
+func newMigration(client *mongo.Client, dbName string) (*migrate.Migrate, error) {
 	sourceDriver, err := (&file.File{}).Open("mongod/migrations/")
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	dbDriver, err := mongodb.WithInstance(client, &mongodb.Config{
 		DatabaseName: dbName,
 	})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	m, err := migrate.NewWithInstance("file", sourceDriver, dbName, dbDriver)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	applied := false
-	if err := m.Up(); err != nil {
-		version, _, _ := m.Version()
-		if version > 0 {
-			applied = true
-		}
-	}
+	return m, nil
+}
 
-	if flags["rollback"].(bool) {
-		if err := m.Down(); err != nil {
-			panic(err)
+func RunMigrationsUp(client *mongo.Client, dbName string) error {
+	m, err := newMigration(client, dbName)
+	if err != nil {
+		return err
+	}
+	if err := m.Up(); err != nil {
+		if errors.Is(err, migrate.ErrNoChange) {
+			logrus.Infoln("No pending migrations to apply")
+			return nil
 		}
-		logrus.Infoln("Migrations rollback completed")
-		return
+		return err
 	}
-	if !applied {
-		logrus.Infoln("Migrations completed")
-	} else {
-		logrus.Infoln("Migrations not applied")
+	logrus.Infoln("Migrations completed")
+	return nil
+}
+
+func RunMigrationsDown(client *mongo.Client, dbName string) error {
+	m, err := newMigration(client, dbName)
+	if err != nil {
+		return err
 	}
+	if err := m.Down(); err != nil {
+		if errors.Is(err, migrate.ErrNoChange) {
+			logrus.Infoln("No migrations to roll back")
+			return nil
+		}
+		return err
+	}
+	logrus.Infoln("Migrations rollback completed")
+	return nil
 }
