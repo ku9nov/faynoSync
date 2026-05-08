@@ -5547,6 +5547,13 @@ func TestTelemetryLuaEmitsArchAndChannelKeys(t *testing.T) {
 		t.Skip("redis telemetry backend is not configured")
 	}
 
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/telemetry", func(c *gin.Context) {
+		appHandler.GetTelemetry(c)
+	})
+
 	ctx := context.Background()
 	admin := "admin"
 	testApp := fmt.Sprintf("telemetry-raw-keys-%d", time.Now().UTC().UnixNano())
@@ -5569,35 +5576,19 @@ func TestTelemetryLuaEmitsArchAndChannelKeys(t *testing.T) {
 	assert.NoError(t, redisClient.SAdd(ctx, keysToCleanup[2], clientID).Err())
 	assert.NoError(t, redisClient.SAdd(ctx, keysToCleanup[3], clientID).Err())
 
-	luaScriptBytes, err := os.ReadFile("server/handler/info/telemetry.lua")
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest("GET", fmt.Sprintf("/telemetry?date=%s&apps=%s", testDate, testApp), nil)
 	if err != nil {
-		t.Fatalf("failed to read telemetry lua script: %v", err)
+		t.Fatal(err)
 	}
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
 
-	dateRangeJSON, _ := json.Marshal([]string{testDate})
-	emptyFiltersJSON := "[]"
-
-	raw, err := redisClient.Eval(ctx, string(luaScriptBytes), []string{},
-		admin,
-		string(dateRangeJSON),
-		testApp,
-		emptyFiltersJSON,
-		emptyFiltersJSON,
-		emptyFiltersJSON,
-		"false",
-	).Result()
-	if err != nil {
-		t.Fatalf("failed to execute telemetry lua script: %v", err)
-	}
-
-	resultStr, ok := raw.(string)
-	if !ok {
-		t.Fatalf("unexpected lua result type: %T", raw)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(resultStr), &result); err != nil {
-		t.Fatalf("failed to parse lua result: %v", err)
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse telemetry response: %v\nBody: %s", err, w.Body.String())
 	}
 
 	architectures, ok := result["architectures"].([]interface{})
