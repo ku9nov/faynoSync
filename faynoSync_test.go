@@ -5171,6 +5171,10 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 }
 
 func TestTelemetryWithVariousParams(t *testing.T) {
+	if !viper.GetBool("ENABLE_TELEMETRY") || redisClient == nil {
+		t.Skip("telemetry integration tests require ENABLE_TELEMETRY=true and Redis connection")
+	}
+
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
 
@@ -5442,6 +5446,9 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 	}
 
 	t.Run("Deduplicates repeated client IDs across week and month ranges", func(t *testing.T) {
+		if !viper.GetBool("ENABLE_TELEMETRY") || redisClient == nil {
+			t.Skip("redis telemetry backend is not configured")
+		}
 		ctx := context.Background()
 		dedupApp := fmt.Sprintf("testapp-dedup-%d", time.Now().UTC().UnixNano())
 		dedupClientID := "dedup-client-001"
@@ -5536,7 +5543,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 }
 
 func TestTelemetryLuaEmitsArchAndChannelKeys(t *testing.T) {
-	if redisClient == nil {
+	if !viper.GetBool("ENABLE_TELEMETRY") || redisClient == nil {
 		t.Skip("redis telemetry backend is not configured")
 	}
 
