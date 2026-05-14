@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -145,6 +146,13 @@ type MetadataSignData struct {
 
 type MetadataPostPayload struct {
 	Metadata map[string]RootMetadata `json:"metadata" binding:"required"`
+}
+
+// MetadataDelegatedRotatePayload represents the payload for rotating delegated role metadata
+type MetadataDelegatedRotatePayload struct {
+	Role      string                     `json:"role" binding:"required"`
+	Delegator string                     `json:"delegator,omitempty"`
+	Metadata  map[string]json.RawMessage `json:"metadata" binding:"required"`
 }
 
 type MetadataPostResponse struct {

@@ -694,7 +694,7 @@ func makeValidRolesForValidateRoot(t *testing.T) *repository.Type {
 func TestValidateRoot_Success(t *testing.T) {
 	roles := makeValidRolesForValidateRoot(t)
 
-	assert.NotPanics(t, func() { ValidateRoot(roles) })
+	assert.NoError(t, ValidateRoot(roles))
 }
 
 // To verify: In ValidateRoot remove the root verification block; test will fail (no panic on invalid root).
@@ -729,14 +729,9 @@ func TestValidateRoot_RootVerificationFails(t *testing.T) {
 	wrongSigner, _ := signature.LoadSigner(targetsKey[0], crypto.Hash(0))
 	_, _ = roles.Root().Sign(wrongSigner)
 
-	var panicMsg interface{}
-	func() {
-		defer func() { panicMsg = recover() }()
-		ValidateRoot(roles)
-	}()
-
-	require.NotNil(t, panicMsg, "ValidateRoot should panic when root verification fails")
-	assert.Contains(t, fmt.Sprint(panicMsg), "verifying root metadata failed")
+	err := ValidateRoot(roles)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "verifying root metadata failed")
 }
 
 // To verify: In ValidateRoot skip VerifyDelegate("targets", ...); test will fail (no panic).
@@ -744,14 +739,9 @@ func TestValidateRoot_TargetsVerificationFails(t *testing.T) {
 	roles := makeValidRolesForValidateRoot(t)
 	roles.SetTargets("targets", tuf_metadata.Targets(time.Now().Add(24*time.Hour)))
 
-	var panicMsg interface{}
-	func() {
-		defer func() { panicMsg = recover() }()
-		ValidateRoot(roles)
-	}()
-
-	require.NotNil(t, panicMsg, "ValidateRoot should panic when targets verification fails")
-	assert.Contains(t, fmt.Sprint(panicMsg), "verifying targets metadata failed")
+	err := ValidateRoot(roles)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "verifying targets metadata failed")
 }
 
 // To verify: In ValidateRoot skip VerifyDelegate("snapshot", ...); test will fail (no panic).
@@ -759,14 +749,9 @@ func TestValidateRoot_SnapshotVerificationFails(t *testing.T) {
 	roles := makeValidRolesForValidateRoot(t)
 	roles.SetSnapshot(tuf_metadata.Snapshot(time.Now().Add(24 * time.Hour)))
 
-	var panicMsg interface{}
-	func() {
-		defer func() { panicMsg = recover() }()
-		ValidateRoot(roles)
-	}()
-
-	require.NotNil(t, panicMsg, "ValidateRoot should panic when snapshot verification fails")
-	assert.Contains(t, fmt.Sprint(panicMsg), "verifying snapshot metadata failed")
+	err := ValidateRoot(roles)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "verifying snapshot metadata failed")
 }
 
 // To verify: In ValidateRoot skip VerifyDelegate("timestamp", ...); test will fail (no panic).
@@ -774,14 +759,9 @@ func TestValidateRoot_TimestampVerificationFails(t *testing.T) {
 	roles := makeValidRolesForValidateRoot(t)
 	roles.SetTimestamp(tuf_metadata.Timestamp(time.Now().Add(1 * time.Hour)))
 
-	var panicMsg interface{}
-	func() {
-		defer func() { panicMsg = recover() }()
-		ValidateRoot(roles)
-	}()
-
-	require.NotNil(t, panicMsg, "ValidateRoot should panic when timestamp verification fails")
-	assert.Contains(t, fmt.Sprint(panicMsg), "verifying timestamp metadata failed")
+	err := ValidateRoot(roles)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "verifying timestamp metadata failed")
 }
 
 // makeCurrentAndNewRootForVerify returns (currentRoot v1, newRoot v2) both valid for verifyNewRootMetadata.
