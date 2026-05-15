@@ -90,6 +90,13 @@ func validateMetadataUpdatePreconditions(c *gin.Context, redisClient *redis.Clie
 	keySuffix := adminName + "_" + appName
 	bootstrapKey := "BOOTSTRAP_" + keySuffix
 	bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
+	if err != nil && err != redis.Nil {
+		logrus.Errorf("Failed to read bootstrap state from Redis for key %s: %v", bootstrapKey, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return nil, false
+	}
 	if err == redis.Nil || bootstrapValue == "" {
 		c.JSON(http.StatusNotFound, gin.H{
 			"message": "Task not accepted.",
