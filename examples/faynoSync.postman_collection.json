@@ -1796,6 +1796,53 @@
       "response": []
     },
     {
+      "name": "Stage Targets/Delegate metadata",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"role\": \"default\",\n  \"delegator\": \"targets\",\n  \"metadata\": {\n    \"targets\": {\n      \"signatures\": [],\n      \"signed\": {\n        \"_type\": \"targets\",\n        \"delegations\": {\n          \"keys\": {\n            \"a2d1b0aa26f9b36b20057ec0b939194c008fa5d7e43b5ad4754601dc19b85324\": {\n              \"keytype\": \"ecdsa\",\n              \"scheme\": \"ecdsa-sha2-nistp256\",\n              \"keyval\": {\n                \"public\": \"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEh1gtVb8sxSyV+alXFemIAOVAmAlO\\njfkCwUAcz46zA4d3Rp1dZglkmeIUwcgV3vOgO58b8ulZ//Vqvw6bqh4Swg==\\n-----END PUBLIC KEY-----\\n\"\n              }\n            },\n            \"bc2256ed61c4bae55835b824a84cc9b6c60fc5905955107466042ac5c6606f84\": {\n              \"keytype\": \"ecdsa\",\n              \"scheme\": \"ecdsa-sha2-nistp256\",\n              \"keyval\": {\n                \"public\": \"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHd/iZ8l7fINy88rLSxUcsI/KJeqT\\ncPPq5kNXHitJomEOf/iPVS/ftGnpFrjpg/j6K9OPE98mRXhlb1SnZeJwTw==\\n-----END PUBLIC KEY-----\\n\"\n              }\n            }\n          },\n          \"roles\": [\n            {\n              \"keyids\": [\n                \"a2d1b0aa26f9b36b20057ec0b939194c008fa5d7e43b5ad4754601dc19b85324\",\n                \"bc2256ed61c4bae55835b824a84cc9b6c60fc5905955107466042ac5c6606f84\"\n              ],\n              \"name\": \"default\",\n              \"paths\": [\n                \"admin/tuf/*\",\n                \"tuf-admin/*\",\n                \"electron-builder/tuf-admin/*\",\n                \"squirrel_windows/tuf-admin/*\",\n                \"tuf-admin/nightly/darwin/arm64/tuf-0.0.0.1\"\n              ],\n              \"terminating\": false,\n              \"threshold\": 2\n            }\n          ]\n        },\n        \"expires\": \"2027-05-19T11:03:54Z\",\n        \"spec_version\": \"1.0.31\",\n        \"targets\": {},\n        \"version\": 3\n      }\n    },\n    \"default\": {\n      \"signatures\": [],\n      \"signed\": {\n        \"_type\": \"targets\",\n        \"expires\": \"2026-11-09T11:03:54Z\",\n        \"spec_version\": \"1.0.31\",\n        \"targets\": {\n          \"tuf-admin/nightly/darwin/arm64/tuf-0.0.0.1\": {\n            \"hashes\": {\n              \"sha256\": \"67728429e346249f5c7439d3093c01217e0b52584e8997cb223e66f84137c800\",\n              \"sha512\": \"ad07fd1624df82ed008f548ac38a42a5ac4b600fac73879d421ed0f019d92f45309105e41692d6d90840805fbba87e41fa678f3cc3079d2eed0481315fe764a3\"\n            },\n            \"length\": 39759064\n          }\n        },\n        \"version\": 3\n      }\n    }\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/tuf/v1/metadata/delegated/rotate?appName=tuf",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "tuf",
+            "v1",
+            "metadata",
+            "delegated",
+            "rotate"
+          ],
+          "query": [
+            {
+              "key": "appName",
+              "value": "tuf",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Delete signing metadata",
       "request": {
         "auth": {

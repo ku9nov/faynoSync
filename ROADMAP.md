@@ -29,6 +29,7 @@
 - [x] Add comprehensive unit tests for TUF functionality
 
 ### Delegations Management
+- [ ] **Delegated role add/revoke workflow, with policy validations and migration rules**
 - [ ] **POST /tuf/v1/delegations** - Create new delegation (?)
 - [ ] **PUT /tuf/v1/delegations** - Update existing delegation (?)
 - [ ] **POST /tuf/v1/delegations/delete** - Delete delegation (?)
@@ -41,8 +42,8 @@
 ### Documentation & Tooling
 - [x] Update Postman template with TUF endpoints
 - [x] Update API documentation for TUF functionality
-- [ ] Add TUF usage examples and guides
-- [ ] Document TUF configuration and setup process
+- [x] Add TUF usage examples and guides
+- [x] Document TUF configuration and setup process
 
 ### Security & Key Management
 - [x] Add support for key types other than ed25519 (e.g., RSA, ECDSA)

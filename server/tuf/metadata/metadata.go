@@ -1,9 +1,7 @@
 package metadata
 
 import (
-	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/signing"
@@ -21,7 +19,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
-	"github.com/secure-systems-lab/go-securesystemslib/cjson"
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sirupsen/logrus"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
@@ -374,77 +371,19 @@ func BootstrapOnlineRolesWithContext(
 	return nil
 }
 
-// validateRoot validates the root metadata
-func ValidateRoot(roles *repository.Type) {
-	logrus.Debug("Performing root metadata validation")
-
-	var err error
-	err = roles.Root().VerifyDelegate("root", roles.Root())
-	if err != nil {
-		panic(fmt.Sprintln("TUF:", "verifying root metadata failed", err))
-	}
-
-	err = roles.Root().VerifyDelegate("targets", roles.Targets("targets"))
-	if err != nil {
-		panic(fmt.Sprintln("TUF:", "verifying targets metadata failed", err))
-	}
-
-	err = roles.Root().VerifyDelegate("snapshot", roles.Snapshot())
-	if err != nil {
-		panic(fmt.Sprintln("TUF:", "verifying snapshot metadata failed", err))
-	}
-
-	err = roles.Root().VerifyDelegate("timestamp", roles.Timestamp())
-	if err != nil {
-		panic(fmt.Sprintln("TUF:", "verifying timestamp metadata failed", err))
-	}
-	logrus.Debug("Root metadata validation completed")
-}
-
 func PostMetadataRotate(c *gin.Context, redisClient *redis.Client) {
-	adminName, err := utils.GetUsernameFromContext(c)
-	if err != nil {
-		logrus.Errorf("Failed to get admin name from context: %v", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	updateCtx, ok := validateMetadataUpdatePreconditions(c, redisClient)
+	if !ok {
 		return
 	}
-
-	appName := c.Query("appName")
-	if appName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "appName query parameter is required",
-		})
-		return
-	}
-
-	if redisClient == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Redis client is not available",
-		})
-		return
-	}
-
-	ctx := context.Background()
-	keySuffix := adminName + "_" + appName
-	bootstrapKey := "BOOTSTRAP_" + keySuffix
-	bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
-	if err == redis.Nil || bootstrapValue == "" {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "Task not accepted.",
-			"error":   fmt.Sprintf("Requires bootstrap finished. State: %s", bootstrapValue),
-		})
-		return
-	}
-
-	if strings.HasPrefix(bootstrapValue, "pre-") || strings.HasPrefix(bootstrapValue, "signing-") {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "Task not accepted.",
-			"error":   fmt.Sprintf("Requires bootstrap finished. State: %s", bootstrapValue),
-		})
-		return
-	}
+	ctx := updateCtx.Ctx
+	adminName := updateCtx.AdminName
+	appName := updateCtx.AppName
+	keySuffix := updateCtx.KeySuffix
+	bootstrapValue := updateCtx.BootstrapValue
 
 	var payload models.MetadataPostPayload
+	var err error
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		logrus.Errorf("Failed to parse metadata payload: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -536,16 +475,16 @@ func PostMetadataRotate(c *gin.Context, redisClient *redis.Client) {
 	if err := verifyNewRootMetadata(currentRootMeta, newRootMeta); err != nil {
 
 		if strings.Contains(err.Error(), "unsigned") || strings.Contains(err.Error(), "signature") {
-
-			signingKey := "ROOT_SIGNING_" + keySuffix
-			redisClient.Set(ctx, signingKey, string(newRootJSON), 0)
-			logrus.Infof("Root metadata v%d saved for offline signing", newRepo.Root().Signed.Version)
-
 			taskID := uuid.New().String()
 			logrus.Debugf("Generated task_id: %s", taskID)
-
-			taskKey := "ROOT_SIGNING_TASK_" + keySuffix
-			redisClient.Set(ctx, taskKey, taskID, 0)
+			if err := stageMetadataForSigning(ctx, redisClient, keySuffix, "ROOT", newRootJSON, taskID); err != nil {
+				logrus.Errorf("Failed to stage root metadata for signing: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "Failed to stage root metadata for signing",
+				})
+				return
+			}
+			logrus.Infof("Root metadata v%d saved for offline signing", newRepo.Root().Signed.Version)
 
 			taskName := tasks.TaskNameMetadataUpdate
 			tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStatePending, &tasks.TaskResult{
@@ -604,24 +543,208 @@ func PostMetadataRotate(c *gin.Context, redisClient *redis.Client) {
 	})
 }
 
-func verifyNewRootMetadata(currentRoot, newRoot *metadata.Metadata[metadata.RootType]) error {
-	if newRoot.Signed.Type != "root" {
-		return fmt.Errorf("expected 'root', got '%s'", newRoot.Signed.Type)
+func PostMetadataDelegatedRotate(c *gin.Context, redisClient *redis.Client) {
+	updateCtx, ok := validateMetadataUpdatePreconditions(c, redisClient)
+	if !ok {
+		return
+	}
+	ctx := updateCtx.Ctx
+	adminName := updateCtx.AdminName
+	appName := updateCtx.AppName
+	keySuffix := updateCtx.KeySuffix
+
+	var payload models.MetadataDelegatedRotatePayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		logrus.Errorf("Failed to parse delegated rotate payload: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid payload format: %v", err),
+		})
+		return
 	}
 
-	if newRoot.Signed.Version != currentRoot.Signed.Version+1 {
-		return fmt.Errorf("expected root version %d, got version %d", currentRoot.Signed.Version+1, newRoot.Signed.Version)
+	roleName := strings.TrimSpace(payload.Role)
+	if roleName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role is required"})
+		return
+	}
+	if isTopLevelRole(roleName) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "delegated rotation endpoint supports delegated roles only",
+		})
+		return
 	}
 
-	if err := currentRoot.VerifyDelegate("root", newRoot); err != nil {
-		return fmt.Errorf("new root not signed by trusted root: %w", err)
+	delegatorRole := strings.TrimSpace(payload.Delegator)
+	if delegatorRole == "" {
+		delegatorRole = "targets"
+	}
+	if delegatorRole != "targets" && isTopLevelRole(delegatorRole) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "delegator must be targets or a delegated role",
+		})
+		return
 	}
 
-	if err := newRoot.VerifyDelegate("root", newRoot); err != nil {
-		return fmt.Errorf("new root threshold not reached: %w", err)
+	targetsRaw, hasTargets := payload.Metadata["targets"]
+	delegatedRaw, hasDelegated := payload.Metadata[roleName]
+	if !hasTargets && !hasDelegated {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "metadata must contain at least one of: targets or delegated role metadata",
+		})
+		return
 	}
 
-	return nil
+	var targetsMetaForDelegatorCheck *metadata.Metadata[metadata.TargetsType]
+	if hasTargets {
+		targetsEnvelope, targetsMeta, err := validateTargetsMetadataForStaging(targetsRaw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("Invalid targets metadata: %v", err),
+			})
+			return
+		}
+
+		version, err := getTargetsSignedVersion(targetsEnvelope)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("Invalid targets metadata: %v", err),
+			})
+			return
+		}
+
+		trustedTargets, err := loadTrustedTargetsMetadataFromS3(ctx, adminName, appName, "targets")
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("Failed to load trusted targets metadata: %v", err),
+			})
+			return
+		}
+		if version <= int64(trustedTargets.Signed.Version) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("targets version must be greater than trusted version %d", trustedTargets.Signed.Version),
+			})
+			return
+		}
+
+		targetsMetaForDelegatorCheck = targetsMeta
+	}
+
+	if hasDelegated {
+		delegatedEnvelope, _, err := validateTargetsMetadataForStaging(delegatedRaw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("Invalid delegated metadata for role %s: %v", roleName, err),
+			})
+			return
+		}
+
+		version, err := getTargetsSignedVersion(delegatedEnvelope)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("Invalid delegated metadata for role %s: %v", roleName, err),
+			})
+			return
+		}
+
+		trustedDelegated, err := loadTrustedTargetsMetadataFromS3(ctx, adminName, appName, roleName)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("Delegated role lifecycle changes are deferred; failed to load trusted role %s: %v", roleName, err),
+			})
+			return
+		}
+		if version <= int64(trustedDelegated.Signed.Version) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("%s version must be greater than trusted version %d", roleName, trustedDelegated.Signed.Version),
+			})
+			return
+		}
+
+		delegatorMeta, err := loadTrustedTargetsMetadataFromS3(ctx, adminName, appName, delegatorRole)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Metadata Update Failed",
+				"error":   fmt.Sprintf("Failed to load delegator metadata %s: %v", delegatorRole, err),
+			})
+			return
+		}
+
+		if err := ensureDelegatorAuthorizesRole(delegatorMeta, roleName); err != nil {
+			// Allow one-request staging when the incoming targets metadata already updates delegations.
+			if !(delegatorRole == "targets" && targetsMetaForDelegatorCheck != nil && ensureDelegatorAuthorizesRole(targetsMetaForDelegatorCheck, roleName) == nil) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"message": "Metadata Update Failed",
+					"error":   fmt.Sprintf("Delegator %s does not authorize role %s: %v", delegatorRole, roleName, err),
+				})
+				return
+			}
+		}
+	}
+
+	taskID := uuid.New().String()
+	taskName := tasks.TaskNameMetadataDelegation
+	tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStatePending, &tasks.TaskResult{
+		Task: &taskName,
+	})
+	cleanupRoles := make([]string, 0, 2)
+	delegatedRoleUpper := strings.ToUpper(roleName)
+	var stageErr error
+
+	if hasTargets && hasDelegated {
+		stageErr = stageMetadataBatchForSigning(ctx, redisClient, keySuffix, taskID, []stagedMetadataForSigning{
+			{roleUpper: "TARGETS", metadataJSON: targetsRaw},
+			{roleUpper: delegatedRoleUpper, metadataJSON: delegatedRaw},
+		})
+		cleanupRoles = append(cleanupRoles, "TARGETS", delegatedRoleUpper)
+	} else {
+		if hasTargets {
+			if err := stageMetadataForSigning(ctx, redisClient, keySuffix, "TARGETS", targetsRaw, taskID); err != nil {
+				stageErr = err
+			}
+			cleanupRoles = append(cleanupRoles, "TARGETS")
+		}
+		if stageErr == nil && hasDelegated {
+			if err := stageMetadataForSigning(ctx, redisClient, keySuffix, delegatedRoleUpper, delegatedRaw, taskID); err != nil {
+				stageErr = err
+			}
+			cleanupRoles = append(cleanupRoles, delegatedRoleUpper)
+		}
+	}
+
+	if stageErr != nil {
+		if err := cleanupStagedMetadataForSigning(ctx, redisClient, keySuffix, cleanupRoles); err != nil {
+			logrus.Warnf("Failed to cleanup staged metadata for task %s: %v", taskID, err)
+		}
+		status := false
+		stageErrMsg := stageErr.Error()
+		tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &status,
+			Error:  &stageErrMsg,
+		})
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Metadata Update Failed",
+			"error":   stageErrMsg,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.MetadataPostResponse{
+		Data: models.MetadataPostData{
+			TaskID:     taskID,
+			LastUpdate: time.Now(),
+		},
+		Message: "Metadata rotation staged for signing",
+	})
 }
 
 func GetMetadataSign(c *gin.Context, redisClient *redis.Client) {
@@ -779,342 +902,6 @@ func GetMetadataSign(c *gin.Context, redisClient *redis.Client) {
 	})
 }
 
-func loadTrustedRootFromS3(ctx context.Context, adminName string, appName string) (map[string]interface{}, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-trusted-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	rootPath := filepath.Join(tmpDir, "root.json")
-	_, filename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
-	if err != nil {
-		if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err2 != nil {
-			return nil, fmt.Errorf("failed to download root metadata: %w", err2)
-		}
-	} else {
-		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, filename, rootPath); err != nil {
-			return nil, fmt.Errorf("failed to download root metadata: %w", err)
-		}
-	}
-
-	rootData, err := os.ReadFile(rootPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read root metadata: %w", err)
-	}
-
-	var rootJSON map[string]interface{}
-	if err := json.Unmarshal(rootData, &rootJSON); err != nil {
-		return nil, fmt.Errorf("failed to parse root metadata: %w", err)
-	}
-
-	return rootJSON, nil
-}
-
-func loadTrustedTargetsFromS3(ctx context.Context, adminName string, appName string) (map[string]interface{}, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-trusted-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	targetsPath := filepath.Join(tmpDir, "targets.json")
-	_, filename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "targets")
-	if err != nil {
-		return nil, fmt.Errorf("failed to find targets metadata: %w", err)
-	}
-
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, filename, targetsPath); err != nil {
-		return nil, fmt.Errorf("failed to download targets metadata: %w", err)
-	}
-
-	targetsData, err := os.ReadFile(targetsPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read targets metadata: %w", err)
-	}
-
-	var targetsJSON map[string]interface{}
-	if err := json.Unmarshal(targetsData, &targetsJSON); err != nil {
-		return nil, fmt.Errorf("failed to parse targets metadata: %w", err)
-	}
-
-	return targetsJSON, nil
-}
-
-func loadTrustedDelegatedFromS3(ctx context.Context, adminName string, appName string, roleName string) (map[string]interface{}, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-trusted-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	rolePath := filepath.Join(tmpDir, roleName+".json")
-	_, filename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, roleName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find %s metadata: %w", roleName, err)
-	}
-
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, filename, rolePath); err != nil {
-		return nil, fmt.Errorf("failed to download %s metadata: %w", roleName, err)
-	}
-
-	roleData, err := os.ReadFile(rolePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %s metadata: %w", roleName, err)
-	}
-
-	var roleJSON map[string]interface{}
-	if err := json.Unmarshal(roleData, &roleJSON); err != nil {
-		return nil, fmt.Errorf("failed to parse %s metadata: %w", roleName, err)
-	}
-
-	return roleJSON, nil
-}
-
-func extractSignedSection(metadataJSON map[string]interface{}) (map[string]interface{}, error) {
-	signedData, ok := metadataJSON["signed"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid metadata format: missing 'signed' field")
-	}
-	return signedData, nil
-}
-
-func decodeAndValidateMetadataKey(keyData interface{}, expectedKeyID string) (*metadata.Key, error) {
-	keyBytes, err := json.Marshal(keyData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode key %s: %w", expectedKeyID, err)
-	}
-	var key metadata.Key
-	if err := json.Unmarshal(keyBytes, &key); err != nil {
-		return nil, fmt.Errorf("failed to decode key %s: %w", expectedKeyID, err)
-	}
-
-	computedKeyID, err := key.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute key ID for %s: %w", expectedKeyID, err)
-	}
-	if computedKeyID != expectedKeyID {
-		return nil, fmt.Errorf("keyid mismatch: provided %s, computed %s", expectedKeyID, computedKeyID)
-	}
-
-	return &key, nil
-}
-
-func getRootRoleKeysFromSigned(signedData map[string]interface{}, roleName string) (map[string]*metadata.Key, error) {
-	rolesMap, ok := signedData["roles"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid metadata format: missing 'roles' field")
-	}
-	roleData, ok := rolesMap[roleName].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("role %s not found in metadata", roleName)
-	}
-	keyIDsRaw, ok := roleData["keyids"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid metadata format: role %s missing keyids", roleName)
-	}
-	keysMap, ok := signedData["keys"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid metadata format: missing 'keys' field")
-	}
-
-	result := make(map[string]*metadata.Key, len(keyIDsRaw))
-	for _, raw := range keyIDsRaw {
-		keyID, ok := raw.(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid keyid entry in role %s", roleName)
-		}
-		keyData, exists := keysMap[keyID]
-		if !exists {
-			return nil, fmt.Errorf("key %s referenced by role %s not found", keyID, roleName)
-		}
-		key, err := decodeAndValidateMetadataKey(keyData, keyID)
-		if err != nil {
-			return nil, err
-		}
-		result[keyID] = key
-	}
-
-	return result, nil
-}
-
-func getDelegatedRoleKeysFromTrustedTargets(trustedTargets map[string]interface{}, roleName string) (map[string]*metadata.Key, error) {
-	signedData, err := extractSignedSection(trustedTargets)
-	if err != nil {
-		return nil, err
-	}
-	delegationsMap, ok := signedData["delegations"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid trusted targets metadata: missing delegations")
-	}
-	delegatedRolesRaw, ok := delegationsMap["roles"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid trusted targets metadata: missing delegated roles")
-	}
-	delegatedKeysRaw, ok := delegationsMap["keys"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid trusted targets metadata: missing delegated keys")
-	}
-
-	var delegatedRole map[string]interface{}
-	for _, rawRole := range delegatedRolesRaw {
-		roleMap, ok := rawRole.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		name, _ := roleMap["name"].(string)
-		if name == roleName {
-			delegatedRole = roleMap
-			break
-		}
-	}
-	if delegatedRole == nil {
-		return nil, fmt.Errorf("delegated role %s not found in trusted targets metadata", roleName)
-	}
-
-	keyIDsRaw, ok := delegatedRole["keyids"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid delegated role %s: missing keyids", roleName)
-	}
-
-	result := make(map[string]*metadata.Key, len(keyIDsRaw))
-	for _, raw := range keyIDsRaw {
-		keyID, ok := raw.(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid delegated keyid for role %s", roleName)
-		}
-		keyData, exists := delegatedKeysRaw[keyID]
-		if !exists {
-			return nil, fmt.Errorf("delegated key %s for role %s not found", keyID, roleName)
-		}
-		key, err := decodeAndValidateMetadataKey(keyData, keyID)
-		if err != nil {
-			return nil, err
-		}
-		result[keyID] = key
-	}
-
-	return result, nil
-}
-
-func verifySignatureOverSignedPayload(signedData map[string]interface{}, key *metadata.Key, signatureHex string) error {
-	canonicalSigned, err := cjson.EncodeCanonical(signedData)
-	if err != nil {
-		return fmt.Errorf("failed to canonicalize signed payload: %w", err)
-	}
-
-	signatureBytes, err := hex.DecodeString(signatureHex)
-	if err != nil {
-		return fmt.Errorf("invalid signature hex: %w", err)
-	}
-
-	publicKey, err := key.ToPublicKey()
-	if err != nil {
-		return fmt.Errorf("failed to parse public key for verification: %w", err)
-	}
-	verifier, err := signing.BuildVerifierForPublicKey(publicKey)
-	if err != nil {
-		return fmt.Errorf("failed to initialize verifier: %w", err)
-	}
-
-	if err := verifier.VerifySignature(bytes.NewReader(signatureBytes), bytes.NewReader(canonicalSigned)); err != nil {
-		return fmt.Errorf("signature verification failed: %w", err)
-	}
-
-	return nil
-}
-
-func validateIncomingMetadataSignature(
-	ctx context.Context,
-	adminName string,
-	appName string,
-	metadataType string,
-	roleName string,
-	keyID string,
-	signatureHex string,
-	signedData map[string]interface{},
-	isSigningState bool,
-) error {
-	var allowedKeys map[string]*metadata.Key
-	var err error
-
-	switch metadataType {
-	case "root":
-		allowedKeys, err = getRootRoleKeysFromSigned(signedData, "root")
-		if err != nil {
-			return err
-		}
-		if !isSigningState {
-			trustedRoot, trustedErr := loadTrustedRootFromS3(ctx, adminName, appName)
-			if trustedErr != nil {
-				return fmt.Errorf("trusted root is required for signature authorization: %w", trustedErr)
-			}
-			trustedRootSigned, signedErr := extractSignedSection(trustedRoot)
-			if signedErr != nil {
-				return fmt.Errorf("invalid trusted root metadata: %w", signedErr)
-			}
-			oldRootKeys, keyErr := getRootRoleKeysFromSigned(trustedRootSigned, "root")
-			if keyErr != nil {
-				return fmt.Errorf("failed to read trusted root keys: %w", keyErr)
-			}
-			for oldKeyID, oldKey := range oldRootKeys {
-				if _, exists := allowedKeys[oldKeyID]; !exists {
-					allowedKeys[oldKeyID] = oldKey
-				}
-			}
-		}
-	case "targets":
-		if roleName == "targets" {
-			trustedRoot, trustedErr := loadTrustedRootFromS3(ctx, adminName, appName)
-			if trustedErr != nil {
-				return fmt.Errorf("trusted root is required for signature authorization: %w", trustedErr)
-			}
-			trustedRootSigned, signedErr := extractSignedSection(trustedRoot)
-			if signedErr != nil {
-				return fmt.Errorf("invalid trusted root metadata: %w", signedErr)
-			}
-			allowedKeys, err = getRootRoleKeysFromSigned(trustedRootSigned, "targets")
-			if err != nil {
-				return fmt.Errorf("failed to read trusted root targets keys: %w", err)
-			}
-		} else {
-			trustedTargets, trustedErr := loadTrustedTargetsFromS3(ctx, adminName, appName)
-			if trustedErr != nil {
-				return fmt.Errorf("trusted targets metadata is required for delegated signature authorization: %w", trustedErr)
-			}
-			allowedKeys, err = getDelegatedRoleKeysFromTrustedTargets(trustedTargets, roleName)
-			if err != nil {
-				return err
-			}
-		}
-	default:
-		return fmt.Errorf("signature validation not supported for metadata type %q", metadataType)
-	}
-
-	key, ok := allowedKeys[keyID]
-	if !ok {
-		return fmt.Errorf("keyid %s is not authorized for role %s", keyID, roleName)
-	}
-
-	if err := verifySignatureOverSignedPayload(signedData, key, signatureHex); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -1210,6 +997,26 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 	signatures, ok := metadataJSON["signatures"].([]interface{})
 	if !ok {
 		signatures = []interface{}{}
+	}
+	if err := ensureUniqueSignatureKeyIDs(signatures); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "Signature Failed",
+			"error":   err.Error(),
+		})
+		return
+	}
+	if metadataType != "root" && metadataType != "targets" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("signature validation not supported for metadata type %q", metadataType),
+		})
+		return
+	}
+	if err := ensureMetadataNotExpiredFromSigned(signedData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "Signature Failed",
+			"error":   err.Error(),
+		})
+		return
 	}
 
 	signatureExists := false
@@ -1411,11 +1218,44 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 				trustedRepo := repository.New()
 				trustedRepo.SetTargets("targets", trustedTargets)
 				if _, err := trustedRepo.Targets("targets").FromFile(targetsPath); err == nil {
-					if err := trustedRepo.Targets("targets").VerifyDelegate(payload.Role, repo.Targets(payload.Role)); err != nil {
-						validationError = err
-						thresholdReached = false
+					if payload.Role == "targets" {
+						trustedRoleVersion := int64(trustedRepo.Targets("targets").Signed.Version)
+						if int64(repo.Targets(payload.Role).Signed.Version) <= trustedRoleVersion {
+							validationError = fmt.Errorf("version must be greater than trusted version %d", trustedRoleVersion)
+							thresholdReached = false
+							break
+						}
+
+						trustedRootMeta, loadErr := loadTrustedRootMetadataFromS3(ctx, adminName, appName)
+						if loadErr != nil {
+							validationError = fmt.Errorf("failed to load trusted root metadata: %w", loadErr)
+							thresholdReached = false
+							break
+						}
+
+						if err := trustedRootMeta.VerifyDelegate("targets", repo.Targets(payload.Role)); err != nil {
+							validationError = err
+							thresholdReached = false
+						} else {
+							thresholdReached = true
+						}
 					} else {
-						thresholdReached = true
+						trustedRole, loadErr := loadTrustedTargetsMetadataFromS3(ctx, adminName, appName, payload.Role)
+						if loadErr != nil {
+							validationError = fmt.Errorf("failed to load trusted delegated role %s: %w", payload.Role, loadErr)
+							thresholdReached = false
+							break
+						}
+						trustedRoleVersion := int64(trustedRole.Signed.Version)
+						if int64(repo.Targets(payload.Role).Signed.Version) <= trustedRoleVersion {
+							validationError = fmt.Errorf("version must be greater than trusted version %d", trustedRoleVersion)
+							thresholdReached = false
+						} else if err := trustedRepo.Targets("targets").VerifyDelegate(payload.Role, repo.Targets(payload.Role)); err != nil {
+							validationError = err
+							thresholdReached = false
+						} else {
+							thresholdReached = true
+						}
 					}
 				}
 			}
@@ -1638,203 +1478,4 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 	}
 
 	c.JSON(http.StatusOK, response)
-}
-
-func finalizeRootMetadataUpdate(
-	ctx context.Context,
-	repo *repository.Type,
-	adminName string,
-	appName string,
-	tmpDir string,
-	isBootstrap bool,
-	bootstrapValue string,
-	redisClient *redis.Client,
-) error {
-	root := repo.Root()
-	if root == nil {
-		return fmt.Errorf("root metadata not loaded")
-	}
-
-	rootFilename := fmt.Sprintf("%d.root.json", root.Signed.Version)
-	rootPath := filepath.Join(tmpDir, rootFilename)
-	if err := root.ToFile(rootPath, true); err != nil {
-		return fmt.Errorf("failed to save root metadata: %w", err)
-	}
-
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
-		return fmt.Errorf("failed to upload root metadata to S3: %w", err)
-	}
-
-	if isBootstrap {
-		bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
-		if strings.HasPrefix(bootstrapValue, "signing-") {
-			taskID := strings.TrimPrefix(bootstrapValue, "signing-")
-			if err := redisClient.Set(ctx, bootstrapKey, taskID, 0).Err(); err != nil {
-				logrus.Warnf("Failed to update bootstrap state: %v", err)
-			}
-		}
-	}
-
-	logrus.Infof("Successfully finalized root metadata update: %s", rootFilename)
-	return nil
-}
-
-func finalizeTargetsMetadataUpdate(
-	ctx context.Context,
-	repo *repository.Type,
-	roleName string,
-	adminName string,
-	appName string,
-	tmpDir string,
-	redisClient *redis.Client,
-) error {
-	logrus.Debugf("Finalizing targets metadata update for role %s", roleName)
-	targets := repo.Targets(roleName)
-	if targets == nil {
-		return fmt.Errorf("targets metadata not loaded for role %s", roleName)
-	}
-
-	targetsFilename := fmt.Sprintf("%d.%s.json", targets.Signed.Version, roleName)
-	targetsPath := filepath.Join(tmpDir, targetsFilename)
-	if err := targets.ToFile(targetsPath, true); err != nil {
-		return fmt.Errorf("failed to save targets metadata: %w", err)
-	}
-
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, targetsFilename, targetsPath); err != nil {
-		return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
-	}
-
-	// Load root metadata to obtain snapshot and timestamp key IDs for re-signing.
-	rootPath := filepath.Join(tmpDir, "finalize_root.json")
-	_, rootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
-	if err != nil {
-		return fmt.Errorf("failed to find root metadata version: %w", err)
-	}
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
-		return fmt.Errorf("failed to download root metadata: %w", err)
-	}
-
-	rootData, err := os.ReadFile(rootPath)
-	if err != nil {
-		return fmt.Errorf("failed to read root metadata: %w", err)
-	}
-
-	var rootMetadata models.RootMetadata
-	if err := json.Unmarshal(rootData, &rootMetadata); err != nil {
-		return fmt.Errorf("failed to parse root metadata: %w", err)
-	}
-
-	// Build snapshot signers from root-declared keys.
-	snapshotRole, ok := rootMetadata.Signed.Roles["snapshot"]
-	if !ok || len(snapshotRole.KeyIDs) == 0 {
-		return fmt.Errorf("snapshot role not found in root metadata")
-	}
-	snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
-	if err != nil {
-		return fmt.Errorf("failed to build snapshot signers: %w", err)
-	}
-
-	// Build timestamp signers from root-declared keys.
-	timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]
-	if !ok || len(timestampRole.KeyIDs) == 0 {
-		return fmt.Errorf("timestamp role not found in root metadata")
-	}
-	timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
-	if err != nil {
-		return fmt.Errorf("failed to build timestamp signers: %w", err)
-	}
-
-	keySuffix := adminName + "_" + appName
-
-	// --- Update and re-sign snapshot ---
-	_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
-	if err != nil {
-		return fmt.Errorf("failed to find latest snapshot version: %w", err)
-	}
-
-	snapshotPath := filepath.Join(tmpDir, snapshotFilename)
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
-		return fmt.Errorf("failed to download snapshot metadata: %w", err)
-	}
-
-	snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, 7)
-	snapshot := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
-	repo.SetSnapshot(snapshot)
-	if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
-		return fmt.Errorf("failed to load snapshot metadata: %w", err)
-	}
-
-	repo.Snapshot().Signed.Meta[fmt.Sprintf("%s.json", roleName)] = metadata.MetaFile(int64(targets.Signed.Version))
-	repo.Snapshot().Signed.Version++
-	repo.Snapshot().Signed.Expires = tuf_utils.HelperExpireIn(snapshotExpiration)
-	repo.Snapshot().ClearSignatures()
-
-	for i, s := range snapshotSigners {
-		if _, err := repo.Snapshot().Sign(s); err != nil {
-			return fmt.Errorf("failed to sign snapshot metadata with key %d: %w", i+1, err)
-		}
-	}
-
-	newSnapshotFilename := fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
-	newSnapshotPath := filepath.Join(tmpDir, newSnapshotFilename)
-	if err := repo.Snapshot().ToFile(newSnapshotPath, true); err != nil {
-		return fmt.Errorf("failed to save snapshot metadata: %w", err)
-	}
-
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newSnapshotFilename, newSnapshotPath); err != nil {
-		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
-	}
-
-	logrus.Infof("Successfully updated and signed snapshot to version %d", repo.Snapshot().Signed.Version)
-
-	// --- Update and re-sign timestamp to reference new snapshot ---
-	timestampPath := filepath.Join(tmpDir, "timestamp.json")
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
-		logrus.Debugf("Timestamp metadata not found in storage, will create new: %v", err)
-	}
-
-	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, 1)
-	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
-	repo.SetTimestamp(timestamp)
-	loadedTimestamp := false
-	if _, statErr := os.Stat(timestampPath); statErr == nil {
-		if _, loadErr := repo.Timestamp().FromFile(timestampPath); loadErr != nil {
-			logrus.Warnf("Failed to load timestamp metadata: %v, creating new one", loadErr)
-		} else {
-			loadedTimestamp = true
-		}
-	}
-
-	timestampMeta := repo.Timestamp().Signed.Meta
-	if timestampMeta == nil {
-		timestampMeta = make(map[string]*metadata.MetaFiles)
-		repo.Timestamp().Signed.Meta = timestampMeta
-	}
-	timestampMeta["snapshot.json"] = metadata.MetaFile(int64(repo.Snapshot().Signed.Version))
-
-	if loadedTimestamp {
-		repo.Timestamp().Signed.Version++
-	}
-	repo.Timestamp().Signed.Expires = tuf_utils.HelperExpireIn(timestampExpiration)
-	repo.Timestamp().ClearSignatures()
-
-	for i, s := range timestampSigners {
-		if _, err := repo.Timestamp().Sign(s); err != nil {
-			return fmt.Errorf("failed to sign timestamp metadata with key %d: %w", i+1, err)
-		}
-	}
-
-	timestampOutPath := filepath.Join(tmpDir, "timestamp.json")
-	if err := repo.Timestamp().ToFile(timestampOutPath, true); err != nil {
-		return fmt.Errorf("failed to save timestamp metadata: %w", err)
-	}
-
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampOutPath); err != nil {
-		return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
-	}
-
-	logrus.Debugf("Successfully updated and signed timestamp referencing snapshot version %d", repo.Snapshot().Signed.Version)
-
-	logrus.Infof("Successfully finalized targets metadata update: %s", targetsFilename)
-	return nil
 }

@@ -112,11 +112,7 @@ func DeleteSlackNotificationState(owner, channel, appName, version string, rdb *
 
 func buildSlackNotificationBlocks(appName, channel, version string, platforms, arches, artifacts, changelog, extensions []string, publish, critical bool) []slack.Block {
 	blocks := []slack.Block{
-		slack.NewHeaderBlock(&slack.TextBlockObject{
-			Type:  slack.PlainTextType,
-			Text:  "Application version upload",
-			Emoji: true,
-		}),
+		slack.NewHeaderBlock(slack.NewTextBlockObject(slack.PlainTextType, "Application version upload", true, false)),
 		slack.NewSectionBlock(nil, []*slack.TextBlockObject{
 			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":package: *App name:*\n%s", appName), false, false),
 			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":bubbles: *Channel name:*\n%s", channel), false, false),
@@ -128,11 +124,7 @@ func buildSlackNotificationBlocks(appName, channel, version string, platforms, a
 
 	artifactItems := buildSlackArtifactItems(platforms, arches, artifacts, extensions)
 	if len(artifactItems) > 0 {
-		blocks = append(blocks, slack.NewDividerBlock(), slack.NewHeaderBlock(&slack.TextBlockObject{
-			Type:  slack.PlainTextType,
-			Text:  "Artifacts",
-			Emoji: true,
-		}))
+		blocks = append(blocks, slack.NewDividerBlock(), slack.NewHeaderBlock(slack.NewTextBlockObject(slack.PlainTextType, "Artifacts", true, false)))
 	}
 
 	for i, artifact := range artifactItems {
