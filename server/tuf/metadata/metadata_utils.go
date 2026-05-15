@@ -280,11 +280,19 @@ func stageMetadataForSigning(
 ) error {
 	signingKey := fmt.Sprintf("%s_SIGNING_%s", roleUpper, keySuffix)
 	taskKey := fmt.Sprintf("%s_SIGNING_TASK_%s", roleUpper, keySuffix)
-	if err := redisClient.Set(ctx, signingKey, string(metadataJSON), stagedSigningDataTTL).Err(); err != nil {
+	pipe := redisClient.TxPipeline()
+	defer pipe.Close()
+
+	metadataSetCmd := pipe.Set(ctx, signingKey, string(metadataJSON), stagedSigningDataTTL)
+	taskSetCmd := pipe.Set(ctx, taskKey, taskID, stagedSigningDataTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		if metadataErr := metadataSetCmd.Err(); metadataErr != nil {
+			return fmt.Errorf("failed to stage metadata for role %s: %w", roleUpper, metadataErr)
+		}
+		if taskErr := taskSetCmd.Err(); taskErr != nil {
+			return fmt.Errorf("failed to stage task for role %s: %w", roleUpper, taskErr)
+		}
 		return fmt.Errorf("failed to stage metadata for role %s: %w", roleUpper, err)
-	}
-	if err := redisClient.Set(ctx, taskKey, taskID, stagedSigningDataTTL).Err(); err != nil {
-		return fmt.Errorf("failed to stage task for role %s: %w", roleUpper, err)
 	}
 	return nil
 }
