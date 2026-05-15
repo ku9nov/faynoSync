@@ -8,6 +8,7 @@
 
 ### Maintenance
 
+- Upgraded `github.com/slack-go/slack` from v0.14.0 to v0.23.1.
 - Refactored the TUF metadata package by moving shared helpers and rotation orchestration from `metadata.go` into `metadata_utils.go`.
 - Added `metadata_delegated_rotate_test.go` covering delegated rotation staging and related error paths.
 
