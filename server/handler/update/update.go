@@ -135,7 +135,8 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		}
 		description := params["description"]
 		tuf := utils.GetBoolParam(params["tuf"])
-		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, owner, ctx)
+		reports := utils.GetBoolParam(params["reports"])
+		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, reports, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return

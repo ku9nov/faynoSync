@@ -116,6 +116,9 @@ func StartServer(config *viper.Viper) {
 	router.GET("/token/list", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.ListTokens)
 	router.DELETE("/token/delete", authMiddleware, utils.AdminOnlyMiddleware(mongoDatabase), handler.DeleteToken)
 
+	// Reports routes
+
+	// TUF routes
 	if config.GetBool("TUF_ENABLED") {
 		tuf.SetupRoutes(router, authMiddleware, mongoDatabase, redisClient, db)
 	}

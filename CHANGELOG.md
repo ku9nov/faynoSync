@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.14
+
+### Features
+
+- Added `reports` parameter to `POST /apps/create` and `POST /apps/update` endpoints.
+
 ## v1.5.13
 
 ### Features
