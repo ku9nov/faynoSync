@@ -9446,6 +9446,43 @@ func TestUpdateApp(t *testing.T) {
 	assert.True(t, exists)
 	assert.True(t, updated.(bool))
 }
+
+func TestListReportKeysNoValuesAfterUpdateAppReportsToFalse(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.ListReportKeys(c)
+	})
+
+	req, err := http.NewRequest("GET", "/report-keys/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ReportKeyResponse struct {
+		ReportKeys []model.ReportKeyListItem `json:"report_keys"`
+	}
+	var actual ReportKeyResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !assert.Len(t, actual.ReportKeys, 1) {
+		return
+	}
+	item := actual.ReportKeys[0]
+	assert.Equal(t, "public testapp", item.AppName)
+	assert.True(t, strings.HasPrefix(item.KeyValue, utils.ReportKeyPrefix))
+	assert.Len(t, item.KeyValue, len(utils.ReportKeyPrefix)+64)
+}
+
 func TestListAppsWhenExist(t *testing.T) {
 
 	router := gin.Default()

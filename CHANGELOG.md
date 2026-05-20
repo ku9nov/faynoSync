@@ -16,7 +16,7 @@
 
 ### Maintenance
 
-- Added integration tests: `TestListReportKeys`, `TestListReportKeysNoValues`, `TestListReportKeysWithSecondaryUser`, `TestListReportKeysAdminUserBeforeTeamUser`, `TestListReportKeysTeamUserPermissionDenied`, `TestListReportKeysTeamUser`, `TestRegenerateReportKey`, `TestFailedRegenerateReportKeyWithSecondaryUser`, `TestFailedRegenerateReportKeyWithTeamUser`, `TestRegenerateReportKeyTeamUser`.
+- Added integration tests: `TestListReportKeys`, `TestListReportKeysNoValues`, `TestListReportKeysWithSecondaryUser`, `TestListReportKeysAdminUserBeforeTeamUser`, `TestListReportKeysTeamUserPermissionDenied`, `TestListReportKeysTeamUser`, `TestRegenerateReportKey`, `TestFailedRegenerateReportKeyWithSecondaryUser`, `TestFailedRegenerateReportKeyWithTeamUser`, `TestRegenerateReportKeyTeamUser`, `TestListReportKeysNoValuesAfterUpdateAppReportsToFalse`.
 
 ## v1.5.13
 
