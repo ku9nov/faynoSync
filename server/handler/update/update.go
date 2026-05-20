@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	db "faynoSync/mongod"
 	"faynoSync/server/handler/create"
 	"faynoSync/server/model"
@@ -142,15 +143,19 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		description := params["description"]
 		tuf := utils.GetBoolParam(params["tuf"])
 		currentApp, appErr := repository.GetAppByID(objectID, owner, ctx)
-		reports := false
-		if appErr == nil {
-			reports = currentApp.Reports
-			previousReports = currentApp.Reports
-			hasCurrentAppState = true
-		} else if appErr.Error() != "app not found" {
+		if appErr != nil {
+			if errors.Is(appErr, db.ErrAppNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": appErr.Error()})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": appErr.Error()})
 			return
 		}
+
+		hasCurrentAppState = true
+		previousReports = currentApp.Reports
+		reports := currentApp.Reports
+
 		if reportParam, reportParamExists := params["reports"]; reportParamExists {
 			reports = utils.GetBoolParam(reportParam)
 			shouldSyncReportKey = true

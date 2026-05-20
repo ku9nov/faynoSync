@@ -5913,8 +5913,8 @@ func TestUpdateAppWithSecondUser(t *testing.T) {
 	router.ServeHTTP(w, req)
 	logrus.Infoln("Response Body:", w.Body.String())
 	// Check the response status code (expecting 200 OK)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d; got %d", http.StatusInternalServerError, w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d; got %d", http.StatusNotFound, w.Code)
 	}
 
 	// Parse the JSON response
@@ -5924,7 +5924,7 @@ func TestUpdateAppWithSecondUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := `{"error":"you don't have permission to update this app"}`
+	expected := `{"error":"app not found"}`
 	assert.Equal(t, expected, w.Body.String())
 }
 

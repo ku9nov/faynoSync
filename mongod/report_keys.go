@@ -14,6 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+var ErrAppNotFound = errors.New("app not found")
+
 func (c *appRepository) resolveOwnerAndTeamUser(ctx context.Context, requester string) (string, *model.TeamUser, error) {
 	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
@@ -43,7 +45,7 @@ func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx 
 	var app model.App
 	if err := collection.FindOne(ctx, filter).Decode(&app); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, errors.New("app not found")
+			return nil, ErrAppNotFound
 		}
 		return nil, err
 	}
