@@ -39,6 +39,11 @@ type AppRepository interface {
 	UpdatePlatform(id primitive.ObjectID, platformName string, updaters []model.Updater, owner string, ctx context.Context) (interface{}, error)
 	UpdateArch(id primitive.ObjectID, paramValue string, owner string, ctx context.Context) (interface{}, error)
 	DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context, owner string) ([]string, bool, error)
+	GetAppByID(id primitive.ObjectID, requester string, ctx context.Context) (*model.App, error)
+	CreateReportKey(appID primitive.ObjectID, requester string, ctx context.Context) (string, error)
+	DeleteReportKey(appID primitive.ObjectID, requester string, ctx context.Context) (bool, error)
+	ListReportKeys(requester string, ctx context.Context) ([]*model.ReportKeyListItem, error)
+	RegenerateReportKey(appID primitive.ObjectID, requester string, ctx context.Context) (string, error)
 }
 
 type appRepository struct {

@@ -456,8 +456,16 @@ The tests verify the implemented API using a test database and an existing S3 bu
   <li>TestTokenMiddlewareFlowForBothTokens</li>
   <li>TestTokenFlow02List</li>
   <li>TestTokenFlow03Delete</li>
-
-
+  <li>TestListReportKeys</li>
+  <li>TestListReportKeysNoValues</li>
+  <li>TestListReportKeysWithSecondaryUser</li>
+  <li>TestListReportKeysAdminUserBeforeTeamUser</li>
+  <li>TestListReportKeysTeamUserPermissionDenied</li>
+  <li>TestListReportKeysTeamUser</li>
+  <li>TestRegenerateReportKey</li>
+  <li>TestFailedRegenerateReportKeyWithSecondaryUser</li>
+  <li>TestFailedRegenerateReportKeyWithTeamUser</li>
+  <li>TestRegenerateReportKeyTeamUser</li>
 </details>
 
 ---

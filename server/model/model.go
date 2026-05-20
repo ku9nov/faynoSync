@@ -166,6 +166,27 @@ type APITokenResponse struct {
 	LastUsedAt  *time.Time         `json:"last_used_at,omitempty"`
 }
 
+type ReportKey struct {
+	ID        primitive.ObjectID `bson:"_id"`
+	AppID     primitive.ObjectID `bson:"app_id"`
+	Owner     string             `bson:"owner"`
+	KeyValue  string             `bson:"key_value"`
+	CreatedAt primitive.DateTime `bson:"created_at"`
+	UpdatedAt primitive.DateTime `bson:"updated_at"`
+}
+
+type ReportKeyListItem struct {
+	ID        primitive.ObjectID `bson:"_id" json:"id"`
+	AppID     primitive.ObjectID `bson:"app_id" json:"app_id"`
+	AppName   string             `bson:"app_name" json:"app_name"`
+	KeyValue  string             `bson:"key_value" json:"key_value"`
+	UpdatedAt primitive.DateTime `bson:"updated_at" json:"updated_at"`
+}
+
+type RegenerateReportKeyRequest struct {
+	AppID string `json:"app_id" binding:"required"`
+}
+
 type Permissions struct {
 	Apps struct {
 		Create   bool     `bson:"create"`

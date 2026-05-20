@@ -35,6 +35,11 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 
 	var result interface{}
 	var resultError error
+	var previousReports bool
+	var requestedReports bool
+	var shouldSyncReportKey bool
+	var appObjectID primitive.ObjectID
+	var hasCurrentAppState bool
 	switch itemType {
 	case "channel":
 		var req model.UpdateChannelRequest
@@ -119,6 +124,7 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id format"})
 			return
 		}
+		appObjectID = objectID
 		var logoLink string
 		form, _ := c.MultipartForm()
 		if form != nil {
@@ -135,7 +141,21 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		}
 		description := params["description"]
 		tuf := utils.GetBoolParam(params["tuf"])
-		reports := utils.GetBoolParam(params["reports"])
+		currentApp, appErr := repository.GetAppByID(objectID, owner, ctx)
+		reports := false
+		if appErr == nil {
+			reports = currentApp.Reports
+			previousReports = currentApp.Reports
+			hasCurrentAppState = true
+		} else if appErr.Error() != "app not found" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": appErr.Error()})
+			return
+		}
+		if reportParam, reportParamExists := params["reports"]; reportParamExists {
+			reports = utils.GetBoolParam(reportParam)
+			shouldSyncReportKey = true
+		}
+		requestedReports = reports
 		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, reports, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
@@ -144,6 +164,20 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 	if resultError != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": resultError.Error()})
 		return
+	}
+
+	if itemType == "app" && shouldSyncReportKey && hasCurrentAppState && previousReports != requestedReports {
+		if requestedReports {
+			if _, createReportKeyErr := repository.CreateReportKey(appObjectID, owner, ctx); createReportKeyErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": createReportKeyErr.Error()})
+				return
+			}
+		} else {
+			if _, deleteReportKeyErr := repository.DeleteReportKey(appObjectID, owner, ctx); deleteReportKeyErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": deleteReportKeyErr.Error()})
+				return
+			}
+		}
 	}
 	var tag language.Tag
 	titleCase := cases.Title(tag)
