@@ -126,6 +126,17 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			return
 		}
 		appObjectID = objectID
+		currentApp, appErr := repository.GetAppByID(objectID, owner, ctx)
+		if appErr != nil {
+			if errors.Is(appErr, db.ErrAppNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": appErr.Error()})
+				return
+			}
+			logrus.WithError(appErr).Error("failed to fetch app for update")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return
+		}
+
 		var logoLink string
 		form, _ := c.MultipartForm()
 		if form != nil {
@@ -142,16 +153,6 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		}
 		description := params["description"]
 		tuf := utils.GetBoolParam(params["tuf"])
-		currentApp, appErr := repository.GetAppByID(objectID, owner, ctx)
-		if appErr != nil {
-			if errors.Is(appErr, db.ErrAppNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": appErr.Error()})
-				return
-			}
-			logrus.WithError(appErr).Error("failed to fetch app for update")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
-		}
 
 		hasCurrentAppState = true
 		previousReports = currentApp.Reports
