@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
@@ -31,6 +32,7 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 
 	var result interface{}
 	var err error
+	shouldCreateReportKey := false
 
 	switch itemType {
 	case "channel":
@@ -109,7 +111,9 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		description := params["description"]
 		private := utils.GetBoolParam(params["private"])
 		tuf := utils.GetBoolParam(params["tuf"])
-		result, err = repository.CreateApp(paramValue, logoLink, description, private, tuf, owner.(string), ctx)
+		reports := utils.GetBoolParam(params["reports"])
+		shouldCreateReportKey = reports
+		result, err = repository.CreateApp(paramValue, logoLink, description, private, tuf, reports, owner.(string), ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
@@ -118,6 +122,25 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if itemType == "app" && shouldCreateReportKey {
+		appID, ok := result.(primitive.ObjectID)
+		if !ok {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve created app id"})
+			return
+		}
+
+		requester, requesterErr := utils.GetUsernameFromContext(c)
+		if requesterErr != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": requesterErr.Error()})
+			return
+		}
+
+		if _, createReportKeyErr := repository.CreateReportKey(appID, requester, ctx); createReportKeyErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": createReportKeyErr.Error()})
+			return
+		}
 	}
 	var tag language.Tag
 	titleCase := cases.Title(tag)

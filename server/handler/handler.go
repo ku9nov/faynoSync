@@ -7,6 +7,7 @@ import (
 	"faynoSync/server/handler/delete"
 	"faynoSync/server/handler/download"
 	"faynoSync/server/handler/info"
+	"faynoSync/server/handler/report"
 	"faynoSync/server/handler/sign"
 	"faynoSync/server/handler/team"
 	"faynoSync/server/handler/token"
@@ -57,6 +58,8 @@ type AppHandler interface {
 	CreateToken(*gin.Context)
 	ListTokens(*gin.Context)
 	DeleteToken(*gin.Context)
+	ListReportKeys(*gin.Context)
+	RegenerateReportKey(*gin.Context)
 }
 
 type appHandler struct {
@@ -267,4 +270,12 @@ func (ch *appHandler) ListTokens(c *gin.Context) {
 
 func (ch *appHandler) DeleteToken(c *gin.Context) {
 	token.DeleteToken(c, ch.database)
+}
+
+func (ch *appHandler) ListReportKeys(c *gin.Context) {
+	report.ListReportKeys(c, ch.repository)
+}
+
+func (ch *appHandler) RegenerateReportKey(c *gin.Context) {
+	report.RegenerateReportKey(c, ch.repository)
 }

@@ -1,0 +1,23 @@
+[
+  {
+    "createIndexes": "report_keys",
+    "indexes": [
+      {
+        "key": {
+          "app_id": 1
+        },
+        "name": "report_keys_unique_app_id",
+        "unique": true,
+        "background": true
+      },
+      {
+        "key": {
+          "owner": 1,
+          "updated_at": -1
+        },
+        "name": "report_keys_owner_updated_desc",
+        "background": true
+      }
+    ]
+  }
+]

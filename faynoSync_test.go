@@ -562,7 +562,7 @@ func TestAppCreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app": "testapp", "private": "true"}`
+	payload := `{"app": "testapp", "private": "true", "tuf": "true", "reports": "true"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -607,6 +607,137 @@ func TestAppCreate(t *testing.T) {
 	assert.NotEmpty(t, idTestappApp)
 }
 
+var keyValueReportKeyTestapp string
+
+func TestListReportKeys(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.ListReportKeys(c)
+	})
+
+	req, err := http.NewRequest("GET", "/report-keys/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ReportKeyResponse struct {
+		ReportKeys []model.ReportKeyListItem `json:"report_keys"`
+	}
+	var actual ReportKeyResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !assert.Len(t, actual.ReportKeys, 1) {
+		return
+	}
+	item := actual.ReportKeys[0]
+	assert.Equal(t, "testapp", item.AppName)
+	assert.True(t, strings.HasPrefix(item.KeyValue, utils.ReportKeyPrefix))
+	assert.Len(t, item.KeyValue, len(utils.ReportKeyPrefix)+64)
+	keyValueReportKeyTestapp = item.KeyValue
+}
+
+func TestRegenerateReportKey(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/report-keys/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.RegenerateReportKey(c)
+	})
+
+	payload := `{"app_id": "` + idTestappApp + `"}`
+	req, err := http.NewRequest("POST", "/report-keys/regenerate", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, idTestappApp, response["app_id"])
+	assert.NotEqual(t, keyValueReportKeyTestapp, response["key_value"].(string))
+	assert.True(t, strings.HasPrefix(response["key_value"].(string), utils.ReportKeyPrefix))
+	assert.Len(t, response["key_value"].(string), len(utils.ReportKeyPrefix)+64)
+	keyValueReportKeyTestapp = response["key_value"].(string)
+}
+func TestFailedRegenerateReportKeyWithSecondaryUser(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/report-keys/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.RegenerateReportKey(c)
+	})
+
+	payload := `{"app_id": "` + idTestappApp + `"}`
+	req, err := http.NewRequest("POST", "/report-keys/regenerate", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "app not found", response["error"].(string))
+}
+func TestListReportKeysWithSecondaryUser(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.ListReportKeys(c)
+	})
+
+	req, err := http.NewRequest("GET", "/report-keys/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ReportKeyResponse struct {
+		ReportKeys []model.ReportKeyListItem `json:"report_keys"`
+	}
+	var actual ReportKeyResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !assert.Len(t, actual.ReportKeys, 0) {
+		t.Fatal("Expected 0 report keys")
+	}
+}
+
 func TestCreatePublicApp(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()
@@ -628,7 +759,7 @@ func TestCreatePublicApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app": "public testapp"}`
+	payload := `{"app": "public testapp", "reports": "true"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -5782,8 +5913,8 @@ func TestUpdateAppWithSecondUser(t *testing.T) {
 	router.ServeHTTP(w, req)
 	logrus.Infoln("Response Body:", w.Body.String())
 	// Check the response status code (expecting 200 OK)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d; got %d", http.StatusInternalServerError, w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d; got %d", http.StatusNotFound, w.Code)
 	}
 
 	// Parse the JSON response
@@ -5793,7 +5924,7 @@ func TestUpdateAppWithSecondUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := `{"error":"you don't have permission to update this app"}`
+	expected := `{"error":"app not found"}`
 	assert.Equal(t, expected, w.Body.String())
 }
 
@@ -6259,6 +6390,29 @@ func TestTeamUserLogin(t *testing.T) {
 	assert.NotEmpty(t, teamUserToken)
 }
 
+func TestListReportKeysTeamUserPermissionDenied(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.ListReportKeys(c)
+	})
+
+	req, err := http.NewRequest("GET", "/report-keys/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+teamUserToken)
+	router.ServeHTTP(w, req)
+	logrus.Infoln("w.Body.String()", w.Body.String())
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	expected := `{"error":"Permission denied"}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
 var uploadedTeamApp string
 
 func TestFailedUploadAppUsingTeamUser(t *testing.T) {
@@ -6539,6 +6693,8 @@ func TestListAppsUsingTeamUserBeforeCreate(t *testing.T) {
 		ID         string `json:"ID"`
 		AppName    string `json:"AppName"`
 		Updated_at string `json:"Updated_at"`
+		Reports    bool   `json:"Reports"`
+		Tuf        bool   `json:"Tuf"`
 	}
 	type AppResponse struct {
 		Apps []AppInfo `json:"apps"`
@@ -6547,6 +6703,8 @@ func TestListAppsUsingTeamUserBeforeCreate(t *testing.T) {
 	expected := []AppInfo{
 		{
 			AppName: "testapp",
+			Reports: true,
+			Tuf:     true,
 		},
 	}
 	var actual AppResponse
@@ -6559,6 +6717,8 @@ func TestListAppsUsingTeamUserBeforeCreate(t *testing.T) {
 	// Compare the relevant fields (AppName) for each item in the response.
 	for i, expectedApp := range expected {
 		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
+		assert.Equal(t, expectedApp.Reports, actual.Apps[i].Reports)
+		assert.Equal(t, expectedApp.Tuf, actual.Apps[i].Tuf)
 	}
 }
 
@@ -7506,6 +7666,35 @@ func TestWhoAmITeamUser(t *testing.T) {
 	assert.NotNil(t, permissions)
 	assert.Equal(t, 4, len(permissions))
 }
+func TestFailedRegenerateReportKeyWithTeamUser(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/report-keys/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.RegenerateReportKey(c)
+	})
+
+	payload := `{"app_id": "` + idTestappApp + `"}`
+	req, err := http.NewRequest("POST", "/report-keys/regenerate", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+teamUserToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "Permission denied", response["error"].(string))
+}
+
 func TestUpdateTeamUser(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
@@ -7593,6 +7782,112 @@ func TestUpdateTeamUser(t *testing.T) {
 
 	expected := `{"message":"Team user updated successfully"}`
 	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestRegenerateReportKeyTeamUser(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/report-keys/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.RegenerateReportKey(c)
+	})
+
+	payload := `{"app_id": "` + idTestappApp + `"}`
+	req, err := http.NewRequest("POST", "/report-keys/regenerate", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+teamUserToken)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, idTestappApp, response["app_id"])
+	assert.NotEqual(t, keyValueReportKeyTestapp, response["key_value"].(string))
+	assert.True(t, strings.HasPrefix(response["key_value"].(string), utils.ReportKeyPrefix))
+	assert.Len(t, response["key_value"].(string), len(utils.ReportKeyPrefix)+64)
+	// keyValueReportKeyTestapp = response["key_value"].(string)
+}
+
+func TestListReportKeysAdminUserBeforeTeamUser(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.ListReportKeys(c)
+	})
+
+	req, err := http.NewRequest("GET", "/report-keys/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ReportKeyResponse struct {
+		ReportKeys []model.ReportKeyListItem `json:"report_keys"`
+	}
+	var actual ReportKeyResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !assert.Len(t, actual.ReportKeys, 2) {
+		t.Fatal("Expected 2 report keys")
+	}
+	for _, item := range actual.ReportKeys {
+		assert.Contains(t, []string{"testapp", "public testapp"}, item.AppName)
+		assert.True(t, strings.HasPrefix(item.KeyValue, utils.ReportKeyPrefix))
+		assert.Len(t, item.KeyValue, len(utils.ReportKeyPrefix)+64)
+	}
+}
+
+func TestListReportKeysTeamUser(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.ListReportKeys(c)
+	})
+
+	req, err := http.NewRequest("GET", "/report-keys/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+teamUserToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ReportKeyResponse struct {
+		ReportKeys []model.ReportKeyListItem `json:"report_keys"`
+	}
+	var actual ReportKeyResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !assert.Len(t, actual.ReportKeys, 1) {
+		return
+	}
+	item := actual.ReportKeys[0]
+	assert.Equal(t, "testapp", item.AppName)
+	assert.True(t, strings.HasPrefix(item.KeyValue, utils.ReportKeyPrefix))
+	assert.Len(t, item.KeyValue, len(utils.ReportKeyPrefix)+64)
 }
 
 func TestUpdateAppUsingTeamUser(t *testing.T) {
@@ -9109,7 +9404,7 @@ func TestUpdateApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := fmt.Sprintf(`{"id": "%s", "app":"newApp"}`, idTestappApp)
+	payload := fmt.Sprintf(`{"id": "%s", "app":"newApp", "tuf": "false", "reports": "false"}`, idTestappApp)
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -9151,6 +9446,43 @@ func TestUpdateApp(t *testing.T) {
 	assert.True(t, exists)
 	assert.True(t, updated.(bool))
 }
+
+func TestListReportKeysNoValuesAfterUpdateAppReportsToFalse(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.ListReportKeys(c)
+	})
+
+	req, err := http.NewRequest("GET", "/report-keys/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ReportKeyResponse struct {
+		ReportKeys []model.ReportKeyListItem `json:"report_keys"`
+	}
+	var actual ReportKeyResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !assert.Len(t, actual.ReportKeys, 1) {
+		return
+	}
+	item := actual.ReportKeys[0]
+	assert.Equal(t, "public testapp", item.AppName)
+	assert.True(t, strings.HasPrefix(item.KeyValue, utils.ReportKeyPrefix))
+	assert.Len(t, item.KeyValue, len(utils.ReportKeyPrefix)+64)
+}
+
 func TestListAppsWhenExist(t *testing.T) {
 
 	router := gin.Default()
@@ -9179,6 +9511,8 @@ func TestListAppsWhenExist(t *testing.T) {
 	type AppInfo struct {
 		ID         string `json:"ID"`
 		AppName    string `json:"AppName"`
+		Reports    bool   `json:"Reports"`
+		Tuf        bool   `json:"Tuf"`
 		Updated_at string `json:"Updated_at"`
 	}
 	type AppResponse struct {
@@ -9188,6 +9522,8 @@ func TestListAppsWhenExist(t *testing.T) {
 	expected := []AppInfo{
 		{
 			AppName: "newApp",
+			Reports: false,
+			Tuf:     false,
 		},
 	}
 	var actual AppResponse
@@ -9199,6 +9535,8 @@ func TestListAppsWhenExist(t *testing.T) {
 	// Compare the relevant fields (ChannelName) for each item in the response.
 	for i, expectedApp := range expected {
 		assert.Equal(t, expectedApp.AppName, actual.Apps[i].AppName)
+		assert.Equal(t, expectedApp.Reports, actual.Apps[i].Reports)
+		assert.Equal(t, expectedApp.Tuf, actual.Apps[i].Tuf)
 	}
 }
 
@@ -9291,7 +9629,37 @@ func TestDeletePublicAppMeta(t *testing.T) {
 	expected := `{"deleteAppResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
 }
+func TestListReportKeysNoValues(t *testing.T) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
 
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.ListReportKeys(c)
+	})
+
+	req, err := http.NewRequest("GET", "/report-keys/list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	type ReportKeyResponse struct {
+		ReportKeys []model.ReportKeyListItem `json:"report_keys"`
+	}
+	var actual ReportKeyResponse
+	err = json.Unmarshal(w.Body.Bytes(), &actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !assert.Len(t, actual.ReportKeys, 0) {
+		t.Fatal("Expected 0 report keys")
+	}
+}
 func TestFailedUpdateAdminUser(t *testing.T) {
 	// Initialize Gin router and recorder for the test
 	router := gin.Default()

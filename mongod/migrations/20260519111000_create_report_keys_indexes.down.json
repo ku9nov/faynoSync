@@ -1,0 +1,10 @@
+[
+  {
+    "dropIndexes": "report_keys",
+    "index": "report_keys_unique_app_id"
+  },
+  {
+    "dropIndexes": "report_keys",
+    "index": "report_keys_owner_updated_desc"
+  }
+]

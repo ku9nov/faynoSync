@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.5.14
+
+### Features
+
+- Added `reports` parameter to `POST /app/create` and `POST /app/update` endpoints.
+- When `reports` is enabled, a public report key is created in the `report_keys` collection and bound to the app (one key per app).
+- Toggling `reports` on app update creates or removes the report key binding when the flag changes.
+- Added `GET /report-keys/list` to list report keys with app identity for the current owner (team users see only allowed apps).
+- Added `POST /report-keys/regenerate` to replace the report key value for a given app.
+
+### Database
+
+- Added `report_keys` collection indexes: unique `app_id` and owner lookup for listing.
+
+### Maintenance
+
+- Added integration tests: `TestListReportKeys`, `TestListReportKeysNoValues`, `TestListReportKeysWithSecondaryUser`, `TestListReportKeysAdminUserBeforeTeamUser`, `TestListReportKeysTeamUserPermissionDenied`, `TestListReportKeysTeamUser`, `TestRegenerateReportKey`, `TestFailedRegenerateReportKeyWithSecondaryUser`, `TestFailedRegenerateReportKeyWithTeamUser`, `TestRegenerateReportKeyTeamUser`, `TestListReportKeysNoValuesAfterUpdateAppReportsToFalse`.
+
 ## v1.5.13
 
 ### Features
