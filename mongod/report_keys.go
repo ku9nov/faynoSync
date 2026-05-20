@@ -30,9 +30,25 @@ func (c *appRepository) resolveOwnerAndTeamUser(ctx context.Context, requester s
 }
 
 func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx context.Context) (*model.App, error) {
-	owner, _, err := c.resolveOwnerAndTeamUser(ctx, requester)
+	owner, teamUser, err := c.resolveOwnerAndTeamUser(ctx, requester)
 	if err != nil {
 		return nil, err
+	}
+	if teamUser != nil {
+		if !teamUser.Permissions.Apps.Edit {
+			return nil, errors.New("you don't have permission to edit apps")
+		}
+
+		appAllowed := false
+		for _, allowedAppID := range teamUser.Permissions.Apps.Allowed {
+			if allowedAppID == id.Hex() {
+				appAllowed = true
+				break
+			}
+		}
+		if !appAllowed {
+			return nil, errors.New("you don't have access to this app")
+		}
 	}
 
 	collection := c.client.Database(c.config.Database).Collection("apps_meta")
