@@ -148,7 +148,8 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 				c.JSON(http.StatusNotFound, gin.H{"error": appErr.Error()})
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": appErr.Error()})
+			logrus.WithError(appErr).Error("failed to fetch app for update")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 			return
 		}
 
