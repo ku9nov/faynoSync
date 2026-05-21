@@ -1127,6 +1127,71 @@
       "response": []
     },
     {
+      "name": "List Report Keys",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/report-keys/list",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "report-keys",
+            "list"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Regenerate Report Key",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"app_id\": \"69ef5400b198f14a2f590415\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/report-keys/regenerate",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "report-keys",
+            "regenerate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Delete Team User",
       "request": {
         "auth": {
