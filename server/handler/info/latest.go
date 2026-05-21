@@ -123,6 +123,16 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			var cachedData CachedResponse
 			if json.Unmarshal([]byte(cachedResponse), &cachedData) == nil {
 				logrus.Debugln("Return cached data: ", cachedData)
+				deviceID := c.GetHeader("X-Device-ID")
+				hasUpdate := false
+				if responseMap, ok := cachedData.Response.(map[string]interface{}); ok {
+					if updateAvailable, exists := responseMap["update_available"]; exists {
+						if updateAvailableBool, ok := updateAvailable.(bool); ok {
+							hasUpdate = updateAvailableBool
+						}
+					}
+				}
+				logStatsToRedis(ctx, rdb, validatedParams, hasUpdate, deviceID)
 
 				// Handle redirect for cached response
 				if cachedData.HTTPStatus == 302 {
