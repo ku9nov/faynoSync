@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.15
+
+### Fixes
+
+- Fixed telemetry does not work when performance mode is enabled.
+
 ## v1.5.14
 
 ### Features
