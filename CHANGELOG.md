@@ -5,6 +5,7 @@
 ### Fixes
 
 - Fixed telemetry does not work when performance mode is enabled.
+- Added `cdn` parameter to `POST /app/create` and `POST /app/update` endpoints.
 
 ## v1.5.14
 

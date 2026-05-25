@@ -157,13 +157,17 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		hasCurrentAppState = true
 		previousReports = currentApp.Reports
 		reports := currentApp.Reports
+		cdnEdge := currentApp.CdnEdge
 
 		if reportParam, reportParamExists := params["reports"]; reportParamExists {
 			reports = utils.GetBoolParam(reportParam)
 			shouldSyncReportKey = true
 		}
+		if cdnParam, cdnParamExists := params["cdn"]; cdnParamExists {
+			cdnEdge = utils.GetBoolParam(cdnParam)
+		}
 		requestedReports = reports
-		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, reports, owner, ctx)
+		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, reports, cdnEdge, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
