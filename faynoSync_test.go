@@ -10,8 +10,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -22,11 +24,14 @@ import (
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 
+	faynosync "github.com/ku9nov/faynosync-sdk-go"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -102,6 +107,44 @@ func removeFile(filename string) {
 	if err != nil {
 		logrus.Errorf("Failed to remove the file: %v", err)
 		return
+	}
+}
+
+func assertSDKMatchesScenario(t *testing.T, expected map[string]interface{}, actual *faynosync.UpdateResponse) {
+	t.Helper()
+
+	require.Equal(t, expected["update_available"], actual.UpdateAvailable)
+	require.Equal(t, expected["critical"], actual.Critical)
+	if expectedIntermediate, ok := expected["is_intermediate_required"]; ok {
+		require.Equal(t, expectedIntermediate, actual.IsIntermediateRequired)
+	}
+	if expectedRollback, ok := expected["possible_rollback"]; ok {
+		rollbackField := reflect.ValueOf(actual).Elem().FieldByName("PossibleRollback")
+		if rollbackField.IsValid() && rollbackField.Kind() == reflect.Bool {
+			require.Equal(t, expectedRollback, rollbackField.Bool())
+		}
+	}
+
+	if expectedChangelog, ok := expected["changelog"]; ok {
+		require.Equal(t, expectedChangelog, actual.Changelog)
+	}
+
+	if expectedURL, ok := expected["update_url"]; ok {
+		require.Equal(t, expectedURL, actual.UpdateURL)
+	}
+
+	actualPackages := make(map[string]string, len(actual.PackageURLs))
+	for _, pkg := range actual.PackageURLs {
+		actualPackages[pkg.Package] = pkg.URL
+	}
+
+	for key, expectedValue := range expected {
+		if !strings.HasPrefix(key, "update_url_") {
+			continue
+		}
+
+		pkg := strings.TrimPrefix(key, "update_url_")
+		require.Equal(t, expectedValue, actualPackages[pkg], "package URL mismatch for %s", pkg)
 	}
 }
 
@@ -4854,6 +4897,21 @@ func TestCheckVersion(t *testing.T) {
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	sdkClient := faynosync.NewClient(faynosync.Config{
+		BaseURL: server.URL,
+	})
+
+	decodeScenarioValue := func(raw string) string {
+		decoded, err := url.QueryUnescape(raw)
+		if err != nil {
+			return raw
+		}
+		return decoded
+	}
+
 	// Define test scenarios.
 	testScenarios := []struct {
 		AppName      string
@@ -4986,6 +5044,20 @@ func TestCheckVersion(t *testing.T) {
 
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
+
+			sdkResp, err := sdkClient.CheckForUpdates(
+				context.Background(),
+				faynosync.CheckOptions{
+					Owner:    decodeScenarioValue(scenario.Owner),
+					AppName:  decodeScenarioValue(scenario.AppName),
+					Version:  decodeScenarioValue(scenario.Version),
+					Channel:  decodeScenarioValue(scenario.ChannelName),
+					Platform: decodeScenarioValue(scenario.Platform),
+					Arch:     decodeScenarioValue(scenario.Arch),
+				},
+			)
+			require.NoError(t, err)
+			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
 		})
 	}
 }
@@ -5175,6 +5247,20 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	sdkClient := faynosync.NewClient(faynosync.Config{
+		BaseURL: server.URL,
+	})
+
+	decodeScenarioValue := func(raw string) string {
+		decoded, err := url.QueryUnescape(raw)
+		if err != nil {
+			return raw
+		}
+		return decoded
+	}
 	// Define test scenarios.
 	testScenarios := []struct {
 		AppName      string
@@ -5297,6 +5383,20 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
+			sdkResp, err := sdkClient.CheckForUpdates(
+				context.Background(),
+				faynosync.CheckOptions{
+					Owner:    decodeScenarioValue(scenario.Owner),
+					AppName:  decodeScenarioValue(scenario.AppName),
+					Version:  decodeScenarioValue(scenario.Version),
+					Channel:  decodeScenarioValue(scenario.ChannelName),
+					Platform: decodeScenarioValue(scenario.Platform),
+					Arch:     decodeScenarioValue(scenario.Arch),
+					DeviceID: decodeScenarioValue(scenario.DeviceID),
+				},
+			)
+			require.NoError(t, err)
+			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
 		})
 	}
 }
@@ -5331,7 +5431,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 				"date_range": dateRange,
 				"admin":      "admin",
 				"summary": map[string]interface{}{
-					"total_requests":               float64(5),
+					"total_requests":               float64(10),
 					"unique_clients":               float64(1),
 					"clients_using_latest_version": float64(0),
 					"clients_outdated":             float64(1),
@@ -5375,7 +5475,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
-					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(5), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(10), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
 				},
 			},
 		},
@@ -5389,7 +5489,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 				"date_range": dateRange,
 				"admin":      "admin",
 				"summary": map[string]interface{}{
-					"total_requests":               float64(5),
+					"total_requests":               float64(10),
 					"unique_clients":               float64(1),
 					"clients_using_latest_version": float64(0),
 					"clients_outdated":             float64(1),
@@ -5433,7 +5533,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
-					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(5), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(10), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
 				},
 			},
 		},
@@ -5446,7 +5546,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 				"date_range": dateRange,
 				"admin":      "admin",
 				"summary": map[string]interface{}{
-					"total_requests":               float64(5),
+					"total_requests":               float64(10),
 					"unique_clients":               float64(1),
 					"clients_using_latest_version": float64(0),
 					"clients_outdated":             float64(1),
@@ -5490,7 +5590,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
-					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(5), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(10), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
 				},
 			},
 		},
@@ -5503,7 +5603,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 				"date_range": dateRange,
 				"admin":      "admin",
 				"summary": map[string]interface{}{
-					"total_requests":               float64(5),
+					"total_requests":               float64(10),
 					"unique_clients":               float64(1),
 					"clients_using_latest_version": float64(0),
 					"clients_outdated":             float64(1),
@@ -5547,7 +5647,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
-					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(5), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(10), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
 				},
 			},
 		},
@@ -8572,6 +8672,20 @@ func TestCheckVersionWithIntermediate(t *testing.T) {
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	sdkClient := faynosync.NewClient(faynosync.Config{
+		BaseURL: server.URL,
+	})
+
+	decodeScenarioValue := func(raw string) string {
+		decoded, err := url.QueryUnescape(raw)
+		if err != nil {
+			return raw
+		}
+		return decoded
+	}
 	// Define test scenarios.
 	testScenarios := []struct {
 		AppName      string
@@ -8702,6 +8816,19 @@ func TestCheckVersionWithIntermediate(t *testing.T) {
 
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
+			sdkResp, err := sdkClient.CheckForUpdates(
+				context.Background(),
+				faynosync.CheckOptions{
+					Owner:    decodeScenarioValue(scenario.Owner),
+					AppName:  decodeScenarioValue(scenario.AppName),
+					Version:  decodeScenarioValue(scenario.Version),
+					Channel:  decodeScenarioValue(scenario.ChannelName),
+					Platform: decodeScenarioValue(scenario.Platform),
+					Arch:     decodeScenarioValue(scenario.Arch),
+				},
+			)
+			require.NoError(t, err)
+			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
 		})
 	}
 }
