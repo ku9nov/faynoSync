@@ -6,78 +6,99 @@ This idea has been in the air for a long time; this document captures it in one 
 
 No matter how much we optimize the API, it will eventually hit resource limits and push us toward DB clustering, replication, and similar ops — which we want to avoid.
 
-For v2, the goal is to build the update flow as **zero-downtime, CDN-native auto-update infrastructure**.
+For v2, the goal is to move the hot path to **SDK-driven edge-first reads with S3-backed response cache**.
 
 ## Two modes (both supported)
 
 | Mode | Endpoint | Notes |
 |------|----------|--------|
 | **Dynamic API** | `/checkVersion` | Unchanged; existing clients and tooling keep working. |
-| **Static CDN** | CDN edge → S3 manifests | New path for high-scale client traffic. |
+| **Edge + S3 cache** | SDK `EdgeURL` → S3 manifests | New high-scale path for client version checks. |
 
-## Static CDN mode — overview
+## Edge + S3 mode — overview
 
 ### Configuration
 
-- Toggle per admin / per app via API.
-- Env vars for CloudFront cache invalidation (AWS-specific for now).
-- Public CDN S3 bucket for response manifests (metadata only; binaries stay on the existing private flow).
-- Works alongside `PERFORMANCE_MODE=true` (Redis caches the same response shapes today).
+- Toggle per app via API (`cdn` parameter on the application).
+- Public S3 bucket for response manifests (metadata only; binaries stay on the existing artifact flow).
+- Independent from `PERFORMANCE_MODE` (no coupling).
+- SDK can optionally use edge-first behavior by passing `EdgeURL` in client config.
 
 ### Request flow
 
 ```
-Client
+SDK Client (`BaseURL` + optional `EdgeURL`)
   ↓
-CDN / Edge
+If `EdgeURL` is set, SDK checks edge/S3 first
   ↓
-  ├─ HIT  → serve manifest from S3
-  └─ MISS → Origin API (/checkVersion)
+  ├─ HIT  → return cached response to client
+  └─ MISS → call Origin API (`/checkVersion`) via `BaseURL`
               ↓
-            Persist manifest to S3
+            API returns normal response
               ↓
-            Future requests → CDN HIT (no API)
+            SDK persists response to S3 cache path
+              ↓
+            Future checks → edge/S3 HIT
 ```
 
-**Scale property:** work is amortized per **cache key** (query dimensions), not per client.
+**Scale property:** origin API load is amortized per **cache key** (query dimensions), not per client.
 
 Example: 100,000 clients on 5 distinct client versions → at most **5** origin calls per dimension set after warm-up, not 100,000.
 
-In practice, warm-up keys multiply:
+In practice, cache keys multiply:
 
 ```
 N ≈ client_versions × channel × platform × arch × updater × package
 ```
 
-Example: 5 versions × 5 dimension combinations ≈ **25** origin calls on publish — well within API capacity (~1000 req/s on a minimal server).
+Example: 5 versions × 5 dimension combinations ≈ **25** origin calls to build cache coverage instead of 100,000 direct API checks.
 
-### Publish / unpublish (primary path)
+### Publish / unpublish behavior
 
-On publish or unpublish of the version (any version):
+On publish or unpublish of any version:
 
-1. Delete all response manifests for that app scope from the CDN S3 bucket.
-2. Invalidate CDN cache for the affected paths.
-3. **Warm manifests:** run `/checkVersion` logic for each known `(owner, app, channel, platform, arch, client_version, updater, package, …)` combination and write JSON to S3.
+1. Delete response manifests for the affected app scope.
+2. Subsequent checks become MISS and repopulate cache through the normal SDK fallback path.
 
-This is the main path; it avoids a thundering herd of client-driven MISS traffic right after a release.
+### Fallback fill (normal operation)
 
-### Lazy fill (fallback)
+If edge/S3 returns MISS, SDK calls `/checkVersion` and then stores the received response in S3.
 
-If CDN mode is enabled, the API may also persist a manifest at the end of `/checkVersion` when handling a MISS (origin fill).
+This naturally handles rare or new dimension combinations without pre-warm jobs.
 
-Use this for rare or new dimension combinations that were not warmed on publish.
+### HTTP status behavior on edge/S3
 
-### HTTP status codes on CDN
-
-The edge/CDN typically returns `200 OK` for objects that exist. Updater-specific behavior must be handled explicitly:
+The edge path typically returns `200 OK` when manifest object exists. MISS falls back to origin API.
 
 | Updater / case | Approach |
 |----------------|----------|
 | Default JSON | Store full faynoSync response body in S3. |
-| No update (e.g. squirrel, electron-builder, tauri) | Omit the object and/or small logic in the CDN module (204 No Content). |
-| electron-builder, squirrel_windows | Clients already expect CDN-hosted artifacts; place YML / RELEASES at the correct paths (no change to client contract). |
+| No update | Return API result, cache it under the same key rules. |
+| Updater-specific artifact contracts | Keep existing contract; only response lookup path changes. |
 
-`PERFORMANCE_MODE` already caches `(body, http_status)` in Redis; CDN manifests should mirror the same semantics per updater type.
+Response caching behavior in this mode is separate from Redis caching used by `PERFORMANCE_MODE`.
+
+For JavaScript SDK integrations (`electron-builder`, `tauri`, `squirrel`), updater-specific protocol details are handled in `js-sdk`.
+API already returns and caches all required response payloads; SDK maps those payloads to updater-compatible HTTP semantics.
+
+Example cached response payloads interpreted by `js-sdk`:
+
+```json
+{
+  "status": "no_content"
+}
+```
+
+SDK behavior: return `204 No Content` to the updater.
+
+```json
+{
+  "status": "redirect",
+  "url": "http://cb-faynosync-s3-public.web.garage.localhost:3902/electron-builder/electron-admin/0.0.0.2/nightly/darwin/arm64/latest.yml"
+}
+```
+
+SDK behavior: return updater-facing redirect/link response based on the provided `url`.
 
 ### Manifest content and paths
 
@@ -94,52 +115,63 @@ Manifests store the **full faynoSync JSON response** (same fields as Dynamic API
 }
 ```
 
-**Path layout (draft):**
+**Path layout:**
 
 ```
 /responses/{owner}/{app_name}/{channel}/{platform}/{arch}/{client_version}.json
 ```
 
-Alternative: hash-based key, e.g. `sha256(owner + app + channel + platform + arch + client_version)`.
-
 **No `latest.json` on CDN:** version comparison stays server-side (or in precomputed per–client-version manifests). A single `latest.json` would push comparison logic to clients and break the original faynoSync model.
 
 ### Event → action (manifest lifecycle)
 
-| Event | S3 / CDN action |
-|-------|------------------|
-| Publish / unpublish latest | Delete manifest prefix for app scope → warm all known dimension keys → invalidate CDN |
-| Rare new client dimension | Lazy fill on MISS → write S3 → subsequent HITs |
+| Event | S3 / Edge action |
+|-------|-------------------|
+| Publish / unpublish | Delete manifest prefix for app scope |
+| Any later check for missing key | SDK fallback to `/checkVersion` → write S3 → subsequent HITs |
 
 Fields such as `critical`, `is_intermediate_required`, and `possible_rollback` are included when manifests are regenerated from `/checkVersion` logic.
 
-## Implementation: `faynosync-cdn-module`
+## Implementation via SDK
 
-A small TypeScript app (separate repo, e.g. `faynosync-cdn-module`):
+SDK supports edge-first checks when `EdgeURL` is provided:
 
-- Built artifacts published on GitHub Releases.
-- CDN-agnostic where possible; only cache invalidation is AWS/CloudFront initially.
-- Avoid Lambdas and heavy edge functions; keep the module simple.
+```go
+client := faynosync.NewClient(faynosync.Config{
+    BaseURL: "http://localhost:9000",
+    EdgeURL: "http://faynosync-cdn-edge.web.garage.localhost:3902",
+})
+```
 
-**API unavailable (edge stub):** if origin is down on MISS, return a standard body with `"update_available": false`. This is a safety stub only — operators still need the API up for publish and warm-up. Clients that already have S3/CDN HITs can keep updating while API is offline.
+If `EdgeURL` is not provided, SDK behaves as before and calls API directly via `BaseURL`.
 
-**Nice-to-have (deferred):** faynoSync self-deploys and updates the CDN module on the bucket — low priority for now.
+When app-level CDN mode is enabled, cached responses are stored at:
 
-**Outcome:** clients can receive update metadata even when the faynoSync API is down, as long as manifests and artifacts are already on CDN/S3.
+```
+/responses/{owner}/{app_name}/{channel}/{platform}/{arch}/{client_version}.json
+```
+
+Each cached response object is stored with standard S3 cache headers:
+
+```
+Cache-Control: public, max-age=60, must-revalidate
+```
+
+**Outcome:** frequent version checks are served from edge/S3 cache, while API remains the source of truth and fallback on cache MISS.
 
 ## Goals
 
-1. **Portable data plane** — minimal AWS coupling; generic CDN + S3; CloudFront invalidation only where needed today.
-2. **Simple TS edge module** — always available via GitHub Releases.
-3. **Separate repository** — `faynosync-cdn-module`.
-4. **Lifetime-scale API** — hot path offloaded; control plane (publish, admin) stays on API.
-5. **Resilience** — cached manifests serve clients when API is temporarily unavailable.
+1. **SDK-first integration** — no separate CDN application required.
+2. **Per-app control** — enable cache mode via app `cdn` parameter.
+3. **Stable cache keying** — deterministic response path per client dimensions.
+4. **Lifecycle safety** — publish/unpublish clears cached manifests for the app scope.
+5. **Hot-path offload** — edge/S3 serves repeated checks, API handles MISS and control plane.
 
 ---
 
 ## Telemetry
 
-Today, metrics are collected inside `/checkVersion` when `X-Device-ID` is present. With CDN mode, version checks no longer always hit the API, so telemetry moves to a dedicated path. The CDN module can forward beacon requests.
+Today, metrics are collected inside `/checkVersion` when `X-Device-ID` is present. With edge/S3 mode, version checks no longer always hit the API, so telemetry moves to a dedicated path. Beacon requests go through the edge path to API.
 
 ### Flow change
 

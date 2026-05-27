@@ -5,7 +5,9 @@
 ### Fixes
 
 - Fixed telemetry does not work when performance mode is enabled.
-- Added `cdn` parameter to `POST /app/create` and `POST /app/update` endpoints.
+- Added `cdn` parameter to `POST /app/create` and `POST /app/update` endpoints, plus `S3_BUCKET_NAME_CDN` for CDN-targeted uploads.
+- Added batch object deletion support in storage clients to clean up related artifacts more efficiently.
+- Updated test setup to use SDK-backed integration flow.
 
 ## v1.5.14
 
