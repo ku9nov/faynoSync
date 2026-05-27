@@ -467,6 +467,7 @@ The tests verify the implemented API using a test database and an existing S3 bu
   <li>TestFailedRegenerateReportKeyWithTeamUser</li>
   <li>TestRegenerateReportKeyTeamUser</li>
   <li>TestListReportKeysNoValuesAfterUpdateAppReportsToFalse</li>
+  <li>TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted</li>
 </details>
 
 ---

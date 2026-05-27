@@ -120,6 +120,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/ku9nov/faynosync-sdk-go v0.0.0
 	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/magiconair/properties v1.8.6 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
@@ -148,3 +149,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/ku9nov/faynosync-sdk-go => ../faynosync-sdk-go

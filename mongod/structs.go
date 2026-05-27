@@ -75,6 +75,7 @@ type Changelog struct {
 type CheckResult struct {
 	Found                  bool
 	Critical               bool
+	CdnEdge                bool
 	Artifacts              []Artifact
 	Changelog              []Changelog
 	IsRequiredIntermediate bool

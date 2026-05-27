@@ -180,6 +180,10 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 				response["changelog"] = changelog
 			}
 			response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
+			if checkResult.CdnEdge {
+				logrus.Debugf("Publishing response to CDN when not found: %v", response)
+				publishResponseToCDN(ctx, validatedParams, response)
+			}
 			if performanceMode && rdb != nil {
 				cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
 			}
@@ -213,6 +217,10 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		response["changelog"] = changelog
 	}
 	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
+	if checkResult.CdnEdge {
+		logrus.Debugf("Publishing response to CDN when found: %v", response)
+		publishResponseToCDN(ctx, validatedParams, response)
+	}
 	if performanceMode && rdb != nil {
 		cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
 	}

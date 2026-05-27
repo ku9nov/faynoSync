@@ -802,7 +802,7 @@ func TestCreatePublicApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app": "public testapp", "reports": "true"}`
+	payload := `{"app": "public testapp", "reports": "true", "cdn": "true"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -4901,6 +4901,7 @@ func TestCheckVersion(t *testing.T) {
 	defer server.Close()
 
 	sdkClient := faynosync.NewClient(faynosync.Config{
+		EdgeURL: "http://cb-faynosync-s3-public.web.garage.localhost:3902",
 		BaseURL: server.URL,
 	})
 
@@ -5058,7 +5059,113 @@ func TestCheckVersion(t *testing.T) {
 			)
 			require.NoError(t, err)
 			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
+			expectedSource := faynosync.SourceAPI
+			if scenario.AppName == "public%20testapp" && scenario.Version == "0.0.1.137" && scenario.ChannelName == "nightly" {
+				expectedSource = faynosync.SourceEdge
+			}
+			require.Equal(t, expectedSource, sdkResp.Source)
 		})
+	}
+}
+
+func TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	// Define the route for the update endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/apps/update", func(c *gin.Context) {
+		handler.UpdateSpecificApp(c)
+	})
+
+	// Create a file to update (you can replace this with a test file path).
+	filePaths := []string{"LICENSE", "LICENSE"}
+	for _, filePath := range filePaths {
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+
+		combinations := []struct {
+			ID          string
+			AppVersion  string
+			ChannelName string
+			Published   bool
+			Critical    bool
+			Platform    string
+			Arch        string
+			Changelog   string
+		}{
+			{uploadedAppIDs[0], "0.0.1.137", "nightly", false, true, "universalPlatform", "universalArch", "### Changelog"},
+		}
+
+		// Iterate through the combinations and update the file for each combination.
+		for _, combo := range combinations {
+			w := httptest.NewRecorder()
+			// Reset the request body for each iteration.
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = io.Copy(part, file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Create a POST request for the update endpoint with the current combination.
+			dataPart, err := writer.CreateFormField("data")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := fmt.Sprintf(`{"id": "%s", "app_name": "public testapp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s", "changelog": "%s"}`, combo.ID, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch, combo.Changelog)
+			_, err = dataPart.Write([]byte(payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Close the writer to finalize the form
+			err = writer.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// logrus.Infoln("Body: ", body)
+			req, err := http.NewRequest("POST", "/apps/update", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Set the Content-Type header for multipart/form-data.
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+
+			// Set the Authorization header.
+			req.Header.Set("Authorization", "Bearer "+authToken)
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			expected := `{"updatedResult.Updated":true}`
+			assert.Equal(t, expected, w.Body.String())
+
+			cdnResponseURL, err := url.Parse(s3Endpoint)
+			require.NoError(t, err)
+			cdnResponseURL = cdnResponseURL.JoinPath(
+				"responses",
+				"admin",
+				"public testapp",
+				combo.ChannelName,
+				combo.Platform,
+				combo.Arch,
+				combo.AppVersion+".json",
+			)
+
+			httpClient := &http.Client{Timeout: 10 * time.Second}
+			resp, err := httpClient.Get(cdnResponseURL.String())
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode, "CDN response JSON should be deleted after publish=false update: %s", cdnResponseURL.String())
+		}
 	}
 }
 

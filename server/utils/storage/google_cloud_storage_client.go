@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -132,6 +133,41 @@ func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucke
 	return publicURL, nil
 }
 
+func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
+	logrus.Debugf("GCS: Uploading public object with cache control to bucket: %s, key: %s\n", bucketName, objectKey)
+
+	bucket := g.client.Bucket(bucketName)
+	attrs, err := bucket.Attrs(ctx)
+	if err != nil {
+		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v\n", bucketName, err)
+		return "", &StorageError{Message: fmt.Sprintf("bucket %s does not exist or is not accessible", bucketName), Err: err}
+	}
+
+	w := bucket.Object(objectKey).NewWriter(ctx)
+	if contentType != "" {
+		w.ContentType = contentType
+	}
+	if cacheControl != "" {
+		w.CacheControl = cacheControl
+	}
+
+	if !attrs.UniformBucketLevelAccess.Enabled {
+		w.PredefinedACL = "publicRead"
+	}
+
+	if _, err := io.Copy(w, fileReader); err != nil {
+		w.Close()
+		return "", &StorageError{Message: "failed to upload public object to GCS", Err: err}
+	}
+
+	if err := w.Close(); err != nil {
+		return "", &StorageError{Message: "failed to finalize upload to GCS", Err: err}
+	}
+
+	publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucketName, objectKey)
+	return publicURL, nil
+}
+
 func (g *GoogleCloudStorageClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	bucket := g.client.Bucket(bucketName)
 	obj := bucket.Object(objectKey)
@@ -218,4 +254,21 @@ func (g *GoogleCloudStorageClient) ListObjects(ctx context.Context, bucketName, 
 	}
 
 	return objectKeys, nil
+}
+
+// GetObjectETag returns object checksum (MD5 hex when available) and existence for GCS.
+func (g *GoogleCloudStorageClient) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
+	attrs, err := g.client.Bucket(bucketName).Object(objectKey).Attrs(ctx)
+	if err != nil {
+		if err == storage.ErrObjectNotExist {
+			return "", false, nil
+		}
+		return "", false, &StorageError{Message: "failed to stat object in GCS", Err: err}
+	}
+
+	if len(attrs.MD5) == 0 {
+		return "", true, nil
+	}
+
+	return hex.EncodeToString(attrs.MD5), true, nil
 }

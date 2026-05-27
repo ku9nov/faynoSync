@@ -309,16 +309,18 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			return
 		}
 	}
-	if performanceMode && rdb != nil {
-		publish := utils.GetBoolParam(ctxQueryMap["publish"])
-		logrus.Debugf("Updating app has publish: %t, invalidation of redis cache is starting.", publish)
-
-		if publish {
-			if err := create.InvalidateCache(c.Request.Context(), ctxQueryMap, rdb); err != nil {
-				logrus.Error("Error invalidating cache:", err)
-			}
-		}
-	}
+	appName, _ := ctxQueryMap["app_name"].(string)
+	create.InvalidatePublishCaches(
+		c.Request.Context(),
+		ctxQueryMap,
+		db,
+		rdb,
+		performanceMode,
+		owner,
+		appName,
+		viper.GetViper(),
+		"Updating app",
+	)
 
 	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {
 		go func() {

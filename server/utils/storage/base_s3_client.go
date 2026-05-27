@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -14,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/spf13/viper"
 )
 
@@ -234,4 +236,28 @@ func (b *BaseS3Client) ListObjects(ctx context.Context, bucketName, prefix strin
 	}
 
 	return objectKeys, nil
+}
+
+// GetObjectETag returns object ETag and existence for S3-compatible storage.
+func (b *BaseS3Client) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
+	output, err := b.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "NotFound", "NoSuchKey":
+				return "", false, nil
+			}
+		}
+
+		return "", false, &StorageError{
+			Message: fmt.Sprintf("failed to stat object in %s", b.providerName),
+			Err:     err,
+		}
+	}
+
+	return strings.Trim(aws.ToString(output.ETag), "\""), true, nil
 }
