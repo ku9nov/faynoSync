@@ -141,6 +141,18 @@ func (g *GoogleCloudStorageClient) DeleteObject(ctx context.Context, bucketName,
 	return nil
 }
 
+func (g *GoogleCloudStorageClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	for _, key := range objectKeys {
+		if key == "" {
+			continue
+		}
+		if err := g.DeleteObject(ctx, bucketName, key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (g *GoogleCloudStorageClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 
 	credsFile := g.env.GetString("GCS_CREDENTIALS_FILE")

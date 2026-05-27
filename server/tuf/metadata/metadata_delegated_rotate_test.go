@@ -50,6 +50,10 @@ func (m *mapDownloadMockClient) DeleteObject(ctx context.Context, bucketName, ob
 	panic("not used")
 }
 
+func (m *mapDownloadMockClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	panic("not used")
+}
+
 func (m *mapDownloadMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	panic("not used")
 }

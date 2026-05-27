@@ -124,6 +124,56 @@ func (b *BaseS3Client) DeleteObject(ctx context.Context, bucketName, objectKey s
 	return nil
 }
 
+// DeleteObjects deletes multiple files from S3-compatible storage in batches.
+func (b *BaseS3Client) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	if len(objectKeys) == 0 {
+		return nil
+	}
+
+	const maxBatchSize = 1000
+	for start := 0; start < len(objectKeys); start += maxBatchSize {
+		end := start + maxBatchSize
+		if end > len(objectKeys) {
+			end = len(objectKeys)
+		}
+
+		objects := make([]types.ObjectIdentifier, 0, end-start)
+		for _, key := range objectKeys[start:end] {
+			if key == "" {
+				continue
+			}
+			objects = append(objects, types.ObjectIdentifier{Key: aws.String(key)})
+		}
+
+		if len(objects) == 0 {
+			continue
+		}
+
+		output, err := b.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucketName),
+			Delete: &types.Delete{
+				Objects: objects,
+				Quiet:   aws.Bool(true),
+			},
+		})
+		if err != nil {
+			return &StorageError{Message: fmt.Sprintf("failed to delete objects from %s", b.providerName), Err: err}
+		}
+
+		if len(output.Errors) > 0 {
+			firstErr := output.Errors[0]
+			errMsg := fmt.Sprintf("key=%s code=%s message=%s",
+				aws.ToString(firstErr.Key),
+				aws.ToString(firstErr.Code),
+				aws.ToString(firstErr.Message),
+			)
+			return &StorageError{Message: fmt.Sprintf("failed to delete objects from %s (%s)", b.providerName, errMsg)}
+		}
+	}
+
+	return nil
+}
+
 // GeneratePresignedURL generates a presigned URL for S3-compatible storage
 func (b *BaseS3Client) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	request, err := b.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{

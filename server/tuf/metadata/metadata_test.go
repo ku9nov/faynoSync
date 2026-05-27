@@ -1794,6 +1794,10 @@ func (u *uploadMockClient) DeleteObject(ctx context.Context, bucketName, objectK
 	panic("not used")
 }
 
+func (u *uploadMockClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	panic("not used")
+}
+
 func (u *uploadMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	panic("not used")
 }
@@ -1827,6 +1831,10 @@ func (u *uploadCaptureMockClient) UploadObject(ctx context.Context, bucketName, 
 }
 
 func (u *uploadCaptureMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (u *uploadCaptureMockClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
 	panic("not used")
 }
 
@@ -1878,6 +1886,10 @@ func (u *uploadFailingMockClient) DeleteObject(ctx context.Context, bucketName, 
 	panic("not used")
 }
 
+func (u *uploadFailingMockClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	panic("not used")
+}
+
 func (u *uploadFailingMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	panic("not used")
 }
@@ -1911,6 +1923,10 @@ func (u *uploadFailOnSuffixMockClient) UploadObject(ctx context.Context, bucketN
 }
 
 func (u *uploadFailOnSuffixMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (u *uploadFailOnSuffixMockClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
 	panic("not used")
 }
 
@@ -2269,6 +2285,10 @@ func (d *multiFileDownloadMockClient) DeleteObject(ctx context.Context, bucketNa
 	panic("not used")
 }
 
+func (d *multiFileDownloadMockClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	panic("not used")
+}
+
 func (d *multiFileDownloadMockClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	panic("not used")
 }
@@ -2431,6 +2451,10 @@ func (d *downloadMockClient) UploadPublicObject(ctx context.Context, bucketName,
 }
 
 func (d *downloadMockClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (d *downloadMockClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
 	panic("not used")
 }
 

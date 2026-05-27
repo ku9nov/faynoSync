@@ -69,6 +69,10 @@ func (c *fsStorageClient) DeleteObject(ctx context.Context, bucketName, objectKe
 	panic("not used")
 }
 
+func (c *fsStorageClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	panic("not used")
+}
+
 func (c *fsStorageClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	panic("not used")
 }
@@ -368,6 +372,9 @@ func (c *failDownloadClient) UploadPublicObject(ctx context.Context, bucketName,
 func (c *failDownloadClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	panic("not used")
 }
+func (c *failDownloadClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	panic("not used")
+}
 func (c *failDownloadClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	panic("not used")
 }
@@ -388,6 +395,9 @@ func (c *failUploadClient) UploadPublicObject(ctx context.Context, bucketName, o
 	return "", fmt.Errorf("upload failed")
 }
 func (c *failUploadClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+func (c *failUploadClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
 	panic("not used")
 }
 func (c *failUploadClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {

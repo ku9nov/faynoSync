@@ -335,6 +335,10 @@ func (c *storageMockClientForForceUpdate) DeleteObject(ctx context.Context, buck
 	panic("not used")
 }
 
+func (c *storageMockClientForForceUpdate) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	panic("not used")
+}
+
 func (c *storageMockClientForForceUpdate) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	panic("not used")
 }
@@ -373,6 +377,10 @@ func (c *multiBodyDownloadMock) UploadPublicObject(ctx context.Context, bucketNa
 }
 
 func (c *multiBodyDownloadMock) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	panic("not used")
+}
+
+func (c *multiBodyDownloadMock) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
 	panic("not used")
 }
 

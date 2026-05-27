@@ -76,6 +76,10 @@ func (m *mockStorageClient) DeleteObject(ctx context.Context, bucketName, object
 	panic("not used in tests")
 }
 
+func (m *mockStorageClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	panic("not used in tests")
+}
+
 func (m *mockStorageClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	panic("not used in tests")
 }

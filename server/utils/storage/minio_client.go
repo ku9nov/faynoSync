@@ -74,6 +74,19 @@ func (m *MinioClient) DeleteObject(ctx context.Context, bucketName, objectKey st
 	return nil
 }
 
+// DeleteObjects deletes multiple files from MinIO.
+func (m *MinioClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	for _, key := range objectKeys {
+		if key == "" {
+			continue
+		}
+		if err := m.DeleteObject(ctx, bucketName, key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GeneratePresignedURL generates a presigned URL for MinIO
 func (m *MinioClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
 	urlStr, err := m.client.PresignedGetObject(ctx, bucketName, objectKey, expiration, nil)
