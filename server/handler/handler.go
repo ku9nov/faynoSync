@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	db "faynoSync/mongod"
 	"faynoSync/server/handler/catalog"
 	"faynoSync/server/handler/create"
@@ -12,9 +13,11 @@ import (
 	"faynoSync/server/handler/team"
 	"faynoSync/server/handler/token"
 	"faynoSync/server/handler/update"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -54,6 +57,7 @@ type AppHandler interface {
 	Whoami(*gin.Context)
 	UpdateAdmin(*gin.Context)
 	GetTelemetry(*gin.Context)
+	TelemetryBeacon(*gin.Context)
 	SquirrelReleases(*gin.Context)
 	CreateToken(*gin.Context)
 	ListTokens(*gin.Context)
@@ -71,7 +75,9 @@ type appHandler struct {
 }
 
 func NewAppHandler(client *mongo.Client, repo db.AppRepository, db *mongo.Database, redisClient *redis.Client, performanceMode bool) AppHandler {
-	return &appHandler{client: client, repository: repo, database: db, redisClient: redisClient, performanceMode: performanceMode}
+	h := &appHandler{client: client, repository: repo, database: db, redisClient: redisClient, performanceMode: performanceMode}
+	h.reloadTelemetryAllowList(context.Background(), "initializing app handler")
+	return h
 }
 
 func (ch *appHandler) HealthCheck(c *gin.Context) {
@@ -120,30 +126,36 @@ func (ch *appHandler) ListApps(c *gin.Context) {
 func (ch *appHandler) CreateChannel(c *gin.Context) {
 	// Call the CreateChannel function from the create package
 	create.CreateChannel(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "creating channel")
 }
 
 func (ch *appHandler) CreatePlatform(c *gin.Context) {
 	// Call the CreatePlatform function from the create package
 	create.CreatePlatform(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "creating platform")
 }
 func (ch *appHandler) CreateArch(c *gin.Context) {
 	// Call the CreateArch function from the create package
 	create.CreateArch(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "creating architecture")
 }
 
 func (ch *appHandler) CreateApp(c *gin.Context) {
 	// Call the CreateApp function from the create package
 	create.CreateApp(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "creating app")
 }
 
 func (ch *appHandler) UploadApp(c *gin.Context) {
 	// Call the UploadApp function from the create package
 	create.UploadApp(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "uploading app version")
 }
 
 func (ch *appHandler) UpdateSpecificApp(c *gin.Context) {
 	// Call the UpdateSpecificApp function from the create package
 	update.UpdateSpecificApp(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "updating app version")
 }
 
 func (ch *appHandler) Login(c *gin.Context) {
@@ -159,50 +171,60 @@ func (ch *appHandler) SignUp(c *gin.Context) {
 func (ch *appHandler) DeleteApp(c *gin.Context) {
 	// Call the DeleteApp function from the delete package
 	delete.DeleteApp(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "deleting app")
 }
 
 func (ch *appHandler) DeleteSpecificVersionOfApp(c *gin.Context) {
 	// Call the DeleteSpecificVersionOfApp function from the delete package
 	delete.DeleteSpecificVersionOfApp(c, ch.repository, ch.database, ch.redisClient)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "deleting app version")
 }
 
 func (ch *appHandler) DeleteChannel(c *gin.Context) {
 	// Call the DeleteChannel function from the delete package
 	delete.DeleteChannel(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "deleting channel")
 }
 
 func (ch *appHandler) DeletePlatform(c *gin.Context) {
 	// Call the DeletePlatform function from the delete package
 	delete.DeletePlatform(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "deleting platform")
 }
 
 func (ch *appHandler) DeleteArch(c *gin.Context) {
 	// Call the DeleteArch function from the delete package
 	delete.DeleteArch(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "deleting architecture")
 }
 
 func (ch *appHandler) UpdateApp(c *gin.Context) {
 	// Call the UpdateApp function from the create package
 	update.UpdateApp(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "updating app")
 }
 
 func (ch *appHandler) UpdateChannel(c *gin.Context) {
 	// Call the UpdateChannel function from the create package
 	update.UpdateChannel(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "updating channel")
 }
 
 func (ch *appHandler) UpdatePlatform(c *gin.Context) {
 	// Call the UpdatePlatform function from the create package
 	update.UpdatePlatform(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "updating platform")
 }
 
 func (ch *appHandler) UpdateArch(c *gin.Context) {
 	// Call the UpdateArch function from the create package
 	update.UpdateArch(c, ch.repository)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "updating architecture")
 }
 func (ch *appHandler) DeleteSpecificArtifactOfApp(c *gin.Context) {
 	// Call the DeleteSpecificArtifactOfApp function from the delete package
 	delete.DeleteSpecificArtifactOfApp(c, ch.repository, ch.database, ch.redisClient)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "deleting app artifact")
 }
 
 func (ch *appHandler) DownloadArtifact(c *gin.Context) {
@@ -236,6 +258,10 @@ func (ch *appHandler) UpdateAdmin(c *gin.Context) {
 
 func (ch *appHandler) GetTelemetry(c *gin.Context) {
 	info.GetTelemetry(c, ch.redisClient, ch.database)
+}
+
+func (ch *appHandler) TelemetryBeacon(c *gin.Context) {
+	info.TelemetryBeacon(c, ch.redisClient)
 }
 
 func (ch *appHandler) SquirrelReleases(c *gin.Context) {
@@ -278,4 +304,24 @@ func (ch *appHandler) ListReportKeys(c *gin.Context) {
 
 func (ch *appHandler) RegenerateReportKey(c *gin.Context) {
 	report.RegenerateReportKey(c, ch.repository)
+}
+
+func (ch *appHandler) reloadTelemetryAllowListAfterSuccess(c *gin.Context, reason string) {
+	status := c.Writer.Status()
+	if status < 200 || status >= 400 {
+		logrus.Debugf("Telemetry allow-list reload skipped after %s because response status is %d", reason, status)
+		return
+	}
+	ch.reloadTelemetryAllowList(c.Request.Context(), reason)
+}
+
+func (ch *appHandler) reloadTelemetryAllowList(parent context.Context, reason string) {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	defer cancel()
+
+	if err := info.ReloadTelemetryAllowList(ctx, ch.database); err != nil {
+		logrus.WithError(err).Errorf("Failed to reload telemetry allow-list after %s", reason)
+		return
+	}
+	logrus.Debugf("Telemetry allow-list reloaded after %s", reason)
 }

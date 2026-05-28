@@ -57,6 +57,7 @@ func StartServer(config *viper.Viper) {
 
 	router.GET("/checkVersion", handler.FindLatestVersion)
 	router.GET("/apps/latest", handler.FetchLatestVersionOfApp)
+	router.GET("/telemetry/beacon", telemetryMiddleware(config), handler.TelemetryBeacon)
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
 

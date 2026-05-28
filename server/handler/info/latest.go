@@ -360,6 +360,10 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 
 // trackClientTelemetry handles analytics collection for version check requests using Redis Sets
 func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, deviceID string) {
+	trackClientTelemetryWithLatest(ctx, rdb, params, hasUpdate, true, deviceID)
+}
+
+func trackClientTelemetryWithLatest(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, hasLatestState bool, deviceID string) {
 	if rdb == nil || deviceID == "" {
 		logrus.Debug("Redis client is not set or deviceID is empty, skipping analytics collection")
 		return
@@ -382,27 +386,32 @@ func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[str
 	requestsKey := fmt.Sprintf("%s:requests:%s", baseKey, dateStr)
 	rdb.Incr(ctx, requestsKey)
 	rdb.Expire(ctx, requestsKey, time.Hour*24*30)
+	logrus.Debugf("Telemetry Redis updated: incr=%s", requestsKey)
 
 	clientsKey := fmt.Sprintf("%s:unique_clients:%s", baseKey, dateStr)
 	rdb.SAdd(ctx, clientsKey, deviceID)
 	rdb.Expire(ctx, clientsKey, time.Hour*24*30)
+	logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", clientsKey, deviceID)
 
 	if channel != "" {
 		channelKey := fmt.Sprintf("%s:channels:%s:%s", baseKey, dateStr, channel)
 		rdb.SAdd(ctx, channelKey, deviceID)
 		rdb.Expire(ctx, channelKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", channelKey, deviceID)
 	}
 
 	if platform != "" {
 		platformKey := fmt.Sprintf("%s:platforms:%s:%s", baseKey, dateStr, platform)
 		rdb.SAdd(ctx, platformKey, deviceID)
 		rdb.Expire(ctx, platformKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", platformKey, deviceID)
 	}
 
 	if arch != "" {
 		archKey := fmt.Sprintf("%s:architectures:%s:%s", baseKey, dateStr, arch)
 		rdb.SAdd(ctx, archKey, deviceID)
 		rdb.Expire(ctx, archKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", archKey, deviceID)
 	}
 
 	if version != "" {
@@ -412,6 +421,7 @@ func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[str
 		// Add current version to known versions set
 		rdb.SAdd(ctx, knownVersionsKey, version)
 		rdb.Expire(ctx, knownVersionsKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", knownVersionsKey, version)
 
 		// Get all known versions
 		knownVersions, err := rdb.SMembers(ctx, knownVersionsKey).Result()
@@ -426,6 +436,7 @@ func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[str
 				oldVersionKey := fmt.Sprintf("%s:version_usage:%s:%s", baseKey, dateStr, knownVersion)
 				rdb.SRem(ctx, oldVersionKey, deviceID)
 				rdb.Expire(ctx, oldVersionKey, time.Hour*24*30)
+				logrus.Debugf("Telemetry Redis updated: srem=%s member=%s", oldVersionKey, deviceID)
 			}
 		}
 
@@ -433,29 +444,37 @@ func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[str
 		versionKey := fmt.Sprintf("%s:version_usage:%s:%s", baseKey, dateStr, version)
 		rdb.SAdd(ctx, versionKey, deviceID)
 		rdb.Expire(ctx, versionKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", versionKey, deviceID)
 
-		// Track if client is using latest version
-		if hasUpdate {
-			// Remove from latest version set if present
-			latestVersionKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateStr)
-			rdb.SRem(ctx, latestVersionKey, deviceID)
-			rdb.Expire(ctx, latestVersionKey, time.Hour*24*30)
+	}
 
-			// Add to outdated set
-			outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateStr)
-			rdb.SAdd(ctx, outdatedKey, deviceID)
-			rdb.Expire(ctx, outdatedKey, time.Hour*24*30)
-		} else {
-			// Remove from outdated set if present
-			outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateStr)
-			rdb.SRem(ctx, outdatedKey, deviceID)
-			rdb.Expire(ctx, outdatedKey, time.Hour*24*30)
+	// Track if client is using latest version
+	if !hasLatestState {
+		logrus.Debug("Telemetry latest/outdated Redis updates skipped because latest state is unknown")
+	} else if hasUpdate {
+		// Remove from latest version set if present
+		latestVersionKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateStr)
+		rdb.SRem(ctx, latestVersionKey, deviceID)
+		rdb.Expire(ctx, latestVersionKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: srem=%s member=%s", latestVersionKey, deviceID)
 
-			// Add to latest version set
-			latestVersionKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateStr)
-			rdb.SAdd(ctx, latestVersionKey, deviceID)
-			rdb.Expire(ctx, latestVersionKey, time.Hour*24*30)
-		}
+		// Add to outdated set
+		outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateStr)
+		rdb.SAdd(ctx, outdatedKey, deviceID)
+		rdb.Expire(ctx, outdatedKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", outdatedKey, deviceID)
+	} else {
+		// Remove from outdated set if present
+		outdatedKey := fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateStr)
+		rdb.SRem(ctx, outdatedKey, deviceID)
+		rdb.Expire(ctx, outdatedKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: srem=%s member=%s", outdatedKey, deviceID)
+
+		// Add to latest version set
+		latestVersionKey := fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateStr)
+		rdb.SAdd(ctx, latestVersionKey, deviceID)
+		rdb.Expire(ctx, latestVersionKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", latestVersionKey, deviceID)
 	}
 }
 
