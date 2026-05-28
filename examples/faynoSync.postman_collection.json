@@ -624,7 +624,7 @@
           "formdata": [
             {
               "key": "data",
-              "value": "{\"id\":\"\", \"app\":\"newname\"}",
+              "value": "{\"id\":\"\", \"app\":\"test\", \"reports\": \"false\"}",
               "type": "text",
               "uuid": "caec69c4-0a55-419b-b5c1-24b6c126c5b9"
             }
@@ -1327,6 +1327,59 @@
             {
               "key": "range",
               "value": "week"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Telemetry beacon",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Device-ID",
+            "value": "ncjskbfhbhjs473tdah",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{URL}}/telemetry/beacon?app_name={{app_name}}&version={{version}}&channel={{channel}}&platform={{platform}}&arch={{arch}}&owner={{username}}",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "telemetry",
+            "beacon"
+          ],
+          "query": [
+            {
+              "key": "app_name",
+              "value": "{{app_name}}"
+            },
+            {
+              "key": "version",
+              "value": "{{version}}"
+            },
+            {
+              "key": "channel",
+              "value": "{{channel}}"
+            },
+            {
+              "key": "platform",
+              "value": "{{platform}}"
+            },
+            {
+              "key": "arch",
+              "value": "{{arch}}"
+            },
+            {
+              "key": "owner",
+              "value": "{{username}}"
             }
           ]
         }
