@@ -5161,8 +5161,11 @@ func TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted(t *testing.T
 				combo.AppVersion+".json",
 			)
 
-			httpClient := &http.Client{Timeout: 10 * time.Second}
-			resp, err := httpClient.Get(cdnResponseURL.String())
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			cdnReq, err := http.NewRequestWithContext(ctx, http.MethodGet, cdnResponseURL.String(), nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(cdnReq)
 			require.NoError(t, err)
 			defer resp.Body.Close()
 			assert.Equal(t, http.StatusNotFound, resp.StatusCode, "CDN response JSON should be deleted after publish=false update: %s", cdnResponseURL.String())
