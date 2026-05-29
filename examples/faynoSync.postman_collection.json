@@ -624,7 +624,7 @@
           "formdata": [
             {
               "key": "data",
-              "value": "{\"id\":\"\", \"app\":\"test\", \"reports\": \"false\"}",
+              "value": "{\"id\":\"\", \"app\":\"newname\", \"reports\": \"false\", \"tuf\": \"false\", \"cdn\": \"false\"}",
               "type": "text",
               "uuid": "caec69c4-0a55-419b-b5c1-24b6c126c5b9"
             }
@@ -1348,7 +1348,7 @@
           }
         ],
         "url": {
-          "raw": "{{URL}}/telemetry/beacon?app_name={{app_name}}&version={{version}}&channel={{channel}}&platform={{platform}}&arch={{arch}}&owner={{username}}",
+          "raw": "{{URL}}/telemetry/beacon?app_name={{app_name}}&version={{version}}&channel={{channel}}&platform={{platform}}&arch={{arch}}&owner={{username}}&is_latest=true",
           "host": [
             "{{URL}}"
           ],
@@ -1380,6 +1380,11 @@
             {
               "key": "owner",
               "value": "{{username}}"
+            },
+            {
+              "key": "is_latest",
+              "value": "true",
+              "type": "text"
             }
           ]
         }
