@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -68,9 +69,16 @@ func (g *GoogleCloudStorageClient) UploadObject(ctx context.Context, bucketName,
 
 	bytesWritten, err := io.Copy(w, fileReader)
 	if err != nil {
-		w.Close()
-		logrus.Debugf("GCS: Failed to copy file content: %v\n", err)
-		return &StorageError{Message: "failed to upload object to GCS", Err: err}
+		closeErr := w.Close()
+		if closeErr != nil {
+			logrus.Debugf("GCS: Failed io.Copy to writer w: %v; additionally failed to close writer w: %v\n", err, closeErr)
+			return &StorageError{
+				Message: "failed to upload object to GCS during io.Copy to writer w and writer finalization",
+				Err:     errors.Join(err, closeErr),
+			}
+		}
+		logrus.Debugf("GCS: Failed io.Copy to writer w: %v\n", err)
+		return &StorageError{Message: "failed to upload object to GCS during io.Copy to writer w", Err: err}
 	}
 
 	logrus.Debugf("GCS: Copied %d bytes to writer\n", bytesWritten)
@@ -156,8 +164,14 @@ func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx contex
 	}
 
 	if _, err := io.Copy(w, fileReader); err != nil {
-		w.Close()
-		return "", &StorageError{Message: "failed to upload public object to GCS", Err: err}
+		closeErr := w.Close()
+		if closeErr != nil {
+			return "", &StorageError{
+				Message: "failed to upload public object to GCS during io.Copy to writer w and writer finalization",
+				Err:     errors.Join(err, closeErr),
+			}
+		}
+		return "", &StorageError{Message: "failed to upload public object to GCS during io.Copy to writer w", Err: err}
 	}
 
 	if err := w.Close(); err != nil {
