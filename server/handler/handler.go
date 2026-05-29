@@ -312,7 +312,7 @@ func (ch *appHandler) reloadTelemetryAllowListAfterSuccess(c *gin.Context, reaso
 		logrus.Debugf("Telemetry allow-list reload skipped after %s because response status is %d", reason, status)
 		return
 	}
-	ch.reloadTelemetryAllowList(c.Request.Context(), reason)
+	ch.reloadTelemetryAllowList(context.Background(), reason)
 }
 
 func (ch *appHandler) reloadTelemetryAllowList(parent context.Context, reason string) {
