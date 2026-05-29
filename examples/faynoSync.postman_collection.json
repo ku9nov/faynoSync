@@ -624,7 +624,7 @@
           "formdata": [
             {
               "key": "data",
-              "value": "{\"id\":\"\", \"app\":\"newname\"}",
+              "value": "{\"id\":\"\", \"app\":\"newname\", \"reports\": \"false\", \"tuf\": \"false\", \"cdn\": \"false\"}",
               "type": "text",
               "uuid": "caec69c4-0a55-419b-b5c1-24b6c126c5b9"
             }
@@ -1127,6 +1127,71 @@
       "response": []
     },
     {
+      "name": "List Report Keys",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/report-keys/list",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "report-keys",
+            "list"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Regenerate Report Key",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"app_id\": \"69ef5400b198f14a2f590415\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/report-keys/regenerate",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "report-keys",
+            "regenerate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Delete Team User",
       "request": {
         "auth": {
@@ -1262,6 +1327,64 @@
             {
               "key": "range",
               "value": "week"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Telemetry beacon",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Device-ID",
+            "value": "ncjskbfhbhjs473tdah",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{URL}}/telemetry/beacon?app_name={{app_name}}&version={{version}}&channel={{channel}}&platform={{platform}}&arch={{arch}}&owner={{username}}&is_latest=true",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "telemetry",
+            "beacon"
+          ],
+          "query": [
+            {
+              "key": "app_name",
+              "value": "{{app_name}}"
+            },
+            {
+              "key": "version",
+              "value": "{{version}}"
+            },
+            {
+              "key": "channel",
+              "value": "{{channel}}"
+            },
+            {
+              "key": "platform",
+              "value": "{{platform}}"
+            },
+            {
+              "key": "arch",
+              "value": "{{arch}}"
+            },
+            {
+              "key": "owner",
+              "value": "{{username}}"
+            },
+            {
+              "key": "is_latest",
+              "value": "true",
+              "type": "text"
             }
           ]
         }

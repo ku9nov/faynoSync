@@ -61,6 +61,21 @@ func (m *MinioClient) UploadPublicObject(ctx context.Context, bucketName, object
 	return uploadInfo.Location, nil
 }
 
+func (m *MinioClient) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
+	options := minio.PutObjectOptions{}
+	if contentType != "" {
+		options.ContentType = contentType
+	}
+	if cacheControl != "" {
+		options.CacheControl = cacheControl
+	}
+	uploadInfo, err := m.client.PutObject(ctx, bucketName, objectKey, fileReader, -1, options)
+	if err != nil {
+		return "", &StorageError{Message: "failed to upload public object to MinIO", Err: err}
+	}
+	return uploadInfo.Location, nil
+}
+
 // DeleteObject deletes a file from MinIO
 func (m *MinioClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	opts := minio.RemoveObjectOptions{
@@ -70,6 +85,19 @@ func (m *MinioClient) DeleteObject(ctx context.Context, bucketName, objectKey st
 	err := m.client.RemoveObject(ctx, bucketName, objectKey, opts)
 	if err != nil {
 		return &StorageError{Message: "failed to delete object from MinIO", Err: err}
+	}
+	return nil
+}
+
+// DeleteObjects deletes multiple files from MinIO.
+func (m *MinioClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	for _, key := range objectKeys {
+		if key == "" {
+			continue
+		}
+		if err := m.DeleteObject(ctx, bucketName, key); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -121,4 +149,19 @@ func (m *MinioClient) ListObjects(ctx context.Context, bucketName, prefix string
 	}
 
 	return objectKeys, nil
+}
+
+// GetObjectETag returns object ETag and existence for MinIO.
+func (m *MinioClient) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
+	info, err := m.client.StatObject(ctx, bucketName, objectKey, minio.StatObjectOptions{})
+	if err != nil {
+		errResp := minio.ToErrorResponse(err)
+		switch errResp.Code {
+		case "NoSuchKey", "NoSuchObject", "NotFound":
+			return "", false, nil
+		}
+		return "", false, &StorageError{Message: "failed to stat object in MinIO", Err: err}
+	}
+
+	return info.ETag, true, nil
 }

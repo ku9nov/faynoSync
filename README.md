@@ -100,6 +100,7 @@ MINIO_SECURE (Deprecated MinIO-only setting. Set to `true` to use HTTPS with Min
 S3_BUCKET_NAME_PRIVATE (The name of your private S3 bucket.)
 S3_ENDPOINT_PRIVATE (Public/private bucket URL used by the application when storing links or resolving keys)
 S3_BUCKET_NAME (The name of your public S3 bucket. Artifacts will be uploaded here by default.)
+S3_BUCKET_NAME_CDN (Optional CDN bucket for artifacts uploaded with `cdn=true`. You can reuse `S3_BUCKET_NAME` or provide a dedicated bucket.)
 S3_ENDPOINT (The public bucket URL used for public artifact links. Artifacts will be uploaded here by default.)
 S3_API_ENDPOINT (Optional custom S3 API endpoint for S3-compatible providers such as local Garage. Leave empty for managed AWS S3.)
 S3_FORCE_PATH_STYLE (Optional. Set to `true` for providers that require path-style requests, such as local Garage.)
@@ -161,6 +162,7 @@ S3_ACCESS_KEY=GK8fcbbed327a9ff97f250eb4e
 S3_SECRET_KEY=8a59fe92499699d139fcee6998343dad2ac73fb2b5dffafa0a7d0b0d4e305db9
 S3_BUCKET_NAME_PRIVATE=cb-faynosync-s3-private
 S3_BUCKET_NAME=cb-faynosync-s3-public
+S3_BUCKET_NAME_CDN=cb-faynosync-s3-public
 S3_ENDPOINT_PRIVATE=http://cb-faynosync-s3-private.web.garage.localhost:3902
 S3_ENDPOINT=http://cb-faynosync-s3-public.web.garage.localhost:3902
 S3_API_ENDPOINT=http://127.0.0.1:3900
@@ -467,6 +469,8 @@ The tests verify the implemented API using a test database and an existing S3 bu
   <li>TestFailedRegenerateReportKeyWithTeamUser</li>
   <li>TestRegenerateReportKeyTeamUser</li>
   <li>TestListReportKeysNoValuesAfterUpdateAppReportsToFalse</li>
+  <li>TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted</li>
+  <li>TestTelemetryBeaconUsesAllowListAndExistingRedisKeys</li>
 </details>
 
 ---

@@ -213,7 +213,7 @@ func (c *appRepository) CreateArch(archID string, owner string, ctx context.Cont
 }
 
 // CreateApp creates a new app_name document
-func (c *appRepository) CreateApp(appName string, logo string, description string, private bool, tuf bool, reports bool, owner string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreateApp(appName string, logo string, description string, private bool, tuf bool, reports bool, cdnEdge bool, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "app_name", Value: appName}}
 	if logo != "" {
 		document = append(document, bson.E{Key: "logo", Value: logo})
@@ -230,6 +230,9 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 	}
 	if reports == true {
 		document = append(document, bson.E{Key: "reports", Value: reports})
+	}
+	if cdnEdge == true {
+		document = append(document, bson.E{Key: "cdn_edge", Value: cdnEdge})
 	}
 	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
 		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "app", ctx)

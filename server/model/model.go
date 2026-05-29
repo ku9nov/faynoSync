@@ -25,6 +25,7 @@ type App struct {
 	Private     bool               `bson:"private"`
 	Tuf         bool               `bson:"tuf"`
 	Reports     bool               `bson:"reports"`
+	CdnEdge     bool               `bson:"cdn_edge"`
 	Description string             `bson:"description"`
 	Owner       string             `bson:"owner"`
 	Updated_at  primitive.DateTime `bson:"updated_at"`

@@ -112,8 +112,9 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		private := utils.GetBoolParam(params["private"])
 		tuf := utils.GetBoolParam(params["tuf"])
 		reports := utils.GetBoolParam(params["reports"])
+		cdnEdge := utils.GetBoolParam(params["cdn"])
 		shouldCreateReportKey = reports
-		result, err = repository.CreateApp(paramValue, logoLink, description, private, tuf, reports, owner.(string), ctx)
+		result, err = repository.CreateApp(paramValue, logoLink, description, private, tuf, reports, cdnEdge, owner.(string), ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return

@@ -2,6 +2,7 @@ package create
 
 import (
 	"context"
+	"errors"
 	db "faynoSync/mongod"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
@@ -47,6 +48,97 @@ func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *re
 	}
 
 	return nil
+}
+
+func IsCdnEdgeEnabled(ctx context.Context, database *mongo.Database, owner, appName string) (bool, error) {
+	var appMeta struct {
+		CdnEdge bool `bson:"cdn_edge"`
+	}
+
+	err := database.Collection("apps_meta").FindOne(ctx, bson.M{
+		"app_name": appName,
+		"owner":    owner,
+	}).Decode(&appMeta)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check cdn_edge flag: %w", err)
+	}
+
+	return appMeta.CdnEdge, nil
+}
+
+func InvalidateCDNResponseCache(ctx context.Context, owner, appName string, env *viper.Viper) error {
+	bucketName := env.GetString("S3_BUCKET_NAME_CDN")
+	if bucketName == "" {
+		logrus.Debug("S3_BUCKET_NAME_CDN is not configured, skipping CDN response invalidation")
+		return nil
+	}
+
+	factory := utils.NewStorageFactory(env)
+	storageClient, err := factory.CreateStorageClient()
+	if err != nil {
+		return fmt.Errorf("failed to create storage client for CDN response invalidation: %w", err)
+	}
+
+	prefix := fmt.Sprintf("responses/%s/%s/", owner, appName)
+	logrus.Debugf("CDN response prefix %s will be invalidated.", prefix)
+
+	objectKeys, err := storageClient.ListObjects(ctx, bucketName, prefix)
+	if err != nil {
+		return fmt.Errorf("failed to list CDN response objects for invalidation: %w", err)
+	}
+
+	if len(objectKeys) == 0 {
+		logrus.Debug("No CDN response objects found to invalidate.")
+		return nil
+	}
+
+	logrus.Debugf("Invalidating %d CDN response objects by prefix.", len(objectKeys))
+	if err := storageClient.DeleteObjects(ctx, bucketName, objectKeys); err != nil {
+		return fmt.Errorf("failed to invalidate CDN response objects: %w", err)
+	}
+
+	return nil
+}
+
+func InvalidatePublishCaches(
+	ctx context.Context,
+	params map[string]interface{},
+	database *mongo.Database,
+	rdb *redis.Client,
+	performanceMode bool,
+	owner string,
+	appName string,
+	env *viper.Viper,
+	logPrefix string,
+) {
+	publishValue, hasPublishValue := params["publish"].(string)
+	publishValue = strings.TrimSpace(strings.ToLower(publishValue))
+	hasExplicitPublish := hasPublishValue && (publishValue == "true" || publishValue == "false")
+
+	logrus.Debugf("%s publish=%q (explicit=%t), invalidation check for caches.", logPrefix, publishValue, hasExplicitPublish)
+	if !hasExplicitPublish {
+		return
+	}
+
+	if performanceMode && rdb != nil {
+		if err := InvalidateCache(ctx, params, rdb); err != nil {
+			logrus.Error("Error invalidating cache:", err)
+		}
+	}
+
+	isCdnEdgeEnabled, err := IsCdnEdgeEnabled(ctx, database, owner, appName)
+	if err != nil {
+		logrus.Error("Error checking cdn_edge flag:", err)
+		return
+	}
+	if isCdnEdgeEnabled {
+		if err := InvalidateCDNResponseCache(ctx, owner, appName, env); err != nil {
+			logrus.Error("Error invalidating CDN response cache:", err)
+		}
+	}
 }
 
 func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
@@ -168,18 +260,17 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		results = append(results, result)
 	}
 
-	if performanceMode && rdb != nil {
-
-		publish := utils.GetBoolParam(ctxQueryMap["publish"])
-
-		logrus.Debugf("Uploaded app has publish: %t, invalidation of redis cache is starting.", publish)
-
-		if publish {
-			if err := InvalidateCache(c.Request.Context(), ctxQueryMap, rdb); err != nil {
-				logrus.Error("Error invalidating cache:", err)
-			}
-		}
-	}
+	InvalidatePublishCaches(
+		c.Request.Context(),
+		ctxQueryMap,
+		db,
+		rdb,
+		performanceMode,
+		owner,
+		appName,
+		viper.GetViper(),
+		"Uploaded app",
+	)
 
 	if len(results) == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no results found. Please check your files."})

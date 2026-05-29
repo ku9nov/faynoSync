@@ -72,6 +72,28 @@ func (a *AWSS3Client) UploadPublicObject(ctx context.Context, bucketName, object
 	return publicURL, nil
 }
 
+func (a *AWSS3Client) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
+	input := &s3.PutObjectInput{
+		Bucket:       aws.String(bucketName),
+		Key:          aws.String(objectKey),
+		Body:         fileReader,
+		CacheControl: aws.String(cacheControl),
+	}
+	if !a.env.GetBool("S3_DISABLE_OBJECT_ACL") {
+		input.ACL = types.ObjectCannedACLPublicRead
+	}
+	if contentType != "" {
+		input.ContentType = aws.String(contentType)
+	}
+	_, err := a.client.PutObject(ctx, input)
+	if err != nil {
+		return "", &StorageError{Message: "failed to upload public object to AWS S3", Err: err}
+	}
+
+	publicURL := fmt.Sprintf("%s/%s", strings.TrimRight(a.env.GetString("S3_ENDPOINT"), "/"), encodeObjectKeyForPublicURL(objectKey))
+	return publicURL, nil
+}
+
 func isAWSManagedS3Endpoint(endpoint string) bool {
 	normalizedEndpoint := strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
 	return strings.Contains(normalizedEndpoint, ".amazonaws.com")

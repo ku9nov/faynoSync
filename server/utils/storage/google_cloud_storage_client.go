@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -67,9 +69,16 @@ func (g *GoogleCloudStorageClient) UploadObject(ctx context.Context, bucketName,
 
 	bytesWritten, err := io.Copy(w, fileReader)
 	if err != nil {
-		w.Close()
-		logrus.Debugf("GCS: Failed to copy file content: %v\n", err)
-		return &StorageError{Message: "failed to upload object to GCS", Err: err}
+		closeErr := w.Close()
+		if closeErr != nil {
+			logrus.Debugf("GCS: Failed io.Copy to writer w: %v; additionally failed to close writer w: %v\n", err, closeErr)
+			return &StorageError{
+				Message: "failed to upload object to GCS during io.Copy to writer w and writer finalization",
+				Err:     errors.Join(err, closeErr),
+			}
+		}
+		logrus.Debugf("GCS: Failed io.Copy to writer w: %v\n", err)
+		return &StorageError{Message: "failed to upload object to GCS during io.Copy to writer w", Err: err}
 	}
 
 	logrus.Debugf("GCS: Copied %d bytes to writer\n", bytesWritten)
@@ -132,11 +141,64 @@ func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucke
 	return publicURL, nil
 }
 
+func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
+	logrus.Debugf("GCS: Uploading public object with cache control to bucket: %s, key: %s\n", bucketName, objectKey)
+
+	bucket := g.client.Bucket(bucketName)
+	attrs, err := bucket.Attrs(ctx)
+	if err != nil {
+		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v\n", bucketName, err)
+		return "", &StorageError{Message: fmt.Sprintf("bucket %s does not exist or is not accessible", bucketName), Err: err}
+	}
+
+	w := bucket.Object(objectKey).NewWriter(ctx)
+	if contentType != "" {
+		w.ContentType = contentType
+	}
+	if cacheControl != "" {
+		w.CacheControl = cacheControl
+	}
+
+	if !attrs.UniformBucketLevelAccess.Enabled {
+		w.PredefinedACL = "publicRead"
+	}
+
+	if _, err := io.Copy(w, fileReader); err != nil {
+		closeErr := w.Close()
+		if closeErr != nil {
+			return "", &StorageError{
+				Message: "failed to upload public object to GCS during io.Copy to writer w and writer finalization",
+				Err:     errors.Join(err, closeErr),
+			}
+		}
+		return "", &StorageError{Message: "failed to upload public object to GCS during io.Copy to writer w", Err: err}
+	}
+
+	if err := w.Close(); err != nil {
+		return "", &StorageError{Message: "failed to finalize upload to GCS", Err: err}
+	}
+
+	publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucketName, objectKey)
+	return publicURL, nil
+}
+
 func (g *GoogleCloudStorageClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	bucket := g.client.Bucket(bucketName)
 	obj := bucket.Object(objectKey)
 	if err := obj.Delete(ctx); err != nil {
 		return &StorageError{Message: "failed to delete object from GCS", Err: err}
+	}
+	return nil
+}
+
+func (g *GoogleCloudStorageClient) DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error {
+	for _, key := range objectKeys {
+		if key == "" {
+			continue
+		}
+		if err := g.DeleteObject(ctx, bucketName, key); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -206,4 +268,21 @@ func (g *GoogleCloudStorageClient) ListObjects(ctx context.Context, bucketName, 
 	}
 
 	return objectKeys, nil
+}
+
+// GetObjectETag returns object checksum (MD5 hex when available) and existence for GCS.
+func (g *GoogleCloudStorageClient) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
+	attrs, err := g.client.Bucket(bucketName).Object(objectKey).Attrs(ctx)
+	if err != nil {
+		if err == storage.ErrObjectNotExist {
+			return "", false, nil
+		}
+		return "", false, &StorageError{Message: "failed to stat object in GCS", Err: err}
+	}
+
+	if len(attrs.MD5) == 0 {
+		return "", true, nil
+	}
+
+	return hex.EncodeToString(attrs.MD5), true, nil
 }

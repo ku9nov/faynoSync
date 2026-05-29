@@ -10,8 +10,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,14 +21,18 @@ import (
 	"faynoSync/mongod"
 	"faynoSync/redisdb"
 	"faynoSync/server/handler"
+	"faynoSync/server/handler/info"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+
+	faynosync "github.com/ku9nov/faynosync-sdk-go"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -102,6 +108,44 @@ func removeFile(filename string) {
 	if err != nil {
 		logrus.Errorf("Failed to remove the file: %v", err)
 		return
+	}
+}
+
+func assertSDKMatchesScenario(t *testing.T, expected map[string]interface{}, actual *faynosync.UpdateResponse) {
+	t.Helper()
+
+	require.Equal(t, expected["update_available"], actual.UpdateAvailable)
+	require.Equal(t, expected["critical"], actual.Critical)
+	if expectedIntermediate, ok := expected["is_intermediate_required"]; ok {
+		require.Equal(t, expectedIntermediate, actual.IsIntermediateRequired)
+	}
+	if expectedRollback, ok := expected["possible_rollback"]; ok {
+		rollbackField := reflect.ValueOf(actual).Elem().FieldByName("PossibleRollback")
+		require.True(t, rollbackField.IsValid(), "expected field PossibleRollback to exist when possible_rollback is provided")
+		require.Equal(t, reflect.Bool, rollbackField.Kind(), "expected field PossibleRollback to be bool when possible_rollback is provided")
+		require.Equal(t, expectedRollback, rollbackField.Bool())
+	}
+
+	if expectedChangelog, ok := expected["changelog"]; ok {
+		require.Equal(t, expectedChangelog, actual.Changelog)
+	}
+
+	if expectedURL, ok := expected["update_url"]; ok {
+		require.Equal(t, expectedURL, actual.UpdateURL)
+	}
+
+	actualPackages := make(map[string]string, len(actual.PackageURLs))
+	for _, pkg := range actual.PackageURLs {
+		actualPackages[pkg.Package] = pkg.URL
+	}
+
+	for key, expectedValue := range expected {
+		if !strings.HasPrefix(key, "update_url_") {
+			continue
+		}
+
+		pkg := strings.TrimPrefix(key, "update_url_")
+		require.Equal(t, expectedValue, actualPackages[pkg], "package URL mismatch for %s", pkg)
 	}
 }
 
@@ -759,7 +803,7 @@ func TestCreatePublicApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"app": "public testapp", "reports": "true"}`
+	payload := `{"app": "public testapp", "reports": "true", "cdn": "true"}`
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -4854,6 +4898,22 @@ func TestCheckVersion(t *testing.T) {
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	sdkClient := faynosync.NewClient(faynosync.Config{
+		EdgeURL: s3Endpoint,
+		BaseURL: server.URL,
+	})
+
+	decodeScenarioValue := func(raw string) string {
+		decoded, err := url.QueryUnescape(raw)
+		if err != nil {
+			return raw
+		}
+		return decoded
+	}
+
 	// Define test scenarios.
 	testScenarios := []struct {
 		AppName      string
@@ -4986,7 +5046,130 @@ func TestCheckVersion(t *testing.T) {
 
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
+
+			sdkResp, err := sdkClient.CheckForUpdates(
+				context.Background(),
+				faynosync.CheckOptions{
+					Owner:    decodeScenarioValue(scenario.Owner),
+					AppName:  decodeScenarioValue(scenario.AppName),
+					Version:  decodeScenarioValue(scenario.Version),
+					Channel:  decodeScenarioValue(scenario.ChannelName),
+					Platform: decodeScenarioValue(scenario.Platform),
+					Arch:     decodeScenarioValue(scenario.Arch),
+				},
+			)
+			require.NoError(t, err)
+			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
+			expectedSource := faynosync.SourceAPI
+			if scenario.AppName == "public%20testapp" && scenario.Version == "0.0.1.137" && scenario.ChannelName == "nightly" {
+				expectedSource = faynosync.SourceEdge
+			}
+			require.Equal(t, expectedSource, sdkResp.Source)
 		})
+	}
+}
+
+func TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	// Define the route for the update endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/apps/update", func(c *gin.Context) {
+		handler.UpdateSpecificApp(c)
+	})
+
+	// Create a file to update (you can replace this with a test file path).
+	filePaths := []string{"LICENSE", "LICENSE"}
+	for _, filePath := range filePaths {
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+
+		combinations := []struct {
+			ID          string
+			AppVersion  string
+			ChannelName string
+			Published   bool
+			Critical    bool
+			Platform    string
+			Arch        string
+			Changelog   string
+		}{
+			{uploadedAppIDs[0], "0.0.1.137", "nightly", false, true, "universalPlatform", "universalArch", "### Changelog"},
+		}
+
+		// Iterate through the combinations and update the file for each combination.
+		for _, combo := range combinations {
+			w := httptest.NewRecorder()
+			// Reset the request body for each iteration.
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = io.Copy(part, file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Create a POST request for the update endpoint with the current combination.
+			dataPart, err := writer.CreateFormField("data")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := fmt.Sprintf(`{"id": "%s", "app_name": "public testapp", "version": "%s", "channel": "%s", "publish": %v, "critical": %v, "platform": "%s", "arch": "%s", "changelog": "%s"}`, combo.ID, combo.AppVersion, combo.ChannelName, combo.Published, combo.Critical, combo.Platform, combo.Arch, combo.Changelog)
+			_, err = dataPart.Write([]byte(payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Close the writer to finalize the form
+			err = writer.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// logrus.Infoln("Body: ", body)
+			req, err := http.NewRequest("POST", "/apps/update", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Set the Content-Type header for multipart/form-data.
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+
+			// Set the Authorization header.
+			req.Header.Set("Authorization", "Bearer "+authToken)
+			// Serve the request using the Gin router.
+			router.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			expected := `{"updatedResult.Updated":true}`
+			assert.Equal(t, expected, w.Body.String())
+
+			cdnResponseURL, err := url.Parse(s3Endpoint)
+			require.NoError(t, err)
+			cdnResponseURL = cdnResponseURL.JoinPath(
+				"responses",
+				"admin",
+				"public testapp",
+				combo.ChannelName,
+				combo.Platform,
+				combo.Arch,
+				combo.AppVersion+".json",
+			)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			cdnReq, err := http.NewRequestWithContext(ctx, http.MethodGet, cdnResponseURL.String(), nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(cdnReq)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode, "CDN response JSON should be deleted after publish=false update: %s", cdnResponseURL.String())
+		}
 	}
 }
 
@@ -5175,6 +5358,20 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	sdkClient := faynosync.NewClient(faynosync.Config{
+		BaseURL: server.URL,
+	})
+
+	decodeScenarioValue := func(raw string) string {
+		decoded, err := url.QueryUnescape(raw)
+		if err != nil {
+			return raw
+		}
+		return decoded
+	}
 	// Define test scenarios.
 	testScenarios := []struct {
 		AppName      string
@@ -5297,6 +5494,20 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
+			sdkResp, err := sdkClient.CheckForUpdates(
+				context.Background(),
+				faynosync.CheckOptions{
+					Owner:    decodeScenarioValue(scenario.Owner),
+					AppName:  decodeScenarioValue(scenario.AppName),
+					Version:  decodeScenarioValue(scenario.Version),
+					Channel:  decodeScenarioValue(scenario.ChannelName),
+					Platform: decodeScenarioValue(scenario.Platform),
+					Arch:     decodeScenarioValue(scenario.Arch),
+					DeviceID: decodeScenarioValue(scenario.DeviceID),
+				},
+			)
+			require.NoError(t, err)
+			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
 		})
 	}
 }
@@ -5331,7 +5542,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 				"date_range": dateRange,
 				"admin":      "admin",
 				"summary": map[string]interface{}{
-					"total_requests":               float64(5),
+					"total_requests":               float64(10),
 					"unique_clients":               float64(1),
 					"clients_using_latest_version": float64(0),
 					"clients_outdated":             float64(1),
@@ -5375,7 +5586,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
-					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(5), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(10), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
 				},
 			},
 		},
@@ -5389,7 +5600,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 				"date_range": dateRange,
 				"admin":      "admin",
 				"summary": map[string]interface{}{
-					"total_requests":               float64(5),
+					"total_requests":               float64(10),
 					"unique_clients":               float64(1),
 					"clients_using_latest_version": float64(0),
 					"clients_outdated":             float64(1),
@@ -5433,7 +5644,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
-					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(5), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(10), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
 				},
 			},
 		},
@@ -5446,7 +5657,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 				"date_range": dateRange,
 				"admin":      "admin",
 				"summary": map[string]interface{}{
-					"total_requests":               float64(5),
+					"total_requests":               float64(10),
 					"unique_clients":               float64(1),
 					"clients_using_latest_version": float64(0),
 					"clients_outdated":             float64(1),
@@ -5490,7 +5701,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
-					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(5), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(10), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
 				},
 			},
 		},
@@ -5503,7 +5714,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 				"date_range": dateRange,
 				"admin":      "admin",
 				"summary": map[string]interface{}{
-					"total_requests":               float64(5),
+					"total_requests":               float64(10),
 					"unique_clients":               float64(1),
 					"clients_using_latest_version": float64(0),
 					"clients_outdated":             float64(1),
@@ -5547,7 +5758,7 @@ func TestTelemetryWithVariousParams(t *testing.T) {
 					map[string]interface{}{"date": dailyStats[4], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[5], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
 					map[string]interface{}{"date": dailyStats[6], "total_requests": float64(0), "unique_clients": float64(0), "clients_using_latest_version": float64(0), "clients_outdated": float64(0)},
-					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(5), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
+					map[string]interface{}{"date": dailyStats[7], "total_requests": float64(10), "unique_clients": float64(1), "clients_using_latest_version": float64(0), "clients_outdated": float64(1)},
 				},
 			},
 		},
@@ -5745,6 +5956,155 @@ func TestTelemetryLuaEmitsArchAndChannelKeys(t *testing.T) {
 	assert.Equal(t, "stable", channelEntry["channel"])
 	_, hasChannelPlatformKey := channelEntry["platform"]
 	assert.False(t, hasChannelPlatformKey)
+}
+
+func TestTelemetryBeaconUsesAllowListAndExistingRedisKeys(t *testing.T) {
+	if !viper.GetBool("ENABLE_TELEMETRY") || redisClient == nil {
+		t.Skip("redis telemetry backend is not configured")
+	}
+
+	ctx := context.Background()
+	owner := fmt.Sprintf("beacon-owner-%d", time.Now().UTC().UnixNano())
+	appName := "beaconapp"
+	channel := "stable"
+	platform := "darwin"
+	arch := "arm64"
+	version := "1.2.3"
+	dateStr := time.Now().UTC().Format("2006-01-02")
+	baseKey := fmt.Sprintf("stats:%s:%s", owner, appName)
+	keysToCleanup := []string{
+		fmt.Sprintf("%s:requests:%s", baseKey, dateStr),
+		fmt.Sprintf("%s:unique_clients:%s", baseKey, dateStr),
+		fmt.Sprintf("%s:channels:%s:%s", baseKey, dateStr, channel),
+		fmt.Sprintf("%s:platforms:%s:%s", baseKey, dateStr, platform),
+		fmt.Sprintf("%s:architectures:%s:%s", baseKey, dateStr, arch),
+		fmt.Sprintf("%s:known_versions", baseKey),
+		fmt.Sprintf("%s:version_usage:%s:%s", baseKey, dateStr, version),
+		fmt.Sprintf("%s:clients_using_latest_version:%s", baseKey, dateStr),
+		fmt.Sprintf("%s:clients_outdated:%s", baseKey, dateStr),
+	}
+
+	metaCollection := mongoDatabase.Collection("apps_meta")
+	appsCollection := mongoDatabase.Collection("apps")
+	t.Cleanup(func() {
+		_, _ = metaCollection.DeleteMany(ctx, bson.M{"owner": owner})
+		_, _ = appsCollection.DeleteMany(ctx, bson.M{"owner": owner})
+		_ = redisClient.Del(ctx, keysToCleanup...).Err()
+	})
+	_ = redisClient.Del(ctx, keysToCleanup...).Err()
+	_, _ = metaCollection.DeleteMany(ctx, bson.M{"owner": owner})
+	_, _ = appsCollection.DeleteMany(ctx, bson.M{"owner": owner})
+
+	appID := primitive.NewObjectID()
+	channelID := primitive.NewObjectID()
+	platformID := primitive.NewObjectID()
+	archID := primitive.NewObjectID()
+	now := primitive.NewDateTimeFromTime(time.Now().UTC())
+
+	_, err := metaCollection.InsertMany(ctx, []interface{}{
+		bson.M{"_id": appID, "app_name": appName, "owner": owner, "updated_at": now},
+		bson.M{"_id": channelID, "channel_name": channel, "owner": owner, "updated_at": now},
+		bson.M{"_id": platformID, "platform_name": platform, "owner": owner, "updated_at": now},
+		bson.M{"_id": archID, "arch_id": arch, "owner": owner, "updated_at": now},
+	})
+	require.NoError(t, err)
+
+	_, err = appsCollection.InsertOne(ctx, bson.M{
+		"_id":        primitive.NewObjectID(),
+		"app_id":     appID,
+		"version":    version,
+		"channel_id": channelID,
+		"published":  true,
+		"owner":      owner,
+		"artifacts": []bson.M{
+			{"platform": platformID, "arch": archID, "package": ".zip", "link": "https://example.com/beacon.zip"},
+		},
+		"updated_at": now,
+	})
+	require.NoError(t, err)
+	require.NoError(t, info.ReloadTelemetryAllowList(ctx, mongoDatabase))
+
+	router := gin.Default()
+	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/telemetry/beacon", func(c *gin.Context) {
+		appHandler.TelemetryBeacon(c)
+	})
+
+	validQuery := fmt.Sprintf(
+		"/telemetry/beacon?owner=%s&app_name=%s&version=%s&channel=%s&platform=%s&arch=%s",
+		url.QueryEscape(owner),
+		url.QueryEscape(appName),
+		url.QueryEscape(version),
+		url.QueryEscape(channel),
+		url.QueryEscape(platform),
+		url.QueryEscape(arch),
+	)
+
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest("GET", validQuery+"&is_latest=true", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Device-ID", "beacon-device-latest")
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	requestCount, err := redisClient.Get(ctx, keysToCleanup[0]).Int()
+	require.NoError(t, err)
+	assert.Equal(t, 1, requestCount)
+	assert.Equal(t, int64(1), redisClient.SCard(ctx, keysToCleanup[1]).Val())
+	assert.Equal(t, int64(1), redisClient.SCard(ctx, keysToCleanup[2]).Val())
+	assert.Equal(t, int64(1), redisClient.SCard(ctx, keysToCleanup[3]).Val())
+	assert.Equal(t, int64(1), redisClient.SCard(ctx, keysToCleanup[4]).Val())
+	assert.Equal(t, int64(1), redisClient.SCard(ctx, keysToCleanup[6]).Val())
+	assert.Equal(t, int64(1), redisClient.SCard(ctx, keysToCleanup[7]).Val())
+	assert.Equal(t, int64(0), redisClient.SCard(ctx, keysToCleanup[8]).Val())
+
+	w = httptest.NewRecorder()
+	req, err = http.NewRequest("GET", validQuery+"&is_latest=false", nil)
+	require.NoError(t, err)
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	requestCountAfterMissingDeviceID, err := redisClient.Get(ctx, keysToCleanup[0]).Int()
+	require.NoError(t, err)
+	assert.Equal(t, 1, requestCountAfterMissingDeviceID)
+
+	w = httptest.NewRecorder()
+	req, err = http.NewRequest("GET", validQuery, nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Device-ID", "beacon-device-unknown-latest")
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.False(t, redisClient.SIsMember(ctx, keysToCleanup[7], "beacon-device-unknown-latest").Val())
+	assert.False(t, redisClient.SIsMember(ctx, keysToCleanup[8], "beacon-device-unknown-latest").Val())
+
+	noVersionQuery := fmt.Sprintf(
+		"/telemetry/beacon?owner=%s&app_name=%s&channel=%s&platform=%s&arch=%s",
+		url.QueryEscape(owner),
+		url.QueryEscape(appName),
+		url.QueryEscape(channel),
+		url.QueryEscape(platform),
+		url.QueryEscape(arch),
+	)
+
+	w = httptest.NewRecorder()
+	req, err = http.NewRequest("GET", noVersionQuery+"&is_latest=false", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Device-ID", "beacon-device-outdated-no-version")
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.False(t, redisClient.SIsMember(ctx, keysToCleanup[6], "beacon-device-outdated-no-version").Val())
+	assert.True(t, redisClient.SIsMember(ctx, keysToCleanup[8], "beacon-device-outdated-no-version").Val())
+
+	w = httptest.NewRecorder()
+	req, err = http.NewRequest("GET", strings.Replace(validQuery, "arch=arm64", "arch=x64", 1)+"&is_latest=false", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Device-ID", "beacon-device-invalid")
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	requestCountAfterInvalid, err := redisClient.Get(ctx, keysToCleanup[0]).Int()
+	require.NoError(t, err)
+	assert.Equal(t, 3, requestCountAfterInvalid)
+	assert.False(t, redisClient.SIsMember(ctx, keysToCleanup[8], "beacon-device-invalid").Val())
 }
 
 func TestListAppsWithSecondUser(t *testing.T) {
@@ -8572,6 +8932,20 @@ func TestCheckVersionWithIntermediate(t *testing.T) {
 	router.GET("/checkVersion", func(c *gin.Context) {
 		handler.FindLatestVersion(c)
 	})
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	sdkClient := faynosync.NewClient(faynosync.Config{
+		BaseURL: server.URL,
+	})
+
+	decodeScenarioValue := func(raw string) string {
+		decoded, err := url.QueryUnescape(raw)
+		if err != nil {
+			return raw
+		}
+		return decoded
+	}
 	// Define test scenarios.
 	testScenarios := []struct {
 		AppName      string
@@ -8702,6 +9076,19 @@ func TestCheckVersionWithIntermediate(t *testing.T) {
 
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
+			sdkResp, err := sdkClient.CheckForUpdates(
+				context.Background(),
+				faynosync.CheckOptions{
+					Owner:    decodeScenarioValue(scenario.Owner),
+					AppName:  decodeScenarioValue(scenario.AppName),
+					Version:  decodeScenarioValue(scenario.Version),
+					Channel:  decodeScenarioValue(scenario.ChannelName),
+					Platform: decodeScenarioValue(scenario.Platform),
+					Arch:     decodeScenarioValue(scenario.Arch),
+				},
+			)
+			require.NoError(t, err)
+			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
 		})
 	}
 }

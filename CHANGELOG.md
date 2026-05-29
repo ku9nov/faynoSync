@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.5.15
+
+### Features
+
+- Added `cdn` parameter to `POST /app/create` and `POST /app/update` endpoints, plus `S3_BUCKET_NAME_CDN` for CDN-targeted uploads.
+- Added batch object deletion support in storage clients to clean up related artifacts more efficiently.
+- Updated test setup to use SDK-backed integration flow.
+- Added telemetry beacon endpoint `/telemetry/beacon` to collect beacon requests and build allow-list index.
+
+### Fixes
+
+- Fixed telemetry does not work when performance mode is enabled.
+
 ## v1.5.14
 
 ### Features

@@ -255,7 +255,11 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 
-	var appMeta, channelMeta, platformMeta, archMeta struct {
+	var appMeta struct {
+		ID      primitive.ObjectID `bson:"_id"`
+		CdnEdge bool               `bson:"cdn_edge,omitempty"`
+	}
+	var channelMeta, platformMeta, archMeta struct {
 		ID primitive.ObjectID `bson:"_id"`
 	}
 
@@ -381,6 +385,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 				}
 				return CheckResult{
 					Found:                  true,
+					CdnEdge:                appMeta.CdnEdge,
 					Artifacts:              artifacts,
 					Changelog:              changelog,
 					Critical:               requiredApp.Critical,
@@ -410,11 +415,11 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 		}
 		artifacts = filteredArtifacts
 		if requestedVersion.Equal(latestAppVersion) {
-			return CheckResult{Found: false, Artifacts: artifacts, LatestVersion: latestApp.Version}, nil
+			return CheckResult{Found: false, CdnEdge: appMeta.CdnEdge, Artifacts: artifacts, LatestVersion: latestApp.Version}, nil
 		} else if requestedVersion.GreaterThan(latestAppVersion) {
-			return CheckResult{Found: false, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, PossibleRollback: true, LatestVersion: latestApp.Version}, nil
+			return CheckResult{Found: false, CdnEdge: appMeta.CdnEdge, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, PossibleRollback: true, LatestVersion: latestApp.Version}, nil
 		} else {
-			return CheckResult{Found: true, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, LatestVersion: latestApp.Version}, nil
+			return CheckResult{Found: true, CdnEdge: appMeta.CdnEdge, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, LatestVersion: latestApp.Version}, nil
 		}
 
 	} else {
