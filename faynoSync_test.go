@@ -21,6 +21,7 @@ import (
 	"faynoSync/mongod"
 	"faynoSync/redisdb"
 	"faynoSync/server/handler"
+	"faynoSync/server/handler/info"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 
@@ -6018,6 +6019,7 @@ func TestTelemetryBeaconUsesAllowListAndExistingRedisKeys(t *testing.T) {
 		"updated_at": now,
 	})
 	require.NoError(t, err)
+	require.NoError(t, info.ReloadTelemetryAllowList(ctx, mongoDatabase))
 
 	router := gin.Default()
 	appHandler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
