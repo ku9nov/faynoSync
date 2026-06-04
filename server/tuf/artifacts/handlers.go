@@ -414,8 +414,6 @@ func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabas
 		logrus.Warnf("Failed to update task state to RUNNING: %v", err)
 	}
 
-	updateArtifactsTUFStatusToDeleted(ctx, mongoDatabase, appDoc.AppID, payload.Version, owner, artifactsToDelete, &taskID)
-
 	go func() {
 		ctx := context.Background()
 		if err := RemoveArtifacts(
@@ -441,7 +439,9 @@ func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabas
 			if err := tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, result); err != nil {
 				logrus.Errorf("Failed to save error task status: %v", err)
 			}
+			return
 		}
+		updateArtifactsTUFStatusToDeleted(ctx, mongoDatabase, appDoc.AppID, payload.Version, owner, artifactsToDelete, &taskID)
 	}()
 
 	artifactPaths := make([]string, len(tufArtifacts))

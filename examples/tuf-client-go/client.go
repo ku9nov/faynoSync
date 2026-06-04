@@ -36,9 +36,9 @@ import (
 // Adapted from the upstream go-tuf client example.
 // The values below are overridden for faynoSync endpoints and target layout.
 const (
-	metadataURL          = "http://cb-faynosync-s3-public.web.garage.localhost:3902/tuf_metadata/admin/tuf/"
+	metadataURL          = "http://cb-faynosync-s3-public.web.garage.localhost:3902/tuf_metadata/admin/test/"
 	targetsURL           = "http://cb-faynosync-s3-public.web.garage.localhost:3902/"
-	targetName           = "tuf-admin/nightly/darwin/arm64/tuf-0.0.0.2"
+	targetName           = "test-admin/nightly/darwin/arm64/test-0.0.0.2"
 	verbosity            = 4
 	generateRandomFolder = false
 )

@@ -275,7 +275,8 @@ func TestRemoveArtifacts_DownloadRootFails_ReturnsError(t *testing.T) {
 	}, testTaskID)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to download root metadata")
+	assert.Contains(t, err.Error(), "failed to download")
+	assert.Contains(t, err.Error(), "root")
 }
 
 // To verify: In RemoveArtifacts change error handling for FindLatestMetadataVersion (targets); test will fail (no error or wrong message).
@@ -667,7 +668,7 @@ func TestRemoveArtifactsFromDelegatedRole_NotEnoughDistinctKeys_ReturnsError(t *
 	_, err := removeArtifactsFromDelegatedRole(ctx, repo, "updates", artifacts, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not enough distinct keys for delegated role updates")
+	assert.Contains(t, err.Error(), "not enough distinct keys")
 	assert.Contains(t, err.Error(), "need 2, got 1")
 }
 
@@ -718,7 +719,8 @@ func TestRemoveArtifactsFromDelegatedRole_LoadDelegationKeyFails_ReturnsError(t 
 
 	require.Error(t, err)
 	assert.False(t, removed)
-	assert.Contains(t, err.Error(), "failed to load delegation private key")
+	assert.Contains(t, err.Error(), "failed to load")
+	assert.Contains(t, err.Error(), "private key")
 }
 
 // To verify: In removeArtifactsFromDelegatedRole skip UploadMetadataToS3 error; test will fail (no error or wrong message).

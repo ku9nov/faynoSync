@@ -1,7 +1,6 @@
 package delegations
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -11,7 +10,6 @@ import (
 )
 
 func UpdateDelegationPaths(
-	ctx context.Context,
 	repo *repository.Type,
 	roleName string,
 	artifactPaths []string,
@@ -97,7 +95,6 @@ func UpdateDelegationPaths(
 }
 
 func RemoveDelegationPaths(
-	ctx context.Context,
 	repo *repository.Type,
 	roleName string,
 	artifactPaths []string,

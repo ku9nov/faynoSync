@@ -2640,3 +2640,188 @@ func TestLoadTrustedTargetsFromS3_Success_WithMockedStorage(t *testing.T) {
 	assert.Equal(t, "targets", result["signed"].(map[string]interface{})["_type"])
 	assert.Equal(t, float64(2), result["signed"].(map[string]interface{})["version"])
 }
+
+// --- C-2 regression: PostMetadataSign targets path returns 400 on S3 error (not silent 200) ---
+
+// To verify: (restore nested if-err==nil blocks); test will fail (200 instead of 400).
+func TestPostMetadataSign_Targets_S3UnavailableDuringVerification_ReturnsBadRequest(t *testing.T) {
+	// Build valid go-tuf targets JSON so FromFile succeeds inside the switch case.
+	targetsObj := tuf_metadata.Targets(time.Now().Add(365 * 24 * time.Hour))
+	targetsObj.Signed.Version = 2
+	stagedJSON := mustBuildTargetsJSON(t, targetsObj)
+
+	// Prepend the test signature keyID to the staged JSON so signatureExists=true,
+	// which skips validateIncomingMetadataSignature (avoiding S3 root lookup there).
+	var staged map[string]interface{}
+	require.NoError(t, json.Unmarshal(stagedJSON, &staged))
+	staged["signatures"] = []interface{}{map[string]interface{}{"keyid": "test-key", "sig": "aabb"}}
+	stagedWithSig, err := json.Marshal(staged)
+	require.NoError(t, err)
+
+	payload := models.MetadataSignPostPayload{
+		Role:      "targets",
+		Signature: models.Signature{KeyID: "test-key", Sig: "aabb"},
+	}
+	c, w := makePostMetadataSignContext("admin", "myapp", payload)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_admin_myapp", "done")
+	mr.Set("TARGETS_SIGNING_admin_myapp", string(stagedWithSig))
+
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(_ context.Context, _, _, _ string) ([]string, error) {
+		return nil, fmt.Errorf("s3 unavailable")
+	}
+	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
+
+	PostMetadataSign(c, client)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "S3 error during targets verification must return 400, not silent 200")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Signature Failed", body["message"])
+	assert.Contains(t, body["error"], "failed to find trusted targets metadata")
+}
+
+// mustBuildTargetsJSON serialises a go-tuf Targets metadata object to canonical JSON bytes.
+func mustBuildTargetsJSON(t *testing.T, meta *tuf_metadata.Metadata[tuf_metadata.TargetsType]) []byte {
+	t.Helper()
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "targets.json")
+	require.NoError(t, meta.ToFile(path, true))
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return b
+}
+
+// --- C-4 regression: PostMetadataRotate stages correct-version root, rejects wrong-version root ---
+
+// To verify: (string matching instead of errors.Is); test will fail when a wrong-version root
+// with "signature"-containing error text is incorrectly staged instead of rejected.
+func TestPostMetadataRotate_CorrectVersionUnsignedRoot_IsStagedForSigning(t *testing.T) {
+	// Build a valid current root (v1, properly signed).
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	currentRootMeta := payload.Metadata["root"]
+	currentRootJSON, err := json.Marshal(currentRootMeta)
+	require.NoError(t, err)
+
+	// Build a new root at v2 with a brand-new key so signatures from v1 keys are absent.
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	newRepoObj := repository.New()
+	newRepoObj.SetRoot(tuf_metadata.Root(expires))
+	_, newPriv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	newKey, err := tuf_metadata.KeyFromPublicKey(newPriv.Public())
+	require.NoError(t, err)
+	for _, role := range []string{"root", "targets", "snapshot", "timestamp"} {
+		require.NoError(t, newRepoObj.Root().Signed.AddKey(newKey, role))
+	}
+	newRepoObj.Root().Signed.Version = 2
+	newRootPath := filepath.Join(t.TempDir(), "new_root.json")
+	require.NoError(t, newRepoObj.Root().ToFile(newRootPath, true))
+	newRootBytes, err := os.ReadFile(newRootPath)
+	require.NoError(t, err)
+	var newRootMeta models.RootMetadata
+	require.NoError(t, json.Unmarshal(newRootBytes, &newRootMeta))
+
+	// Mock download so PostMetadataRotate finds the current root.
+	savedList := tuf_storage.ListMetadataForLatest
+	savedViper := tuf_storage.GetViperForDownload
+	savedFactory := tuf_storage.StorageFactoryForDownload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.ListMetadataForLatest = func(_ context.Context, _, _, _ string) ([]string, error) {
+		return []string{"1.root.json"}, nil
+	}
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &downloadMockFactory{client: &downloadMockClient{body: currentRootJSON}}
+	}
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedViper
+		tuf_storage.StorageFactoryForDownload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_admin_myapp", "done")
+
+	c, w := makePostMetadataRotateContext("admin", "myapp", models.MetadataPostPayload{
+		Metadata: map[string]models.RootMetadata{"root": newRootMeta},
+	})
+	PostMetadataRotate(c, client)
+
+	assert.Equal(t, http.StatusOK, w.Code, "Correct-version root with missing signatures must be staged (200)")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Metadata Update Processed", body["message"])
+	require.NotNil(t, body["data"])
+	data := body["data"].(map[string]interface{})
+	assert.NotEmpty(t, data["task_id"], "taskID must be present when metadata is staged")
+}
+
+// To verify: test will fail when a wrong-version root is accepted instead of rejected with 400.
+func TestPostMetadataRotate_WrongVersionRoot_ReturnsBadRequest(t *testing.T) {
+	payload, _, cleanup := makeValidRootAndPayload(t)
+	defer cleanup()
+	currentRootMeta := payload.Metadata["root"]
+	currentRootJSON, err := json.Marshal(currentRootMeta)
+	require.NoError(t, err)
+
+	// New root jumps to version 5 — not current+1.
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	newRepoObj := repository.New()
+	newRepoObj.SetRoot(tuf_metadata.Root(expires))
+	_, newPriv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	newKey, err := tuf_metadata.KeyFromPublicKey(newPriv.Public())
+	require.NoError(t, err)
+	for _, role := range []string{"root", "targets", "snapshot", "timestamp"} {
+		require.NoError(t, newRepoObj.Root().Signed.AddKey(newKey, role))
+	}
+	newRepoObj.Root().Signed.Version = 5
+	newRootPath := filepath.Join(t.TempDir(), "new_root.json")
+	require.NoError(t, newRepoObj.Root().ToFile(newRootPath, true))
+	newRootBytes, err := os.ReadFile(newRootPath)
+	require.NoError(t, err)
+	var newRootMeta models.RootMetadata
+	require.NoError(t, json.Unmarshal(newRootBytes, &newRootMeta))
+
+	savedList := tuf_storage.ListMetadataForLatest
+	savedViper := tuf_storage.GetViperForDownload
+	savedFactory := tuf_storage.StorageFactoryForDownload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.ListMetadataForLatest = func(_ context.Context, _, _, _ string) ([]string, error) {
+		return []string{"1.root.json"}, nil
+	}
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &downloadMockFactory{client: &downloadMockClient{body: currentRootJSON}}
+	}
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedViper
+		tuf_storage.StorageFactoryForDownload = savedFactory
+	}()
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_admin_myapp", "done")
+
+	c, w := makePostMetadataRotateContext("admin", "myapp", models.MetadataPostPayload{
+		Metadata: map[string]models.RootMetadata{"root": newRootMeta},
+	})
+	PostMetadataRotate(c, client)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "Wrong-version root must be rejected with 400")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Metadata Update Failed", body["message"])
+	assert.Contains(t, body["error"], "expected root version 2")
+}

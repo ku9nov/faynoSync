@@ -10,6 +10,7 @@ import (
 
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/tasks"
+	tuf_utils "faynoSync/server/tuf/utils"
 	"faynoSync/server/utils"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,10 @@ func GetConfig(c *gin.Context, redisClient *redis.Client) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "appName query parameter is required",
 		})
+		return
+	}
+	if err := tuf_utils.ValidateAppName(appName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -110,7 +115,6 @@ func GetConfig(c *gin.Context, redisClient *redis.Client) {
 		}
 
 		for _, fullKey := range keys {
-
 			alreadyProcessed := false
 			for _, standardKey := range settingsKeys {
 				if standardKey != "BOOTSTRAP" && fullKey == standardKey+"_"+keySuffix {
@@ -122,22 +126,17 @@ func GetConfig(c *gin.Context, redisClient *redis.Client) {
 				continue
 			}
 
-			keyWithoutSuffix := strings.TrimSuffix(fullKey, "_EXPIRATION_"+keySuffix)
-			if keyWithoutSuffix == fullKey {
+			roleName := strings.TrimSuffix(fullKey, "_EXPIRATION_"+keySuffix)
+			if roleName == fullKey {
 				continue
 			}
 
 			value, err := redisClient.Get(ctx, fullKey).Result()
 			if err == nil && value != "" {
 				if intVal, err := strconv.Atoi(value); err == nil {
-					settings["role_expiration"] = intVal
-					break
+					settings[strings.ToLower(roleName)+"_expiration"] = intVal
 				}
 			}
-		}
-
-		if _, found := settings["role_expiration"]; found {
-			break
 		}
 
 		if cursor == 0 {
@@ -164,6 +163,10 @@ func PutConfig(c *gin.Context, redisClient *redis.Client) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "appName query parameter is required",
 		})
+		return
+	}
+	if err := tuf_utils.ValidateAppName(appName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -201,6 +204,11 @@ func PutConfig(c *gin.Context, redisClient *redis.Client) {
 		"snapshot":  true,
 		"timestamp": true,
 		// "bins":      true,
+	}
+
+	targetsOnlineVal, _ := redisClient.Get(ctx, "TARGETS_ONLINE_KEY_"+keySuffix).Result()
+	if targetsOnlineVal != "true" && targetsOnlineVal != "1" {
+		delete(validOnlineRoles, "targets")
 	}
 
 	updatedRoles := []string{}

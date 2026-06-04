@@ -17,6 +17,7 @@ import (
 
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	tuf_metadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
@@ -108,6 +109,51 @@ func runDelegatedTargetsSignatureValidationTest(t *testing.T, roleName string, p
 		signedData,
 		false,
 	)
+}
+
+// To verify: In loadTrustedRootMetadataFromS3 remove the expiration check; test will fail (no error for expired root).
+func TestLoadTrustedRootMetadataFromS3_ExpiredRoot_ReturnsError(t *testing.T) {
+	// A root with a past expiration must be rejected even if structurally valid.
+	expiredRoot := `{
+		"signatures": [],
+		"signed": {
+			"_type": "root",
+			"version": 1,
+			"spec_version": "1.0.0",
+			"expires": "2020-01-01T00:00:00Z",
+			"consistent_snapshot": false,
+			"keys": {},
+			"roles": {
+				"root":      {"keyids": [], "threshold": 1},
+				"targets":   {"keyids": [], "threshold": 1},
+				"snapshot":  {"keyids": [], "threshold": 1},
+				"timestamp": {"keyids": [], "threshold": 1}
+			}
+		}
+	}`
+
+	savedList := tuf_storage.ListMetadataForLatest
+	savedViper := tuf_storage.GetViperForDownload
+	savedFactory := tuf_storage.StorageFactoryForDownload
+	tuf_storage.ListMetadataForLatest = func(_ context.Context, _, _, _ string) ([]string, error) {
+		return []string{"1.root.json"}, nil
+	}
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &forceUpdateMockFactory{client: &storageMockClientForForceUpdate{body: []byte(expiredRoot)}}
+	}
+	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedViper
+		tuf_storage.StorageFactoryForDownload = savedFactory
+	}()
+
+	_, err := loadTrustedRootMetadataFromS3(context.Background(), "admin", "app")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expired")
 }
 
 func loadTestSigner(privateKey crypto.Signer) (signature.Signer, error) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sirupsen/logrus"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
 	"github.com/theupdateframework/go-tuf/v2/metadata"
@@ -38,11 +39,7 @@ func RemoveArtifacts(
 
 	keySuffix := adminName + "_" + appName
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-tuf-*")
+	tmpDir, err := os.MkdirTemp("", "tmp-tuf-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -51,9 +48,16 @@ func RemoveArtifacts(
 	repo := repository.New()
 
 	rootPath := filepath.Join(tmpDir, "root.json")
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err != nil {
-		if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err2 != nil {
-			return fmt.Errorf("failed to download root metadata: %w", err)
+	_, latestRootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
+	if err != nil {
+		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err != nil {
+			if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err2 != nil {
+				return fmt.Errorf("failed to download root metadata (tried root.json and 1.root.json): %w", err)
+			}
+		}
+	} else {
+		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, latestRootFilename, rootPath); err != nil {
+			return fmt.Errorf("failed to download latest root metadata: %w", err)
 		}
 	}
 
@@ -151,7 +155,7 @@ func RemoveArtifacts(
 			artifactPaths = append(artifactPaths, artifact.Path)
 		}
 		pathsRemoved, err := delegations.RemoveDelegationPaths(
-			ctx, repo, roleName, artifactPaths, adminName,
+			repo, roleName, artifactPaths, adminName,
 		)
 		if err != nil {
 			logrus.Warnf("Failed to remove delegation paths for role %s: %v", roleName, err)
@@ -329,35 +333,20 @@ func removeArtifactsFromDelegatedRole(
 	if len(roleKeyIDs) == 0 {
 		return false, fmt.Errorf("no key IDs found for delegated role %s", roleName)
 	}
-	if roleThreshold < 1 {
-		roleThreshold = 1
-	}
-	seenKeyID := make(map[string]bool)
-	keysToSign := make([]string, 0, roleThreshold)
-	for _, keyID := range roleKeyIDs {
-		if seenKeyID[keyID] {
-			continue
-		}
-		seenKeyID[keyID] = true
-		keysToSign = append(keysToSign, keyID)
-		if len(keysToSign) == roleThreshold {
-			break
-		}
-	}
-	if len(keysToSign) < roleThreshold {
-		return false, fmt.Errorf("not enough distinct keys for delegated role %s: need %d, got %d", roleName, roleThreshold, len(keysToSign))
-	}
 
-	for _, delegationKeyID := range keysToSign {
-		delegationSigner, err := signing.BuildSignerFromPrivateKeyFile(delegationKeyID, delegationKeyID)
-		if err != nil {
-			return false, fmt.Errorf("failed to load delegation private key %s for role %s: %w", delegationKeyID, roleName, err)
-		}
-
-		if _, err := repo.Targets(roleName).Sign(delegationSigner); err != nil {
-			return false, fmt.Errorf("failed to sign %s metadata with key %s: %w", roleName, delegationKeyID, err)
-		}
-		logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, delegationKeyID)
+	if _, err := signing.LoadAndSignDelegation(
+		roleName,
+		roleKeyIDs,
+		roleThreshold,
+		func(s signature.Signer, keyID string) error {
+			_, err := repo.Targets(roleName).Sign(s)
+			if err == nil {
+				logrus.Debugf("Successfully signed delegated role %s with key %s", roleName, keyID)
+			}
+			return err
+		},
+	); err != nil {
+		return false, fmt.Errorf("failed to sign delegated role %s: %w", roleName, err)
 	}
 
 	newDelegationFilename := fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName)

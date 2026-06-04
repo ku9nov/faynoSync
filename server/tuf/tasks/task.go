@@ -11,6 +11,23 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	// taskActiveTTL caps how long an in-progress task record lives in Redis.
+	taskActiveTTL = 24 * time.Hour
+	// taskTerminalTTL keeps completed/failed records for 7 days for audit/debugging.
+	taskTerminalTTL = 7 * 24 * time.Hour
+)
+
+func taskTTL(state TaskState) time.Duration {
+	switch state {
+	case TaskStateSuccess, TaskStateFailure, TaskStateRevoked,
+		TaskStateRejected, TaskStateIgnored, TaskStateErrored:
+		return taskTerminalTTL
+	default:
+		return taskActiveTTL
+	}
+}
+
 // GetTask retrieves task status from Redis
 func GetTask(c *gin.Context, redisClient *redis.Client) {
 	taskID := c.Query("task_id")
@@ -113,7 +130,7 @@ func SaveTaskStatus(redisClient *redis.Client, taskID string, state TaskState, r
 		return err
 	}
 
-	err = redisClient.Set(ctx, taskKey, taskJSON, 0).Err()
+	err = redisClient.Set(ctx, taskKey, taskJSON, taskTTL(state)).Err()
 	if err != nil {
 		logrus.Errorf("Failed to save task status to Redis: %v", err)
 		return err
@@ -169,7 +186,7 @@ func UpdateTaskState(redisClient *redis.Client, taskID string, state TaskState) 
 		return err
 	}
 
-	err = redisClient.Set(ctx, taskKey, taskJSON, 0).Err()
+	err = redisClient.Set(ctx, taskKey, taskJSON, taskTTL(state)).Err()
 	if err != nil {
 		logrus.Errorf("Failed to update task state in Redis: %v", err)
 		return err
@@ -224,7 +241,7 @@ func UpdateTaskResult(redisClient *redis.Client, taskID string, result *TaskResu
 		return err
 	}
 
-	err = redisClient.Set(ctx, taskKey, taskJSON, 0).Err()
+	err = redisClient.Set(ctx, taskKey, taskJSON, taskTTL(taskStatus.State)).Err()
 	if err != nil {
 		logrus.Errorf("Failed to update task result in Redis: %v", err)
 		return err

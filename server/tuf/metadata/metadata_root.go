@@ -3,6 +3,7 @@ package metadata
 import (
 	"context"
 	"errors"
+	tuf_utils "faynoSync/server/tuf/utils"
 	"faynoSync/server/utils"
 	"net/http"
 
@@ -51,6 +52,10 @@ func getTrustedMetadata(
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "appName query parameter is required",
 		})
+		return
+	}
+	if err := tuf_utils.ValidateAppName(appName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	ctx := context.Background()
