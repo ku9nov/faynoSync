@@ -651,14 +651,27 @@ func TestForceOnlineMetadataUpdate_Success_TimestampOnly(t *testing.T) {
 	defer mr.Close()
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
+	snapTmp := t.TempDir()
+	snapPath := filepath.Join(snapTmp, "1.snapshot.json")
+	require.NoError(t, tuf_metadata.Snapshot(time.Now().Add(7*24*time.Hour)).ToFile(snapPath, false))
+	snapshotJSON, err := os.ReadFile(snapPath)
+	require.NoError(t, err)
+
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	savedList := tuf_storage.ListMetadataForLatest
 	savedDownloadViper := tuf_storage.GetViperForDownload
 	savedDownloadFactory := tuf_storage.StorageFactoryForDownload
 	savedUploadViper := tuf_storage.GetViperForUpload
 	savedUploadFactory := tuf_storage.StorageFactoryForUpload
 
-	downloadClient := &storageMockClientForForceUpdate{body: rootJSON}
+	downloadClient := &multiBodyDownloadMock{bodies: map[string][]byte{
+		"1.root.json":     rootJSON,
+		"1.snapshot.json": snapshotJSON,
+	}}
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.root.json", "1.snapshot.json"}, nil
+	}
 	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &forceUpdateMockFactory{client: downloadClient}
@@ -668,6 +681,7 @@ func TestForceOnlineMetadataUpdate_Success_TimestampOnly(t *testing.T) {
 		return &forceUpdateMockFactory{client: downloadClient}
 	}
 	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
 		tuf_storage.GetViperForDownload = savedDownloadViper
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 		tuf_storage.GetViperForUpload = savedUploadViper
@@ -1749,6 +1763,8 @@ func TestBumpTimestampRole_UploadFails(t *testing.T) {
 	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTimestampSigner(t)
 	defer cleanup()
 
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
+
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -1775,6 +1791,8 @@ func TestBumpTimestampRole_UploadFails(t *testing.T) {
 func TestBumpTimestampRole_ToFileFails(t *testing.T) {
 	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTimestampSigner(t)
 	defer cleanup()
+
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
 
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
 	require.NoError(t, os.Mkdir(timestampPath, 0755))
@@ -1818,6 +1836,7 @@ func TestBumpTimestampRole_Success(t *testing.T) {
 	defer cleanup()
 
 	timestampJSON := makeValidTimestampJSON(t, repo, signer, tmpDir)
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
 
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
@@ -1858,6 +1877,8 @@ func TestBumpTimestampRole_Success(t *testing.T) {
 func TestBumpTimestampRole_NewTimestamp_VersionIsOne(t *testing.T) {
 	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTimestampSigner(t)
 	defer cleanup()
+
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
 
 	ctx := context.Background()
 	mr := miniredis.RunT(t)

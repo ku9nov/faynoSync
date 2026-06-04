@@ -626,38 +626,35 @@ func bumpTimestampRole(
 	}
 
 	snapshot := repo.Snapshot()
-	if snapshot == nil {
+	var snapshotPath string
+	if snapshot != nil {
+		snapshotPath = filepath.Join(tmpDir, fmt.Sprintf("%d.snapshot.json", snapshot.Signed.Version))
+	} else {
 		// Snapshot not in memory (e.g. timestamp-only bump): load from S3 so the
 		// new timestamp always carries a valid snapshot reference.
 		_, snapshotFilename, findErr := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
-		if findErr == nil {
-			snapshotDlPath := filepath.Join(tmpDir, snapshotFilename)
-			if dlErr := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotDlPath); dlErr == nil {
-				snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, 7)
-				snap := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
-				repo.SetSnapshot(snap)
-				if _, loadErr := repo.Snapshot().FromFile(snapshotDlPath); loadErr == nil {
-					snapshot = repo.Snapshot()
-				} else {
-					logrus.Warnf("Failed to load snapshot for timestamp reference: %v", loadErr)
-				}
-			} else {
-				logrus.Warnf("Failed to download snapshot for timestamp reference: %v", dlErr)
-			}
-		} else {
-			logrus.Warnf("Failed to find snapshot version for timestamp reference: %v", findErr)
+		if findErr != nil {
+			return fmt.Errorf("failed to find snapshot version for timestamp reference: %w", findErr)
 		}
-	}
-	if snapshot != nil {
-		snapshotFile := filepath.Join(tmpDir, fmt.Sprintf("%d.snapshot.json", snapshot.Signed.Version))
-		mf, err := metaFileFromPath(snapshotFile, int64(snapshot.Signed.Version))
-		if err != nil {
-			return fmt.Errorf("failed to compute snapshot hash for timestamp: %w", err)
+		snapshotDlPath := filepath.Join(tmpDir, snapshotFilename)
+		if dlErr := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotDlPath); dlErr != nil {
+			return fmt.Errorf("failed to download snapshot for timestamp reference: %w", dlErr)
 		}
-		timestampMeta["snapshot.json"] = mf
-	} else {
-		logrus.Warnf("Snapshot not available; timestamp will be signed without a snapshot reference")
+		snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, 7)
+		snap := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
+		repo.SetSnapshot(snap)
+		if _, loadErr := repo.Snapshot().FromFile(snapshotDlPath); loadErr != nil {
+			return fmt.Errorf("failed to load snapshot for timestamp reference: %w", loadErr)
+		}
+		snapshot = repo.Snapshot()
+		snapshotPath = snapshotDlPath
 	}
+
+	mf, err := metaFileFromPath(snapshotPath, int64(snapshot.Signed.Version))
+	if err != nil {
+		return fmt.Errorf("failed to compute snapshot hash for timestamp: %w", err)
+	}
+	timestampMeta["snapshot.json"] = mf
 	if loadedTimestamp {
 		repo.Timestamp().Signed.Version++
 	}
