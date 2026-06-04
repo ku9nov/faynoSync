@@ -543,12 +543,11 @@ func bumpSnapshotRole(
 	targets := repo.Targets("targets")
 	if targets != nil {
 		targetsFile := filepath.Join(tmpDir, fmt.Sprintf("%d.targets.json", targets.Signed.Version))
-		if mf, err := metaFileFromPath(targetsFile, int64(targets.Signed.Version)); err == nil {
-			snapshotMeta["targets.json"] = mf
-		} else {
-			logrus.Warnf("Failed to compute targets hash for snapshot, using version-only: %v", err)
-			snapshotMeta["targets.json"] = metadata.MetaFile(int64(targets.Signed.Version))
+		mf, err := metaFileFromPath(targetsFile, int64(targets.Signed.Version))
+		if err != nil {
+			return fmt.Errorf("failed to compute targets hash for snapshot: %w", err)
 		}
+		snapshotMeta["targets.json"] = mf
 	}
 
 	if targets != nil && targets.Signed.Delegations != nil {
@@ -558,12 +557,11 @@ func bumpSnapshotRole(
 				if delegation != nil {
 					metaFilename := fmt.Sprintf("%s.json", role.Name)
 					delegationFile := filepath.Join(tmpDir, fmt.Sprintf("%d.%s.json", delegation.Signed.Version, role.Name))
-					if mf, err := metaFileFromPath(delegationFile, int64(delegation.Signed.Version)); err == nil {
-						snapshotMeta[metaFilename] = mf
-					} else {
-						logrus.Warnf("Failed to compute %s hash for snapshot, using version-only: %v", role.Name, err)
-						snapshotMeta[metaFilename] = metadata.MetaFile(int64(delegation.Signed.Version))
+					mf, err := metaFileFromPath(delegationFile, int64(delegation.Signed.Version))
+					if err != nil {
+						return fmt.Errorf("failed to compute %s hash for snapshot: %w", role.Name, err)
 					}
+					snapshotMeta[metaFilename] = mf
 				}
 			}
 		}
@@ -652,12 +650,11 @@ func bumpTimestampRole(
 	}
 	if snapshot != nil {
 		snapshotFile := filepath.Join(tmpDir, fmt.Sprintf("%d.snapshot.json", snapshot.Signed.Version))
-		if mf, err := metaFileFromPath(snapshotFile, int64(snapshot.Signed.Version)); err == nil {
-			timestampMeta["snapshot.json"] = mf
-		} else {
-			logrus.Warnf("Failed to compute snapshot hash for timestamp, using version-only: %v", err)
-			timestampMeta["snapshot.json"] = metadata.MetaFile(int64(snapshot.Signed.Version))
+		mf, err := metaFileFromPath(snapshotFile, int64(snapshot.Signed.Version))
+		if err != nil {
+			return fmt.Errorf("failed to compute snapshot hash for timestamp: %w", err)
 		}
+		timestampMeta["snapshot.json"] = mf
 	} else {
 		logrus.Warnf("Snapshot not available; timestamp will be signed without a snapshot reference")
 	}

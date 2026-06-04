@@ -1167,39 +1167,20 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 			}
 		} else {
 			logrus.Debugf("Metadata update: loading trusted root from S3")
-			trustedRoot, err := loadTrustedRootFromS3(ctx, adminName, appName)
+			trustedRootMeta, err := loadTrustedRootMetadataFromS3(ctx, adminName, appName)
 			if err == nil {
-				trustedRootPath := filepath.Join(tmpDir, "trusted_root.json")
-				trustedRootJSON, _ := json.Marshal(trustedRoot)
-				if writeErr := os.WriteFile(trustedRootPath, trustedRootJSON, 0644); writeErr != nil {
-					logrus.Warnf("Failed to persist trusted root locally: %v", writeErr)
-					validationError = fmt.Errorf("trusted root is required for root rotation: %w", writeErr)
-					thresholdReached = false
-					break
-				}
+				trustedRootRole := trustedRootMeta.Signed.Roles["root"]
+				oldKeyIDs = trustedRootRole.KeyIDs
+				isRootRotation = true
 
-				trustedRepo := repository.New()
-				trustedRootMeta := metadata.Root(time.Now().Add(365 * 24 * time.Hour))
-				trustedRepo.SetRoot(trustedRootMeta)
-				if _, parseErr := trustedRepo.Root().FromFile(trustedRootPath); parseErr == nil {
-
-					trustedRootRole := trustedRepo.Root().Signed.Roles["root"]
-					oldKeyIDs = trustedRootRole.KeyIDs
-					isRootRotation = true
-
-					logrus.Debugf("Validating new root against trusted root and itself")
-					if err := verifyNewRootMetadata(trustedRepo.Root(), repo.Root()); err == nil {
-						logrus.Infof("Root rotation verification succeeded: threshold reached with trusted and new root signatures")
-						thresholdReached = true
-					} else {
-						logrus.Warnf("Root rotation verification failed: %v", err)
-						thresholdReached = false
-						validationError = err
-					}
+				logrus.Debugf("Validating new root against trusted root and itself")
+				if err := verifyNewRootMetadata(trustedRootMeta, repo.Root()); err == nil {
+					logrus.Infof("Root rotation verification succeeded: threshold reached with trusted and new root signatures")
+					thresholdReached = true
 				} else {
-					logrus.Warnf("Failed to load trusted root from file: %v", parseErr)
-					validationError = fmt.Errorf("trusted root is required for root rotation: %w", parseErr)
+					logrus.Warnf("Root rotation verification failed: %v", err)
 					thresholdReached = false
+					validationError = err
 				}
 			} else {
 				logrus.Warnf("Failed to load trusted root from S3: %v", err)
