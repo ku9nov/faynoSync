@@ -40,6 +40,10 @@ func PostMetadataOnline(c *gin.Context, redisClient *redis.Client) {
 		})
 		return
 	}
+	if err := tuf_utils.ValidateAppName(appName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if redisClient == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -203,11 +207,7 @@ func forceOnlineMetadataUpdate(
 ) ([]string, error) {
 	keySuffix := adminName + "_" + appName
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-tuf-*")
+	tmpDir, err := os.MkdirTemp("", "tmp-tuf-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -542,7 +542,13 @@ func bumpSnapshotRole(
 
 	targets := repo.Targets("targets")
 	if targets != nil {
-		snapshotMeta["targets.json"] = metadata.MetaFile(int64(targets.Signed.Version))
+		targetsFile := filepath.Join(tmpDir, fmt.Sprintf("%d.targets.json", targets.Signed.Version))
+		if mf, err := metaFileFromPath(targetsFile, int64(targets.Signed.Version)); err == nil {
+			snapshotMeta["targets.json"] = mf
+		} else {
+			logrus.Warnf("Failed to compute targets hash for snapshot, using version-only: %v", err)
+			snapshotMeta["targets.json"] = metadata.MetaFile(int64(targets.Signed.Version))
+		}
 	}
 
 	if targets != nil && targets.Signed.Delegations != nil {
@@ -551,7 +557,13 @@ func bumpSnapshotRole(
 				delegation := repo.Targets(role.Name)
 				if delegation != nil {
 					metaFilename := fmt.Sprintf("%s.json", role.Name)
-					snapshotMeta[metaFilename] = metadata.MetaFile(int64(delegation.Signed.Version))
+					delegationFile := filepath.Join(tmpDir, fmt.Sprintf("%d.%s.json", delegation.Signed.Version, role.Name))
+					if mf, err := metaFileFromPath(delegationFile, int64(delegation.Signed.Version)); err == nil {
+						snapshotMeta[metaFilename] = mf
+					} else {
+						logrus.Warnf("Failed to compute %s hash for snapshot, using version-only: %v", role.Name, err)
+						snapshotMeta[metaFilename] = metadata.MetaFile(int64(delegation.Signed.Version))
+					}
 				}
 			}
 		}
@@ -616,9 +628,38 @@ func bumpTimestampRole(
 	}
 
 	snapshot := repo.Snapshot()
+	if snapshot == nil {
+		// Snapshot not in memory (e.g. timestamp-only bump): load from S3 so the
+		// new timestamp always carries a valid snapshot reference.
+		_, snapshotFilename, findErr := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
+		if findErr == nil {
+			snapshotDlPath := filepath.Join(tmpDir, snapshotFilename)
+			if dlErr := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotDlPath); dlErr == nil {
+				snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, 7)
+				snap := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
+				repo.SetSnapshot(snap)
+				if _, loadErr := repo.Snapshot().FromFile(snapshotDlPath); loadErr == nil {
+					snapshot = repo.Snapshot()
+				} else {
+					logrus.Warnf("Failed to load snapshot for timestamp reference: %v", loadErr)
+				}
+			} else {
+				logrus.Warnf("Failed to download snapshot for timestamp reference: %v", dlErr)
+			}
+		} else {
+			logrus.Warnf("Failed to find snapshot version for timestamp reference: %v", findErr)
+		}
+	}
 	if snapshot != nil {
-		snapshotMetaFile := metadata.MetaFile(int64(snapshot.Signed.Version))
-		timestampMeta["snapshot.json"] = snapshotMetaFile
+		snapshotFile := filepath.Join(tmpDir, fmt.Sprintf("%d.snapshot.json", snapshot.Signed.Version))
+		if mf, err := metaFileFromPath(snapshotFile, int64(snapshot.Signed.Version)); err == nil {
+			timestampMeta["snapshot.json"] = mf
+		} else {
+			logrus.Warnf("Failed to compute snapshot hash for timestamp, using version-only: %v", err)
+			timestampMeta["snapshot.json"] = metadata.MetaFile(int64(snapshot.Signed.Version))
+		}
+	} else {
+		logrus.Warnf("Snapshot not available; timestamp will be signed without a snapshot reference")
 	}
 	if loadedTimestamp {
 		repo.Timestamp().Signed.Version++

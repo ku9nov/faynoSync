@@ -26,6 +26,19 @@ import (
 	tuf_utils "faynoSync/server/tuf/utils"
 )
 
+func metaFileFromPath(path string, version int64) (*metadata.MetaFiles, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s for hash computation: %w", path, err)
+	}
+	sum := sha256.Sum256(data)
+	return &metadata.MetaFiles{
+		Version: version,
+		Length:  int64(len(data)),
+		Hashes:  metadata.Hashes{"sha256": metadata.HexBytes(sum[:])},
+	}, nil
+}
+
 func AddArtifacts(
 	ctx context.Context,
 	redisClient *redis.Client,
@@ -44,11 +57,7 @@ func AddArtifacts(
 
 	keySuffix := adminName + "_" + appName
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-tuf-*")
+	tmpDir, err := os.MkdirTemp("", "tmp-tuf-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -166,7 +175,7 @@ func AddArtifacts(
 			artifactPaths = append(artifactPaths, artifact.Path)
 		}
 		pathsUpdated, err := delegations.UpdateDelegationPaths(
-			ctx, repo, roleName, artifactPaths, adminName,
+			repo, roleName, artifactPaths, adminName,
 		)
 		if err != nil {
 			logrus.Warnf("Failed to update delegation paths for role %s: %v", roleName, err)
@@ -323,7 +332,11 @@ func matchDelegatedPathPattern(pattern string, artifactPath string) (bool, error
 		return true, nil
 	}
 
-	// Preserve legacy delegation semantics where "prefix/*" is used as recursive prefix.
+	// Deliberate extension: "prefix/*" is treated as a recursive prefix.
+	// This diverges from the TUF spec glob (where * does not cross /), but all
+	// bootstrapped delegations use this convention (e.g. "test-admin/*" must
+	// match "test-admin/nightly/darwin/arm64/file"). Do not remove without
+	// re-bootstrapping all delegations to use "**" or pathHashPrefixes instead.
 	if strings.HasSuffix(pattern, "/*") {
 		prefix := strings.TrimSuffix(pattern, "*")
 		if strings.HasPrefix(artifactPath, prefix) {
@@ -471,7 +484,7 @@ func updateSnapshotAndTimestamp(
 	snapshotSigners []signature.Signer,
 	tmpDir string,
 ) error {
-	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s", adminName)
+	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s_%s", adminName, appName)
 	lockTTL := 300 * time.Second
 	maxWaitTime := 500 * time.Second
 
@@ -560,7 +573,17 @@ func updateSnapshotAndTimestamp(
 		delegation := repo.Targets(roleName)
 		if delegation != nil && delegation.Signed.Version > 0 {
 			metaFilename := fmt.Sprintf("%s.json", roleName)
-			snapshotMeta[metaFilename] = metadata.MetaFile(int64(delegation.Signed.Version))
+			delegationFile := filepath.Join(tmpDir, fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName))
+			if _, statErr := os.Stat(delegationFile); statErr != nil {
+				if err := delegation.ToFile(delegationFile, true); err != nil {
+					return fmt.Errorf("failed to write %s for hash computation: %w", roleName, err)
+				}
+			}
+			mf, err := metaFileFromPath(delegationFile, int64(delegation.Signed.Version))
+			if err != nil {
+				return fmt.Errorf("failed to compute hash for %s: %w", roleName, err)
+			}
+			snapshotMeta[metaFilename] = mf
 			logrus.Debugf("Updated snapshot meta for role %s (version %d)", roleName, delegation.Signed.Version)
 		} else {
 			logrus.Warnf("Role %s not found in repo or has invalid version, skipping snapshot update", roleName)
@@ -570,7 +593,17 @@ func updateSnapshotAndTimestamp(
 	// Always update targets.json in snapshot
 	targets := repo.Targets("targets")
 	if targets != nil {
-		snapshotMeta["targets.json"] = metadata.MetaFile(int64(targets.Signed.Version))
+		targetsFile := filepath.Join(tmpDir, fmt.Sprintf("%d.targets.json", targets.Signed.Version))
+		if _, statErr := os.Stat(targetsFile); statErr != nil {
+			if err := targets.ToFile(targetsFile, true); err != nil {
+				return fmt.Errorf("failed to write targets for hash computation: %w", err)
+			}
+		}
+		mf, err := metaFileFromPath(targetsFile, int64(targets.Signed.Version))
+		if err != nil {
+			return fmt.Errorf("failed to compute targets hash for snapshot: %w", err)
+		}
+		snapshotMeta["targets.json"] = mf
 	}
 
 	repo.Snapshot().Signed.Version++
@@ -637,8 +670,17 @@ func updateTimestamp(
 
 	snapshot := repo.Snapshot()
 	if snapshot != nil {
-		snapshotMetaFile := metadata.MetaFile(int64(snapshot.Signed.Version))
-		timestampMeta["snapshot.json"] = snapshotMetaFile
+		snapshotFile := filepath.Join(tmpDir, fmt.Sprintf("%d.snapshot.json", snapshot.Signed.Version))
+		if _, statErr := os.Stat(snapshotFile); statErr != nil {
+			if err := snapshot.ToFile(snapshotFile, true); err != nil {
+				return fmt.Errorf("failed to write snapshot for hash computation: %w", err)
+			}
+		}
+		mf, err := metaFileFromPath(snapshotFile, int64(snapshot.Signed.Version))
+		if err != nil {
+			return fmt.Errorf("failed to compute snapshot hash for timestamp: %w", err)
+		}
+		timestampMeta["snapshot.json"] = mf
 	}
 	if loadedTimestamp {
 		repo.Timestamp().Signed.Version++

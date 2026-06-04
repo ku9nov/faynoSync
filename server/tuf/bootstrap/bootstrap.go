@@ -9,6 +9,7 @@ import (
 	"faynoSync/server/tuf/models"
 	tuf_storage "faynoSync/server/tuf/storage"
 	"faynoSync/server/tuf/tasks"
+	tuf_utils "faynoSync/server/tuf/utils"
 	"faynoSync/server/utils"
 	"fmt"
 	"net/http"
@@ -141,6 +142,10 @@ func GetBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
 		})
 		return
 	}
+	if err := tuf_utils.ValidateAppName(appName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	isInitialized, err := hasPersistedRootMetadata(context.Background(), adminName, appName)
 	if err != nil {
@@ -203,99 +208,6 @@ func GetBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
 	})
 }
 
-// Seems like only for testing purposes (?)
-func GetBootstrapLocks(c *gin.Context, redisClient *redis.Client) {
-	adminName, err := utils.GetUsernameFromContext(c)
-	if err != nil {
-		logrus.Errorf("Failed to get admin name from context: %v", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	appName := c.Query("appName")
-	if appName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "appName query parameter is required",
-		})
-		return
-	}
-
-	if redisClient == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Redis client is not available",
-		})
-		return
-	}
-
-	ctx := context.Background()
-	locks := make(map[string]interface{})
-
-	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + appName
-	bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
-	if err == nil {
-		locks["BOOTSTRAP"] = gin.H{
-			"key":    bootstrapKey,
-			"value":  bootstrapValue,
-			"exists": true,
-		}
-		logrus.Debugf("Found BOOTSTRAP lock for admin %s, app %s: %s", adminName, appName, bootstrapValue)
-	} else {
-		locks["BOOTSTRAP"] = gin.H{
-			"key":    bootstrapKey,
-			"value":  nil,
-			"exists": false,
-		}
-		logrus.Debugf("No BOOTSTRAP lock found for admin %s, app %s", adminName, appName)
-	}
-
-	preLockKeys, err := scanKeys(ctx, redisClient, "pre-*")
-	if err == nil {
-		preLocks := make([]map[string]interface{}, 0)
-		for _, key := range preLockKeys {
-			value, err := redisClient.Get(ctx, key).Result()
-			if err == nil {
-				preLocks = append(preLocks, map[string]interface{}{
-					"key":    key,
-					"value":  value,
-					"exists": true,
-				})
-				logrus.Debugf("Found pre-lock: %s = %s", key, value)
-			}
-		}
-		locks["pre_locks"] = preLocks
-		logrus.Debugf("Found %d pre-locks", len(preLocks))
-	} else {
-		locks["pre_locks"] = []map[string]interface{}{}
-		logrus.Debugf("Error searching for pre-locks: %v", err)
-	}
-
-	settingsKeys, err := scanKeys(ctx, redisClient, "bootstrap:settings:*")
-	if err == nil {
-		settings := make([]map[string]interface{}, 0)
-		for _, key := range settingsKeys {
-			value, err := redisClient.Get(ctx, key).Result()
-			if err == nil {
-				settings = append(settings, map[string]interface{}{
-					"key":    key,
-					"value":  value,
-					"exists": true,
-				})
-				logrus.Debugf("Found bootstrap setting: %s = %s", key, value)
-			}
-		}
-		locks["settings"] = settings
-		logrus.Debugf("Found %d bootstrap settings", len(settings))
-	} else {
-		locks["settings"] = []map[string]interface{}{}
-		logrus.Debugf("Error searching for bootstrap settings: %v", err)
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"data":    locks,
-		"message": "Bootstrap locks status retrieved successfully",
-	})
-}
-
 func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 	adminName, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -323,6 +235,10 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 		})
 		return
 	}
+	if err := tuf_utils.ValidateAppName(payload.AppName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if redisClient == nil {
 		logrus.Errorf("Redis client is nil, refusing bootstrap for admin %s, app %s", adminName, payload.AppName)
@@ -332,83 +248,55 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
-	if redisClient != nil {
-		ctx := context.Background()
-		bootstrapKey := "BOOTSTRAP_" + adminName + "_" + payload.AppName
-		bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
-		logrus.Debugf("Bootstrap key: %s, value: %s", bootstrapKey, bootstrapValue)
-		if err == nil && bootstrapValue != "" {
-			// Check if temporary keys still exist (bootstrap is in progress)
-			preLockKey := bootstrapValue
-			settingsKey := "bootstrap:settings:" + bootstrapValue
+	ctx := context.Background()
+	bootstrapKey := "BOOTSTRAP_" + adminName + "_" + payload.AppName
+	bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
+	logrus.Debugf("Bootstrap key: %s, value: %s", bootstrapKey, bootstrapValue)
+	if err == nil && bootstrapValue != "" {
+		// Check if temporary keys still exist (bootstrap is in progress)
+		preLockKey := bootstrapValue
+		settingsKey := "bootstrap:settings:" + bootstrapValue
 
-			preLockExists, err := redisClient.Exists(ctx, preLockKey).Result()
-			if err != nil {
-				logrus.Warnf("Error checking pre-lock key existence: %v", err)
-			}
+		preLockExists, err := redisClient.Exists(ctx, preLockKey).Result()
+		if err != nil {
+			logrus.Warnf("Error checking pre-lock key existence: %v", err)
+		}
 
-			settingsExists, err := redisClient.Exists(ctx, settingsKey).Result()
-			if err != nil {
-				logrus.Warnf("Error checking settings key existence: %v", err)
-			}
+		settingsExists, err := redisClient.Exists(ctx, settingsKey).Result()
+		if err != nil {
+			logrus.Warnf("Error checking settings key existence: %v", err)
+		}
 
-			if preLockExists > 0 || settingsExists > 0 {
-				logrus.Warnf("Bootstrap already in progress for admin %s, app %s. Task ID: %s", adminName, payload.AppName, bootstrapValue)
-				c.JSON(http.StatusConflict, gin.H{
-					"error": "Bootstrap already in progress for this admin and app",
-					"data": gin.H{
-						"task_id": bootstrapValue,
-						"admin":   adminName,
-						"app":     payload.AppName,
-						"status":  "in_progress",
-					},
-				})
-				return
-			}
+		if preLockExists > 0 || settingsExists > 0 {
+			logrus.Warnf("Bootstrap already in progress for admin %s, app %s. Task ID: %s", adminName, payload.AppName, bootstrapValue)
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "Bootstrap already in progress for this admin and app",
+				"data": gin.H{
+					"task_id": bootstrapValue,
+					"admin":   adminName,
+					"app":     payload.AppName,
+					"status":  "in_progress",
+				},
+			})
+			return
+		}
 
-			if preLockExists == 0 && settingsExists == 0 {
+		if preLockExists == 0 && settingsExists == 0 {
 
-				if strings.HasPrefix(bootstrapValue, "pre-") {
-					taskIDFromValue := bootstrapValue[4:]
-					taskState := getTaskStatusFromRedis(redisClient, taskIDFromValue)
+			if strings.HasPrefix(bootstrapValue, "pre-") {
+				taskIDFromValue := bootstrapValue[4:]
+				taskState := getTaskStatusFromRedis(redisClient, taskIDFromValue)
 
-					// If task is in FAILURE, ERRORED, REVOKED state, or not found (PENDING but locks are gone),
-					// clean up the stale lock and allow new bootstrap
-					switch taskState {
-					case tasks.TaskStateFailure, tasks.TaskStateErrored, tasks.TaskStateRevoked, tasks.TaskStatePending:
-						logrus.Warnf("Found stale bootstrap lock from task %s (state: %s), cleaning up", taskIDFromValue, taskState)
-						releaseBootstrapLock(redisClient, taskIDFromValue, adminName, payload.AppName)
-						// Continue with bootstrap after cleanup
-					case tasks.TaskStateSuccess:
-						// Task succeeded but locks are missing - this shouldn't happen, but treat as completed
-						logrus.Warnf("Bootstrap task %s succeeded but locks are missing, treating as completed", taskIDFromValue)
-						c.JSON(http.StatusConflict, gin.H{
-							"error": "Bootstrap already completed for this admin and app",
-							"data": gin.H{
-								"task_id": bootstrapValue,
-								"admin":   adminName,
-								"app":     payload.AppName,
-								"status":  "completed",
-							},
-						})
-						return
-					default:
-						// Task is in progress (STARTED, RUNNING, etc.) but locks are missing - treat as in progress
-						logrus.Warnf("Bootstrap task %s is in state %s but locks are missing, treating as in progress", taskIDFromValue, taskState)
-						c.JSON(http.StatusConflict, gin.H{
-							"error": "Bootstrap already in progress for this admin and app",
-							"data": gin.H{
-								"task_id": taskIDFromValue,
-								"admin":   adminName,
-								"app":     payload.AppName,
-								"status":  "in_progress",
-							},
-						})
-						return
-					}
-				} else {
-					// bootstrapValue is a taskID (not pre-taskID), meaning bootstrap was completed
-					logrus.Warnf("Bootstrap already completed for admin %s, app %s. Task ID: %s", adminName, payload.AppName, bootstrapValue)
+				// If task is in FAILURE, ERRORED, REVOKED state, or not found (PENDING but locks are gone),
+				// clean up the stale lock and allow new bootstrap
+				switch taskState {
+				case tasks.TaskStateFailure, tasks.TaskStateErrored, tasks.TaskStateRevoked, tasks.TaskStatePending:
+					logrus.Warnf("Found stale bootstrap lock from task %s (state: %s), cleaning up", taskIDFromValue, taskState)
+					releaseBootstrapLock(redisClient, taskIDFromValue, adminName, payload.AppName)
+					// Continue with bootstrap after cleanup
+				case tasks.TaskStateSuccess:
+					// Task succeeded but locks are missing - this shouldn't happen, but treat as completed
+					logrus.Warnf("Bootstrap task %s succeeded but locks are missing, treating as completed", taskIDFromValue)
 					c.JSON(http.StatusConflict, gin.H{
 						"error": "Bootstrap already completed for this admin and app",
 						"data": gin.H{
@@ -419,40 +307,66 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 						},
 					})
 					return
+				default:
+					// Task is in progress (STARTED, RUNNING, etc.) but locks are missing - treat as in progress
+					logrus.Warnf("Bootstrap task %s is in state %s but locks are missing, treating as in progress", taskIDFromValue, taskState)
+					c.JSON(http.StatusConflict, gin.H{
+						"error": "Bootstrap already in progress for this admin and app",
+						"data": gin.H{
+							"task_id": taskIDFromValue,
+							"admin":   adminName,
+							"app":     payload.AppName,
+							"status":  "in_progress",
+						},
+					})
+					return
 				}
+			} else {
+				// bootstrapValue is a taskID (not pre-taskID), meaning bootstrap was completed
+				logrus.Warnf("Bootstrap already completed for admin %s, app %s. Task ID: %s", adminName, payload.AppName, bootstrapValue)
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "Bootstrap already completed for this admin and app",
+					"data": gin.H{
+						"task_id": bootstrapValue,
+						"admin":   adminName,
+						"app":     payload.AppName,
+						"status":  "completed",
+					},
+				})
+				return
 			}
 		}
-
-		preLockKeys, err := scanKeys(ctx, redisClient, "pre-*")
-		if err == nil {
-			for _, preKey := range preLockKeys {
-
-				taskIDFromPre := preKey[4:] // Remove "pre-" prefix
-
-				settingsKey := "bootstrap:settings:" + taskIDFromPre
-				settingsExists, err := redisClient.Exists(ctx, settingsKey).Result()
-				if err == nil && settingsExists > 0 {
-
-					bootstrapKey := "BOOTSTRAP_" + adminName + "_" + payload.AppName
-					bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
-					if err == nil && bootstrapValue == taskIDFromPre {
-						logrus.Warnf("Bootstrap already in progress for admin %s, app %s. Task ID: %s (found via pre-lock)", adminName, payload.AppName, taskIDFromPre)
-						c.JSON(http.StatusConflict, gin.H{
-							"error": "Bootstrap already in progress for this admin and app",
-							"data": gin.H{
-								"task_id": taskIDFromPre,
-								"admin":   adminName,
-								"app":     payload.AppName,
-								"status":  "in_progress",
-							},
-						})
-						return
-					}
-				}
-			}
-		}
-		logrus.Debugf("No existing bootstrap lock or in-progress bootstrap found for admin %s, app %s", adminName, payload.AppName)
 	}
+
+	preLockKeys, err := scanKeys(ctx, redisClient, "pre-*")
+	if err == nil {
+		for _, preKey := range preLockKeys {
+
+			taskIDFromPre := preKey[4:] // Remove "pre-" prefix
+
+			settingsKey := "bootstrap:settings:" + taskIDFromPre
+			settingsExists, err := redisClient.Exists(ctx, settingsKey).Result()
+			if err == nil && settingsExists > 0 {
+
+				bootstrapKey := "BOOTSTRAP_" + adminName + "_" + payload.AppName
+				bootstrapValue, err := redisClient.Get(ctx, bootstrapKey).Result()
+				if err == nil && bootstrapValue == taskIDFromPre {
+					logrus.Warnf("Bootstrap already in progress for admin %s, app %s. Task ID: %s (found via pre-lock)", adminName, payload.AppName, taskIDFromPre)
+					c.JSON(http.StatusConflict, gin.H{
+						"error": "Bootstrap already in progress for this admin and app",
+						"data": gin.H{
+							"task_id": taskIDFromPre,
+							"admin":   adminName,
+							"app":     payload.AppName,
+							"status":  "in_progress",
+						},
+					})
+					return
+				}
+			}
+		}
+	}
+	logrus.Debugf("No existing bootstrap lock or in-progress bootstrap found for admin %s, app %s", adminName, payload.AppName)
 
 	logrus.Debug("Checking bootstrap state using persistent metadata")
 	isInitialized, err := hasPersistedRootMetadata(context.Background(), adminName, payload.AppName)
@@ -600,16 +514,6 @@ func preLockBootstrap(
 	return true, ""
 }
 
-func bootstrap(
-	redisClient *redis.Client,
-	taskID string,
-	adminName string,
-	appName string,
-	payload *models.BootstrapPayload,
-) {
-	bootstrapWithContext(context.Background(), redisClient, taskID, adminName, appName, payload)
-}
-
 func bootstrapWithContext(
 	ctx context.Context,
 	redisClient *redis.Client,
@@ -667,16 +571,6 @@ func bootstrapWithContext(
 		logrus.Debugf("Cleaning up bootstrap locks after failure for admin: %s, task_id: %s", adminName, taskID)
 		releaseBootstrapLock(redisClient, taskID, adminName, appName)
 	}
-}
-
-func bootstrapFinalize(
-	redisClient *redis.Client,
-	taskID string,
-	adminName string,
-	appName string,
-	payload *models.BootstrapPayload,
-) bool {
-	return bootstrapFinalizeWithContext(context.Background(), redisClient, taskID, adminName, appName, payload)
 }
 
 func bootstrapFinalizeWithContext(

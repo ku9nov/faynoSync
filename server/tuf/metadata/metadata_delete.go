@@ -4,6 +4,7 @@ import (
 	"context"
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/tasks"
+	tuf_utils "faynoSync/server/tuf/utils"
 	"faynoSync/server/utils"
 	"fmt"
 	"net/http"
@@ -29,6 +30,10 @@ func PostMetadataSignDelete(c *gin.Context, redisClient *redis.Client) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "appName query parameter is required",
 		})
+		return
+	}
+	if err := tuf_utils.ValidateAppName(appName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

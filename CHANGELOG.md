@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.5.16
+
+### Security (TUF)
+
+- Fixed snapshot lock key inconsistency that allowed concurrent artifact publish and force-online update to race and silently discard each other's snapshot changes.
+- Fixed silent verification skip in `PostMetadataSign` targets path: S3/unmarshal failures now surface as errors instead of being swallowed, preventing unverified metadata from advancing.
+- Fixed trusted metadata loaded from S3 without expiration check; expired metadata is now rejected before use.
+- Fixed root rotation staging that used fragile error string matching to detect wrong-version vs bad-signature failures.
+- Fixed `PostMetadataSign` Redis writes silently ignored on staging paths; errors are now propagated.
+- Fixed `loadTrustedRootMetadataFromS3` using raw `json.Unmarshal` instead of the library's `FromFile`; root is now loaded through the verified library path.
+
+### Fixes (TUF)
+
+- Fixed snapshot `MetaFile` entries omitting hashes; snapshot now includes `sha256` hash and length for all referenced metadata files.
+- Fixed missing root signature verification in the `thresholdReached` targets signing path.
+- Fixed `GetConfig` returning only the first custom role expiration due to a loop variable bug.
+- Fixed `RemoveArtifacts` loading root by hardcoded version 1 instead of the latest version.
+- Fixed duplicate signing logic in `removeArtifactsFromDelegatedRole`.
+- Fixed MongoDB artifact status updated before TUF operation succeeds; status is now written only after a successful TUF commit.
+- Fixed temporary directories created in `cwd` instead of system temp.
+- Fixed `HelperGetPathForTarget` panicking on `os.Getwd()` failure; returns error instead.
+- Fixed task records stored in Redis with no TTL.
+- Fixed `CalculateExpirationDays` silently returning 365 on parse failure; returns error instead.
+- Removed unused `ctx context.Context` parameter from delegation helpers.
+
+### Improvements (TUF)
+
+- Added `appName` validation to reject characters that could cause Redis key collisions or S3 path injection.
+- Replaced `KEYS` with `SCAN` in `GetMetadataSign` to avoid blocking Redis on large keyspaces.
+- Fixed `GetConfig` loop and `PutConfig` to respect online/offline mode for targets expiration.
+- Removed dead code: `GetBootstrapLocks`, `bootstrap()`, `bootstrapFinalize()`.
+
 ## v1.5.15
 
 ### Features

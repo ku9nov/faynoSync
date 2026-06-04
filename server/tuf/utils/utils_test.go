@@ -8,6 +8,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetExpirationFromRedis_ReturnsRedisValue(t *testing.T) {
@@ -94,8 +95,9 @@ func TestCalculateExpirationDays_ValidRFC3339(t *testing.T) {
 	expiresStr := futureDate.Format(time.RFC3339)
 	expectedDays := 30
 
-	result := CalculateExpirationDays(expiresStr)
+	result, err := CalculateExpirationDays(expiresStr)
 
+	require.NoError(t, err)
 	assert.GreaterOrEqual(t, result, expectedDays-1, "Result should be at least %d days", expectedDays-1)
 	assert.LessOrEqual(t, result, expectedDays+1, "Result should be at most %d days", expectedDays+1)
 }
@@ -107,21 +109,22 @@ func TestCalculateExpirationDays_ValidAlternativeFormat(t *testing.T) {
 	expiresStr := futureDate.Format("2006-01-02T15:04:05.999999999Z")
 	expectedDays := 60
 
-	result := CalculateExpirationDays(expiresStr)
+	result, err := CalculateExpirationDays(expiresStr)
 
+	require.NoError(t, err)
 	assert.GreaterOrEqual(t, result, expectedDays-1, "Result should be at least %d days", expectedDays-1)
 	assert.LessOrEqual(t, result, expectedDays+1, "Result should be at most %d days", expectedDays+1)
 }
 
-// To verify: Modify CalculateExpirationDays to return 0
+// To verify: Modify CalculateExpirationDays to not return an error for invalid input
 func TestCalculateExpirationDays_InvalidFormat(t *testing.T) {
 
 	expiresStr := "invalid-date-format"
-	defaultValue := 365
 
-	result := CalculateExpirationDays(expiresStr)
+	result, err := CalculateExpirationDays(expiresStr)
 
-	assert.Equal(t, defaultValue, result, "Result should be default value for invalid date format")
+	require.Error(t, err, "should return an error for unparseable date")
+	assert.Equal(t, 0, result)
 }
 
 // To verify: Modify CalculateExpirationDays to return 0
@@ -130,8 +133,9 @@ func TestCalculateExpirationDays_PastDate(t *testing.T) {
 	pastDate := time.Now().AddDate(0, 0, -10).UTC()
 	expiresStr := pastDate.Format(time.RFC3339)
 
-	result := CalculateExpirationDays(expiresStr)
+	result, err := CalculateExpirationDays(expiresStr)
 
+	require.NoError(t, err)
 	assert.GreaterOrEqual(t, result, 1, "Result should be at least 1 day for past dates")
 }
 
@@ -141,8 +145,9 @@ func TestCalculateExpirationDays_ZeroDays(t *testing.T) {
 	now := time.Now().UTC()
 	expiresStr := now.Format(time.RFC3339)
 
-	result := CalculateExpirationDays(expiresStr)
+	result, err := CalculateExpirationDays(expiresStr)
 
+	require.NoError(t, err)
 	assert.GreaterOrEqual(t, result, 1, "Result should be at least 1 day even when calculated as 0")
 }
 

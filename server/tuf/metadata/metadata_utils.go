@@ -3,8 +3,10 @@ package metadata
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/signing"
 	tuf_storage "faynoSync/server/tuf/storage"
@@ -76,6 +78,10 @@ func validateMetadataUpdatePreconditions(c *gin.Context, redisClient *redis.Clie
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "appName query parameter is required",
 		})
+		return nil, false
+	}
+	if err := tuf_utils.ValidateAppName(appName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return nil, false
 	}
 
@@ -204,11 +210,7 @@ func ensureDelegationsKeysMatchKeyIDs(signedData map[string]interface{}) error {
 }
 
 func loadTrustedTargetsMetadataFromS3(ctx context.Context, adminName string, appName string, roleName string) (*metadata.Metadata[metadata.TargetsType], error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-trusted-role-*")
+	tmpDir, err := os.MkdirTemp("", "tmp-trusted-role-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -229,15 +231,15 @@ func loadTrustedTargetsMetadataFromS3(ctx context.Context, adminName string, app
 		return nil, fmt.Errorf("failed to load %s metadata: %w", roleName, err)
 	}
 
+	if !targetsMeta.Signed.Expires.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("trusted %s metadata is expired at %s", roleName, targetsMeta.Signed.Expires.UTC().Format(time.RFC3339))
+	}
+
 	return targetsMeta, nil
 }
 
 func loadTrustedRootBytesFromS3(ctx context.Context, adminName string, appName string) ([]byte, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-trusted-root-*")
+	tmpDir, err := os.MkdirTemp("", "tmp-trusted-root-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -269,9 +271,28 @@ func loadTrustedRootMetadataFromS3(ctx context.Context, adminName string, appNam
 		return nil, err
 	}
 
+	tmpDir, err := os.MkdirTemp("", "tmp-trusted-root-meta-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	rootPath := filepath.Join(tmpDir, "root.json")
+	if err := os.WriteFile(rootPath, rootData, 0600); err != nil {
+		return nil, fmt.Errorf("failed to write root metadata for parsing: %w", err)
+	}
+
 	rootMeta := metadata.Root(time.Now().Add(365 * 24 * time.Hour))
-	if err := json.Unmarshal(rootData, rootMeta); err != nil {
+	if _, err := rootMeta.FromFile(rootPath); err != nil {
 		return nil, fmt.Errorf("failed to load root metadata: %w", err)
+	}
+
+	if !rootMeta.Signed.Expires.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("trusted root metadata is expired at %s", rootMeta.Signed.Expires.UTC().Format(time.RFC3339))
+	}
+
+	if err := rootMeta.VerifyDelegate("root", rootMeta); err != nil {
+		return nil, fmt.Errorf("trusted root metadata signature verification failed: %w", err)
 	}
 
 	return rootMeta, nil
@@ -463,6 +484,27 @@ func isTopLevelRole(roleName string) bool {
 	}
 }
 
+// errRootSignaturesMissing is returned by verifyNewRootMetadata when the
+// metadata is structurally valid but lacks sufficient signatures. Callers
+// use errors.Is to distinguish this from hard failures (wrong version/type).
+var errRootSignaturesMissing = errors.New("root signatures missing or insufficient")
+
+// metaFileFromPath reads path (which must already be written to disk) and
+// returns a MetaFiles entry with version, length, and SHA-256 hash. The hash
+// must match the bytes stored in S3 so clients can verify downloads.
+func metaFileFromPath(path string, version int64) (*metadata.MetaFiles, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s for hash computation: %w", path, err)
+	}
+	sum := sha256.Sum256(data)
+	return &metadata.MetaFiles{
+		Version: version,
+		Length:  int64(len(data)),
+		Hashes:  metadata.Hashes{"sha256": metadata.HexBytes(sum[:])},
+	}, nil
+}
+
 func verifyNewRootMetadata(currentRoot, newRoot *metadata.Metadata[metadata.RootType]) error {
 	if newRoot.Signed.Type != "root" {
 		return fmt.Errorf("expected 'root', got '%s'", newRoot.Signed.Type)
@@ -473,11 +515,11 @@ func verifyNewRootMetadata(currentRoot, newRoot *metadata.Metadata[metadata.Root
 	}
 
 	if err := currentRoot.VerifyDelegate("root", newRoot); err != nil {
-		return fmt.Errorf("new root not signed by trusted root: %w", err)
+		return fmt.Errorf("%w: new root not signed by trusted root: %v", errRootSignaturesMissing, err)
 	}
 
 	if err := newRoot.VerifyDelegate("root", newRoot); err != nil {
-		return fmt.Errorf("new root threshold not reached: %w", err)
+		return fmt.Errorf("%w: new root threshold not reached: %v", errRootSignaturesMissing, err)
 	}
 
 	return nil
@@ -498,11 +540,7 @@ func loadTrustedRootFromS3(ctx context.Context, adminName string, appName string
 }
 
 func loadTrustedTargetsFromS3(ctx context.Context, adminName string, appName string) (map[string]interface{}, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-trusted-*")
+	tmpDir, err := os.MkdirTemp("", "tmp-trusted-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -532,11 +570,7 @@ func loadTrustedTargetsFromS3(ctx context.Context, adminName string, appName str
 }
 
 func loadTrustedDelegatedFromS3(ctx context.Context, adminName string, appName string, roleName string) (map[string]interface{}, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-trusted-*")
+	tmpDir, err := os.MkdirTemp("", "tmp-trusted-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -836,22 +870,6 @@ func finalizeRootMetadataUpdate(
 	return nil
 }
 
-// Maybe split this function into smaller, focused units?
-
-// this function handles multiple responsibilities: persisting targets, re-signing snapshot, and re-signing timestamp. Breaking it into smaller functions would improve testability and readability.
-
-// Example structure:
-
-// func finalizeTargetsMetadataUpdate(...) error {
-//     if err := saveAndUploadTargets(...); err != nil {
-//         return err
-//     }
-//     if err := updateAndSignSnapshot(...); err != nil {
-//         return err
-//     }
-//     return updateAndSignTimestamp(...)
-// }
-
 func finalizeTargetsMetadataUpdate(
 	ctx context.Context,
 	repo *repository.Type,
@@ -940,7 +958,11 @@ func finalizeTargetsMetadataUpdate(
 		return fmt.Errorf("failed to load snapshot metadata: %w", err)
 	}
 
-	repo.Snapshot().Signed.Meta[fmt.Sprintf("%s.json", roleName)] = metadata.MetaFile(int64(targets.Signed.Version))
+	targetsMF, err := metaFileFromPath(targetsPath, int64(targets.Signed.Version))
+	if err != nil {
+		return fmt.Errorf("failed to compute hash for %s: %w", roleName, err)
+	}
+	repo.Snapshot().Signed.Meta[fmt.Sprintf("%s.json", roleName)] = targetsMF
 	repo.Snapshot().Signed.Version++
 	repo.Snapshot().Signed.Expires = tuf_utils.HelperExpireIn(snapshotExpiration)
 	repo.Snapshot().ClearSignatures()
@@ -986,7 +1008,11 @@ func finalizeTargetsMetadataUpdate(
 		timestampMeta = make(map[string]*metadata.MetaFiles)
 		repo.Timestamp().Signed.Meta = timestampMeta
 	}
-	timestampMeta["snapshot.json"] = metadata.MetaFile(int64(repo.Snapshot().Signed.Version))
+	snapshotMF, err := metaFileFromPath(newSnapshotPath, int64(repo.Snapshot().Signed.Version))
+	if err != nil {
+		return fmt.Errorf("failed to compute snapshot hash for timestamp: %w", err)
+	}
+	timestampMeta["snapshot.json"] = snapshotMF
 
 	if loadedTimestamp {
 		repo.Timestamp().Signed.Version++

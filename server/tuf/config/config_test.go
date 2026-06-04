@@ -168,22 +168,23 @@ func TestGetConfig_Success_WithStringSettings_PreservesString(t *testing.T) {
 	assert.Equal(t, "five", resp.Data["number_of_delegated_bins"])
 }
 
-// To verify: In GetConfig change Scan pattern or role_expiration assignment; test will fail (missing role_expiration).
+// To verify: In GetConfig change Scan pattern or expiration key derivation; test will fail (missing key).
 func TestGetConfig_Success_WithCustomRoleExpiration_IncludesRoleExpiration(t *testing.T) {
 	c, w := makeGetConfigContext("appName", "owner")
 	mr := miniredis.RunT(t)
 	defer mr.Close()
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	mr.Set("BOOTSTRAP_owner_appName", "done")
-
 	mr.Set("DELEGATED_EXPIRATION_owner_appName", "30")
+	mr.Set("OTHERROLE_EXPIRATION_owner_appName", "60")
 
 	GetConfig(c, client)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp models.GetConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, float64(30), resp.Data["role_expiration"])
+	assert.Equal(t, float64(30), resp.Data["delegated_expiration"])
+	assert.Equal(t, float64(60), resp.Data["otherrole_expiration"])
 }
 
 // To verify: In GetConfig change the bootstrap Get error handling to return 200 on Redis error; test will fail (wrong status).
@@ -328,6 +329,7 @@ func TestPutConfig_Success_ValidRole_UpdatesRedisAndReturns202(t *testing.T) {
 	defer mr.Close()
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	mr.Set("BOOTSTRAP_owner_appName", "done")
+	mr.Set("TARGETS_ONLINE_KEY_owner_appName", "true")
 	mr.Set("TARGETS_EXPIRATION_owner_appName", "90") // existing value
 
 	PutConfig(c, client)
@@ -468,6 +470,7 @@ func TestPutConfig_PartialSuccess_SomeValidSomeInvalid(t *testing.T) {
 	defer mr.Close()
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	mr.Set("BOOTSTRAP_owner_appName", "done")
+	mr.Set("TARGETS_ONLINE_KEY_owner_appName", "true")
 	mr.Set("TARGETS_EXPIRATION_owner_appName", "90")
 	mr.Set("SNAPSHOT_EXPIRATION_owner_appName", "60")
 

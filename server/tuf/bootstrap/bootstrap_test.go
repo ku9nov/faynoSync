@@ -3,13 +3,18 @@ package bootstrap
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/ed25519"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"fmt"
 
 	"faynoSync/server/tuf/models"
 	tuf_storage "faynoSync/server/tuf/storage"
@@ -18,8 +23,12 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/sigstore/sigstore/pkg/signature"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
+	gotufmetadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
 
 func TestMain(m *testing.M) {
@@ -684,7 +693,7 @@ func TestPreLockBootstrap_WithRedis_BootstrapKeyAlreadyExists_ReturnsNotAcquired
 // To verify: In bootstrap remove nil checks for redisClient in UpdateTaskState/saveSettings path; test may panic or behave differently.
 func TestBootstrap_NilRedis_NoPanic(t *testing.T) {
 	payload := validMinimalBootstrapPayload()
-	bootstrap(nil, "task-nil", "admin", "myapp", payload)
+	bootstrapWithContext(context.Background(), nil, "task-nil", "admin", "myapp", payload)
 }
 
 // To verify: In bootstrap change failure path to not call releaseBootstrapLock; test will fail (keys still present).
@@ -701,7 +710,7 @@ func TestBootstrap_FinalizeFails_ReleasesLock(t *testing.T) {
 	payload := validMinimalBootstrapPayload()
 	// Minimal payload causes BootstrapOnlineRoles to fail, so bootstrapFinalize returns false
 
-	bootstrap(client, taskID, adminName, appName, payload)
+	bootstrapWithContext(context.Background(), client, taskID, adminName, appName, payload)
 
 	// releaseBootstrapLock should have deleted pre-<taskID> and BOOTSTRAP_<admin>_<app>
 	_, err := client.Get(client.Context(), "pre-"+taskID).Result()
@@ -723,7 +732,7 @@ func TestBootstrap_FinalizeFails_SavesFailureState(t *testing.T) {
 	taskName := tasks.TaskNameBootstrap
 	tasks.SaveTaskStatus(client, taskID, tasks.TaskStatePending, &tasks.TaskResult{Task: &taskName})
 
-	bootstrap(client, taskID, adminName, appName, payload)
+	bootstrapWithContext(context.Background(), client, taskID, adminName, appName, payload)
 
 	taskData, err := client.Get(client.Context(), "task:"+taskID).Result()
 	require.NoError(t, err)
@@ -745,7 +754,7 @@ func TestBootstrap_WithRedis_UpdatesTaskStateThenSavesFailure(t *testing.T) {
 	appName := "a"
 	payload := validMinimalBootstrapPayload()
 
-	bootstrap(client, taskID, adminName, appName, payload)
+	bootstrapWithContext(context.Background(), client, taskID, adminName, appName, payload)
 
 	taskData, err := client.Get(client.Context(), "task:"+taskID).Result()
 	require.NoError(t, err)
@@ -760,7 +769,7 @@ func TestBootstrap_WithRedis_UpdatesTaskStateThenSavesFailure(t *testing.T) {
 // To verify: In bootstrapFinalize remove nil check for redisClient in the cleanup block; test still passes (we return false before that block).
 func TestBootstrapFinalize_NilRedis_ReturnsFalse(t *testing.T) {
 	payload := validMinimalBootstrapPayload()
-	got := bootstrapFinalize(nil, "task-nil", "admin", "myapp", payload)
+	got := bootstrapFinalizeWithContext(context.Background(), nil, "task-nil", "admin", "myapp", payload)
 	assert.False(t, got, "bootstrapFinalize should return false when BootstrapOnlineRoles fails (nil Redis)")
 }
 
@@ -771,7 +780,7 @@ func TestBootstrapFinalize_BootstrapOnlineRolesFails_ReturnsFalse(t *testing.T) 
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	payload := validMinimalBootstrapPayload()
 
-	got := bootstrapFinalize(client, "task-fail", "admin", "myapp", payload)
+	got := bootstrapFinalizeWithContext(context.Background(), client, "task-fail", "admin", "myapp", payload)
 
 	assert.False(t, got, "bootstrapFinalize should return false when BootstrapOnlineRoles fails")
 }
@@ -790,7 +799,7 @@ func TestBootstrapFinalize_BootstrapOnlineRolesFails_DoesNotModifyRedis(t *testi
 	mr.Set(bootstrapKey, originalValue)
 	payload := validMinimalBootstrapPayload()
 
-	bootstrapFinalize(client, taskID, adminName, appName, payload)
+	bootstrapFinalizeWithContext(context.Background(), client, taskID, adminName, appName, payload)
 
 	val, err := client.Get(client.Context(), bootstrapKey).Result()
 	require.NoError(t, err)
@@ -1262,4 +1271,177 @@ func TestRunBootstrapRecovery_AbortsWhenBootstrapMarkerChanged(t *testing.T) {
 	require.NotNil(t, taskStatus.Result)
 	require.NotNil(t, taskStatus.Result.Error)
 	assert.Contains(t, *taskStatus.Result.Error, "bootstrap marker changed")
+}
+
+// --- H-2 regression: recoverSettingsFromStorage derives TargetsOnlineKey from ONLINE_KEY_DIR ---
+
+// makeRecoveryTUFRepo creates a minimal signed TUF repository and returns
+// the serialised metadata bytes for each role plus the targets keyID.
+func makeRecoveryTUFRepo(t *testing.T) (root, targets, snap, ts []byte, targetsKeyID string) {
+	t.Helper()
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	roles := repository.New()
+	roles.SetRoot(gotufmetadata.Root(expires))
+	roles.SetTargets("targets", gotufmetadata.Targets(expires))
+	roles.SetSnapshot(gotufmetadata.Snapshot(expires))
+	roles.SetTimestamp(gotufmetadata.Timestamp(expires))
+
+	keys := map[string]ed25519.PrivateKey{}
+	for _, name := range []string{"root", "targets", "snapshot", "timestamp"} {
+		_, priv, err := ed25519.GenerateKey(nil)
+		require.NoError(t, err)
+		keys[name] = priv
+		k, err := gotufmetadata.KeyFromPublicKey(priv.Public())
+		require.NoError(t, err)
+		require.NoError(t, roles.Root().Signed.AddKey(k, name))
+		if name == "targets" {
+			targetsKeyID, err = k.ID()
+			require.NoError(t, err)
+		}
+	}
+	for _, name := range []string{"root", "targets", "snapshot", "timestamp"} {
+		s, err := signature.LoadSigner(keys[name], crypto.Hash(0))
+		require.NoError(t, err)
+		switch name {
+		case "root":
+			_, err = roles.Root().Sign(s)
+		case "targets":
+			_, err = roles.Targets("targets").Sign(s)
+		case "snapshot":
+			_, err = roles.Snapshot().Sign(s)
+		case "timestamp":
+			_, err = roles.Timestamp().Sign(s)
+		}
+		require.NoError(t, err)
+	}
+	snap_meta := map[string]*gotufmetadata.MetaFiles{
+		"targets.json": gotufmetadata.MetaFile(int64(roles.Targets("targets").Signed.Version)),
+	}
+	roles.Snapshot().Signed.Meta = snap_meta
+	ts_meta := map[string]*gotufmetadata.MetaFiles{
+		"snapshot.json": gotufmetadata.MetaFile(int64(roles.Snapshot().Signed.Version)),
+	}
+	roles.Timestamp().Signed.Meta = ts_meta
+
+	dir := t.TempDir()
+	write := func(name string, obj interface{ ToFile(string, bool) error }) []byte {
+		p := filepath.Join(dir, name)
+		require.NoError(t, obj.ToFile(p, true))
+		b, err := os.ReadFile(p)
+		require.NoError(t, err)
+		return b
+	}
+	root = write("1.root.json", roles.Root())
+	targets = write("1.targets.json", roles.Targets("targets"))
+	snap = write("1.snapshot.json", roles.Snapshot())
+	ts = write("timestamp.json", roles.Timestamp())
+	return
+}
+
+// To verify: (remove ONLINE_KEY_DIR check); test will fail (TargetsOnlineKey=true when it should be false).
+func TestRecoverSettingsFromStorage_OfflineTargets_TargetsOnlineKeyFalse(t *testing.T) {
+	rootBytes, targetsBytes, snapBytes, tsBytes, _ := makeRecoveryTUFRepo(t)
+
+	objects := map[string][]byte{
+		"tuf_metadata/admin/myapp/1.root.json":     rootBytes,
+		"tuf_metadata/admin/myapp/1.targets.json":  targetsBytes,
+		"tuf_metadata/admin/myapp/1.snapshot.json": snapBytes,
+		"tuf_metadata/admin/myapp/timestamp.json":  tsBytes,
+	}
+
+	savedFind := findLatestMetadataBootstrap
+	savedDownload := downloadMetadataForBootstrap
+	findLatestMetadataBootstrap = func(_ context.Context, _, _, roleName string) (int, string, error) {
+		switch roleName {
+		case "root":
+			return 1, "1.root.json", nil
+		case "targets":
+			return 1, "1.targets.json", nil
+		case "snapshot":
+			return 1, "1.snapshot.json", nil
+		}
+		return 0, "", fmt.Errorf("not found: %s", roleName)
+	}
+	downloadMetadataForBootstrap = func(_ context.Context, _, _, objectKey, filePath string) error {
+		data, ok := objects[objectKey]
+		if !ok {
+			// Try last path segment
+			for k, v := range objects {
+				if filepath.Base(k) == filepath.Base(objectKey) {
+					return os.WriteFile(filePath, v, 0644)
+				}
+			}
+			return fmt.Errorf("object not found: %s", objectKey)
+		}
+		return os.WriteFile(filePath, data, 0644)
+	}
+	defer func() {
+		findLatestMetadataBootstrap = savedFind
+		downloadMetadataForBootstrap = savedDownload
+	}()
+
+	// ONLINE_KEY_DIR is empty — targets key file is absent.
+	emptyKeyDir := t.TempDir()
+	oldDir := viper.GetString("ONLINE_KEY_DIR")
+	viper.Set("ONLINE_KEY_DIR", emptyKeyDir)
+	defer viper.Set("ONLINE_KEY_DIR", oldDir)
+
+	settings, err := recoverSettingsFromStorage(context.Background(), "admin", "myapp")
+
+	require.NoError(t, err)
+	assert.False(t, settings.TargetsOnlineKey, "targets must be offline when key is absent from ONLINE_KEY_DIR")
+}
+
+// To verify: (TargetsOnlineKey=false when it should be true).
+func TestRecoverSettingsFromStorage_OnlineTargets_TargetsOnlineKeyTrue(t *testing.T) {
+	rootBytes, targetsBytes, snapBytes, tsBytes, targetsKeyID := makeRecoveryTUFRepo(t)
+
+	objects := map[string][]byte{
+		"tuf_metadata/admin/myapp/1.root.json":     rootBytes,
+		"tuf_metadata/admin/myapp/1.targets.json":  targetsBytes,
+		"tuf_metadata/admin/myapp/1.snapshot.json": snapBytes,
+		"tuf_metadata/admin/myapp/timestamp.json":  tsBytes,
+	}
+
+	savedFind := findLatestMetadataBootstrap
+	savedDownload := downloadMetadataForBootstrap
+	findLatestMetadataBootstrap = func(_ context.Context, _, _, roleName string) (int, string, error) {
+		switch roleName {
+		case "root":
+			return 1, "1.root.json", nil
+		case "targets":
+			return 1, "1.targets.json", nil
+		case "snapshot":
+			return 1, "1.snapshot.json", nil
+		}
+		return 0, "", fmt.Errorf("not found: %s", roleName)
+	}
+	downloadMetadataForBootstrap = func(_ context.Context, _, _, objectKey, filePath string) error {
+		data, ok := objects[objectKey]
+		if !ok {
+			for k, v := range objects {
+				if filepath.Base(k) == filepath.Base(objectKey) {
+					return os.WriteFile(filePath, v, 0644)
+				}
+			}
+			return fmt.Errorf("object not found: %s", objectKey)
+		}
+		return os.WriteFile(filePath, data, 0644)
+	}
+	defer func() {
+		findLatestMetadataBootstrap = savedFind
+		downloadMetadataForBootstrap = savedDownload
+	}()
+
+	// ONLINE_KEY_DIR contains a file named after the targets keyID — targets is online.
+	keyDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(keyDir, targetsKeyID), []byte("dummy"), 0600))
+	oldDir := viper.GetString("ONLINE_KEY_DIR")
+	viper.Set("ONLINE_KEY_DIR", keyDir)
+	defer viper.Set("ONLINE_KEY_DIR", oldDir)
+
+	settings, err := recoverSettingsFromStorage(context.Background(), "admin", "myapp")
+
+	require.NoError(t, err)
+	assert.True(t, settings.TargetsOnlineKey, "targets must be online when key file is present in ONLINE_KEY_DIR")
 }

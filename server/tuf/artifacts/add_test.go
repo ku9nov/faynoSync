@@ -644,7 +644,11 @@ func TestGetRoleForArtifactPath_MultipleRoles_FirstRoleMatches_ReturnsFirst(t *t
 	assert.Equal(t, "updates", roleName)
 }
 
-func TestGetRoleForArtifactPath_SingleWildcardPatternMatchesNestedPath_ReturnsRoleName(t *testing.T) {
+// TUF spec glob semantics: * does not cross directory separators, so a
+// deeply nested path does not match "prefix/*".
+// Deliberate extension: "prefix/*" is recursive in this implementation.
+// "tuf-ku9n/*" must match deeply nested paths like "tuf-ku9n/nightly/linux/amd64/file".
+func TestGetRoleForArtifactPath_WildcardPatternMatchesNestedPath(t *testing.T) {
 	repo := repoWithTargetsAndOneRoleForGetRole("default", []string{"tuf-ku9n/*"})
 
 	roleName, err := getRoleForArtifactPath(repo, "tuf-ku9n/nightly/linux/amd64/tuf-0.0.0.1.js")
@@ -696,7 +700,9 @@ func TestMatchesRole_SecondPathMatches_ReturnsTrue(t *testing.T) {
 	assert.True(t, got)
 }
 
-func TestMatchesRole_SingleWildcardPatternMatchesNestedPath_ReturnsTrue(t *testing.T) {
+// Deliberate extension: "prefix/*" is recursive in this implementation.
+// "tuf-ku9n/*" must match deeply nested paths like "tuf-ku9n/nightly/linux/amd64/file".
+func TestMatchesRole_WildcardPatternMatchesNestedPath(t *testing.T) {
 	role := &tuf_metadata.DelegatedRole{Name: "default", KeyIDs: []string{"k1"}, Threshold: 1, Paths: []string{"tuf-ku9n/*"}}
 	got := matchesRole("tuf-ku9n/nightly/linux/amd64/tuf-0.0.0.1.js", role)
 	assert.True(t, got)
@@ -1056,7 +1062,7 @@ func TestUpdateSnapshotAndTimestamp_RedisSetNXError_ReturnsError(t *testing.T) {
 func TestUpdateSnapshotAndTimestamp_LockHeld_Timeout_ReturnsError(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
-	mr.Set("LOCK_SNAPSHOT_"+testAdminName, "locked")
+	mr.Set("LOCK_SNAPSHOT_"+testAdminName+"_"+testAppName, "locked")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/tasks"
+	tuf_utils "faynoSync/server/tuf/utils"
 	"faynoSync/server/utils"
 	"fmt"
 	"math"
@@ -19,6 +20,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
 	gotufmetadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
@@ -102,6 +104,10 @@ func PostBootstrapRecovery(c *gin.Context, redisClient *redis.Client) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Missing required field: appName",
 		})
+		return
+	}
+	if valErr := tuf_utils.ValidateAppName(payload.AppName); valErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": valErr.Error()})
 		return
 	}
 
@@ -439,11 +445,7 @@ func isRecoveryRequired(ctx context.Context, redisClient *redis.Client, adminNam
 }
 
 func recoverSettingsFromStorage(ctx context.Context, adminName, appName string) (recoveredBootstrapSettings, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return recoveredBootstrapSettings{}, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	tmpDir, err := os.MkdirTemp(cwd, "tmp-recovery-*")
+	tmpDir, err := os.MkdirTemp("", "tmp-recovery-*")
 	if err != nil {
 		return recoveredBootstrapSettings{}, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -602,6 +604,18 @@ func recoverSettingsFromStorage(ctx context.Context, adminName, appName string) 
 		delegatedExpiration[roleName] = days
 	}
 
+	targetsOnlineKey := false
+	if onlineKeyDir := viper.GetString("ONLINE_KEY_DIR"); onlineKeyDir != "" {
+		if targetsRole, ok := rootMetadata.Signed.Roles["targets"]; ok {
+			for _, keyID := range targetsRole.KeyIDs {
+				if _, statErr := os.Stat(filepath.Join(onlineKeyDir, keyID)); statErr == nil {
+					targetsOnlineKey = true
+					break
+				}
+			}
+		}
+	}
+
 	return recoveredBootstrapSettings{
 		RootExpiration:      rootExpirationDays,
 		RootThreshold:       roleThreshold("root"),
@@ -615,7 +629,7 @@ func recoverSettingsFromStorage(ctx context.Context, adminName, appName string) 
 		TimestampExpiration: timestampExpirationDays,
 		TimestampThreshold:  roleThreshold("timestamp"),
 		TimestampNumKeys:    roleNumKeys("timestamp"),
-		TargetsOnlineKey:    true,
+		TargetsOnlineKey:    targetsOnlineKey,
 		DelegatedExpiration: delegatedExpiration,
 	}, nil
 }

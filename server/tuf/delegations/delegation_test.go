@@ -1,7 +1,6 @@
 package delegations
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -70,10 +69,9 @@ func pathSliceContains(paths []string, p string) bool {
 
 // To verify: In UpdateDelegationPaths change the condition so repo.Targets("targets") nil is not treated as error; test will fail (no error or wrong message).
 func TestUpdateDelegationPaths_TargetsNotLoaded(t *testing.T) {
-	ctx := context.Background()
 	repo := repoWithNoTargets()
 
-	updated, err := UpdateDelegationPaths(ctx, repo, "myrole", []string{"a/b"}, "admin")
+	updated, err := UpdateDelegationPaths(repo, "myrole", []string{"a/b"}, "admin")
 
 	require.Error(t, err)
 	assert.False(t, updated)
@@ -82,10 +80,9 @@ func TestUpdateDelegationPaths_TargetsNotLoaded(t *testing.T) {
 
 // To verify: In UpdateDelegationPaths skip the check for delegations == nil; test will fail (panic or wrong error).
 func TestUpdateDelegationPaths_NoDelegations(t *testing.T) {
-	ctx := context.Background()
 	repo := repoWithTargetsNoDelegations()
 
-	updated, err := UpdateDelegationPaths(ctx, repo, "myrole", []string{"a/b"}, "admin")
+	updated, err := UpdateDelegationPaths(repo, "myrole", []string{"a/b"}, "admin")
 
 	require.Error(t, err)
 	assert.False(t, updated)
@@ -94,10 +91,9 @@ func TestUpdateDelegationPaths_NoDelegations(t *testing.T) {
 
 // To verify: In UpdateDelegationPaths skip the check for delegations.Roles == nil; test will fail (panic or wrong error).
 func TestUpdateDelegationPaths_DelegationsRolesNil(t *testing.T) {
-	ctx := context.Background()
 	repo := repoWithTargetsDelegationsRolesNil()
 
-	updated, err := UpdateDelegationPaths(ctx, repo, "myrole", []string{"a/b"}, "admin")
+	updated, err := UpdateDelegationPaths(repo, "myrole", []string{"a/b"}, "admin")
 
 	require.Error(t, err)
 	assert.False(t, updated)
@@ -106,10 +102,9 @@ func TestUpdateDelegationPaths_DelegationsRolesNil(t *testing.T) {
 
 // To verify: In UpdateDelegationPaths change role lookup so a wrong name is accepted; test will fail (no error or wrong message).
 func TestUpdateDelegationPaths_RoleNotFound(t *testing.T) {
-	ctx := context.Background()
 	repo := repoWithTargetsAndDelegations("existing-role", []string{"x"})
 
-	updated, err := UpdateDelegationPaths(ctx, repo, "nonexistent", []string{"a/b"}, "admin")
+	updated, err := UpdateDelegationPaths(repo, "nonexistent", []string{"a/b"}, "admin")
 
 	require.Error(t, err)
 	assert.False(t, updated)
@@ -118,12 +113,11 @@ func TestUpdateDelegationPaths_RoleNotFound(t *testing.T) {
 
 // To verify: In UpdateDelegationPaths change exact match logic so existing path is treated as new; test will fail (updated true or path duplicated).
 func TestUpdateDelegationPaths_AllPathsExactMatch_ReturnsFalseNoChange(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	existingPath := "foo/bar"
 	repo := repoWithTargetsAndDelegations(roleName, []string{existingPath})
 
-	updated, err := UpdateDelegationPaths(ctx, repo, roleName, []string{existingPath}, "admin")
+	updated, err := UpdateDelegationPaths(repo, roleName, []string{existingPath}, "admin")
 
 	require.NoError(t, err)
 	assert.False(t, updated, "should not report update when all paths already exist (exact match)")
@@ -134,13 +128,12 @@ func TestUpdateDelegationPaths_AllPathsExactMatch_ReturnsFalseNoChange(t *testin
 
 // To verify: In UpdateDelegationPaths skip adding new path when !exactMatch; test will fail (updated false or path missing).
 func TestUpdateDelegationPaths_AddNewPath_ReturnsTrueAndPathAdded(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	existingPath := "a"
 	newPath := "b"
 	repo := repoWithTargetsAndDelegations(roleName, []string{existingPath})
 
-	updated, err := UpdateDelegationPaths(ctx, repo, roleName, []string{newPath}, "admin")
+	updated, err := UpdateDelegationPaths(repo, roleName, []string{newPath}, "admin")
 
 	require.NoError(t, err)
 	assert.True(t, updated)
@@ -151,11 +144,10 @@ func TestUpdateDelegationPaths_AddNewPath_ReturnsTrueAndPathAdded(t *testing.T) 
 
 // To verify: In UpdateDelegationPaths do not add full path when artifactPath has prefix match; test will fail (path "foo/bar" missing).
 func TestUpdateDelegationPaths_PrefixMatch_AddsFullPath(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"foo/"})
 
-	updated, err := UpdateDelegationPaths(ctx, repo, roleName, []string{"foo/bar"}, "admin")
+	updated, err := UpdateDelegationPaths(repo, roleName, []string{"foo/bar"}, "admin")
 
 	require.NoError(t, err)
 	assert.True(t, updated)
@@ -165,11 +157,10 @@ func TestUpdateDelegationPaths_PrefixMatch_AddsFullPath(t *testing.T) {
 
 // To verify: In UpdateDelegationPaths change behavior for empty artifactPaths (e.g. return error); test will fail (wrong return).
 func TestUpdateDelegationPaths_EmptyArtifactPaths_ReturnsFalseNoError(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"a"})
 
-	updated, err := UpdateDelegationPaths(ctx, repo, roleName, []string{}, "admin")
+	updated, err := UpdateDelegationPaths(repo, roleName, []string{}, "admin")
 
 	require.NoError(t, err)
 	assert.False(t, updated)
@@ -180,12 +171,11 @@ func TestUpdateDelegationPaths_EmptyArtifactPaths_ReturnsFalseNoError(t *testing
 
 // To verify: In UpdateDelegationPaths add duplicate paths to role; test will fail (duplicate in Paths).
 func TestUpdateDelegationPaths_DuplicateInInput_AddedOnce(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	newPath := "only-one"
 	repo := repoWithTargetsAndDelegations(roleName, []string{})
 
-	updated, err := UpdateDelegationPaths(ctx, repo, roleName, []string{newPath, newPath}, "admin")
+	updated, err := UpdateDelegationPaths(repo, roleName, []string{newPath, newPath}, "admin")
 
 	require.NoError(t, err)
 	assert.True(t, updated)
@@ -201,12 +191,11 @@ func TestUpdateDelegationPaths_DuplicateInInput_AddedOnce(t *testing.T) {
 
 // To verify: In UpdateDelegationPaths change logic so repo is not updated via SetTargets; test will fail (paths not updated in repo).
 func TestUpdateDelegationPaths_MultipleNewPaths_AllAddedAndRepoUpdated(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"existing"})
 	newPaths := []string{"p1", "p2", "p3"}
 
-	updated, err := UpdateDelegationPaths(ctx, repo, roleName, newPaths, "admin")
+	updated, err := UpdateDelegationPaths(repo, roleName, newPaths, "admin")
 
 	require.NoError(t, err)
 	assert.True(t, updated)
@@ -221,10 +210,9 @@ func TestUpdateDelegationPaths_MultipleNewPaths_AllAddedAndRepoUpdated(t *testin
 
 // To verify: In RemoveDelegationPaths skip the check for targets == nil; test will fail (panic or wrong error).
 func TestRemoveDelegationPaths_TargetsNotLoaded(t *testing.T) {
-	ctx := context.Background()
 	repo := repoWithNoTargets()
 
-	removed, err := RemoveDelegationPaths(ctx, repo, "myrole", []string{"a/b"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, "myrole", []string{"a/b"}, "admin")
 
 	require.Error(t, err)
 	assert.False(t, removed)
@@ -233,10 +221,9 @@ func TestRemoveDelegationPaths_TargetsNotLoaded(t *testing.T) {
 
 // To verify: In RemoveDelegationPaths skip the check for delegations == nil; test will fail (panic or wrong error).
 func TestRemoveDelegationPaths_NoDelegations(t *testing.T) {
-	ctx := context.Background()
 	repo := repoWithTargetsNoDelegations()
 
-	removed, err := RemoveDelegationPaths(ctx, repo, "myrole", []string{"a/b"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, "myrole", []string{"a/b"}, "admin")
 
 	require.Error(t, err)
 	assert.False(t, removed)
@@ -245,10 +232,9 @@ func TestRemoveDelegationPaths_NoDelegations(t *testing.T) {
 
 // To verify: In RemoveDelegationPaths skip the check for delegations.Roles == nil; test will fail (panic or wrong error).
 func TestRemoveDelegationPaths_DelegationsRolesNil(t *testing.T) {
-	ctx := context.Background()
 	repo := repoWithTargetsDelegationsRolesNil()
 
-	removed, err := RemoveDelegationPaths(ctx, repo, "myrole", []string{"a/b"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, "myrole", []string{"a/b"}, "admin")
 
 	require.Error(t, err)
 	assert.False(t, removed)
@@ -257,10 +243,9 @@ func TestRemoveDelegationPaths_DelegationsRolesNil(t *testing.T) {
 
 // To verify: In RemoveDelegationPaths change role lookup so a wrong name is accepted; test will fail (no error or wrong message).
 func TestRemoveDelegationPaths_RoleNotFound(t *testing.T) {
-	ctx := context.Background()
 	repo := repoWithTargetsAndDelegations("existing-role", []string{"x"})
 
-	removed, err := RemoveDelegationPaths(ctx, repo, "nonexistent", []string{"a/b"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, "nonexistent", []string{"a/b"}, "admin")
 
 	require.Error(t, err)
 	assert.False(t, removed)
@@ -269,11 +254,10 @@ func TestRemoveDelegationPaths_RoleNotFound(t *testing.T) {
 
 // To verify: In RemoveDelegationPaths skip exact path removal or SetTargets; test will fail (removed false or path still present).
 func TestRemoveDelegationPaths_RemoveExactPath_ReturnsTrueAndPathRemoved(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"a", "b"})
 
-	removed, err := RemoveDelegationPaths(ctx, repo, roleName, []string{"a"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, roleName, []string{"a"}, "admin")
 
 	require.NoError(t, err)
 	assert.True(t, removed)
@@ -284,11 +268,10 @@ func TestRemoveDelegationPaths_RemoveExactPath_ReturnsTrueAndPathRemoved(t *test
 
 // To verify: In RemoveDelegationPaths remove non-existent path (e.g. return true); test will fail (removed true or paths changed).
 func TestRemoveDelegationPaths_RemoveNonExistentPath_ReturnsFalse(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"a"})
 
-	removed, err := RemoveDelegationPaths(ctx, repo, roleName, []string{"b"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, roleName, []string{"b"}, "admin")
 
 	require.NoError(t, err)
 	assert.False(t, removed)
@@ -299,11 +282,10 @@ func TestRemoveDelegationPaths_RemoveNonExistentPath_ReturnsFalse(t *testing.T) 
 
 // To verify: In RemoveDelegationPaths change behavior for empty artifactPaths (e.g. return true); test will fail (wrong return).
 func TestRemoveDelegationPaths_EmptyArtifactPaths_ReturnsFalse(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"a", "b"})
 
-	removed, err := RemoveDelegationPaths(ctx, repo, roleName, []string{}, "admin")
+	removed, err := RemoveDelegationPaths(repo, roleName, []string{}, "admin")
 
 	require.NoError(t, err)
 	assert.False(t, removed)
@@ -315,11 +297,10 @@ func TestRemoveDelegationPaths_EmptyArtifactPaths_ReturnsFalse(t *testing.T) {
 
 // To verify: In RemoveDelegationPaths remove only one occurrence per path or skip SetTargets; test will fail (wrong paths).
 func TestRemoveDelegationPaths_RemoveMultiplePaths_ReturnsTrueAndRepoUpdated(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"a", "b", "c"})
 
-	removed, err := RemoveDelegationPaths(ctx, repo, roleName, []string{"a", "c"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, roleName, []string{"a", "c"}, "admin")
 
 	require.NoError(t, err)
 	assert.True(t, removed)
@@ -330,11 +311,10 @@ func TestRemoveDelegationPaths_RemoveMultiplePaths_ReturnsTrueAndRepoUpdated(t *
 
 // To verify: In RemoveDelegationPaths do not remove path when only prefix matches; test will fail (path "foo" removed).
 func TestRemoveDelegationPaths_OnlyExactMatchRemoved_PrefixNotRemoved(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"foo", "foo/bar"})
 
-	removed, err := RemoveDelegationPaths(ctx, repo, roleName, []string{"foo/bar"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, roleName, []string{"foo/bar"}, "admin")
 
 	require.NoError(t, err)
 	assert.True(t, removed)
@@ -345,11 +325,10 @@ func TestRemoveDelegationPaths_OnlyExactMatchRemoved_PrefixNotRemoved(t *testing
 
 // To verify: In RemoveDelegationPaths change iteration order (e.g. forward) so slice removal is wrong; test may fail (wrong remaining paths).
 func TestRemoveDelegationPaths_RemoveFromMiddle_AllRemovedCorrectly(t *testing.T) {
-	ctx := context.Background()
 	roleName := "myrole"
 	repo := repoWithTargetsAndDelegations(roleName, []string{"first", "middle", "last"})
 
-	removed, err := RemoveDelegationPaths(ctx, repo, roleName, []string{"middle"}, "admin")
+	removed, err := RemoveDelegationPaths(repo, roleName, []string{"middle"}, "admin")
 
 	require.NoError(t, err)
 	assert.True(t, removed)
