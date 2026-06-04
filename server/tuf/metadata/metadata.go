@@ -1301,7 +1301,27 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 			if int64(repo.Targets(payload.Role).Signed.Version) <= trustedRoleVersion {
 				validationError = fmt.Errorf("version must be greater than trusted version %d", trustedRoleVersion)
 				thresholdReached = false
-			} else if err := trustedRepo.Targets("targets").VerifyDelegate(payload.Role, repo.Targets(payload.Role)); err != nil {
+				break
+			}
+
+			trustedRootMeta, loadErr := loadTrustedRootMetadataFromS3(ctx, adminName, appName)
+			if loadErr != nil {
+				validationError = fmt.Errorf("failed to load trusted root metadata: %w", loadErr)
+				thresholdReached = false
+				break
+			}
+			if !trustedRepo.Targets("targets").Signed.Expires.After(time.Now().UTC()) {
+				validationError = fmt.Errorf("trusted targets metadata is expired at %s", trustedRepo.Targets("targets").Signed.Expires.UTC().Format(time.RFC3339))
+				thresholdReached = false
+				break
+			}
+			if err := trustedRootMeta.VerifyDelegate("targets", trustedRepo.Targets("targets")); err != nil {
+				validationError = fmt.Errorf("trusted targets metadata signature verification failed: %w", err)
+				thresholdReached = false
+				break
+			}
+
+			if err := trustedRepo.Targets("targets").VerifyDelegate(payload.Role, repo.Targets(payload.Role)); err != nil {
 				validationError = err
 				thresholdReached = false
 			} else {
