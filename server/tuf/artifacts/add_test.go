@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -324,7 +325,7 @@ func TestAddArtifacts_FindLatestTargetsFails_ReturnsError(t *testing.T) {
 	mr.Set("BOOTSTRAP_"+testAdminName+"_"+testAppName, "done")
 
 	artifacts := []Artifact{
-		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
 	}
 
 	err := AddArtifacts(ctx, redisClient, nil, testAdminName, testAppName, artifacts, false, testTaskID)
@@ -444,7 +445,7 @@ func TestAddArtifacts_MixedValidAndInvalidPaths_SuccessWithInvalidSkipped(t *tes
 	mr.Set("TARGETS_EXPIRATION_"+testAdminName+"_"+testAppName, "365")
 
 	artifacts := []Artifact{
-		{Path: "updates/valid.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+		{Path: "updates/valid.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
 		{Path: "invalid/path.exe", Info: ArtifactInfo{Length: 2, Hashes: map[string]string{"sha256": "cd"}}},
 	}
 
@@ -789,7 +790,7 @@ func TestUpdateDelegatedRoleWithArtifacts_TargetsOrDelegationsNil_ReturnsError(t
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
 	_, err := updateDelegatedRoleWithArtifacts(ctx, repo, "updates", []Artifact{
-		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
@@ -821,7 +822,7 @@ func TestUpdateDelegatedRoleWithArtifacts_NotEnoughDistinctKeys_ReturnsError(t *
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
 	_, err := updateDelegatedRoleWithArtifacts(ctx, repo, "updates", []Artifact{
-		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
@@ -845,7 +846,7 @@ func TestUpdateDelegatedRoleWithArtifacts_NoKeyIDsForRole_ReturnsError(t *testin
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
 	_, err := updateDelegatedRoleWithArtifacts(ctx, repo, "updates", []Artifact{
-		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
@@ -874,7 +875,7 @@ func TestUpdateDelegatedRoleWithArtifacts_LoadDelegationKeyFails_ReturnsError(t 
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
 	_, err := updateDelegatedRoleWithArtifacts(ctx, repo, "updates", []Artifact{
-		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
@@ -909,7 +910,7 @@ func TestUpdateDelegatedRoleWithArtifacts_ExistingDelegation_DownloadFails_Retur
 	tmpDir := t.TempDir()
 
 	_, err := updateDelegatedRoleWithArtifacts(ctx, repo, "updates", []Artifact{
-		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
@@ -956,7 +957,7 @@ func TestUpdateDelegatedRoleWithArtifacts_ExistingDelegation_LoadFails_ReturnsEr
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
 	_, err := updateDelegatedRoleWithArtifacts(ctx, repo, "updates", []Artifact{
-		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "ab"}}},
+		{Path: "updates/app.tar", Info: ArtifactInfo{Length: 1, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
 	}, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
@@ -1261,9 +1262,14 @@ func TestUpdateTimestamp_UploadFails_ReturnsError(t *testing.T) {
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &fsStorageFactory{client: &failUploadClient{}}
 	}
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{}, nil
+	}
 	defer func() {
 		tuf_storage.GetViperForUpload = savedGetViperU
 		tuf_storage.StorageFactoryForUpload = savedFactoryU
+		tuf_storage.ListMetadataForLatest = savedList
 	}()
 
 	ctx := context.Background()
@@ -1295,9 +1301,14 @@ func TestUpdateTimestamp_ToFileFails_ReturnsError(t *testing.T) {
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &fsStorageFactory{client: &failUploadClient{}}
 	}
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{}, nil
+	}
 	defer func() {
 		tuf_storage.GetViperForUpload = savedGetViperU
 		tuf_storage.StorageFactoryForUpload = savedFactoryU
+		tuf_storage.ListMetadataForLatest = savedList
 	}()
 
 	ctx := context.Background()
@@ -1337,11 +1348,17 @@ func TestUpdateTimestamp_Success_NoExistingTimestamp(t *testing.T) {
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
 	}
+	// No existing timestamp in storage, so a fresh timestamp at version 1 is created.
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{}, nil
+	}
 	defer func() {
 		tuf_storage.GetViperForDownload = savedGetViperD
 		tuf_storage.StorageFactoryForDownload = savedFactoryD
 		tuf_storage.GetViperForUpload = savedGetViperU
 		tuf_storage.StorageFactoryForUpload = savedFactoryU
+		tuf_storage.ListMetadataForLatest = savedList
 	}()
 
 	ctx := context.Background()
@@ -1388,9 +1405,15 @@ func TestUpdateTimestamp_Success_WithSnapshotInRepo(t *testing.T) {
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
 	}
+	// No existing timestamp in storage, so a fresh timestamp is created.
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{}, nil
+	}
 	defer func() {
 		tuf_storage.GetViperForUpload = savedGetViperU
 		tuf_storage.StorageFactoryForUpload = savedFactoryU
+		tuf_storage.ListMetadataForLatest = savedList
 	}()
 
 	ctx := context.Background()
@@ -1433,17 +1456,26 @@ func TestUpdateTimestamp_VersionIncremented_WhenExistingTimestampLoaded(t *testi
 	if _, err := repo.Timestamp().Sign(signer); err != nil {
 		t.Fatal(err)
 	}
-	timestampPath := filepath.Join(tmpDir, "timestamp.json")
-	require.NoError(t, repo.Timestamp().ToFile(timestampPath, true))
-	require.FileExists(t, timestampPath)
+	// The existing v3 timestamp lives in storage; the bump must load and increment it.
+	metadataPrefix := filepath.Join(storeDir, "tuf_metadata", testAdminName, testAppName)
+	require.NoError(t, os.MkdirAll(metadataPrefix, 0755))
+	require.NoError(t, repo.Timestamp().ToFile(filepath.Join(metadataPrefix, "timestamp.json"), true))
 
+	savedList := tuf_storage.ListMetadataForLatest
 	savedGetViperD := tuf_storage.GetViperForDownload
 	savedFactoryD := tuf_storage.StorageFactoryForDownload
 	savedGetViperU := tuf_storage.GetViperForUpload
 	savedFactoryU := tuf_storage.StorageFactoryForUpload
-	tuf_storage.GetViperForDownload = func() *viper.Viper { return viper.New() }
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"timestamp.json"}, nil
+	}
+	tuf_storage.GetViperForDownload = func() *viper.Viper {
+		v := viper.New()
+		v.Set("S3_BUCKET_NAME", "test-bucket")
+		return v
+	}
 	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &fsStorageFactory{client: &failDownloadClient{}}
+		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
 	}
 	tuf_storage.GetViperForUpload = func() *viper.Viper {
 		v := viper.New()
@@ -1454,6 +1486,7 @@ func TestUpdateTimestamp_VersionIncremented_WhenExistingTimestampLoaded(t *testi
 		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
 	}
 	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
 		tuf_storage.GetViperForDownload = savedGetViperD
 		tuf_storage.StorageFactoryForDownload = savedFactoryD
 		tuf_storage.GetViperForUpload = savedGetViperU
@@ -1473,6 +1506,63 @@ func TestUpdateTimestamp_VersionIncremented_WhenExistingTimestampLoaded(t *testi
 	}
 	require.NoError(t, json.Unmarshal(data, &tsSigned))
 	assert.Equal(t, 4, tsSigned.Signed.Version, "when existing timestamp (version 3) is loaded, version must be incremented to 4")
+}
+
+// --- buildVerifiedTargetFile tests ---
+
+const validSHA256Hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+// To verify: In buildVerifiedTargetFile remove the missing-sha256 check; test will fail (no error).
+func TestBuildVerifiedTargetFile_MissingSHA256_ReturnsError(t *testing.T) {
+	_, err := buildVerifiedTargetFile(Artifact{
+		Path: "updates/app.tar",
+		Info: ArtifactInfo{Length: 10, Hashes: map[string]string{"sha512": validSHA256Hex + validSHA256Hex}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing required sha256 hash")
+}
+
+// To verify: In buildVerifiedTargetFile remove the length > 0 check; test will fail (no error).
+func TestBuildVerifiedTargetFile_NonPositiveLength_ReturnsError(t *testing.T) {
+	_, err := buildVerifiedTargetFile(Artifact{
+		Path: "updates/app.tar",
+		Info: ArtifactInfo{Length: 0, Hashes: map[string]string{"sha256": validSHA256Hex}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid length")
+}
+
+// To verify: In buildVerifiedTargetFile restore the []byte(hashStr) raw-bytes fallback; test will fail (no error).
+func TestBuildVerifiedTargetFile_InvalidHexHash_ReturnsError(t *testing.T) {
+	_, err := buildVerifiedTargetFile(Artifact{
+		Path: "updates/app.tar",
+		Info: ArtifactInfo{Length: 10, Hashes: map[string]string{"sha256": "zzzz"}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid hex")
+}
+
+// To verify: In buildVerifiedTargetFile remove the sha256 length == 32 check; test will fail (no error).
+func TestBuildVerifiedTargetFile_ShortSHA256_ReturnsError(t *testing.T) {
+	_, err := buildVerifiedTargetFile(Artifact{
+		Path: "updates/app.tar",
+		Info: ArtifactInfo{Length: 10, Hashes: map[string]string{"sha256": "abcd"}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sha256 hash must be")
+}
+
+// To verify: In buildVerifiedTargetFile change how hashes/length are populated; test will fail (wrong bytes or length).
+func TestBuildVerifiedTargetFile_Valid_ReturnsTargetFile(t *testing.T) {
+	tf, err := buildVerifiedTargetFile(Artifact{
+		Path: "updates/app.tar",
+		Info: ArtifactInfo{Length: 1024, Hashes: map[string]string{"sha256": validSHA256Hex}},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tf)
+	assert.Equal(t, int64(1024), tf.Length)
+	want, _ := hex.DecodeString(validSHA256Hex)
+	assert.Equal(t, tuf_metadata.HexBytes(want), tf.Hashes["sha256"])
 }
 
 // --- getArtifactPaths tests ---

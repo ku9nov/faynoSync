@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5.17
+
+### Security (TUF)
+
+- Fixed delegated key rotation failing at the delegated-signing step; the rollback floor now derives from the trusted snapshot (`root → snapshot`) instead of re-verifying the orphaned old delegated blob through the just-rotated targets delegator.
+- Fixed trusted metadata read back from S3 without re-verifying its signature; all loaders now verify signature + expiration against the root chain before any authorization/version decision.
+- Fixed timestamp version rollback on a transient S3 download error; version is only reset to 1 when the object provably does not exist.
+- Fixed inconsistent locking across the snapshot/timestamp update paths; all three now run inside a single token-checked per-(admin,app) lock.
+- Fixed `AddArtifacts`/`RemoveArtifacts` mutating root/targets/delegated metadata loaded from S3 without verifying signatures first.
+- Fixed target hashes accepted without format validation; a well-formed 32-byte `sha256` is now required (invalid-hex raw-bytes fallback removed, non-positive lengths rejected).
+- Fixed unbounded expiration values from config/bootstrap; per-role bounds are now enforced (`timestamp ≤ snapshot ≤ targets ≤ root`).
+
 ## v1.5.16
 
 ### Security (TUF)

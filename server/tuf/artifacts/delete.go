@@ -66,6 +66,9 @@ func RemoveArtifacts(
 	if _, err := repo.Root().FromFile(rootPath); err != nil {
 		return fmt.Errorf("failed to load root metadata: %w", err)
 	}
+	if err := verifyTrustedRoot(repo); err != nil {
+		return err
+	}
 
 	rootData, err := os.ReadFile(rootPath)
 	if err != nil {
@@ -122,6 +125,9 @@ func RemoveArtifacts(
 	repo.SetTargets("targets", targets)
 	if _, err := repo.Targets("targets").FromFile(targetsPath); err != nil {
 		return fmt.Errorf("failed to load targets metadata: %w", err)
+	}
+	if err := verifyTrustedTargets(repo); err != nil {
+		return err
 	}
 
 	rolesArtifacts := make(map[string][]Artifact)
@@ -286,6 +292,9 @@ func removeArtifactsFromDelegatedRole(
 
 	if _, err := repo.Targets(roleName).FromFile(delegationPath); err != nil {
 		return false, fmt.Errorf("failed to load %s metadata: %w", roleName, err)
+	}
+	if err := verifyTrustedDelegatedRole(repo, roleName); err != nil {
+		return false, err
 	}
 
 	delegation := repo.Targets(roleName)

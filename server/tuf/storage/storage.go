@@ -202,6 +202,19 @@ func FindLatestMetadataVersion(ctx context.Context, adminName string, appName st
 	return maxVersion, latestFilename, nil
 }
 
+func MetadataExists(ctx context.Context, adminName string, appName string, filename string) (bool, error) {
+	filenames, err := ListMetadataForLatest(ctx, adminName, appName, "")
+	if err != nil {
+		return false, fmt.Errorf("failed to list metadata files: %w", err)
+	}
+	for _, f := range filenames {
+		if f == filename {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // GetAllDelegatedRoles returns all delegated role names found in S3 storage
 func GetAllDelegatedRoles(ctx context.Context, adminName string, appName string) ([]string, error) {
 	filenames, err := listMetadataForGetAllDelegatedRoles(ctx, adminName, appName, "")

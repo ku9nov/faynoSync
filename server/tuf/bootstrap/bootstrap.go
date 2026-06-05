@@ -395,6 +395,22 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
+	// Bound expiration values to prevent already-expired metadata
+	// and reject absurd/out-of-range values.
+	roleExpirations := map[string]int{
+		"root":      payload.Settings.Roles.Root.Expiration,
+		"targets":   payload.Settings.Roles.Targets.Expiration,
+		"snapshot":  payload.Settings.Roles.Snapshot.Expiration,
+		"timestamp": payload.Settings.Roles.Timestamp.Expiration,
+	}
+	for role, expiration := range roleExpirations {
+		if err := tuf_utils.ValidateExpiration(role, expiration); err != nil {
+			logrus.Errorf("Invalid expiration in bootstrap payload: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	if len(payload.Metadata) == 0 {
 		logrus.Error("Missing required field: metadata")
 		c.JSON(http.StatusBadRequest, gin.H{

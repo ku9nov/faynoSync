@@ -312,20 +312,29 @@ func forceOnlineMetadataUpdate(
 		}
 	}
 
-	if contains(roles, "snapshot") || hasTargetsOrDelegations {
-		if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
-			return nil, fmt.Errorf("failed to bump snapshot role: %w", err)
+	needSnapshot := contains(roles, "snapshot") || hasTargetsOrDelegations
+	needTimestamp := contains(roles, "timestamp") || hasTargetsOrDelegations || contains(roles, "snapshot")
+
+	if needSnapshot || needTimestamp {
+		if err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+			if needSnapshot {
+				if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
+					return fmt.Errorf("failed to bump snapshot role: %w", err)
+				}
+			}
+			if needTimestamp {
+				if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
+					return fmt.Errorf("failed to bump timestamp role: %w", err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
-		if !contains(updatedRoles, "snapshot") {
+		if needSnapshot && !contains(updatedRoles, "snapshot") {
 			updatedRoles = append(updatedRoles, "snapshot")
 		}
-	}
-
-	if contains(roles, "timestamp") || hasTargetsOrDelegations || contains(roles, "snapshot") {
-		if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
-			return nil, fmt.Errorf("failed to bump timestamp role: %w", err)
-		}
-		if !contains(updatedRoles, "timestamp") {
+		if needTimestamp && !contains(updatedRoles, "timestamp") {
 			updatedRoles = append(updatedRoles, "timestamp")
 		}
 	}
@@ -500,23 +509,8 @@ func bumpSnapshotRole(
 	tmpDir string,
 	keySuffix string,
 ) error {
-	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s_%s", adminName, appName)
-	lockTTL := 300 * time.Second
-
-	acquired, err := redisClient.SetNX(ctx, lockKey, "locked", lockTTL).Result()
-	if err != nil {
-		return fmt.Errorf("failed to acquire snapshot lock: %w", err)
-	}
-	if !acquired {
-		return fmt.Errorf("failed to acquire snapshot lock: snapshot lock already held")
-	}
-
-	defer func() {
-		if err := redisClient.Del(ctx, lockKey).Err(); err != nil {
-			logrus.Warnf("Failed to release snapshot lock: %v", err)
-		}
-	}()
-
+	// Caller (forceOnlineMetadataUpdate) holds the per-(admin,app) snapshot lock via
+	// WithSnapshotLock, covering both this snapshot bump and the following timestamp bump.
 	_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
 	if err != nil {
 		return fmt.Errorf("failed to find latest snapshot version: %w", err)
@@ -603,20 +597,12 @@ func bumpTimestampRole(
 ) error {
 
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
-		logrus.Debug("Timestamp metadata not found, creating new one")
-	}
-
 	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, 1)
 	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
 	repo.SetTimestamp(timestamp)
-	loadedTimestamp := false
-	if _, err := os.Stat(timestampPath); err == nil {
-		if _, err := repo.Timestamp().FromFile(timestampPath); err != nil {
-			logrus.Warnf("Failed to load timestamp metadata: %v, creating new one", err)
-		} else {
-			loadedTimestamp = true
-		}
+	loadedTimestamp, err := LoadExistingTimestampForBump(ctx, repo, adminName, appName, timestampPath)
+	if err != nil {
+		return err
 	}
 
 	timestampMeta := repo.Timestamp().Signed.Meta
