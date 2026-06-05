@@ -150,6 +150,8 @@ Required fields:
 
 Decision: send `application.name` and verify that the report key belongs to that app. This makes the request self-contained and reduces the risk of accidentally using the wrong key.
 
+Verification direction: the server looks up the report key by `key_value` in `report_keys`, resolves its `app_id`, reads `apps_meta.app_name`, and compares it with `application.name` from the body. It also checks `app.Reports` is enabled. Because ingestion looks the key up on every request, `report_keys` MUST have an index on `key_value`; otherwise each ingest becomes a full collection scan.
+
 ## 10. Extended request with details
 
 ```json
@@ -179,7 +181,7 @@ Decision: send `application.name` and verify that the report key belongs to that
 
 1. checks compressed size;
 2. decodes base64;
-3. decompresses gzip with a decompressed size limit;
+3. decompresses gzip with a decompressed size limit enforced via `io.LimitReader` on the gzip stream (the server MUST NOT trust any declared/decompressed size from the client — this is the zip-bomb guard);
 4. stores the payload in S3/R2;
 5. writes metadata to `report_blobs`.
 
@@ -262,8 +264,10 @@ Recommended HTTP statuses:
 `groupHash` is deterministic and based only on stable dimensions:
 
 ```text
-sha256(application.name + application.version + application.channel + system.platform + system.arch + event.type + event.reason)
+sha256(application.name + "|" + application.version + "|" + application.channel + "|" + system.platform + "|" + system.arch + "|" + event.type + "|" + event.reason)
 ```
+
+The `|` separator is required to avoid ambiguous concatenations (e.g. `name="ab",version="1"` colliding with `name="a",version="b1"`). `|` is safe because none of the grouping fields can contain it: the `event.reason` regex excludes it, and the app/version/channel/platform/arch validators reject it.
 
 Fields included in grouping:
 
@@ -293,7 +297,7 @@ One group = one Mongo document.
 
 ```json
 {
-  "_id": "sha256...",
+  "_id": "ObjectId",
   "groupHash": "sha256...",
   "application": {
     "name": "my-app",
@@ -322,6 +326,8 @@ One group = one Mongo document.
 
 Recommended indexes:
 
+`_id` is an auto-generated Mongo ObjectId; `groupHash` is the grouping identity. The upsert matches on `groupHash`, so the unique index on `groupHash` below is mandatory — it guarantees one group = one document under concurrent upserts.
+
 ```javascript
 db.report_groups.createIndex({ groupHash: 1 }, { unique: true })
 db.report_groups.createIndex({ "application.name": 1, "application.version": 1, "event.type": 1 })
@@ -345,7 +351,6 @@ db.report_groups.updateOne(
       "updatedAt": now
     },
     $setOnInsert: {
-      "_id": hash,
       "groupHash": hash,
       "application": {
         "name": "my-app",
@@ -509,9 +514,11 @@ Recommended dimensions:
 Suggested MVP defaults:
 
 - per report key: configurable;
-- per `X-Device-ID`: 1 request/hour;
+- per `X-Device-ID` + groupHash: 1 request/hour;
 - per groupHash: 30 requests/minute;
 - burst: configurable.
+
+The per-device limit MUST be scoped by `groupHash`, not global per device. A single device can legitimately emit different event types within an hour (e.g. `startup_failure`, then `update_failure`, then `crash`); a global 1/hour cap would silently drop those distinct reports and hide real rollout failures. Scoping by `device + groupHash` only suppresses repeats of the same failure, which is the intended dedup behavior.
 
 Redis is the right place for rate limits.
 
@@ -519,11 +526,11 @@ Example keys:
 
 ```text
 reports:rl:key:<report_key>:minute:<bucket>
-reports:rl:device:<device_id>:hour:<bucket>
+reports:rl:device:<device_id>:group:<group_hash>:hour:<bucket>
 reports:rl:group:<group_hash>:minute:<bucket>
 ```
 
-Report keys are effectively public client keys, so for MVP there is no need to complicate Redis rate-limit keys with additional hashing. It is more important not to duplicate the report key in persistent report documents.
+Report keys are effectively public client keys (they ship inside the client and are stored in plaintext in `report_keys.key_value`, not hashed). They are not secrets: real abuse protection comes from the `REPORTS_ENABLED` gate, the per-app `app.Reports` flag, and these rate limits — not from key secrecy. For MVP there is no need to complicate Redis rate-limit keys with additional hashing. It is more important not to duplicate the report key in persistent report documents.
 
 ## 19. Validation rules
 
@@ -540,6 +547,10 @@ The server must reject the request before storage if:
 - compressed details exceed the limit;
 - decompressed details exceed the limit;
 - details encoding/content type is not supported.
+
+For `application.name`, `application.channel`, `system.platform`, `system.arch`, and `application.version`, the server MUST reuse the existing validators (`IsValidAppName`, `IsValidChannelName`, `IsValidPlatformName`, `IsValidArchName`, `IsValidVersion`) already used by telemetry ingestion, instead of introducing new regexes. Only `event.reason` needs its own dedicated regex.
+
+The decompressed-size limit MUST be enforced with `io.LimitReader` around the gzip reader; the server MUST NOT trust any client-declared decompressed size. If the limit is hit before EOF, reject with `413`.
 
 The server should validate version syntax but must not require that the version exists in release metadata. Reports may come from old clients, failed installs, or environments where the server no longer has full release context.
 

@@ -29,7 +29,7 @@ func StartServer(config *viper.Viper) {
 	// Initialize Redis client
 	var redisClient *redis.Client
 
-	if config.GetBool("PERFORMANCE_MODE") || config.GetBool("ENABLE_TELEMETRY") {
+	if config.GetBool("PERFORMANCE_MODE") || config.GetBool("ENABLE_TELEMETRY") || config.GetBool("TUF_ENABLED") {
 		logrus.Infoln("Redis connection is required. Connecting to Redis.")
 		redisConfig := redisdb.RedisConfig{
 			Addr:     config.GetString("REDIS_HOST") + ":" + config.GetString("REDIS_PORT"),
