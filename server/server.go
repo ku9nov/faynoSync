@@ -29,7 +29,7 @@ func StartServer(config *viper.Viper) {
 	// Initialize Redis client
 	var redisClient *redis.Client
 
-	if config.GetBool("PERFORMANCE_MODE") || config.GetBool("ENABLE_TELEMETRY") || config.GetBool("TUF_ENABLED") {
+	if config.GetBool("PERFORMANCE_MODE") || config.GetBool("ENABLE_TELEMETRY") || config.GetBool("TUF_ENABLED") || config.GetBool("REPORTS_ENABLED") {
 		logrus.Infoln("Redis connection is required. Connecting to Redis.")
 		redisConfig := redisdb.RedisConfig{
 			Addr:     config.GetString("REDIS_HOST") + ":" + config.GetString("REDIS_PORT"),
@@ -120,6 +120,11 @@ func StartServer(config *viper.Viper) {
 	// Reports routes
 	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.ListReportKeys)
 	router.POST("/report-keys/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.RegenerateReportKey)
+
+	// Report ingestion routes
+	if config.GetBool("REPORTS_ENABLED") {
+
+	}
 
 	// TUF routes
 	if config.GetBool("TUF_ENABLED") {
