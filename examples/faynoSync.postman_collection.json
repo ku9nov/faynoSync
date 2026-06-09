@@ -2253,6 +2253,103 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Report ingest",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "rpk_82a014c973e2f3ff73f3973cbb4e5fdb6232726f3ad13ed6e8ba3b0a6a91fb93",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-Device-ID",
+            "value": "7f2c9a2e-1B2d-3c8a-1f22-arc123je1456",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"application\": { \"name\": \"test\", \"version\": \"1.4.2\", \"channel\": \"stable\" },\n    \"system\":      { \"platform\": \"windows\", \"arch\": \"amd64\" },\n    \"event\":       { \"type\": \"update_failure\", \"reason\": \"checksum_mismatch\" }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/reports/ingest",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "reports",
+            "ingest"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List report groups",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/reports/groups",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "reports",
+            "groups"
+          ],
+          "query": [
+            {
+              "key": "app",
+              "value": "test",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "version",
+              "value": "1.4.17",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "type",
+              "value": "update_failure",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "reason",
+              "value": "panic",
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        }
+      },
+      "response": []
     }
   ],
   "auth": {

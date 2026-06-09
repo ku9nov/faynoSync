@@ -16,11 +16,21 @@ const (
 	snapshotLockInitialDelay = 50 * time.Millisecond
 	snapshotLockMaxDelay     = 2 * time.Second
 	snapshotLockReleaseGrace = 5 * time.Second
+	snapshotLockRenewEvery   = snapshotLockTTL / 3
 )
 
 var snapshotLockReleaseScript = redis.NewScript(`
 if redis.call("GET", KEYS[1]) == ARGV[1] then
 	return redis.call("DEL", KEYS[1])
+end
+return 0
+`)
+
+// Token-guarded refresh so we never extend a lock we no longer own (e.g. after
+// our lease expired and another updater grabbed it).
+var snapshotLockRenewScript = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+	return redis.call("PEXPIRE", KEYS[1], ARGV[2])
 end
 return 0
 `)
@@ -79,6 +89,32 @@ func WithSnapshotLock(
 		if err := snapshotLockReleaseScript.Run(releaseCtx, redisClient, []string{lockKey}, token).Err(); err != nil && err != redis.Nil {
 			logrus.Warnf("Failed to release snapshot lock %s: %v", lockKey, err)
 		}
+	}()
+
+	// Renew the lease while fn runs so a slow critical section (S3 stalls)
+	stopRenew := make(chan struct{})
+	renewDone := make(chan struct{})
+	go func() {
+		defer close(renewDone)
+		ticker := time.NewTicker(snapshotLockRenewEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopRenew:
+				return
+			case <-ticker.C:
+				renewCtx, renewCancel := context.WithTimeout(context.Background(), snapshotLockReleaseGrace)
+				err := snapshotLockRenewScript.Run(renewCtx, redisClient, []string{lockKey}, token, snapshotLockTTL.Milliseconds()).Err()
+				renewCancel()
+				if err != nil && err != redis.Nil {
+					logrus.Warnf("Failed to renew snapshot lock %s: %v", lockKey, err)
+				}
+			}
+		}
+	}()
+	defer func() {
+		close(stopRenew)
+		<-renewDone
 	}()
 
 	return fn()
