@@ -199,6 +199,33 @@ func IsValidArchName(input string) bool {
 	return validName.MatchString(input)
 }
 
+// validEventTypes is the single source of truth for report event types. Adding a
+// new type requires a server change by design; reasons are open via regex.
+var validEventTypes = map[string]struct{}{
+	"crash":            {},
+	"startup_failure":  {},
+	"update_failure":   {},
+	"install_failure":  {},
+	"rollback_failure": {},
+}
+
+func IsValidEventType(input string) bool {
+	_, ok := validEventTypes[input]
+	return ok
+}
+
+var validEventReason = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+
+func IsValidEventReason(input string) bool {
+	return validEventReason.MatchString(input)
+}
+
+var validGroupHash = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+func IsValidGroupHash(input string) bool {
+	return validGroupHash.MatchString(input)
+}
+
 func ValidateUpdateParams(c *gin.Context, database *mongo.Database) (map[string]interface{}, error) {
 	var ctxQueryMap map[string]interface{}
 	var err error

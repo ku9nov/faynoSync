@@ -61,6 +61,10 @@ func StartServer(config *viper.Viper) {
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
 
+	if config.GetBool("REPORTS_ENABLED") {
+		router.POST("/reports/ingest", handler.IngestReport)
+	}
+
 	if config.GetBool("ENABLE_PRIVATE_APP_DOWNLOADING") {
 		router.GET("/download", handler.DownloadArtifact)
 		router.Use(authMiddleware)
@@ -121,9 +125,10 @@ func StartServer(config *viper.Viper) {
 	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.ListReportKeys)
 	router.POST("/report-keys/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.RegenerateReportKey)
 
-	// Report ingestion routes
+	// Reports read API (admin + team users scoped to their allowed apps)
 	if config.GetBool("REPORTS_ENABLED") {
-
+		router.GET("/reports/groups", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.ListReportGroups)
+		router.GET("/reports/groups/:groupHash/blobs", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.ListReportGroupBlobs)
 	}
 
 	// TUF routes

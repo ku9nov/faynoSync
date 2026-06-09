@@ -2,6 +2,7 @@ package mongod
 
 import (
 	"context"
+	"time"
 
 	"faynoSync/server/model"
 
@@ -44,6 +45,14 @@ type AppRepository interface {
 	DeleteReportKey(appID primitive.ObjectID, requester string, ctx context.Context) (bool, error)
 	ListReportKeys(requester string, ctx context.Context) ([]*model.ReportKeyListItem, error)
 	RegenerateReportKey(appID primitive.ObjectID, requester string, ctx context.Context) (string, error)
+	GetReportContextByKey(ctx context.Context, keyValue string) (*model.ReportContext, error)
+	IncrementReportGroup(ctx context.Context, appID primitive.ObjectID, owner, hash string, app model.ReportApplication, system model.ReportSystem, event model.ReportEvent, now time.Time) error
+	IncrementReportGroupDetails(ctx context.Context, appID primitive.ObjectID, hash string, storedDelta, rejectedDelta int, now time.Time) error
+	InsertReportBlob(ctx context.Context, blob model.ReportBlob) error
+	FindExcessReportBlobs(ctx context.Context, appID primitive.ObjectID, hash string, keepN int64) ([]model.ReportBlob, error)
+	DeleteReportBlobsByIDs(ctx context.Context, ids []primitive.ObjectID) (int64, error)
+	GetReportGroups(ctx context.Context, requester string, filters map[string]string, page, limit int64) (*model.PaginatedReportGroups, error)
+	GetReportBlobsByGroupHash(ctx context.Context, requester, groupHash string, limit int64) ([]*model.ReportBlob, error)
 }
 
 type appRepository struct {

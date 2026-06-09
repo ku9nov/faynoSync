@@ -64,6 +64,9 @@ type AppHandler interface {
 	DeleteToken(*gin.Context)
 	ListReportKeys(*gin.Context)
 	RegenerateReportKey(*gin.Context)
+	IngestReport(*gin.Context)
+	ListReportGroups(*gin.Context)
+	ListReportGroupBlobs(*gin.Context)
 }
 
 type appHandler struct {
@@ -304,6 +307,18 @@ func (ch *appHandler) ListReportKeys(c *gin.Context) {
 
 func (ch *appHandler) RegenerateReportKey(c *gin.Context) {
 	report.RegenerateReportKey(c, ch.repository)
+}
+
+func (ch *appHandler) IngestReport(c *gin.Context) {
+	report.IngestReport(c, ch.repository, ch.redisClient)
+}
+
+func (ch *appHandler) ListReportGroups(c *gin.Context) {
+	report.ListReportGroups(c, ch.repository)
+}
+
+func (ch *appHandler) ListReportGroupBlobs(c *gin.Context) {
+	report.ListReportGroupBlobs(c, ch.repository)
 }
 
 func (ch *appHandler) reloadTelemetryAllowListAfterSuccess(c *gin.Context, reason string) {
