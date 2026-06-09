@@ -88,6 +88,7 @@ func ListReportGroupBlobs(c *gin.Context, repository db.AppRepository) {
 		url, err := storageClient.GeneratePresignedURL(ctx, bucket, b.Storage.Key, presignedBlobTTL)
 		if err != nil {
 			logrus.Errorf("Failed to presign report blob %s: %v", b.Storage.Key, err)
+			continue
 		}
 		items = append(items, reportBlobResponse{ReportBlob: *b, URL: url})
 	}
