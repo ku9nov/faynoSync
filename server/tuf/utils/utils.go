@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -27,6 +28,43 @@ var validAppNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`)
 func ValidateAppName(appName string) error {
 	if !validAppNameRe.MatchString(appName) {
 		return fmt.Errorf("appName %q is invalid: only alphanumeric characters and hyphens are allowed, and it must start with an alphanumeric character", appName)
+	}
+	return nil
+}
+
+// Expiration bounds (in days).
+// timestamp <= snapshot <= targets <= root: root is the offline trust anchor
+const (
+	MinExpirationDays = 1
+
+	MaxRootExpirationDays      = 365
+	MaxTargetsExpirationDays   = 180
+	MaxSnapshotExpirationDays  = 30
+	MaxTimestampExpirationDays = 7
+	MaxDelegatedExpirationDays = 180
+)
+
+func MaxExpirationDaysForRole(role string) int {
+	switch strings.ToLower(role) {
+	case "root":
+		return MaxRootExpirationDays
+	case "targets":
+		return MaxTargetsExpirationDays
+	case "snapshot":
+		return MaxSnapshotExpirationDays
+	case "timestamp":
+		return MaxTimestampExpirationDays
+	default:
+		return MaxDelegatedExpirationDays
+	}
+}
+
+func ValidateExpiration(role string, days int) error {
+	if days < MinExpirationDays {
+		return fmt.Errorf("expiration for role %q must be >= %d day(s), got %d", role, MinExpirationDays, days)
+	}
+	if max := MaxExpirationDaysForRole(role); days > max {
+		return fmt.Errorf("expiration for role %q must be <= %d days, got %d", role, max, days)
 	}
 	return nil
 }

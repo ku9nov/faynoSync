@@ -192,3 +192,34 @@ func TestCalculatePathHash_ConsistentHash(t *testing.T) {
 
 	assert.Equal(t, result1, result2, "Hash should be consistent for the same path")
 }
+
+func TestValidateExpiration(t *testing.T) {
+	cases := []struct {
+		role    string
+		days    int
+		wantErr bool
+	}{
+		{"root", 0, true},
+		{"root", -5, true},
+		{"root", 365, false},
+		{"root", 366, true},
+		{"targets", 180, false},
+		{"targets", 181, true},
+		{"snapshot", 30, false},
+		{"snapshot", 31, true},
+		{"timestamp", 7, false},
+		{"timestamp", 8, true},
+		{"timestamp", 1, false},
+		{"custom-bin", 180, false},
+		{"custom-bin", 181, true},
+		{"custom-bin", 0, true},
+	}
+	for _, tc := range cases {
+		err := ValidateExpiration(tc.role, tc.days)
+		if tc.wantErr {
+			assert.Error(t, err, "role=%s days=%d", tc.role, tc.days)
+		} else {
+			assert.NoError(t, err, "role=%s days=%d", tc.role, tc.days)
+		}
+	}
+}

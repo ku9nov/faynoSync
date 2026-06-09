@@ -3,8 +3,8 @@ package metadata
 import (
 	"context"
 	"crypto"
-	"crypto/ed25519"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
@@ -47,24 +47,6 @@ func runDelegatedTargetsSignatureValidationTest(t *testing.T, roleName string, p
 	keyID, err := delegationKey.ID()
 	require.NoError(t, err)
 
-	// Prepare trusted targets metadata that authorizes delegated role key.
-	trustedTargets := tuf_metadata.Targets(time.Now().Add(24 * time.Hour))
-	trustedTargets.Signed.Delegations = &tuf_metadata.Delegations{
-		Keys: map[string]*tuf_metadata.Key{
-			keyID: delegationKey,
-		},
-		Roles: []tuf_metadata.DelegatedRole{
-			{
-				Name:      roleName,
-				KeyIDs:    []string{keyID},
-				Threshold: 1,
-				Paths:     []string{"*"},
-			},
-		},
-	}
-	trustedTargetsJSON, err := json.Marshal(trustedTargets)
-	require.NoError(t, err)
-
 	// Sign delegated targets metadata to produce canonical signed payload + signature.
 	delegatedTargets := tuf_metadata.Targets(time.Now().Add(24 * time.Hour))
 	signer, err := loadTestSigner(privateKey)
@@ -79,24 +61,13 @@ func runDelegatedTargetsSignatureValidationTest(t *testing.T, roleName string, p
 	require.NoError(t, json.Unmarshal(signedBytes, &signedData))
 	signatureHex := hex.EncodeToString(delegatedTargets.Signatures[0].Signature)
 
-	// Mock storage lookup used by loadTrustedTargetsFromS3.
-	mockViper := viper.New()
-	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
-	savedList := tuf_storage.ListMetadataForLatest
-	savedGetViperForDownload := tuf_storage.GetViperForDownload
-	savedStorageFactoryForDownload := tuf_storage.StorageFactoryForDownload
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"1.targets.json"}, nil
-	}
-	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
-	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &forceUpdateMockFactory{client: &storageMockClientForForceUpdate{body: trustedTargetsJSON}}
-	}
-	defer func() {
-		tuf_storage.ListMetadataForLatest = savedList
-		tuf_storage.GetViperForDownload = savedGetViperForDownload
-		tuf_storage.StorageFactoryForDownload = savedStorageFactoryForDownload
-	}()
+	// Trusted store used by loadTrustedTargetsFromS3: a signed root + signed targets that
+	// declares the delegated role's key. The targets blob is now verified before its
+	// delegations are trusted for authorization.
+	fixture := buildTrustedStoreFixture(t, 1, []*fixtureDelegation{
+		{role: roleName, key: delegationKey},
+	})
+	defer fixture.install(t, nil)()
 
 	return validateIncomingMetadataSignature(
 		context.Background(),

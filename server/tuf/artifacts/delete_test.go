@@ -253,6 +253,41 @@ func TestRemoveArtifacts_NoValidArtifacts_ReturnsError(t *testing.T) {
 	t.Logf("Inputs: artifacts=%v; Result: err=%v", artifacts, err)
 }
 
+// To verify: drop verifyTrustedTargets in RemoveArtifacts; this test fails (a targets blob not
+// signed by the root-authorized targets key is loaded and extended anyway).
+func TestRemoveArtifacts_TamperedTargetsSignature_ReturnsError(t *testing.T) {
+	storeDir, _, cleanup := makeRemoveArtifactsTestEnv(t, testAdminName, testAppName)
+	defer cleanup()
+
+	// Overwrite the stored targets with a structurally valid blob signed by a key the trusted
+	// root does not authorize for the targets role.
+	_, rogue, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	rogueSigner, err := signature.LoadSigner(rogue, crypto.Hash(0))
+	require.NoError(t, err)
+	forged := tuf_metadata.Targets(tuf_utils.HelperExpireIn(365))
+	forged.Signed.Version = 2
+	_, err = forged.Sign(rogueSigner)
+	require.NoError(t, err)
+	metadataPrefix := filepath.Join(storeDir, "tuf_metadata", testAdminName, testAppName)
+	require.NoError(t, forged.ToFile(filepath.Join(metadataPrefix, "2.targets.json"), true))
+
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_"+testAdminName+"_"+testAppName, "done")
+
+	artifacts := []Artifact{
+		{Path: "updates/app-1.0.0.tar", Info: ArtifactInfo{Length: 1024, Hashes: map[string]string{"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
+	}
+
+	err = RemoveArtifacts(ctx, redisClient, nil, testAdminName, testAppName, artifacts, testTaskID)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "trusted targets metadata signature verification failed")
+}
+
 // To verify: In RemoveArtifacts change error handling when DownloadMetadataFromS3 fails for root; test will fail (no error or wrong message).
 func TestRemoveArtifacts_DownloadRootFails_ReturnsError(t *testing.T) {
 	_, _, cleanup := makeRemoveArtifactsTestEnv(t, testAdminName, testAppName)
@@ -386,9 +421,10 @@ func TestUpdateSnapshotAndTimestamp_AfterRemove_TimestampVersionIncremented(t *t
 	repo.SetTimestamp(ts)
 	_, err = repo.Timestamp().Sign(tsSigner)
 	require.NoError(t, err)
-	timestampPath := filepath.Join(tmpDir, "timestamp.json")
-	require.NoError(t, repo.Timestamp().ToFile(timestampPath, true))
-	require.FileExists(t, timestampPath)
+	// The existing v3 timestamp lives in storage; the bump must load and increment it.
+	storedTimestampPath := filepath.Join(metadataPrefix, "timestamp.json")
+	require.NoError(t, repo.Timestamp().ToFile(storedTimestampPath, true))
+	require.FileExists(t, storedTimestampPath)
 
 	savedList := tuf_storage.ListMetadataForLatest
 	savedGetViperD := tuf_storage.GetViperForDownload
@@ -396,7 +432,7 @@ func TestUpdateSnapshotAndTimestamp_AfterRemove_TimestampVersionIncremented(t *t
 	savedGetViperU := tuf_storage.GetViperForUpload
 	savedFactoryU := tuf_storage.StorageFactoryForUpload
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"1.snapshot.json"}, nil
+		return []string{"1.snapshot.json", "timestamp.json"}, nil
 	}
 	tuf_storage.GetViperForDownload = func() *viper.Viper {
 		v := viper.New()
@@ -647,12 +683,15 @@ func TestRemoveArtifactsFromDelegatedRole_ArtifactNotFound_ReturnsFalseNil(t *te
 	t.Logf("Artifact not in delegation: removed=false, err=nil")
 }
 
-// To verify: In removeArtifactsFromDelegatedRole skip "not enough distinct keys" check for threshold; test will fail (no error or wrong message).
-func TestRemoveArtifactsFromDelegatedRole_NotEnoughDistinctKeys_ReturnsError(t *testing.T) {
+// To verify: In removeArtifactsFromDelegatedRole drop verifyTrustedDelegatedRole; test will fail
+// (a delegated file whose signatures don't satisfy the delegator's threshold is extended anyway).
+func TestRemoveArtifactsFromDelegatedRole_DelegatedSignaturesBelowThreshold_ReturnsError(t *testing.T) {
 	repo, _, _, tmpDir, redisClient, cleanup := makeRemoveArtifactsFromDelegatedRoleEnv(t, testAdminName, testAppName)
 	defer cleanup()
 
-	// Role has one key but threshold 2: signing will fail with "not enough distinct keys".
+	// Raise the delegator's threshold for "updates" to 2 while it still declares a single key.
+	// The stored delegated file carries one valid signature, so it no longer meets the
+	// threshold and must be rejected by the trusted-store verification before any re-signing.
 	for i := range repo.Targets("targets").Signed.Delegations.Roles {
 		if repo.Targets("targets").Signed.Delegations.Roles[i].Name == "updates" {
 			repo.Targets("targets").Signed.Delegations.Roles[i].Threshold = 2
@@ -668,16 +707,18 @@ func TestRemoveArtifactsFromDelegatedRole_NotEnoughDistinctKeys_ReturnsError(t *
 	_, err := removeArtifactsFromDelegatedRole(ctx, repo, "updates", artifacts, testAdminName, testAppName, redisClient, tmpDir)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not enough distinct keys")
-	assert.Contains(t, err.Error(), "need 2, got 1")
+	assert.Contains(t, err.Error(), "trusted updates metadata signature verification failed")
 }
 
-// To verify: In removeArtifactsFromDelegatedRole skip "no key IDs found" check; test will fail (no error or wrong message).
-func TestRemoveArtifactsFromDelegatedRole_NoKeyIDsForRole_ReturnsError(t *testing.T) {
+// To verify: In removeArtifactsFromDelegatedRole drop verifyTrustedDelegatedRole; test will fail
+// (a delegated file is loaded and extended even though the trusted delegator does not authorize it).
+func TestRemoveArtifactsFromDelegatedRole_DelegatorDoesNotAuthorizeRole_ReturnsError(t *testing.T) {
 	repo, storeDir, keyDir, tmpDir, redisClient, cleanup := makeRemoveArtifactsFromDelegatedRoleEnv(t, testAdminName, testAppName)
 	defer cleanup()
 
-	// Replace targets with delegations that have no role "updates" (empty Roles)
+	// Replace targets with delegations that have no role "updates" (empty Roles). The stored
+	// 1.updates.json still loads, but the root-trusted delegator no longer authorizes "updates",
+	// so verification must reject it before any mutation/re-signing.
 	targetsKeyID := repo.Root().Signed.Roles["targets"].KeyIDs[0]
 	targetsKey := repo.Root().Signed.Keys[targetsKeyID]
 	exp := tuf_utils.HelperExpireIn(365)
@@ -687,7 +728,6 @@ func TestRemoveArtifactsFromDelegatedRole_NoKeyIDsForRole_ReturnsError(t *testin
 		Roles: []tuf_metadata.DelegatedRole{}, // no "updates" role
 	}
 	repo.SetTargets("targets", targets)
-	// Still have 1.updates.json in store so download/load succeed; then lookup roleKeyIDs fails
 	_ = storeDir
 	_ = keyDir
 
@@ -698,7 +738,7 @@ func TestRemoveArtifactsFromDelegatedRole_NoKeyIDsForRole_ReturnsError(t *testin
 
 	require.Error(t, err)
 	assert.False(t, removed)
-	assert.Contains(t, err.Error(), "no key IDs found for delegated role updates")
+	assert.Contains(t, err.Error(), "trusted updates metadata signature verification failed")
 }
 
 // To verify: In removeArtifactsFromDelegatedRole skip LoadPrivateKeyFromFilesystem error; test will fail (no error or wrong message).

@@ -1,0 +1,14 @@
+[
+  {
+    "createIndexes": "report_keys",
+    "indexes": [
+      {
+        "key": {
+          "key_value": 1
+        },
+        "name": "report_keys_key_value",
+        "background": true
+      }
+    ]
+  }
+]

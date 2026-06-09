@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8055,6 +8059,628 @@ func TestFailedRegenerateReportKeyWithTeamUser(t *testing.T) {
 	assert.Equal(t, "Permission denied", response["error"].(string))
 }
 
+// ---------------------------------------------------------------------------
+// Report ingestion / aggregation / storage integration helpers and tests.
+// These run against the real Mongo, Redis and object storage configured for
+// the suite. Every test isolates itself by using a unique event.reason (and
+// therefore a unique groupHash), so assertions never depend on global counts.
+// ---------------------------------------------------------------------------
+
+const (
+	rpVersion  = "1.0.0"
+	rpChannel  = "stable"
+	rpPlatform = "linux"
+	rpArch     = "amd64"
+	rpType     = "crash"
+)
+
+func reportAppName(t *testing.T, appIDHex string) string {
+	oid, err := primitive.ObjectIDFromHex(appIDHex)
+	require.NoError(t, err)
+	var doc struct {
+		AppName string `bson:"app_name"`
+	}
+	err = mongoDatabase.Collection("apps_meta").FindOne(context.TODO(), bson.M{"_id": oid}).Decode(&doc)
+	require.NoError(t, err)
+	return doc.AppName
+}
+
+func reportKeyForApp(t *testing.T, appIDHex string) string {
+	oid, err := primitive.ObjectIDFromHex(appIDHex)
+	require.NoError(t, err)
+	var doc struct {
+		KeyValue string `bson:"key_value"`
+	}
+	err = mongoDatabase.Collection("report_keys").FindOne(context.TODO(), bson.M{"app_id": oid}).Decode(&doc)
+	require.NoError(t, err)
+	return doc.KeyValue
+}
+
+func computeReportGroupHash(name, version, channel, platform, arch, etype, reason string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{name, version, channel, platform, arch, etype, reason}, "|")))
+	return hex.EncodeToString(sum[:])
+}
+
+func reportBody(name, version, channel, platform, arch, etype, reason string) string {
+	return fmt.Sprintf(
+		`{"application":{"name":"%s","version":"%s","channel":"%s"},"system":{"platform":"%s","arch":"%s"},"event":{"type":"%s","reason":"%s"}}`,
+		name, version, channel, platform, arch, etype, reason,
+	)
+}
+
+func reportBodyWithDetails(name, reason, encoding, contentType, payload string) string {
+	return fmt.Sprintf(
+		`{"application":{"name":"%s","version":"%s","channel":"%s"},"system":{"platform":"%s","arch":"%s"},"event":{"type":"%s","reason":"%s"},"details":{"encoding":"%s","content_type":"%s","payload":"%s"}}`,
+		name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason, encoding, contentType, payload,
+	)
+}
+
+func gzipBase64(t *testing.T, data []byte) string {
+	t.Helper()
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	_, err := w.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+func serveReportIngest(authHeader, deviceID, body string) *httptest.ResponseRecorder {
+	router := gin.Default()
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/reports/ingest", func(c *gin.Context) { h.IngestReport(c) })
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/reports/ingest", bytes.NewBufferString(body))
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+	if deviceID != "" {
+		req.Header.Set("X-Device-ID", deviceID)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func ingestWithKey(key, deviceID, body string) *httptest.ResponseRecorder {
+	return serveReportIngest("Bearer "+key, deviceID, body)
+}
+
+func getReportGroupDoc(t *testing.T, appIDHex, hash string) *model.ReportGroup {
+	oid, err := primitive.ObjectIDFromHex(appIDHex)
+	require.NoError(t, err)
+	var g model.ReportGroup
+	err = mongoDatabase.Collection("report_groups").FindOne(context.TODO(), bson.M{"app_id": oid, "groupHash": hash}).Decode(&g)
+	if err == mongo.ErrNoDocuments {
+		return nil
+	}
+	require.NoError(t, err)
+	return &g
+}
+
+func countReportBlobDocs(t *testing.T, appIDHex, hash string) int64 {
+	oid, err := primitive.ObjectIDFromHex(appIDHex)
+	require.NoError(t, err)
+	n, err := mongoDatabase.Collection("report_blobs").CountDocuments(context.TODO(), bson.M{"app_id": oid, "groupHash": hash})
+	require.NoError(t, err)
+	return n
+}
+
+// flushReportRateLimits clears only the report rate-limit counters so a test's
+// fixed-window buckets start clean, without disturbing other Redis state.
+func flushReportRateLimits(t *testing.T) {
+	if redisClient == nil {
+		return
+	}
+	keys, err := redisClient.Keys(context.TODO(), "reports:rl:*").Result()
+	require.NoError(t, err)
+	if len(keys) > 0 {
+		require.NoError(t, redisClient.Del(context.TODO(), keys...).Err())
+	}
+}
+
+// cleanupReportApp removes a test-created app and all of its report artifacts so
+// later legacy tests (e.g. the "no report keys remain" assertion) are unaffected.
+func cleanupReportApp(appIDHex string) {
+	oid, err := primitive.ObjectIDFromHex(appIDHex)
+	if err != nil {
+		return
+	}
+	ctx := context.TODO()
+	mongoDatabase.Collection("report_keys").DeleteMany(ctx, bson.M{"app_id": oid})
+	mongoDatabase.Collection("report_groups").DeleteMany(ctx, bson.M{"app_id": oid})
+	mongoDatabase.Collection("report_blobs").DeleteMany(ctx, bson.M{"app_id": oid})
+	mongoDatabase.Collection("apps_meta").DeleteOne(ctx, bson.M{"_id": oid})
+}
+
+func createReportEnabledApp(t *testing.T, token, name string) string {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/app/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		h.CreateApp(c)
+	})
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	dataPart, err := writer.CreateFormField("data")
+	require.NoError(t, err)
+	_, err = dataPart.Write([]byte(fmt.Sprintf(`{"app": "%s", "reports": "true"}`, name)))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req, _ := http.NewRequest("POST", "/app/create", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	id, ok := resp["createAppResult.Created"]
+	require.True(t, ok, w.Body.String())
+	appID := id.(string)
+	t.Cleanup(func() { cleanupReportApp(appID) })
+	return appID
+}
+
+func TestReportIngestAuth(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "auth_probe")
+
+	t.Run("missing header", func(t *testing.T) {
+		w := serveReportIngest("", "dev-auth-1", body)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+	t.Run("non-bearer scheme", func(t *testing.T) {
+		w := serveReportIngest("Basic "+key, "dev-auth-2", body)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+	t.Run("unknown key", func(t *testing.T) {
+		w := ingestWithKey(utils.ReportKeyPrefix+strings.Repeat("0", 64), "dev-auth-3", body)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+}
+
+func TestReportIngestMissingDeviceID(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "no_device")
+	w := ingestWithKey(key, "", body)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestReportIngestAppNameMismatch(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	// Valid app name that is not the key's application -> 403.
+	body := reportBody("someotherapp", rpVersion, rpChannel, rpPlatform, rpArch, rpType, "mismatch")
+	w := ingestWithKey(key, "dev-mismatch", body)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestReportIngestMalformedJSON(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	w := ingestWithKey(key, "dev-malformed", `{"application":`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestReportIngestMissingRequiredFields(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+
+	full := map[string]string{
+		"application.name":    name,
+		"application.version": rpVersion,
+		"application.channel": rpChannel,
+		"system.platform":     rpPlatform,
+		"system.arch":         rpArch,
+		"event.type":          rpType,
+		"event.reason":        "missing_fields",
+	}
+
+	for _, drop := range []string{
+		"application.name", "application.version", "application.channel",
+		"system.platform", "system.arch", "event.type", "event.reason",
+	} {
+		t.Run("missing "+drop, func(t *testing.T) {
+			f := make(map[string]string, len(full))
+			for k, v := range full {
+				if k == drop {
+					continue
+				}
+				f[k] = v
+			}
+			body := fmt.Sprintf(
+				`{"application":{"name":"%s","version":"%s","channel":"%s"},"system":{"platform":"%s","arch":"%s"},"event":{"type":"%s","reason":"%s"}}`,
+				f["application.name"], f["application.version"], f["application.channel"],
+				f["system.platform"], f["system.arch"], f["event.type"], f["event.reason"],
+			)
+			w := ingestWithKey(key, "dev-missing-"+drop, body)
+			assert.Equal(t, http.StatusBadRequest, w.Code, "dropping %s must be rejected", drop)
+		})
+	}
+}
+
+func TestReportIngestInvalidEventType(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, "explosion", "bad_type")
+	w := ingestWithKey(key, "dev-badtype", body)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestReportIngestInvalidEventReason(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	for _, reason := range []string{"has space", "pipe|char", strings.Repeat("a", 129)} {
+		body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+		w := ingestWithKey(key, "dev-badreason", body)
+		assert.Equalf(t, http.StatusBadRequest, w.Code, "reason %q must be rejected", reason)
+	}
+}
+
+func TestReportIngestBodyTooLarge(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+
+	prev := viper.Get("REPORTS_MAX_BODY_BYTES")
+	viper.Set("REPORTS_MAX_BODY_BYTES", 16)
+	defer viper.Set("REPORTS_MAX_BODY_BYTES", prev)
+
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "too_large")
+	w := ingestWithKey(key, "dev-toolarge", body)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+}
+
+func TestReportIngestAggregation(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "aggregation_count"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	const n = 3
+	var firstSeen primitive.DateTime
+	for i := 0; i < n; i++ {
+		// Distinct device id each time to dodge the per-device+group hourly limit.
+		w := ingestWithKey(key, fmt.Sprintf("dev-agg-%d", i), body)
+		require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+		if i == 0 {
+			firstSeen = getReportGroupDoc(t, idTestappApp, hash).Stats.FirstSeen
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, int64(n), g.Stats.Count)
+	assert.Equal(t, firstSeen, g.Stats.FirstSeen, "firstSeen must stay fixed")
+	// Millisecond precision: lastSeen never moves backwards as the group accumulates.
+	assert.GreaterOrEqual(t, int64(g.Stats.LastSeen), int64(firstSeen), "lastSeen must advance")
+}
+
+func TestReportIngestDistinctReasonDistinctGroup(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+
+	h1 := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "distinct_a")
+	h2 := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "distinct_b")
+	require.NotEqual(t, h1, h2)
+
+	w1 := ingestWithKey(key, "dev-distinct-1", reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "distinct_a"))
+	w2 := ingestWithKey(key, "dev-distinct-2", reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "distinct_b"))
+	require.Equal(t, http.StatusAccepted, w1.Code)
+	require.Equal(t, http.StatusAccepted, w2.Code)
+
+	assert.NotNil(t, getReportGroupDoc(t, idTestappApp, h1))
+	assert.NotNil(t, getReportGroupDoc(t, idTestappApp, h2))
+}
+
+func TestReportIngestTenantIsolation(t *testing.T) {
+	flushReportRateLimits(t)
+	appID1 := createReportEnabledApp(t, authToken, "test")
+	appID2 := createReportEnabledApp(t, authTokenSecondUser, "test")
+	require.NotEqual(t, appID1, appID2)
+
+	key1 := reportKeyForApp(t, appID1)
+	key2 := reportKeyForApp(t, appID2)
+
+	reason := "tenant_isolation"
+	// Identical dimensions (same app name "test") -> identical groupHash...
+	hash := computeReportGroupHash("test", rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	body := reportBody("test", rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key1, "dev-tenant-1", body).Code)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key2, "dev-tenant-2", body).Code)
+
+	// ...but two separate report_groups docs, scoped by app_id, counts never merge.
+	g1 := getReportGroupDoc(t, appID1, hash)
+	g2 := getReportGroupDoc(t, appID2, hash)
+	require.NotNil(t, g1)
+	require.NotNil(t, g2)
+	assert.NotEqual(t, g1.AppID, g2.AppID)
+	assert.Equal(t, int64(1), g1.Stats.Count)
+	assert.Equal(t, int64(1), g2.Stats.Count)
+	assert.NotEqual(t, g1.Owner, g2.Owner)
+}
+
+func TestReportRateLimitPerDevice(t *testing.T) {
+	if redisClient == nil {
+		t.Skip("rate limiting requires Redis (ENABLE_TELEMETRY)")
+	}
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "rl_per_device"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	w1 := ingestWithKey(key, "dev-rl-same", body)
+	require.Equal(t, http.StatusAccepted, w1.Code)
+	w2 := ingestWithKey(key, "dev-rl-same", body)
+	assert.Equal(t, http.StatusTooManyRequests, w2.Code)
+
+	// The base count from the first (accepted) request is still present.
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, int64(1), g.Stats.Count)
+}
+
+func TestReportRateLimitDifferentReasonSameDevice(t *testing.T) {
+	if redisClient == nil {
+		t.Skip("rate limiting requires Redis (ENABLE_TELEMETRY)")
+	}
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+
+	w1 := ingestWithKey(key, "dev-rl-multi", reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "rl_reason_a"))
+	w2 := ingestWithKey(key, "dev-rl-multi", reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "rl_reason_b"))
+	assert.Equal(t, http.StatusAccepted, w1.Code)
+	assert.Equal(t, http.StatusAccepted, w2.Code, "different group must not share the per-device limit")
+}
+
+func TestReportRateLimitPerGroup(t *testing.T) {
+	if redisClient == nil {
+		t.Skip("rate limiting requires Redis (ENABLE_TELEMETRY)")
+	}
+	flushReportRateLimits(t)
+	prev := viper.Get("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE")
+	viper.Set("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE", 1000)
+	defer viper.Set("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE", prev)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "rl_per_group"
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	// 30/min per group; distinct devices so only the per-group window trips.
+	accepted, limited := 0, 0
+	for i := 0; i < 31; i++ {
+		w := ingestWithKey(key, fmt.Sprintf("dev-rlgrp-%d", i), body)
+		switch w.Code {
+		case http.StatusAccepted:
+			accepted++
+		case http.StatusTooManyRequests:
+			limited++
+		default:
+			t.Fatalf("unexpected status %d: %s", w.Code, w.Body.String())
+		}
+	}
+	assert.Equal(t, 30, accepted)
+	assert.Equal(t, 1, limited)
+}
+
+func TestReportRateLimitPerKey(t *testing.T) {
+	if redisClient == nil {
+		t.Skip("rate limiting requires Redis (ENABLE_TELEMETRY)")
+	}
+	flushReportRateLimits(t)
+	prev := viper.Get("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE")
+	viper.Set("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE", 2)
+	defer viper.Set("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE", prev)
+
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+
+	// Distinct devices and groups so only the per-key window can trip.
+	codes := []int{}
+	for i := 0; i < 3; i++ {
+		body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, fmt.Sprintf("rl_key_%d", i))
+		w := ingestWithKey(key, fmt.Sprintf("dev-rlkey-%d", i), body)
+		codes = append(codes, w.Code)
+	}
+	assert.Equal(t, http.StatusAccepted, codes[0])
+	assert.Equal(t, http.StatusAccepted, codes[1])
+	assert.Equal(t, http.StatusTooManyRequests, codes[2])
+}
+
+func TestReportDetailsStored(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "details_stored"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	raw := []byte(`{"message":"expected sha256 != actual sha256","stack":"a\nb\nc"}`)
+	payload := gzipBase64(t, raw)
+	body := reportBodyWithDetails(name, reason, "gzip+base64", "application/json", payload)
+
+	w := ingestWithKey(key, "dev-details-stored", body)
+	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+
+	var resp model.ReportIngestResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.True(t, resp.StoredDetails)
+	assert.Equal(t, hash, resp.GroupHash)
+
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, int64(1), g.Stats.DetailsStored)
+
+	oid, _ := primitive.ObjectIDFromHex(idTestappApp)
+	var blob model.ReportBlob
+	require.NoError(t, mongoDatabase.Collection("report_blobs").FindOne(context.TODO(), bson.M{"app_id": oid, "groupHash": hash}).Decode(&blob))
+
+	bucket := viper.GetString("S3_BUCKET_NAME_PRIVATE")
+	assert.Equal(t, bucket, blob.Storage.Bucket, "details must land in the private bucket")
+	assert.Equal(t, "gzip", blob.Storage.Encoding)
+	assert.Equal(t, int64(len(raw)), blob.Storage.DecompressedSize)
+
+	// expiresAt ~= createdAt + REPORTS_BLOB_RETENTION_DAYS.
+	retention := viper.GetInt("REPORTS_BLOB_RETENTION_DAYS")
+	if retention <= 0 {
+		retention = 30
+	}
+	delta := blob.ExpiresAt.Time().Sub(blob.CreatedAt.Time())
+	assert.InDelta(t, float64(retention), delta.Hours()/24, 1.0)
+
+	// The stored object holds the compressed bytes: download and decompress.
+	storageClient, err := utils.NewStorageFactory(viper.GetViper()).CreateStorageClient()
+	require.NoError(t, err)
+	tmp := filepath.Join(t.TempDir(), "blob.json.gz")
+	require.NoError(t, storageClient.DownloadObject(context.TODO(), bucket, blob.Storage.Key, tmp))
+	f, err := os.Open(tmp)
+	require.NoError(t, err)
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	require.NoError(t, err)
+	got, err := io.ReadAll(zr)
+	require.NoError(t, err)
+	assert.Equal(t, raw, got)
+}
+
+func TestReportDetailsUnsupportedEncoding(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "details_bad_encoding"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	payload := gzipBase64(t, []byte(`{}`))
+	body := reportBodyWithDetails(name, reason, "zstd", "application/json", payload)
+	w := ingestWithKey(key, "dev-details-enc", body)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g, "base count must be incremented even when details are rejected")
+	assert.Equal(t, int64(1), g.Stats.Count)
+	assert.Equal(t, int64(1), g.Stats.DetailsRejected)
+	assert.Equal(t, int64(0), g.Stats.DetailsStored)
+}
+
+func TestReportDetailsCompressedTooLarge(t *testing.T) {
+	flushReportRateLimits(t)
+	prev := viper.Get("REPORTS_MAX_DETAILS_COMPRESSED_BYTES")
+	viper.Set("REPORTS_MAX_DETAILS_COMPRESSED_BYTES", 16)
+	defer viper.Set("REPORTS_MAX_DETAILS_COMPRESSED_BYTES", prev)
+
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "details_compressed_big"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	payload := gzipBase64(t, bytes.Repeat([]byte("abcdefgh"), 256))
+	body := reportBodyWithDetails(name, reason, "gzip+base64", "application/json", payload)
+	w := ingestWithKey(key, "dev-details-comp", body)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, int64(1), g.Stats.Count)
+	assert.Equal(t, int64(1), g.Stats.DetailsRejected)
+}
+
+func TestReportDetailsZipBomb(t *testing.T) {
+	flushReportRateLimits(t)
+	prev := viper.Get("REPORTS_MAX_DETAILS_DECOMPRESSED_BYTES")
+	viper.Set("REPORTS_MAX_DETAILS_DECOMPRESSED_BYTES", 1000)
+	defer viper.Set("REPORTS_MAX_DETAILS_DECOMPRESSED_BYTES", prev)
+
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "details_zip_bomb"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	// Small compressed, large decompressed.
+	payload := gzipBase64(t, bytes.Repeat([]byte("a"), 200000))
+	body := reportBodyWithDetails(name, reason, "gzip+base64", "application/json", payload)
+	w := ingestWithKey(key, "dev-details-bomb", body)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, int64(1), g.Stats.Count, "base count preserved")
+	assert.Equal(t, int64(1), g.Stats.DetailsRejected)
+}
+
+func TestReportBlobRetention(t *testing.T) {
+	flushReportRateLimits(t)
+	prev := viper.Get("REPORTS_MAX_BLOBS_PER_GROUP")
+	viper.Set("REPORTS_MAX_BLOBS_PER_GROUP", 2)
+	defer viper.Set("REPORTS_MAX_BLOBS_PER_GROUP", prev)
+
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "blob_retention"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	for i := 0; i < 4; i++ {
+		payload := gzipBase64(t, []byte(fmt.Sprintf(`{"n":%d}`, i)))
+		body := reportBodyWithDetails(name, reason, "gzip+base64", "application/json", payload)
+		w := ingestWithKey(key, fmt.Sprintf("dev-retention-%d", i), body)
+		require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	assert.Equal(t, int64(2), countReportBlobDocs(t, idTestappApp, hash), "only the 2 newest blobs are retained")
+}
+
+func setAppReports(t *testing.T, token, appIDHex, appName string, enabled bool) {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/app/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		h.UpdateApp(c)
+	})
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	dataPart, err := writer.CreateFormField("data")
+	require.NoError(t, err)
+	_, err = dataPart.Write([]byte(fmt.Sprintf(`{"id": "%s", "app": "%s", "reports": "%t"}`, appIDHex, appName, enabled)))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req, _ := http.NewRequest("POST", "/app/update", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestReportIngestDisablingReportsRevokesKey(t *testing.T) {
+	flushReportRateLimits(t)
+	appID := createReportEnabledApp(t, authToken, "lifecycleapp")
+	key := reportKeyForApp(t, appID)
+	body := reportBody("lifecycleapp", rpVersion, rpChannel, rpPlatform, rpArch, rpType, "lifecycle")
+
+	// Key works while reports are enabled.
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-lifecycle", body).Code)
+
+	// Disabling reports deletes the report key (handler syncs the lifecycle).
+	setAppReports(t, authToken, appID, "lifecycleapp", false)
+
+	// The old key no longer resolves -> 401.
+	w := ingestWithKey(key, "dev-lifecycle", body)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
 func TestUpdateTeamUser(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
@@ -8142,6 +8768,148 @@ func TestUpdateTeamUser(t *testing.T) {
 
 	expected := `{"message":"Team user updated successfully"}`
 	assert.Equal(t, expected, w.Body.String())
+}
+
+// At this point the team user has apps.download and allowed_apps = [testapp, teamApp],
+// so the read API becomes exercisable for both admin and a scoped team user.
+
+func serveListReportGroups(token, rawQuery string) *httptest.ResponseRecorder {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/reports/groups", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		h.ListReportGroups(c)
+	})
+
+	url := "/reports/groups"
+	if rawQuery != "" {
+		url += "?" + rawQuery
+	}
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func serveListReportBlobs(token, groupHash string) *httptest.ResponseRecorder {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/reports/groups/:groupHash/blobs", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		h.ListReportGroupBlobs(c)
+	})
+
+	req, _ := http.NewRequest("GET", "/reports/groups/"+groupHash+"/blobs", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestReportGroupsAdminScopingAndFilters(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "admin_filter_unique"
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-adminfilter", reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)).Code)
+
+	w := serveListReportGroups(authToken, "app="+name+"&reason="+reason+"&type="+rpType+"&page=1&limit=5")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp model.PaginatedReportGroups
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int64(1), resp.Total, "unique reason filter must narrow to exactly one group")
+	assert.Equal(t, int64(1), resp.Page)
+	assert.Equal(t, int64(5), resp.Limit)
+	require.Len(t, resp.Items, 1)
+	assert.Equal(t, reason, resp.Items[0].Event.Reason)
+	assert.NotContains(t, w.Body.String(), `"owner"`, "owner must not be serialized")
+}
+
+func TestReportGroupsTeamUserAllowedAndDenied(t *testing.T) {
+	flushReportRateLimits(t)
+
+	// Allowed: a group under testapp (admin owner, in the team user's allowed_apps).
+	testappKey := reportKeyForApp(t, idTestappApp)
+	testappName := reportAppName(t, idTestappApp)
+	allowedReason := "team_allowed"
+	require.Equal(t, http.StatusAccepted, ingestWithKey(testappKey, "dev-team-allowed", reportBody(testappName, rpVersion, rpChannel, rpPlatform, rpArch, rpType, allowedReason)).Code)
+
+	// Denied: a group under "public testapp" (same owner, NOT in allowed_apps).
+	publicKey := reportKeyForApp(t, idPublicTestappApp)
+	publicName := reportAppName(t, idPublicTestappApp)
+	deniedReason := "team_denied"
+	require.Equal(t, http.StatusAccepted, ingestWithKey(publicKey, "dev-team-denied", reportBody(publicName, rpVersion, rpChannel, rpPlatform, rpArch, rpType, deniedReason)).Code)
+
+	wAllowed := serveListReportGroups(teamUserToken, "reason="+allowedReason)
+	require.Equal(t, http.StatusOK, wAllowed.Code, wAllowed.Body.String())
+	var allowed model.PaginatedReportGroups
+	require.NoError(t, json.Unmarshal(wAllowed.Body.Bytes(), &allowed))
+	assert.Equal(t, int64(1), allowed.Total, "team user must see groups of an allowed app")
+
+	wDenied := serveListReportGroups(teamUserToken, "reason="+deniedReason)
+	require.Equal(t, http.StatusOK, wDenied.Code, wDenied.Body.String())
+	var denied model.PaginatedReportGroups
+	require.NoError(t, json.Unmarshal(wDenied.Body.Bytes(), &denied))
+	assert.Equal(t, int64(0), denied.Total, "team user must not see groups of a non-allowed app")
+}
+
+func TestReportGroupBlobsPresigned(t *testing.T) {
+	// Reuses the blob stored by TestReportDetailsStored.
+	name := reportAppName(t, idTestappApp)
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, "details_stored")
+
+	w := serveListReportBlobs(authToken, hash)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.GreaterOrEqual(t, len(resp.Items), 1)
+
+	item := resp.Items[0]
+	url, _ := item["url"].(string)
+	assert.True(t, strings.HasPrefix(url, "http"), "presigned url must be resolvable, got %q", url)
+
+	_, hasOwner := item["owner"]
+	assert.False(t, hasOwner, "owner must be absent from blob JSON")
+	storage, _ := item["storage"].(map[string]interface{})
+	require.NotNil(t, storage)
+	_, hasBucket := storage["bucket"]
+	assert.False(t, hasBucket, "storage.bucket must be absent from blob JSON")
+}
+
+func TestReportGroupBlobsCrossOwnerEmpty(t *testing.T) {
+	flushReportRateLimits(t)
+
+	// Second owner stores a blob under an app the admin does not own.
+	appID := createReportEnabledApp(t, authTokenSecondUser, "owner2reports")
+	key := reportKeyForApp(t, appID)
+	reason := "cross_owner_blob"
+	hash := computeReportGroupHash("owner2reports", rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	payload := gzipBase64(t, []byte(`{"secret":"owner2"}`))
+	body := reportBodyWithDetails("owner2reports", reason, "gzip+base64", "application/json", payload)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-cross-owner", body).Code)
+	require.Equal(t, int64(1), countReportBlobDocs(t, appID, hash))
+
+	// Admin requests the same hash -> no cross-owner leak.
+	w := serveListReportBlobs(authToken, hash)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp.Items)
+}
+
+func TestReportGroupBlobsInvalidHash(t *testing.T) {
+	for _, bad := range []string{"nothexvalue", strings.Repeat("a", 63), strings.Repeat("a", 65)} {
+		w := serveListReportBlobs(authToken, bad)
+		assert.Equalf(t, http.StatusBadRequest, w.Code, "hash %q must be rejected", bad)
+	}
 }
 
 func TestRegenerateReportKeyTeamUser(t *testing.T) {

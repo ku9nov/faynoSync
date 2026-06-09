@@ -1,0 +1,6 @@
+[
+  {
+    "dropIndexes": "report_keys",
+    "index": "report_keys_key_value"
+  }
+]

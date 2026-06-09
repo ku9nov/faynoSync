@@ -1272,13 +1272,18 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 				thresholdReached = true
 			}
 		} else {
-			trustedRole, loadErr := loadTrustedTargetsMetadataFromS3(ctx, adminName, appName, payload.Role)
+			// Rollback floor comes from the trusted snapshot (root -> snapshot),
+			// not from re-verifying the published delegated blob through targets:
+			// during a delegated key rotation the new targets has already rotated
+			// this role's keys, so the still-published old delegated metadata no
+			// longer verifies against its delegator. Snapshot binds the version and
+			// stays verifiable from root, preserving rollback protection.
+			trustedRoleVersion, loadErr := trustedDelegatedVersionFromSnapshot(ctx, adminName, appName, payload.Role)
 			if loadErr != nil {
-				validationError = fmt.Errorf("failed to load trusted delegated role %s: %w", payload.Role, loadErr)
+				validationError = fmt.Errorf("failed to load trusted snapshot for delegated role %s: %w", payload.Role, loadErr)
 				thresholdReached = false
 				break
 			}
-			trustedRoleVersion := int64(trustedRole.Signed.Version)
 			if int64(repo.Targets(payload.Role).Signed.Version) <= trustedRoleVersion {
 				validationError = fmt.Errorf("version must be greater than trusted version %d", trustedRoleVersion)
 				thresholdReached = false

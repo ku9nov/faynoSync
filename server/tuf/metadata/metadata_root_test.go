@@ -82,24 +82,8 @@ func TestGetMetadataRoot_MissingAppName_ReturnsBadRequest(t *testing.T) {
 
 // To verify: In GetMetadataRoot change success response shape (e.g. remove data.trusted_root) or return non-200; test will fail.
 func TestGetMetadataRoot_Success_WithTrustedRoot(t *testing.T) {
-	rootJSON := []byte(`{"signed":{"_type":"root","version":1,"expires":"2030-01-01T00:00:00Z"},"signatures":[]}`)
-	savedList := tuf_storage.ListMetadataForLatest
-	savedViper := tuf_storage.GetViperForDownload
-	savedFactory := tuf_storage.StorageFactoryForDownload
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"1.root.json"}, nil
-	}
-	mockViper := viper.New()
-	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
-	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
-	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &downloadMockFactory{client: &downloadMockClient{body: rootJSON}}
-	}
-	defer func() {
-		tuf_storage.ListMetadataForLatest = savedList
-		tuf_storage.GetViperForDownload = savedViper
-		tuf_storage.StorageFactoryForDownload = savedFactory
-	}()
+	fixture := buildTrustedStoreFixture(t, 1, nil)
+	defer fixture.install(t, nil)()
 
 	c, w := makeGetMetadataRootContext("admin", "myapp")
 	GetMetadataRoot(c)
@@ -148,24 +132,8 @@ func TestGetMetadataRoot_Success_WithoutTrustedRoot(t *testing.T) {
 
 // To verify: In GetMetadataTargets change response key or status; test will fail.
 func TestGetMetadataTargets_Success_WithTrustedTargets(t *testing.T) {
-	targetsJSON := []byte(`{"signed":{"_type":"targets","version":2,"expires":"2030-01-01T00:00:00Z"},"signatures":[]}`)
-	savedList := tuf_storage.ListMetadataForLatest
-	savedViper := tuf_storage.GetViperForDownload
-	savedFactory := tuf_storage.StorageFactoryForDownload
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"2.targets.json"}, nil
-	}
-	mockViper := viper.New()
-	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
-	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
-	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &downloadMockFactory{client: &downloadMockClient{body: targetsJSON}}
-	}
-	defer func() {
-		tuf_storage.ListMetadataForLatest = savedList
-		tuf_storage.GetViperForDownload = savedViper
-		tuf_storage.StorageFactoryForDownload = savedFactory
-	}()
+	fixture := buildTrustedStoreFixture(t, 2, nil)
+	defer fixture.install(t, nil)()
 
 	c, w := makeGetMetadataTargetsContext("admin", "myapp")
 	GetMetadataTargets(c)
@@ -196,24 +164,10 @@ func TestGetMetadataDelegated_MissingRoleName_ReturnsBadRequest(t *testing.T) {
 
 // To verify: In GetMetadataDelegated change response key or delegated loading behavior; test will fail.
 func TestGetMetadataDelegated_Success_WithTrustedDelegated(t *testing.T) {
-	delegatedJSON := []byte(`{"signed":{"_type":"targets","version":3,"expires":"2030-01-01T00:00:00Z"},"signatures":[]}`)
-	savedList := tuf_storage.ListMetadataForLatest
-	savedViper := tuf_storage.GetViperForDownload
-	savedFactory := tuf_storage.StorageFactoryForDownload
-	tuf_storage.ListMetadataForLatest = func(_ context.Context, _ string, _ string, _ string) ([]string, error) {
-		return []string{"3.myrole.json"}, nil
-	}
-	mockViper := viper.New()
-	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
-	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
-	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &downloadMockFactory{client: &downloadMockClient{body: delegatedJSON}}
-	}
-	defer func() {
-		tuf_storage.ListMetadataForLatest = savedList
-		tuf_storage.GetViperForDownload = savedViper
-		tuf_storage.StorageFactoryForDownload = savedFactory
-	}()
+	fixture := buildTrustedStoreFixture(t, 1, []*fixtureDelegation{
+		{role: "myrole", version: 3, buildFile: true},
+	})
+	defer fixture.install(t, nil)()
 
 	c, w := makeGetMetadataDelegatedContext("admin", "myapp", "myrole")
 	GetMetadataDelegated(c)

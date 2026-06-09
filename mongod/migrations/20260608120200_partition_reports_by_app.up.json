@@ -1,0 +1,19 @@
+[
+  {
+    "dropIndexes": "report_groups",
+    "index": "report_groups_unique_group_hash"
+  },
+  {
+    "createIndexes": "report_groups",
+    "indexes": [
+      { "key": {"app_id": 1, "groupHash": 1}, "name": "report_groups_unique_app_group", "unique": true, "background": true },
+      { "key": {"app_id": 1, "stats.lastSeen": -1}, "name": "report_groups_app_lastseen", "background": true }
+    ]
+  },
+  {
+    "createIndexes": "report_blobs",
+    "indexes": [
+      { "key": {"app_id": 1, "groupHash": 1, "createdAt": -1}, "name": "report_blobs_app_group_created", "background": true }
+    ]
+  }
+]

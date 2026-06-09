@@ -1,0 +1,70 @@
+[
+  {
+    "createIndexes": "report_groups",
+    "indexes": [
+      {
+        "key": {
+          "groupHash": 1
+        },
+        "name": "report_groups_unique_group_hash",
+        "unique": true,
+        "background": true
+      },
+      {
+        "key": {
+          "application.name": 1,
+          "application.version": 1,
+          "event.type": 1
+        },
+        "name": "report_groups_app_version_type",
+        "background": true
+      },
+      {
+        "key": {
+          "application.name": 1,
+          "application.channel": 1,
+          "system.platform": 1,
+          "stats.lastSeen": -1
+        },
+        "name": "report_groups_app_channel_platform_lastseen",
+        "background": true
+      },
+      {
+        "key": {
+          "stats.lastSeen": -1
+        },
+        "name": "report_groups_lastseen_desc",
+        "background": true
+      }
+    ]
+  },
+  {
+    "createIndexes": "report_blobs",
+    "indexes": [
+      {
+        "key": {
+          "groupHash": 1,
+          "createdAt": -1
+        },
+        "name": "report_blobs_group_created",
+        "background": true
+      },
+      {
+        "key": {
+          "application.name": 1,
+          "createdAt": -1
+        },
+        "name": "report_blobs_app_created",
+        "background": true
+      },
+      {
+        "key": {
+          "expiresAt": 1
+        },
+        "name": "report_blobs_ttl",
+        "expireAfterSeconds": 0,
+        "background": true
+      }
+    ]
+  }
+]

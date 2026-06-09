@@ -300,7 +300,10 @@ func validMinimalBootstrapPayload() *models.BootstrapPayload {
 		AppName: "myapp",
 		Settings: models.Settings{
 			Roles: models.RolesData{
-				Root: models.RoleExpiration{Expiration: 365},
+				Root:      models.RoleExpiration{Expiration: 365},
+				Targets:   models.RoleExpiration{Expiration: 90},
+				Snapshot:  models.RoleExpiration{Expiration: 7},
+				Timestamp: models.RoleExpiration{Expiration: 1},
 			},
 		},
 		Metadata: map[string]models.RootMetadata{
@@ -380,6 +383,31 @@ func TestPostBootstrap_MissingRootExpiration_ReturnsBadRequest(t *testing.T) {
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, "Missing required field: settings.roles.root.expiration", body["error"])
+}
+
+// To verify: remove the ValidateExpiration loop in PostBootstrap; test will fail
+// (out-of-bound expiration would be accepted and stored).
+func TestPostBootstrap_OutOfBoundExpiration_ReturnsBadRequest(t *testing.T) {
+	cases := map[string]func(*models.BootstrapPayload){
+		"root too large":   func(p *models.BootstrapPayload) { p.Settings.Roles.Root.Expiration = 400 },
+		"targets zero":     func(p *models.BootstrapPayload) { p.Settings.Roles.Targets.Expiration = 0 },
+		"snapshot too big": func(p *models.BootstrapPayload) { p.Settings.Roles.Snapshot.Expiration = 90 },
+		"timestamp neg":    func(p *models.BootstrapPayload) { p.Settings.Roles.Timestamp.Expiration = -1 },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			payload := validMinimalBootstrapPayload()
+			mutate(payload)
+			c, w := makePostBootstrapContext("admin", payload)
+			mr := miniredis.RunT(t)
+			defer mr.Close()
+			client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+			PostBootstrap(c, client)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+		})
+	}
 }
 
 // To verify: In PostBootstrap remove len(payload.Metadata) == 0 check or return 202; test will fail (wrong status).

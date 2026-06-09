@@ -20,6 +20,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"faynoSync/server/tuf/delegations"
+	tuf_metadata "faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/signing"
 	tuf_storage "faynoSync/server/tuf/storage"
 	"faynoSync/server/tuf/tasks"
@@ -84,6 +85,9 @@ func AddArtifacts(
 	if _, err := repo.Root().FromFile(rootPath); err != nil {
 		return fmt.Errorf("failed to load root metadata: %w", err)
 	}
+	if err := verifyTrustedRoot(repo); err != nil {
+		return err
+	}
 
 	rootData, err := os.ReadFile(rootPath)
 	if err != nil {
@@ -140,6 +144,9 @@ func AddArtifacts(
 	repo.SetTargets("targets", targets)
 	if _, err := repo.Targets("targets").FromFile(targetsPath); err != nil {
 		return fmt.Errorf("failed to load targets metadata: %w", err)
+	}
+	if err := verifyTrustedTargets(repo); err != nil {
+		return err
 	}
 
 	rolesArtifacts := make(map[string][]Artifact)
@@ -376,6 +383,9 @@ func updateDelegatedRoleWithArtifacts(
 		if _, err := repo.Targets(roleName).FromFile(delegationPath); err != nil {
 			return false, fmt.Errorf("failed to load %s metadata: %w", roleName, err)
 		}
+		if err := verifyTrustedDelegatedRole(repo, roleName); err != nil {
+			return false, err
+		}
 	} else {
 		logrus.Debugf("Delegation metadata for role %s not found, creating new. Error: %v", roleName, err)
 		delegation := repo.Targets(roleName)
@@ -389,34 +399,10 @@ func updateDelegatedRoleWithArtifacts(
 	}
 
 	for _, artifact := range artifacts {
-
-		hashes := make(metadata.Hashes)
-		for alg, hashStr := range artifact.Info.Hashes {
-			hashBytes, err := hex.DecodeString(hashStr)
-			if err != nil {
-				logrus.Warnf("Failed to decode hash %s for algorithm %s: %v", hashStr, alg, err)
-				hashBytes = []byte(hashStr)
-			}
-			hashes[alg] = metadata.HexBytes(hashBytes)
+		targetFile, err := buildVerifiedTargetFile(artifact)
+		if err != nil {
+			return false, err
 		}
-
-		var custom *json.RawMessage
-		if len(artifact.Info.Custom) > 0 {
-			customBytes, err := json.Marshal(artifact.Info.Custom)
-			if err != nil {
-				logrus.Warnf("Failed to marshal custom data for artifact %s: %v", artifact.Path, err)
-			} else {
-				rawMsg := json.RawMessage(customBytes)
-				custom = &rawMsg
-			}
-		}
-
-		targetFile := &metadata.TargetFiles{
-			Length: artifact.Info.Length,
-			Hashes: hashes,
-			Custom: custom,
-		}
-
 		delegation.Signed.Targets[artifact.Path] = targetFile
 	}
 
@@ -473,6 +459,46 @@ func updateDelegatedRoleWithArtifacts(
 	return false, nil
 }
 
+func buildVerifiedTargetFile(artifact Artifact) (*metadata.TargetFiles, error) {
+	sha256Hex, ok := artifact.Info.Hashes["sha256"]
+	if !ok || sha256Hex == "" {
+		return nil, fmt.Errorf("artifact %s is missing required sha256 hash", artifact.Path)
+	}
+	if artifact.Info.Length <= 0 {
+		return nil, fmt.Errorf("artifact %s has invalid length %d", artifact.Path, artifact.Info.Length)
+	}
+
+	hashes := make(metadata.Hashes)
+	for alg, hashStr := range artifact.Info.Hashes {
+		hashBytes, err := hex.DecodeString(hashStr)
+		if err != nil {
+			return nil, fmt.Errorf("artifact %s has invalid hex for %s hash %q: %w", artifact.Path, alg, hashStr, err)
+		}
+		hashes[alg] = metadata.HexBytes(hashBytes)
+	}
+
+	if len(hashes["sha256"]) != sha256.Size {
+		return nil, fmt.Errorf("artifact %s sha256 hash must be %d bytes, got %d", artifact.Path, sha256.Size, len(hashes["sha256"]))
+	}
+
+	var custom *json.RawMessage
+	if len(artifact.Info.Custom) > 0 {
+		customBytes, err := json.Marshal(artifact.Info.Custom)
+		if err != nil {
+			logrus.Warnf("Failed to marshal custom data for artifact %s: %v", artifact.Path, err)
+		} else {
+			rawMsg := json.RawMessage(customBytes)
+			custom = &rawMsg
+		}
+	}
+
+	return &metadata.TargetFiles{
+		Length: artifact.Info.Length,
+		Hashes: hashes,
+		Custom: custom,
+	}, nil
+}
+
 func updateSnapshotAndTimestamp(
 	ctx context.Context,
 	repo *repository.Type,
@@ -484,155 +510,100 @@ func updateSnapshotAndTimestamp(
 	snapshotSigners []signature.Signer,
 	tmpDir string,
 ) error {
-	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s_%s", adminName, appName)
-	lockTTL := 300 * time.Second
-	maxWaitTime := 500 * time.Second
-
-	lockCtx, cancel := context.WithTimeout(ctx, maxWaitTime)
-	defer cancel()
-
-	lockAcquired := false
-	initialDelay := 50 * time.Millisecond
-	maxDelay := 2 * time.Second
-	currentDelay := initialDelay
-	startTime := time.Now()
-
-	for !lockAcquired {
-
-		select {
-		case <-lockCtx.Done():
-			return fmt.Errorf("failed to acquire snapshot lock: timeout after %v (another process is updating snapshot)", maxWaitTime)
-		default:
-		}
-
-		acquired, err := redisClient.SetNX(lockCtx, lockKey, "locked", lockTTL).Result()
+	// Hold a single per-(admin,app) lock across the snapshot AND timestamp
+	// read-modify-write so concurrent updates cannot break version monotonicity.
+	return tuf_metadata.WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+		_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
 		if err != nil {
+			return fmt.Errorf("failed to find latest snapshot version: %w", err)
+		}
 
-			if lockCtx.Err() != nil {
-				return fmt.Errorf("failed to acquire snapshot lock: timeout after %v (another process is updating snapshot)", maxWaitTime)
+		snapshotPath := filepath.Join(tmpDir, snapshotFilename)
+		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
+			return fmt.Errorf("failed to download snapshot metadata: %w", err)
+		}
+
+		snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+adminName+"_"+appName, 7)
+		snapshot := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
+		repo.SetSnapshot(snapshot)
+		if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
+			return fmt.Errorf("failed to load snapshot metadata: %w", err)
+		}
+
+		snapshotMeta := repo.Snapshot().Signed.Meta
+		if snapshotMeta == nil {
+			snapshotMeta = make(map[string]*metadata.MetaFiles)
+			repo.Snapshot().Signed.Meta = snapshotMeta
+		}
+
+		// Update snapshot meta only for updated roles
+		// The existing roles in snapshot are preserved automatically since we loaded snapshot from S3
+		for _, roleName := range updatedRoles {
+			// Role should already be loaded in repo from updateDelegatedRoleWithArtifacts
+			delegation := repo.Targets(roleName)
+			if delegation != nil && delegation.Signed.Version > 0 {
+				metaFilename := fmt.Sprintf("%s.json", roleName)
+				delegationFile := filepath.Join(tmpDir, fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName))
+				if _, statErr := os.Stat(delegationFile); statErr != nil {
+					if err := delegation.ToFile(delegationFile, true); err != nil {
+						return fmt.Errorf("failed to write %s for hash computation: %w", roleName, err)
+					}
+				}
+				mf, err := metaFileFromPath(delegationFile, int64(delegation.Signed.Version))
+				if err != nil {
+					return fmt.Errorf("failed to compute hash for %s: %w", roleName, err)
+				}
+				snapshotMeta[metaFilename] = mf
+				logrus.Debugf("Updated snapshot meta for role %s (version %d)", roleName, delegation.Signed.Version)
+			} else {
+				logrus.Warnf("Role %s not found in repo or has invalid version, skipping snapshot update", roleName)
 			}
-			return fmt.Errorf("failed to acquire snapshot lock: %w", err)
 		}
 
-		if acquired {
-			lockAcquired = true
-			elapsed := time.Since(startTime)
-			if elapsed > 100*time.Millisecond {
-				logrus.Debugf("Acquired snapshot lock after %v (retries with exponential backoff)", elapsed)
-			}
-			break
-		}
-
-		logrus.Debugf("Snapshot lock is held by another process, waiting %v before retry...", currentDelay)
-		select {
-		case <-lockCtx.Done():
-			return fmt.Errorf("failed to acquire snapshot lock: timeout after %v (another process is updating snapshot)", maxWaitTime)
-		case <-time.After(currentDelay):
-
-			currentDelay *= 2
-			if currentDelay > maxDelay {
-				currentDelay = maxDelay
-			}
-		}
-	}
-
-	// Ensure lock is released when function exits
-	defer func() {
-		if err := redisClient.Del(ctx, lockKey).Err(); err != nil {
-			logrus.Warnf("Failed to release snapshot lock: %v", err)
-		}
-	}()
-
-	_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
-	if err != nil {
-		return fmt.Errorf("failed to find latest snapshot version: %w", err)
-	}
-
-	snapshotPath := filepath.Join(tmpDir, snapshotFilename)
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
-		return fmt.Errorf("failed to download snapshot metadata: %w", err)
-	}
-
-	snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+adminName+"_"+appName, 7)
-	snapshot := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
-	repo.SetSnapshot(snapshot)
-	if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
-		return fmt.Errorf("failed to load snapshot metadata: %w", err)
-	}
-
-	snapshotMeta := repo.Snapshot().Signed.Meta
-	if snapshotMeta == nil {
-		snapshotMeta = make(map[string]*metadata.MetaFiles)
-		repo.Snapshot().Signed.Meta = snapshotMeta
-	}
-
-	// Update snapshot meta only for updated roles
-	// The existing roles in snapshot are preserved automatically since we loaded snapshot from S3
-	for _, roleName := range updatedRoles {
-		// Role should already be loaded in repo from updateDelegatedRoleWithArtifacts
-		delegation := repo.Targets(roleName)
-		if delegation != nil && delegation.Signed.Version > 0 {
-			metaFilename := fmt.Sprintf("%s.json", roleName)
-			delegationFile := filepath.Join(tmpDir, fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName))
-			if _, statErr := os.Stat(delegationFile); statErr != nil {
-				if err := delegation.ToFile(delegationFile, true); err != nil {
-					return fmt.Errorf("failed to write %s for hash computation: %w", roleName, err)
+		// Always update targets.json in snapshot
+		targets := repo.Targets("targets")
+		if targets != nil {
+			targetsFile := filepath.Join(tmpDir, fmt.Sprintf("%d.targets.json", targets.Signed.Version))
+			if _, statErr := os.Stat(targetsFile); statErr != nil {
+				if err := targets.ToFile(targetsFile, true); err != nil {
+					return fmt.Errorf("failed to write targets for hash computation: %w", err)
 				}
 			}
-			mf, err := metaFileFromPath(delegationFile, int64(delegation.Signed.Version))
+			mf, err := metaFileFromPath(targetsFile, int64(targets.Signed.Version))
 			if err != nil {
-				return fmt.Errorf("failed to compute hash for %s: %w", roleName, err)
+				return fmt.Errorf("failed to compute targets hash for snapshot: %w", err)
 			}
-			snapshotMeta[metaFilename] = mf
-			logrus.Debugf("Updated snapshot meta for role %s (version %d)", roleName, delegation.Signed.Version)
-		} else {
-			logrus.Warnf("Role %s not found in repo or has invalid version, skipping snapshot update", roleName)
+			snapshotMeta["targets.json"] = mf
 		}
-	}
 
-	// Always update targets.json in snapshot
-	targets := repo.Targets("targets")
-	if targets != nil {
-		targetsFile := filepath.Join(tmpDir, fmt.Sprintf("%d.targets.json", targets.Signed.Version))
-		if _, statErr := os.Stat(targetsFile); statErr != nil {
-			if err := targets.ToFile(targetsFile, true); err != nil {
-				return fmt.Errorf("failed to write targets for hash computation: %w", err)
+		repo.Snapshot().Signed.Version++
+
+		repo.Snapshot().Signed.Expires = tuf_utils.HelperExpireIn(snapshotExpiration)
+
+		repo.Snapshot().ClearSignatures()
+
+		for i, s := range snapshotSigners {
+			if _, err := repo.Snapshot().Sign(s); err != nil {
+				return fmt.Errorf("failed to sign snapshot metadata with key %d: %w", i+1, err)
 			}
 		}
-		mf, err := metaFileFromPath(targetsFile, int64(targets.Signed.Version))
-		if err != nil {
-			return fmt.Errorf("failed to compute targets hash for snapshot: %w", err)
+
+		snapshotFilename = fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
+		snapshotPath = filepath.Join(tmpDir, snapshotFilename)
+		if err := repo.Snapshot().ToFile(snapshotPath, true); err != nil {
+			return fmt.Errorf("failed to save snapshot metadata: %w", err)
 		}
-		snapshotMeta["targets.json"] = mf
-	}
 
-	repo.Snapshot().Signed.Version++
-
-	repo.Snapshot().Signed.Expires = tuf_utils.HelperExpireIn(snapshotExpiration)
-
-	repo.Snapshot().ClearSignatures()
-
-	for i, s := range snapshotSigners {
-		if _, err := repo.Snapshot().Sign(s); err != nil {
-			return fmt.Errorf("failed to sign snapshot metadata with key %d: %w", i+1, err)
+		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
+			return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 		}
-	}
 
-	snapshotFilename = fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
-	snapshotPath = filepath.Join(tmpDir, snapshotFilename)
-	if err := repo.Snapshot().ToFile(snapshotPath, true); err != nil {
-		return fmt.Errorf("failed to save snapshot metadata: %w", err)
-	}
+		if err := updateTimestamp(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir); err != nil {
+			return fmt.Errorf("failed to update timestamp: %w", err)
+		}
 
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
-		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
-	}
-
-	if err := updateTimestamp(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir); err != nil {
-		return fmt.Errorf("failed to update timestamp: %w", err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func updateTimestamp(
@@ -645,21 +616,13 @@ func updateTimestamp(
 	tmpDir string,
 ) error {
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
-		logrus.Debug("Timestamp metadata not found, creating new one")
-	}
-
 	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+adminName+"_"+appName, 1)
 	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
 	repo.SetTimestamp(timestamp)
 
-	loadedTimestamp := false
-	if _, err := os.Stat(timestampPath); err == nil {
-		if _, err := repo.Timestamp().FromFile(timestampPath); err != nil {
-			logrus.Warnf("Failed to load timestamp metadata: %v, creating new one", err)
-		} else {
-			loadedTimestamp = true
-		}
+	loadedTimestamp, err := tuf_metadata.LoadExistingTimestampForBump(ctx, repo, adminName, appName, timestampPath)
+	if err != nil {
+		return err
 	}
 
 	timestampMeta := repo.Timestamp().Signed.Meta

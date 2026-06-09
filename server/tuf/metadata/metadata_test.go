@@ -2408,7 +2408,11 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotAndTimestampSigning(t
 		tuf_storage.StorageFactoryForDownload = savedFactoryDownload
 	}()
 
-	err = finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err = finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, redisClient)
 
 	require.NoError(t, err)
 
@@ -2506,28 +2510,12 @@ func TestLoadTrustedRootFromS3_StorageUnavailable_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to download root metadata")
 }
 
-// To verify: In loadTrustedRootFromS3 skip ReadFile or json.Unmarshal; test will fail (nil result or wrong content).
+// To verify: In loadTrustedRootFromS3 skip ReadFile/json.Unmarshal or the signature verification;
+// test will fail (nil result, wrong content, or rejected signed root).
 func TestLoadTrustedRootFromS3_Success_WithMockedStorage(t *testing.T) {
 	ctx := context.Background()
-	rootJSON := []byte(`{"signed":{"_type":"root","version":1,"expires":"2030-01-01T00:00:00Z"},"signatures":[]}`)
-
-	savedList := tuf_storage.ListMetadataForLatest
-	savedViper := tuf_storage.GetViperForDownload
-	savedFactory := tuf_storage.StorageFactoryForDownload
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"1.root.json"}, nil
-	}
-	mockViper := viper.New()
-	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
-	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
-	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &downloadMockFactory{client: &downloadMockClient{body: rootJSON}}
-	}
-	defer func() {
-		tuf_storage.ListMetadataForLatest = savedList
-		tuf_storage.GetViperForDownload = savedViper
-		tuf_storage.StorageFactoryForDownload = savedFactory
-	}()
+	fixture := buildTrustedStoreFixture(t, 1, nil)
+	defer fixture.install(t, nil)()
 
 	result, err := loadTrustedRootFromS3(ctx, "admin", "myapp")
 
@@ -2571,11 +2559,9 @@ func TestLoadTrustedRootFromS3_ReadFileFailure_ReturnsError(t *testing.T) {
 // To verify: In loadTrustedTargetsFromS3 change the return error message or return nil when FindLatestMetadataVersion fails; test will fail (no error or wrong message).
 func TestLoadTrustedTargetsFromS3_FindFails_ReturnsError(t *testing.T) {
 	ctx := context.Background()
-	savedList := tuf_storage.ListMetadataForLatest
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("list failed")
-	}
-	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
+	// Root verifies (advertised), but no targets file is listed so the targets lookup fails.
+	fixture := buildTrustedStoreFixture(t, 1, nil)
+	defer fixture.install(t, []string{"1.root.json"})()
 
 	result, err := loadTrustedTargetsFromS3(ctx, "admin", "myapp")
 
@@ -2587,15 +2573,21 @@ func TestLoadTrustedTargetsFromS3_FindFails_ReturnsError(t *testing.T) {
 // To verify: In loadTrustedTargetsFromS3 change the return error when download fails; test will fail (no error or wrong message).
 func TestLoadTrustedTargetsFromS3_DownloadFails_ReturnsError(t *testing.T) {
 	ctx := context.Background()
+	// Root verifies, targets is listed but its body is absent from the store so the download fails.
+	fixture := buildTrustedStoreFixture(t, 1, nil)
+	rootOnly := map[string][]byte{"1.root.json": fixture.bodies["1.root.json"]}
+
 	savedList := tuf_storage.ListMetadataForLatest
 	savedViper := tuf_storage.GetViperForDownload
 	savedFactory := tuf_storage.StorageFactoryForDownload
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"1.targets.json"}, nil
+		return []string{"1.root.json", "1.targets.json"}, nil
 	}
-	tuf_storage.GetViperForDownload = func() *viper.Viper { return viper.New() }
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &downloadMockFactory{err: fmt.Errorf("create client failed")}
+		return &forceUpdateMockFactory{client: &multiBodyDownloadMock{bodies: rootOnly}}
 	}
 	defer func() {
 		tuf_storage.ListMetadataForLatest = savedList
@@ -2610,28 +2602,12 @@ func TestLoadTrustedTargetsFromS3_DownloadFails_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to download targets metadata")
 }
 
-// To verify: In loadTrustedTargetsFromS3 skip ReadFile or json.Unmarshal; test will fail (nil result or wrong content).
+// To verify: In loadTrustedTargetsFromS3 skip ReadFile/json.Unmarshal or the signature verification;
+// test will fail (nil result, wrong content, or rejected signed targets).
 func TestLoadTrustedTargetsFromS3_Success_WithMockedStorage(t *testing.T) {
 	ctx := context.Background()
-	targetsJSON := []byte(`{"signed":{"_type":"targets","version":2,"expires":"2030-01-01T00:00:00Z"},"signatures":[]}`)
-
-	savedList := tuf_storage.ListMetadataForLatest
-	savedViper := tuf_storage.GetViperForDownload
-	savedFactory := tuf_storage.StorageFactoryForDownload
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return []string{"1.targets.json"}, nil
-	}
-	mockViper := viper.New()
-	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
-	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
-	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &downloadMockFactory{client: &downloadMockClient{body: targetsJSON}}
-	}
-	defer func() {
-		tuf_storage.ListMetadataForLatest = savedList
-		tuf_storage.GetViperForDownload = savedViper
-		tuf_storage.StorageFactoryForDownload = savedFactory
-	}()
+	fixture := buildTrustedStoreFixture(t, 2, nil)
+	defer fixture.install(t, nil)()
 
 	result, err := loadTrustedTargetsFromS3(ctx, "admin", "myapp")
 

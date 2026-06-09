@@ -222,6 +222,12 @@ func PutConfig(c *gin.Context, redisClient *redis.Client) {
 			continue
 		}
 
+		if err := tuf_utils.ValidateExpiration(roleLower, expiration); err != nil {
+			logrus.Warnf("Rejected expiration update: %v", err)
+			invalidRoles = append(invalidRoles, role)
+			continue
+		}
+
 		expirationKey := strings.ToUpper(role) + "_EXPIRATION_" + keySuffix
 		existingValue, err := redisClient.Get(ctx, expirationKey).Result()
 		if err == redis.Nil || existingValue == "" {

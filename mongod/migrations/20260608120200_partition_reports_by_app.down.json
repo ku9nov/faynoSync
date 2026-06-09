@@ -1,0 +1,20 @@
+[
+  {
+    "dropIndexes": "report_blobs",
+    "index": "report_blobs_app_group_created"
+  },
+  {
+    "dropIndexes": "report_groups",
+    "index": "report_groups_app_lastseen"
+  },
+  {
+    "dropIndexes": "report_groups",
+    "index": "report_groups_unique_app_group"
+  },
+  {
+    "createIndexes": "report_groups",
+    "indexes": [
+      { "key": {"groupHash": 1}, "name": "report_groups_unique_group_hash", "unique": true, "background": true }
+    ]
+  }
+]

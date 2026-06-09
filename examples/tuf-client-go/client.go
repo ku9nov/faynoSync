@@ -38,7 +38,7 @@ import (
 const (
 	metadataURL          = "http://cb-faynosync-s3-public.web.garage.localhost:3902/tuf_metadata/admin/test/"
 	targetsURL           = "http://cb-faynosync-s3-public.web.garage.localhost:3902/"
-	targetName           = "test-admin/nightly/darwin/arm64/test-0.0.0.2"
+	targetName           = "test-admin/nightly/darwin/arm64/test-0.0.0.11"
 	verbosity            = 4
 	generateRandomFolder = false
 )

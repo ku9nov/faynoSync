@@ -323,7 +323,7 @@ func TestPutConfig_EmptyExpiration_ReturnsBadRequest(t *testing.T) {
 // To verify: In PutConfig change redisClient.Set key or value; test will fail (wrong key/value in Redis).
 func TestPutConfig_Success_ValidRole_UpdatesRedisAndReturns202(t *testing.T) {
 	c, w := makePutConfigContext("appName", "owner", &models.PutConfigPayload{
-		Settings: models.SettingsPayload{Expiration: map[string]int{"targets": 365}},
+		Settings: models.SettingsPayload{Expiration: map[string]int{"targets": 180}},
 	})
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -341,7 +341,7 @@ func TestPutConfig_Success_ValidRole_UpdatesRedisAndReturns202(t *testing.T) {
 	assert.NotEmpty(t, resp.Data.TaskID)
 	val, err := mr.Get("TARGETS_EXPIRATION_owner_appName")
 	require.NoError(t, err)
-	assert.Equal(t, "365", val, "Redis expiration key should be updated to new value")
+	assert.Equal(t, "180", val, "Redis expiration key should be updated to new value")
 }
 
 // To verify: In PutConfig change SaveTaskStatus key prefix or skip call; test will fail (task key not found or wrong state).
@@ -399,10 +399,57 @@ func TestPutConfig_InvalidRole_NotUpdated_InvalidRolesList(t *testing.T) {
 	assert.Contains(t, invalidRoles, "root")
 }
 
+// To verify: remove the ValidateExpiration call in PutConfig; test will fail
+// (out-of-bound/negative values would be written instead of rejected).
+func TestPutConfig_OutOfBoundExpiration_Rejected(t *testing.T) {
+	c, w := makePutConfigContext("appName", "owner", &models.PutConfigPayload{
+		Settings: models.SettingsPayload{
+			Expiration: map[string]int{
+				"targets":   500, // exceeds 180-day targets cap
+				"snapshot":  0,   // already-expired
+				"timestamp": -1,  // negative
+			},
+		},
+	})
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_owner_appName", "done")
+	mr.Set("TARGETS_ONLINE_KEY_owner_appName", "true")
+	mr.Set("TARGETS_EXPIRATION_owner_appName", "90")
+	mr.Set("SNAPSHOT_EXPIRATION_owner_appName", "7")
+	mr.Set("TIMESTAMP_EXPIRATION_owner_appName", "1")
+
+	PutConfig(c, client)
+
+	assert.Equal(t, http.StatusAccepted, w.Code)
+	// None of the Redis values should change.
+	targetsVal, _ := mr.Get("TARGETS_EXPIRATION_owner_appName")
+	assert.Equal(t, "90", targetsVal)
+	snapshotVal, _ := mr.Get("SNAPSHOT_EXPIRATION_owner_appName")
+	assert.Equal(t, "7", snapshotVal)
+	timestampVal, _ := mr.Get("TIMESTAMP_EXPIRATION_owner_appName")
+	assert.Equal(t, "1", timestampVal)
+
+	var resp models.PutConfigResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	raw, err := mr.Get("task:" + resp.Data.TaskID)
+	require.NoError(t, err)
+	var taskStatus tasks.TaskStatus
+	require.NoError(t, json.Unmarshal([]byte(raw), &taskStatus))
+	details := taskStatus.Result.Details
+	updatedRoles, ok := details["updated_roles"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, updatedRoles, 0)
+	invalidRoles, ok := details["invalid_roles"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, invalidRoles, 3)
+}
+
 // To verify: In PutConfig skip the Redis Get check for existing expiration key; test will fail (role would be "updated" or wrong invalid list).
 func TestPutConfig_RoleNotInRedis_InvalidRoles(t *testing.T) {
 	c, w := makePutConfigContext("appName", "owner", &models.PutConfigPayload{
-		Settings: models.SettingsPayload{Expiration: map[string]int{"targets": 365}},
+		Settings: models.SettingsPayload{Expiration: map[string]int{"targets": 180}},
 	})
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -460,7 +507,7 @@ func TestPutConfig_PartialSuccess_SomeValidSomeInvalid(t *testing.T) {
 	c, w := makePutConfigContext("appName", "owner", &models.PutConfigPayload{
 		Settings: models.SettingsPayload{
 			Expiration: map[string]int{
-				"targets":  365,
+				"targets":  180,
 				"snapshot": 30,
 				"bins":     7, // invalid role
 			},
@@ -479,7 +526,7 @@ func TestPutConfig_PartialSuccess_SomeValidSomeInvalid(t *testing.T) {
 	assert.Equal(t, http.StatusAccepted, w.Code)
 	targetsVal, err := mr.Get("TARGETS_EXPIRATION_owner_appName")
 	require.NoError(t, err)
-	assert.Equal(t, "365", targetsVal)
+	assert.Equal(t, "180", targetsVal)
 	snapshotVal, err := mr.Get("SNAPSHOT_EXPIRATION_owner_appName")
 	require.NoError(t, err)
 	assert.Equal(t, "30", snapshotVal)

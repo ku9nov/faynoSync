@@ -651,14 +651,27 @@ func TestForceOnlineMetadataUpdate_Success_TimestampOnly(t *testing.T) {
 	defer mr.Close()
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
+	snapTmp := t.TempDir()
+	snapPath := filepath.Join(snapTmp, "1.snapshot.json")
+	require.NoError(t, tuf_metadata.Snapshot(time.Now().Add(7*24*time.Hour)).ToFile(snapPath, false))
+	snapshotJSON, err := os.ReadFile(snapPath)
+	require.NoError(t, err)
+
 	mockViper := viper.New()
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	savedList := tuf_storage.ListMetadataForLatest
 	savedDownloadViper := tuf_storage.GetViperForDownload
 	savedDownloadFactory := tuf_storage.StorageFactoryForDownload
 	savedUploadViper := tuf_storage.GetViperForUpload
 	savedUploadFactory := tuf_storage.StorageFactoryForUpload
 
-	downloadClient := &storageMockClientForForceUpdate{body: rootJSON}
+	downloadClient := &multiBodyDownloadMock{bodies: map[string][]byte{
+		"1.root.json":     rootJSON,
+		"1.snapshot.json": snapshotJSON,
+	}}
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.root.json", "1.snapshot.json"}, nil
+	}
 	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &forceUpdateMockFactory{client: downloadClient}
@@ -668,6 +681,7 @@ func TestForceOnlineMetadataUpdate_Success_TimestampOnly(t *testing.T) {
 		return &forceUpdateMockFactory{client: downloadClient}
 	}
 	defer func() {
+		tuf_storage.ListMetadataForLatest = savedList
 		tuf_storage.GetViperForDownload = savedDownloadViper
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 		tuf_storage.GetViperForUpload = savedUploadViper
@@ -1478,37 +1492,83 @@ func makeValidSnapshotJSON(t *testing.T, repo *repository.Type, signer signature
 }
 
 // To verify: In bumpSnapshotRole remove the SetNX error handling or return a different error; test will fail (no error or wrong message).
-func TestBumpSnapshotRole_LockAcquireFails(t *testing.T) {
-	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndSnapshotSigner(t)
-	defer cleanup()
+// Snapshot/timestamp locking is now centralized in WithSnapshotLock; the
+// dedicated lock behavior is covered by the TestWithSnapshotLock_* tests below.
 
-	ctx := context.Background()
+func TestWithSnapshotLock_NilRedis(t *testing.T) {
+	err := WithSnapshotLock(context.Background(), nil, "admin", "app", func() error {
+		t.Fatal("fn must not run without a redis client")
+		return nil
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "redis client is required")
+}
+
+func TestWithSnapshotLock_AcquireFails(t *testing.T) {
 	mr := miniredis.RunT(t)
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	mr.Close() // cause Redis operations to fail
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
-
+	called := false
+	err := WithSnapshotLock(context.Background(), redisClient, "admin", "app", func() error {
+		called = true
+		return nil
+	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
+	assert.False(t, called, "fn must not run when the lock cannot be acquired")
 }
 
-// To verify: In bumpSnapshotRole remove the !acquired check or return a different error; test will fail (no error or wrong message).
-func TestBumpSnapshotRole_LockNotAcquired(t *testing.T) {
-	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndSnapshotSigner(t)
-	defer cleanup()
-
-	ctx := context.Background()
+func TestWithSnapshotLock_AlreadyHeld_TimesOut(t *testing.T) {
 	mr := miniredis.RunT(t)
 	defer mr.Close()
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	mr.Set("LOCK_SNAPSHOT_admin_app", "locked") // lock already held
+	mr.Set("LOCK_SNAPSHOT_admin_app", "someone-elses-token") // lock already held
 
-	err := bumpSnapshotRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
+	// Bound the wait via the caller context so the test is fast.
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
 
+	called := false
+	err := WithSnapshotLock(ctx, redisClient, "admin", "app", func() error {
+		called = true
+		return nil
+	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
-	assert.Contains(t, err.Error(), "snapshot lock already held")
+	assert.Contains(t, err.Error(), "timeout")
+	assert.False(t, called, "fn must not run while another holder owns the lock")
+	// The other holder's lock must remain intact (token-based release).
+	val, _ := mr.Get("LOCK_SNAPSHOT_admin_app")
+	assert.Equal(t, "someone-elses-token", val)
+}
+
+func TestWithSnapshotLock_Success_RunsFnAndReleases(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	called := false
+	err := WithSnapshotLock(context.Background(), redisClient, "admin", "app", func() error {
+		called = true
+		assert.True(t, mr.Exists("LOCK_SNAPSHOT_admin_app"), "lock must be held while fn runs")
+		return nil
+	})
+	require.NoError(t, err)
+	assert.True(t, called, "fn must run when the lock is acquired")
+	assert.False(t, mr.Exists("LOCK_SNAPSHOT_admin_app"), "lock must be released after fn returns")
+}
+
+func TestWithSnapshotLock_PropagatesFnError(t *testing.T) {
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	sentinel := fmt.Errorf("boom")
+	err := WithSnapshotLock(context.Background(), redisClient, "admin", "app", func() error {
+		return sentinel
+	})
+	require.ErrorIs(t, err, sentinel)
+	assert.False(t, mr.Exists("LOCK_SNAPSHOT_admin_app"), "lock must be released even when fn fails")
 }
 
 // To verify: In bumpSnapshotRole remove the FindLatestMetadataVersion error handling or return a different error; test will fail (no error or wrong message).
@@ -1749,6 +1809,8 @@ func TestBumpTimestampRole_UploadFails(t *testing.T) {
 	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTimestampSigner(t)
 	defer cleanup()
 
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
+
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -1760,9 +1822,15 @@ func TestBumpTimestampRole_UploadFails(t *testing.T) {
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &forceUpdateMockFactory{err: fmt.Errorf("upload failed")}
 	}
+	// No existing timestamp in storage, so the bump proceeds to a fresh v1 and fails on upload.
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{}, nil
+	}
 	defer func() {
 		tuf_storage.GetViperForUpload = savedUploadViper
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
+		tuf_storage.ListMetadataForLatest = savedList
 	}()
 
 	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
@@ -1775,6 +1843,8 @@ func TestBumpTimestampRole_UploadFails(t *testing.T) {
 func TestBumpTimestampRole_ToFileFails(t *testing.T) {
 	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTimestampSigner(t)
 	defer cleanup()
+
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
 
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
 	require.NoError(t, os.Mkdir(timestampPath, 0755))
@@ -1799,11 +1869,18 @@ func TestBumpTimestampRole_ToFileFails(t *testing.T) {
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &forceUpdateMockFactory{client: client}
 	}
+	// No existing timestamp in storage, so the bump proceeds to ToFile (which fails
+	// because timestampPath is a directory).
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{}, nil
+	}
 	defer func() {
 		tuf_storage.GetViperForDownload = savedDownloadViper
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 		tuf_storage.GetViperForUpload = savedUploadViper
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
+		tuf_storage.ListMetadataForLatest = savedList
 	}()
 
 	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
@@ -1818,6 +1895,7 @@ func TestBumpTimestampRole_Success(t *testing.T) {
 	defer cleanup()
 
 	timestampJSON := makeValidTimestampJSON(t, repo, signer, tmpDir)
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
 
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
@@ -1839,11 +1917,17 @@ func TestBumpTimestampRole_Success(t *testing.T) {
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &forceUpdateMockFactory{client: client}
 	}
+	// Existing timestamp present in storage, so it is loaded and its version is bumped.
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"timestamp.json"}, nil
+	}
 	defer func() {
 		tuf_storage.GetViperForDownload = savedDownloadViper
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 		tuf_storage.GetViperForUpload = savedUploadViper
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
+		tuf_storage.ListMetadataForLatest = savedList
 	}()
 
 	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
@@ -1858,6 +1942,8 @@ func TestBumpTimestampRole_Success(t *testing.T) {
 func TestBumpTimestampRole_NewTimestamp_VersionIsOne(t *testing.T) {
 	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTimestampSigner(t)
 	defer cleanup()
+
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
 
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
@@ -1880,11 +1966,17 @@ func TestBumpTimestampRole_NewTimestamp_VersionIsOne(t *testing.T) {
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
 		return &forceUpdateMockFactory{client: client}
 	}
+	// No existing timestamp in storage, so a fresh timestamp at version 1 is created.
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{}, nil
+	}
 	defer func() {
 		tuf_storage.GetViperForDownload = savedDownloadViper
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 		tuf_storage.GetViperForUpload = savedUploadViper
 		tuf_storage.StorageFactoryForUpload = savedUploadFactory
+		tuf_storage.ListMetadataForLatest = savedList
 	}()
 
 	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
@@ -1892,6 +1984,43 @@ func TestBumpTimestampRole_NewTimestamp_VersionIsOne(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, repo.Timestamp().Signed.Expires.IsZero())
 	assert.Equal(t, int64(1), repo.Timestamp().Signed.Version)
+}
+
+// Regression: when a timestamp already exists in storage but the download fails
+// (transient error), the bump MUST fail rather than silently recreating the
+// timestamp at version 1, which would roll back freeze/rollback protection.
+func TestBumpTimestampRole_ExistingTimestampDownloadFails_DoesNotReset(t *testing.T) {
+	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTimestampSigner(t)
+	defer cleanup()
+
+	makeValidSnapshotJSON(t, repo, signer, tmpDir)
+
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	savedDownloadViper := tuf_storage.GetViperForDownload
+	savedDownloadFactory := tuf_storage.StorageFactoryForDownload
+	tuf_storage.GetViperForDownload = func() *viper.Viper { return viper.New() }
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &forceUpdateMockFactory{err: fmt.Errorf("transient download failure")}
+	}
+	// Storage reports the timestamp exists, but the download fails.
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"timestamp.json"}, nil
+	}
+	defer func() {
+		tuf_storage.GetViperForDownload = savedDownloadViper
+		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
+		tuf_storage.ListMetadataForLatest = savedList
+	}()
+
+	err := bumpTimestampRole(ctx, repo, "admin", "app", redisClient, []signature.Signer{signer}, tmpDir, keySuffix)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to reset version")
 }
 
 // --- contains and isStandardRole tests ---

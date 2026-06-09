@@ -279,12 +279,6 @@ func forceOnlineMetadataUpdate(
 	updatedRoles := []string{}
 
 	hasTargetsOrDelegations := false
-	for _, role := range roles {
-		if role == "targets" || (!isStandardRole(role) && role != "snapshot" && role != "timestamp") {
-			hasTargetsOrDelegations = true
-			break
-		}
-	}
 
 	if contains(roles, "targets") {
 		if err := bumpTargetsRole(ctx, repo, adminName, appName, redisClient, targetsSigners, tmpDir, keySuffix); err != nil {
@@ -312,20 +306,29 @@ func forceOnlineMetadataUpdate(
 		}
 	}
 
-	if contains(roles, "snapshot") || hasTargetsOrDelegations {
-		if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
-			return nil, fmt.Errorf("failed to bump snapshot role: %w", err)
+	needSnapshot := contains(roles, "snapshot") || hasTargetsOrDelegations
+	needTimestamp := contains(roles, "timestamp") || hasTargetsOrDelegations || contains(roles, "snapshot")
+
+	if needSnapshot || needTimestamp {
+		if err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+			if needSnapshot {
+				if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
+					return fmt.Errorf("failed to bump snapshot role: %w", err)
+				}
+			}
+			if needTimestamp {
+				if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
+					return fmt.Errorf("failed to bump timestamp role: %w", err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
-		if !contains(updatedRoles, "snapshot") {
+		if needSnapshot && !contains(updatedRoles, "snapshot") {
 			updatedRoles = append(updatedRoles, "snapshot")
 		}
-	}
-
-	if contains(roles, "timestamp") || hasTargetsOrDelegations || contains(roles, "snapshot") {
-		if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
-			return nil, fmt.Errorf("failed to bump timestamp role: %w", err)
-		}
-		if !contains(updatedRoles, "timestamp") {
+		if needTimestamp && !contains(updatedRoles, "timestamp") {
 			updatedRoles = append(updatedRoles, "timestamp")
 		}
 	}
@@ -500,23 +503,8 @@ func bumpSnapshotRole(
 	tmpDir string,
 	keySuffix string,
 ) error {
-	lockKey := fmt.Sprintf("LOCK_SNAPSHOT_%s_%s", adminName, appName)
-	lockTTL := 300 * time.Second
-
-	acquired, err := redisClient.SetNX(ctx, lockKey, "locked", lockTTL).Result()
-	if err != nil {
-		return fmt.Errorf("failed to acquire snapshot lock: %w", err)
-	}
-	if !acquired {
-		return fmt.Errorf("failed to acquire snapshot lock: snapshot lock already held")
-	}
-
-	defer func() {
-		if err := redisClient.Del(ctx, lockKey).Err(); err != nil {
-			logrus.Warnf("Failed to release snapshot lock: %v", err)
-		}
-	}()
-
+	// Caller (forceOnlineMetadataUpdate) holds the per-(admin,app) snapshot lock via
+	// WithSnapshotLock, covering both this snapshot bump and the following timestamp bump.
 	_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
 	if err != nil {
 		return fmt.Errorf("failed to find latest snapshot version: %w", err)
@@ -603,20 +591,12 @@ func bumpTimestampRole(
 ) error {
 
 	timestampPath := filepath.Join(tmpDir, "timestamp.json")
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
-		logrus.Debug("Timestamp metadata not found, creating new one")
-	}
-
 	timestampExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TIMESTAMP_EXPIRATION_"+keySuffix, 1)
 	timestamp := metadata.Timestamp(tuf_utils.HelperExpireIn(timestampExpiration))
 	repo.SetTimestamp(timestamp)
-	loadedTimestamp := false
-	if _, err := os.Stat(timestampPath); err == nil {
-		if _, err := repo.Timestamp().FromFile(timestampPath); err != nil {
-			logrus.Warnf("Failed to load timestamp metadata: %v, creating new one", err)
-		} else {
-			loadedTimestamp = true
-		}
+	loadedTimestamp, err := LoadExistingTimestampForBump(ctx, repo, adminName, appName, timestampPath)
+	if err != nil {
+		return err
 	}
 
 	timestampMeta := repo.Timestamp().Signed.Meta
@@ -626,38 +606,35 @@ func bumpTimestampRole(
 	}
 
 	snapshot := repo.Snapshot()
-	if snapshot == nil {
+	var snapshotPath string
+	if snapshot != nil {
+		snapshotPath = filepath.Join(tmpDir, fmt.Sprintf("%d.snapshot.json", snapshot.Signed.Version))
+	} else {
 		// Snapshot not in memory (e.g. timestamp-only bump): load from S3 so the
 		// new timestamp always carries a valid snapshot reference.
 		_, snapshotFilename, findErr := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
-		if findErr == nil {
-			snapshotDlPath := filepath.Join(tmpDir, snapshotFilename)
-			if dlErr := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotDlPath); dlErr == nil {
-				snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, 7)
-				snap := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
-				repo.SetSnapshot(snap)
-				if _, loadErr := repo.Snapshot().FromFile(snapshotDlPath); loadErr == nil {
-					snapshot = repo.Snapshot()
-				} else {
-					logrus.Warnf("Failed to load snapshot for timestamp reference: %v", loadErr)
-				}
-			} else {
-				logrus.Warnf("Failed to download snapshot for timestamp reference: %v", dlErr)
-			}
-		} else {
-			logrus.Warnf("Failed to find snapshot version for timestamp reference: %v", findErr)
+		if findErr != nil {
+			return fmt.Errorf("failed to find snapshot version for timestamp reference: %w", findErr)
 		}
-	}
-	if snapshot != nil {
-		snapshotFile := filepath.Join(tmpDir, fmt.Sprintf("%d.snapshot.json", snapshot.Signed.Version))
-		mf, err := metaFileFromPath(snapshotFile, int64(snapshot.Signed.Version))
-		if err != nil {
-			return fmt.Errorf("failed to compute snapshot hash for timestamp: %w", err)
+		snapshotDlPath := filepath.Join(tmpDir, snapshotFilename)
+		if dlErr := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, snapshotFilename, snapshotDlPath); dlErr != nil {
+			return fmt.Errorf("failed to download snapshot for timestamp reference: %w", dlErr)
 		}
-		timestampMeta["snapshot.json"] = mf
-	} else {
-		logrus.Warnf("Snapshot not available; timestamp will be signed without a snapshot reference")
+		snapshotExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "SNAPSHOT_EXPIRATION_"+keySuffix, 7)
+		snap := metadata.Snapshot(tuf_utils.HelperExpireIn(snapshotExpiration))
+		repo.SetSnapshot(snap)
+		if _, loadErr := repo.Snapshot().FromFile(snapshotDlPath); loadErr != nil {
+			return fmt.Errorf("failed to load snapshot for timestamp reference: %w", loadErr)
+		}
+		snapshot = repo.Snapshot()
+		snapshotPath = snapshotDlPath
 	}
+
+	mf, err := metaFileFromPath(snapshotPath, int64(snapshot.Signed.Version))
+	if err != nil {
+		return fmt.Errorf("failed to compute snapshot hash for timestamp: %w", err)
+	}
+	timestampMeta["snapshot.json"] = mf
 	if loadedTimestamp {
 		repo.Timestamp().Signed.Version++
 	}

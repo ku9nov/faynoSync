@@ -29,7 +29,7 @@ func StartServer(config *viper.Viper) {
 	// Initialize Redis client
 	var redisClient *redis.Client
 
-	if config.GetBool("PERFORMANCE_MODE") || config.GetBool("ENABLE_TELEMETRY") {
+	if config.GetBool("PERFORMANCE_MODE") || config.GetBool("ENABLE_TELEMETRY") || config.GetBool("TUF_ENABLED") || config.GetBool("REPORTS_ENABLED") {
 		logrus.Infoln("Redis connection is required. Connecting to Redis.")
 		redisConfig := redisdb.RedisConfig{
 			Addr:     config.GetString("REDIS_HOST") + ":" + config.GetString("REDIS_PORT"),
@@ -60,6 +60,10 @@ func StartServer(config *viper.Viper) {
 	router.GET("/telemetry/beacon", telemetryMiddleware(config), handler.TelemetryBeacon)
 	router.POST("/signup", handler.SignUp)
 	router.POST("/login", handler.Login)
+
+	if config.GetBool("REPORTS_ENABLED") {
+		router.POST("/reports/ingest", handler.IngestReport)
+	}
 
 	if config.GetBool("ENABLE_PRIVATE_APP_DOWNLOADING") {
 		router.GET("/download", handler.DownloadArtifact)
@@ -120,6 +124,12 @@ func StartServer(config *viper.Viper) {
 	// Reports routes
 	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.ListReportKeys)
 	router.POST("/report-keys/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.RegenerateReportKey)
+
+	// Reports read API (admin + team users scoped to their allowed apps)
+	if config.GetBool("REPORTS_ENABLED") {
+		router.GET("/reports/groups", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.ListReportGroups)
+		router.GET("/reports/groups/:groupHash/blobs", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.ListReportGroupBlobs)
+	}
 
 	// TUF routes
 	if config.GetBool("TUF_ENABLED") {

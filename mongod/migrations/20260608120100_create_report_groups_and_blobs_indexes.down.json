@@ -1,0 +1,30 @@
+[
+  {
+    "dropIndexes": "report_groups",
+    "index": "report_groups_unique_group_hash"
+  },
+  {
+    "dropIndexes": "report_groups",
+    "index": "report_groups_app_version_type"
+  },
+  {
+    "dropIndexes": "report_groups",
+    "index": "report_groups_app_channel_platform_lastseen"
+  },
+  {
+    "dropIndexes": "report_groups",
+    "index": "report_groups_lastseen_desc"
+  },
+  {
+    "dropIndexes": "report_blobs",
+    "index": "report_blobs_group_created"
+  },
+  {
+    "dropIndexes": "report_blobs",
+    "index": "report_blobs_app_created"
+  },
+  {
+    "dropIndexes": "report_blobs",
+    "index": "report_blobs_ttl"
+  }
+]

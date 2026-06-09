@@ -254,7 +254,7 @@ func TestSaveSettings_AllRoleExpirationsWritten(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
 	payload := validSaveSettingsPayload()
-	payload.Settings.Roles.Root.Expiration = 400
+	payload.Settings.Roles.Root.Expiration = 365
 	payload.Settings.Roles.Targets.Expiration = 120
 	payload.Settings.Roles.Snapshot.Expiration = 14
 	payload.Settings.Roles.Timestamp.Expiration = 2
@@ -264,7 +264,7 @@ func TestSaveSettings_AllRoleExpirationsWritten(t *testing.T) {
 	ctx := context.Background()
 	suffix := "a_b"
 	expirations := map[string]string{
-		"ROOT_EXPIRATION_" + suffix:      "400",
+		"ROOT_EXPIRATION_" + suffix:      "365",
 		"TARGETS_EXPIRATION_" + suffix:   "120",
 		"SNAPSHOT_EXPIRATION_" + suffix:  "14",
 		"TIMESTAMP_EXPIRATION_" + suffix: "2",

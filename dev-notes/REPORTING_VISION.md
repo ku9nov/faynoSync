@@ -150,6 +150,8 @@ Required fields:
 
 Decision: send `application.name` and verify that the report key belongs to that app. This makes the request self-contained and reduces the risk of accidentally using the wrong key.
 
+Verification direction: the server looks up the report key by `key_value` in `report_keys`, resolves its `app_id`, reads `apps_meta.app_name`, and compares it with `application.name` from the body. It also checks `app.Reports` is enabled. Because ingestion looks the key up on every request, `report_keys` MUST have an index on `key_value`; otherwise each ingest becomes a full collection scan.
+
 ## 10. Extended request with details
 
 ```json
@@ -179,8 +181,8 @@ Decision: send `application.name` and verify that the report key belongs to that
 
 1. checks compressed size;
 2. decodes base64;
-3. decompresses gzip with a decompressed size limit;
-4. stores the payload in S3/R2;
+3. decompresses gzip with a decompressed size limit enforced via `io.LimitReader` on the gzip stream (the server MUST NOT trust any declared/decompressed size from the client — this is the zip-bomb guard);
+4. stores the **compressed** payload in the private S3 bucket (`S3_BUCKET_NAME_PRIVATE`) — details can contain sensitive data, so they never go to the public/CDN bucket and are only retrievable via short-lived presigned URLs;
 5. writes metadata to `report_blobs`.
 
 `details` are not included in `groupHash`.
@@ -262,8 +264,10 @@ Recommended HTTP statuses:
 `groupHash` is deterministic and based only on stable dimensions:
 
 ```text
-sha256(application.name + application.version + application.channel + system.platform + system.arch + event.type + event.reason)
+sha256(application.name + "|" + application.version + "|" + application.channel + "|" + system.platform + "|" + system.arch + "|" + event.type + "|" + event.reason)
 ```
+
+The `|` separator is required to avoid ambiguous concatenations (e.g. `name="ab",version="1"` colliding with `name="a",version="b1"`). `|` is safe because none of the grouping fields can contain it: the `event.reason` regex excludes it, and the app/version/channel/platform/arch validators reject it.
 
 Fields included in grouping:
 
@@ -287,14 +291,27 @@ Fields excluded from grouping:
 
 Rationale: stack traces and logs are often unique. If details affected grouping, every crash/report could become its own group.
 
+### Multi-tenant partitioning (implemented)
+
+`groupHash` is built from dimensions only and is therefore **not** globally unique: app names
+are unique per `(app_name, owner)`, so two different owners can both have an app named `test`
+and produce the same `groupHash`. To keep tenants isolated, each `report_groups` /
+`report_blobs` document also stores `app_id` (and `owner`, denormalized from the report key
+at ingest time), and the grouping identity is the composite **`(app_id, groupHash)`** enforced
+by a unique index. The upsert matches on `{ app_id, groupHash }`. `app_id` is never part of the
+hash itself — it is a separate partition key. Every read query is scoped by `app_id`, so one
+owner can never see another owner's reports even when the hashes coincide.
+
 ## 14. Mongo collection: report_groups
 
 One group = one Mongo document.
 
 ```json
 {
-  "_id": "sha256...",
+  "_id": "ObjectId",
   "groupHash": "sha256...",
+  "app_id": "ObjectId",
+  "owner": "admin-username",
   "application": {
     "name": "my-app",
     "version": "1.4.2",
@@ -320,10 +337,15 @@ One group = one Mongo document.
 }
 ```
 
-Recommended indexes:
+Indexes (implemented):
+
+`_id` is an auto-generated Mongo ObjectId; the grouping identity is the composite
+`(app_id, groupHash)`. The upsert matches on `{ app_id, groupHash }`, so the unique index
+below is mandatory — it guarantees one group = one document per app under concurrent upserts.
 
 ```javascript
-db.report_groups.createIndex({ groupHash: 1 }, { unique: true })
+db.report_groups.createIndex({ app_id: 1, groupHash: 1 }, { unique: true })
+db.report_groups.createIndex({ app_id: 1, "stats.lastSeen": -1 })
 db.report_groups.createIndex({ "application.name": 1, "application.version": 1, "event.type": 1 })
 db.report_groups.createIndex({ "application.name": 1, "application.channel": 1, "system.platform": 1, "stats.lastSeen": -1 })
 db.report_groups.createIndex({ "stats.lastSeen": -1 })
@@ -335,7 +357,7 @@ Ingestion count must be counted directly in MongoDB:
 
 ```javascript
 db.report_groups.updateOne(
-  { groupHash: hash },
+  { app_id: appId, groupHash: hash },
   {
     $inc: {
       "stats.count": 1
@@ -345,8 +367,9 @@ db.report_groups.updateOne(
       "updatedAt": now
     },
     $setOnInsert: {
-      "_id": hash,
       "groupHash": hash,
+      "app_id": appId,
+      "owner": owner,
       "application": {
         "name": "my-app",
         "version": "1.4.2",
@@ -370,13 +393,16 @@ db.report_groups.updateOne(
 )
 ```
 
+The upsert retries once on a duplicate-key error: under a concurrent insert race one writer
+may get `E11000`; on retry the document exists and it collapses to a plain `$inc`.
+
 If the request contains `details`, the base count must still be incremented regardless of whether the blob was stored. Details are a debug payload, and the fact of a failure report is important for rollout health.
 
 After processing `details`, the server can make a separate lightweight update:
 
 ```javascript
 db.report_groups.updateOne(
-  { groupHash: hash },
+  { app_id: appId, groupHash: hash },
   {
     $inc: {
       "stats.detailsStored": stored ? 1 : 0,
@@ -422,6 +448,8 @@ Recommended model:
 {
   "_id": "ObjectId",
   "groupHash": "sha256...",
+  "app_id": "ObjectId",
+  "owner": "admin-username",
   "application": {
     "name": "my-app",
     "version": "1.4.2",
@@ -437,27 +465,34 @@ Recommended model:
   },
   "storage": {
     "driver": "aws",
-    "bucket": "faynosync-reports",
-    "key": "reports/my-app/2026/05/20/sha256...json.gz",
+    "bucket": "cb-faynosync-s3-private",
+    "key": "reports/my-app/2026/05/20/sha256...-<rand>.json.gz",
     "compressedSize": 42117,
     "decompressedSize": 188420,
     "contentType": "application/json",
     "encoding": "gzip"
   },
-  "createdAt": "2026-05-20T12:00:00Z"
+  "createdAt": "2026-05-20T12:00:00Z",
+  "expiresAt": "2026-06-19T12:00:00Z"
 }
 ```
 
-Recommended indexes:
+`storage.bucket` is the **private** bucket (`S3_BUCKET_NAME_PRIVATE`). `contentType`/`encoding`
+describe the original payload (`application/json`, gzipped); the stored object is the compressed
+bytes. `expiresAt` is set per-document at insert time to `now + REPORTS_BLOB_RETENTION_DAYS` and
+drives the TTL index.
+
+Indexes (implemented):
 
 ```javascript
+db.report_blobs.createIndex({ app_id: 1, groupHash: 1, createdAt: -1 })
 db.report_blobs.createIndex({ groupHash: 1, createdAt: -1 })
 db.report_blobs.createIndex({ "application.name": 1, createdAt: -1 })
-db.report_blobs.createIndex({ "application.name": 1, "application.version": 1, "event.type": 1, createdAt: -1 })
-db.report_blobs.createIndex({ createdAt: 1 }, { expireAfterSeconds: 2592000 })
+db.report_blobs.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 ```
 
-TTL is not required but strongly recommended if blob retention is not explicitly managed elsewhere.
+The TTL index uses `expireAfterSeconds: 0` and expires each document at its own `expiresAt`, so
+changing `REPORTS_BLOB_RETENTION_DAYS` affects only future blobs (no migration needed).
 
 Do not store the report key in `report_groups` or `report_blobs`; it already exists in `report_keys`. New collections should store only report data and storage metadata.
 
@@ -491,9 +526,14 @@ REPORTS_MAX_DETAILS_DECOMPRESSED_BYTES=1048576
 REPORTS_BLOB_RETENTION_DAYS=30
 REPORTS_MAX_BLOBS_PER_GROUP=10
 REPORTS_STORAGE_PREFIX=reports
+REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE=100
 ```
 
-Report blobs must use the same storage provider as the rest of faynoSync storage, i.e. the current `STORAGE_DRIVER` and corresponding `S3_*` settings.
+Report blobs use the same storage provider as the rest of faynoSync storage (the current
+`STORAGE_DRIVER` and `S3_*` settings) but are written to the **private** bucket
+`S3_BUCKET_NAME_PRIVATE` — no new storage config is introduced. `REPORTS_ENABLED` also forces a
+Redis connection (it is part of the Redis-init condition), so rate limits always have Redis
+available.
 
 ## 18. Rate limits
 
@@ -506,12 +546,19 @@ Recommended dimensions:
 - per `X-Device-ID`;
 - optional per groupHash.
 
-Suggested MVP defaults:
+Implemented defaults (fixed-window counters in Redis):
 
-- per report key: configurable;
-- per `X-Device-ID`: 1 request/hour;
-- per groupHash: 30 requests/minute;
-- burst: configurable.
+- per report key: `REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE` requests/minute (default 100);
+- per `X-Device-ID` + groupHash: 1 request/hour (fixed);
+- per groupHash: 30 requests/minute (fixed).
+
+Limits are evaluated after `groupHash` is built and before the Mongo upsert. On a Redis error
+the limiter **fails open** (allows the request) and logs — rate limiting is abuse control, not a
+trust boundary, so a Redis blip must not drop legitimate reports. The per-device limit being
+scoped by `groupHash` is what makes it safe: a device can still emit different event types within
+the hour; only repeats of the *same* failure are suppressed.
+
+The per-device limit MUST be scoped by `groupHash`, not global per device. A single device can legitimately emit different event types within an hour (e.g. `startup_failure`, then `update_failure`, then `crash`); a global 1/hour cap would silently drop those distinct reports and hide real rollout failures. Scoping by `device + groupHash` only suppresses repeats of the same failure, which is the intended dedup behavior.
 
 Redis is the right place for rate limits.
 
@@ -519,11 +566,11 @@ Example keys:
 
 ```text
 reports:rl:key:<report_key>:minute:<bucket>
-reports:rl:device:<device_id>:hour:<bucket>
+reports:rl:device:<device_id>:group:<group_hash>:hour:<bucket>
 reports:rl:group:<group_hash>:minute:<bucket>
 ```
 
-Report keys are effectively public client keys, so for MVP there is no need to complicate Redis rate-limit keys with additional hashing. It is more important not to duplicate the report key in persistent report documents.
+Report keys are effectively public client keys (they ship inside the client and are stored in plaintext in `report_keys.key_value`, not hashed). They are not secrets: real abuse protection comes from the `REPORTS_ENABLED` gate, the per-app `app.Reports` flag, and these rate limits — not from key secrecy. For MVP there is no need to complicate Redis rate-limit keys with additional hashing. It is more important not to duplicate the report key in persistent report documents.
 
 ## 19. Validation rules
 
@@ -540,6 +587,10 @@ The server must reject the request before storage if:
 - compressed details exceed the limit;
 - decompressed details exceed the limit;
 - details encoding/content type is not supported.
+
+For `application.name`, `application.channel`, `system.platform`, `system.arch`, and `application.version`, the server MUST reuse the existing validators (`IsValidAppName`, `IsValidChannelName`, `IsValidPlatformName`, `IsValidArchName`, `IsValidVersion`) already used by telemetry ingestion, instead of introducing new regexes. Only `event.reason` needs its own dedicated regex.
+
+The decompressed-size limit MUST be enforced with `io.LimitReader` around the gzip reader; the server MUST NOT trust any client-declared decompressed size. If the limit is hit before EOF, reject with `413`.
 
 The server should validate version syntax but must not require that the version exists in release metadata. Reports may come from old clients, failed installs, or environments where the server no longer has full release context.
 
@@ -711,3 +762,202 @@ Report ingestion must not become input for metadata trust decisions. Reports may
 - cache safety.
 
 This vision does not weaken signature, threshold, expiration, or rollback protection.
+
+---
+
+# Implemented API reference
+
+The sections above are the design rationale. Everything below documents the API exactly as
+implemented, with concrete requests, responses, and the behaviour integration tests must verify.
+
+## 28. Ingestion endpoint
+
+```
+POST /reports/ingest
+Authorization: Bearer rpk_<64_hex>
+X-Device-ID: <anonymous_device_id>
+Content-Type: application/json
+```
+
+Public route (no JWT). Active only when `REPORTS_ENABLED=true`. Registered before the global
+JWT auth middleware, so it is authenticated by the report key, not by JWT.
+
+### Status codes
+
+| Code | When |
+|------|------|
+| `202 Accepted`              | report counted (with or without details) |
+| `400 Bad Request`           | missing `X-Device-ID`, malformed JSON, missing/invalid field, bad `event.type`/`event.reason`, unsupported details encoding/content_type |
+| `401 Unauthorized`          | missing/non-Bearer Authorization, or unknown report key |
+| `403 Forbidden`             | reports disabled for the app, or `application.name` ≠ the key's app |
+| `413 Payload Too Large`     | body over `REPORTS_MAX_BODY_BYTES`, or compressed/decompressed details over their limits |
+| `429 Too Many Requests`     | a rate limit was hit |
+| `500 Internal Server Error` | unexpected Mongo error on the base upsert |
+
+Note: `403 reports disabled` is largely theoretical. The app-update handler syncs the report-key
+lifecycle with the `reports` flag — disabling reports deletes the app's report key (and enabling
+re-creates it). So once reports are off there is no valid key and requests fail at `401` first.
+The `reports` flag is still re-checked on every request, so `403` remains as defence in depth for
+any race window.
+
+### Minimal request
+
+```bash
+curl -i -X POST http://localhost:9000/reports/ingest \
+  -H "Authorization: Bearer rpk_87077831a3c0c3f5a3cca1b1a5441e36033550708e92b832166d8550ba847315" \
+  -H "X-Device-ID: 7f3c9a2e-1b4d-4c8a-9f12-abc123def456" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "application": { "name": "test", "version": "1.4.2", "channel": "stable" },
+    "system":      { "platform": "windows", "arch": "amd64" },
+    "event":       { "type": "update_failure", "reason": "checksum_mismatch" }
+  }'
+```
+
+```json
+{ "status": "accepted", "group_hash": "9f2b…", "stored_details": false }
+```
+
+### Request with details
+
+`details.payload` is the JSON debug object, gzip-compressed then base64-encoded
+(`gzip + base64`, content type `application/json`).
+
+```bash
+# build a payload:
+PAYLOAD=$(printf '{"message":"sha mismatch","stack":"..."}' | gzip | base64 -w0)
+
+curl -i -X POST http://localhost:9000/reports/ingest \
+  -H "Authorization: Bearer rpk_8707…7315" \
+  -H "X-Device-ID: 7f3c9a2e-1b4d-4c8a-9f12-abc123def456" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"application\": { \"name\": \"test\", \"version\": \"1.4.2\", \"channel\": \"stable\" },
+    \"system\":      { \"platform\": \"windows\", \"arch\": \"amd64\" },
+    \"event\":       { \"type\": \"crash\", \"reason\": \"panic_nil_pointer\" },
+    \"details\": { \"encoding\": \"gzip+base64\", \"content_type\": \"application/json\", \"payload\": \"$PAYLOAD\" }
+  }"
+```
+
+```json
+{ "status": "accepted", "group_hash": "1ab3…", "stored_details": true }
+```
+
+`stored_details` is `true` only when the blob was actually written to the private bucket and the
+`report_blobs` metadata inserted. On a storage outage the response is still `202` with
+`stored_details: false`, the base count is preserved, and `stats.detailsRejected` is incremented.
+
+### Error examples
+
+```bash
+# unknown / missing key
+→ 401 { "error": "invalid report key" }
+# application.name does not match the key's app
+→ 403 { "error": "report key does not belong to this application" }
+# event.type not in the enum
+→ 400 { "error": "invalid event.type" }
+# decompressed details exceed REPORTS_MAX_DETAILS_DECOMPRESSED_BYTES
+→ 413 { "error": "decompressed details too large" }
+# repeat of the same report from the same device within the hour
+→ 429 { "error": "rate limit exceeded" }
+```
+
+## 29. Read API (admin + team users)
+
+Authenticated (JWT) routes, active only when `REPORTS_ENABLED=true`, gated by
+`CheckPermission(download, apps)`:
+
+- **admins** see every app under their account;
+- **team users** must have the `apps.download` permission and only see apps present in their
+  `allowed_apps`.
+
+Scoping is enforced in the repository: the requester is resolved to a set of accessible `app_id`s
+and every query filters on `app_id ∈ {accessible}`. Cross-owner access is impossible even when two
+owners share a `groupHash`.
+
+### List groups
+
+```
+GET /reports/groups
+    ?app=test&version=1.4.2&channel=stable&platform=windows&arch=amd64
+    &type=update_failure&reason=checksum_mismatch
+    &from=2026-05-01T00:00:00Z&to=2026-06-01T00:00:00Z
+    &page=1&limit=20
+```
+
+All filters are optional; `from`/`to` are RFC3339 and filter on `stats.lastSeen`. Results are
+sorted by `stats.lastSeen` descending.
+
+```bash
+curl -s "http://localhost:9000/reports/groups?app=test&limit=20" \
+  -H "Authorization: Bearer <JWT>"
+```
+
+```json
+{
+  "items": [
+    {
+      "id": "665…",
+      "group_hash": "9f2b…",
+      "app_id": "663…",
+      "application": { "name": "test", "version": "1.4.2", "channel": "stable" },
+      "system": { "platform": "windows", "arch": "amd64" },
+      "event": { "type": "update_failure", "reason": "checksum_mismatch" },
+      "stats": {
+        "count": 182,
+        "first_seen": "2026-05-20T10:00:00Z",
+        "last_seen": "2026-05-20T12:00:00Z",
+        "details_stored": 17,
+        "details_rejected": 3
+      },
+      "created_at": "2026-05-20T10:00:00Z",
+      "updated_at": "2026-05-20T12:00:00Z"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20
+}
+```
+
+`owner` and `storage.bucket` are never serialized (`json:"-"`).
+
+### List a group's detail blobs
+
+```
+GET /reports/groups/:groupHash/blobs
+```
+
+`:groupHash` must be 64 hex chars (else `400`). Returns blob metadata plus a short-lived (15 min)
+presigned URL per blob, generated against the private bucket.
+
+```bash
+curl -s "http://localhost:9000/reports/groups/1ab3…/blobs" \
+  -H "Authorization: Bearer <JWT>"
+```
+
+```json
+{
+  "items": [
+    {
+      "id": "667…",
+      "group_hash": "1ab3…",
+      "app_id": "663…",
+      "application": { "name": "test", "version": "1.4.2", "channel": "stable" },
+      "system": { "platform": "windows", "arch": "amd64" },
+      "event": { "type": "crash", "reason": "panic_nil_pointer" },
+      "storage": {
+        "driver": "aws",
+        "key": "reports/test/2026/06/08/1ab3…-9c1f.json.gz",
+        "compressed_size": 142,
+        "decompressed_size": 38,
+        "content_type": "application/json",
+        "encoding": "gzip"
+      },
+      "created_at": "2026-06-08T12:00:00Z",
+      "expires_at": "2026-07-08T12:00:00Z",
+      "url": "https://…presigned…"
+    }
+  ]
+}
+```
