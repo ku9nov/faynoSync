@@ -141,6 +141,16 @@ ENABLE_TELEMETRY (Set to `true` to enable telemetry)
 # TUF Configuration
 TUF_ENABLED=true (Set to `true` to enable TUF (The Update Framework) functionality. This enables secure software update management with metadata signing, artifact publishing, and root key rotation capabilities)
 ONLINE_KEY_DIR=/private_keys (Directory path where online signing keys are stored. These keys are used for online metadata signing operations in TUF)
+
+# Reports Configuration
+REPORTS_ENABLED (Set to `true` to enable the crash/event reporting API, `false` to disable.)
+REPORTS_MAX_BODY_BYTES (Maximum size in bytes of an ingest request body, default: `262144`)
+REPORTS_MAX_DETAILS_COMPRESSED_BYTES (Maximum size in bytes of a compressed detail blob, default: `131072`)
+REPORTS_MAX_DETAILS_DECOMPRESSED_BYTES (Maximum size in bytes of a detail blob after decompression, default: `1048576`)
+REPORTS_BLOB_RETENTION_DAYS (Retention applied per blob at insert time, not by the Mongo TTL index, default: `30`)
+REPORTS_MAX_BLOBS_PER_GROUP (Maximum number of detail blobs kept per report group, default: `10`)
+REPORTS_STORAGE_PREFIX (Key prefix for report blobs in the private S3 bucket, default: `reports`)
+REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE (Per-API-key ingest rate limit; per-group 30/min and per-device+group 1/hour are fixed, default: `100`)
 ```
 
 ### 📝 Environment File Setup

@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.6.0
+
+### Features
+
+- Added a crash/event reporting API: clients can ingest reports, which are deduplicated into groups by signature hash, with detail blobs stored in the private S3 bucket and served via presigned URLs.
+- Added report endpoints for ingest, group listing, group details, and presigned blob access.
+- Added per-key, per-group, and per-device+group rate limiting on report ingest.
+- Added report partitioning by app and supporting MongoDB indexes via new migrations.
+- Added `REPORTS_*` configuration (enable flag, body/blob size limits, blob retention, max blobs per group, storage prefix, rate limit).
+
 ## v1.5.17
 
 ### Security (TUF)
