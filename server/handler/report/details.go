@@ -30,7 +30,8 @@ func decodeAndValidateDetails(d *model.ReportDetails, maxCompressed, maxDecompre
 	}
 
 	// Reject an oversized base64 string before allocating the decoded buffer.
-	if int64(len(d.Payload)) > int64(base64.StdEncoding.EncodedLen(int(maxCompressed))) {
+	encodedLen := (maxCompressed + 2) / 3 * 4
+	if int64(len(d.Payload)) > encodedLen {
 		return nil, http.StatusRequestEntityTooLarge, "compressed details too large"
 	}
 
