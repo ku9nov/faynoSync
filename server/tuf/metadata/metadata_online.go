@@ -279,12 +279,6 @@ func forceOnlineMetadataUpdate(
 	updatedRoles := []string{}
 
 	hasTargetsOrDelegations := false
-	for _, role := range roles {
-		if role == "targets" || (!isStandardRole(role) && role != "snapshot" && role != "timestamp") {
-			hasTargetsOrDelegations = true
-			break
-		}
-	}
 
 	if contains(roles, "targets") {
 		if err := bumpTargetsRole(ctx, repo, adminName, appName, redisClient, targetsSigners, tmpDir, keySuffix); err != nil {
