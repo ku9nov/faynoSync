@@ -8450,6 +8450,9 @@ func TestReportRateLimitPerGroup(t *testing.T) {
 		t.Skip("rate limiting requires Redis (ENABLE_TELEMETRY)")
 	}
 	flushReportRateLimits(t)
+	prev := viper.Get("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE")
+	viper.Set("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE", 1000)
+	defer viper.Set("REPORTS_RATE_LIMIT_PER_KEY_PER_MINUTE", prev)
 	key := reportKeyForApp(t, idTestappApp)
 	name := reportAppName(t, idTestappApp)
 	reason := "rl_per_group"
