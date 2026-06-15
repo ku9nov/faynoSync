@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.6.1
+
+### Fixes
+
+- Fixed version parsing on the latest-version check: `-` separators in the `version` query parameter are now normalized to `.` so values like `1-2-3` are parsed correctly.
+
+### Dependencies
+
+- Bumped `tsx` to `^4.22.4` in the `tuf-client-ts` example, pulling in `esbuild` >=0.28.1 and resolving two Dependabot alerts (dev-only, example code).
+
 ## v1.6.0
 
 ### Features

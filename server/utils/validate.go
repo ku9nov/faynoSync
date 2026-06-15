@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
@@ -49,7 +50,7 @@ func ValidateJWT(tokenString string) (*jwt.Token, error) {
 func ValidateParamsLatest(c *gin.Context, database *mongo.Database) (map[string]interface{}, error) {
 	ctxQueryMap := map[string]interface{}{
 		"app_name": c.Query("app_name"),
-		"version":  c.Query("version"),
+		"version":  strings.ReplaceAll(c.Query("version"), "-", "."),
 		"channel":  c.Query("channel"),
 		"publish":  c.Query("publish"),
 		"platform": c.Query("platform"),
