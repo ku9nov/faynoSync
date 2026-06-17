@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6.2
+
+### Security
+
+- Updated Go to 1.26.3 (`go.mod`, `Dockerfile`, CI workflow) to fix stdlib CVE-2026-* issues.
+- Updated `golang.org/x/crypto` to 0.52.0 to fix CVE-2026-* issues.
+- Updated `golang.org/x/net` to 0.55.0 to fix CVE-2026-* issues.
+
 ## v1.6.1
 
 ### Fixes

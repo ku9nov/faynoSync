@@ -32,7 +32,7 @@ The API is now live at `http://localhost:9000`. Check for an update from any cli
 curl "http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin"
 ```
 
-Upload builds and manage versions via the [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) or the [REST API](https://github.com/ku9nov/faynoSync/blob/main/API.md). Full setup, env vars, and self-build instructions are below.
+Upload builds and manage versions via the [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) or the [REST API](https://github.com/ku9nov/faynoSync/blob/main/dev-notes/API.md). Full setup, env vars, and self-build instructions are below.
 
 ---
 
