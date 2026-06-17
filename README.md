@@ -13,6 +13,29 @@
 
 ---
 
+**Self-hosted update server for desktop apps — your release pipeline, fully under your control.**
+
+### ⚡ Quickstart (<5 min)
+
+Spin up the API with MongoDB, Redis, and a preconfigured S3-compatible storage (Garage) — no cloud account required:
+
+```bash
+git clone https://github.com/ku9nov/faynoSync.git
+cd faynoSync
+docker compose up --build                                   # API + MongoDB + Redis + Garage
+docker compose exec -T backend /usr/bin/faynoSync migrate up # run after the stack is healthy
+```
+
+The API is now live at `http://localhost:9000`. Check for an update from any client:
+
+```bash
+curl "http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin"
+```
+
+Upload builds and manage versions via the [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) or the [REST API](https://github.com/ku9nov/faynoSync/blob/main/dev-notes/API.md). Full setup, env vars, and self-build instructions are below.
+
+---
+
 ## 📖 Overview
 
 faynoSync is a self-hosted, open-source API server for managing and updating cross-platform desktop applications (Windows, macOS, Linux).
@@ -24,6 +47,8 @@ When a client queries the API, it receives version information and a download UR
 faynoSync supports both background updates and manual update prompts, depending on how the client integrates with the API. This gives developers full control over how and when updates are delivered to end-users.
 
 It’s ideal for managing updates in Electron apps, native desktop applications, or any cross-platform software where you want full control over versioning, distribution, and update channels (e.g. stable, beta, nightly).
+
+![demo](https://github.com/user-attachments/assets/7071cfb6-8293-4069-a0c1-b8fda70d431f)
 
 ---
 
