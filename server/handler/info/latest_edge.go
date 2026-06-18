@@ -54,7 +54,7 @@ func publishResponseToCDN(ctx context.Context, params map[string]interface{}, re
 		params["app_name"].(string),
 	}
 
-	for _, key := range []string{"channel", "platform", "arch"} {
+	for _, key := range []string{"channel", "platform", "arch", "updater"} {
 		if value, ok := params[key].(string); ok && value != "" {
 			objectKeyParts = append(objectKeyParts, value)
 		}
