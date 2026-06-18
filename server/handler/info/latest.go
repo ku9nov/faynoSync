@@ -78,17 +78,28 @@ func BuildChangelogResponse(changelog []db.Changelog) string {
 	return ""
 }
 
+// ignoredArtifactPackages lists packages that are derived by updaters themselves
+// (e.g. electron-builder fetches .blockmap based on the yml) and must not be returned.
+var ignoredArtifactPackages = map[string]bool{
+	"blockmap": true,
+}
+
 // BuildArtifactUrls builds artifact URLs map from artifacts slice
 func BuildArtifactUrls(artifacts []db.Artifact, platform, arch string) map[string]string {
 	logrus.Debugf("Artifacts in BuildArtifactUrls: %v", artifacts)
 	urls := make(map[string]string)
 
 	for _, artifact := range artifacts {
+		pkg := strings.TrimPrefix(artifact.Package, ".")
+		if ignoredArtifactPackages[pkg] {
+			continue
+		}
+
 		var key string
 		if artifact.Package == "" {
 			key = "update_url"
 		} else if artifact.Package != "" && artifact.Link != "" {
-			key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+			key = "update_url_" + pkg
 		}
 
 		if artifact.Link != "" && strings.Contains(artifact.Link, platform) && strings.Contains(artifact.Link, arch) {
