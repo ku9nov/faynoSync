@@ -231,6 +231,14 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		return
 	}
 
+	// Resolve the actual owner (admin) for S3 paths; team users must store under their admin
+	s3Owner, err := utils.ResolveRequestOwner(c.Request.Context(), owner, db)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve owner"})
+		return
+	}
+
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(ctxQueryMap["id"].(string))
 	if err != nil {
@@ -273,7 +281,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			fileHashes = append(fileHashes, hashes)
 			fileLengths = append(fileLengths, length)
-			link, ext, err := utils.UploadToS3(ctxQueryMap, owner, file, c, viper.GetViper(), checkAppVisibility)
+			link, ext, err := utils.UploadToS3(ctxQueryMap, s3Owner, file, c, viper.GetViper(), checkAppVisibility)
 			if err != nil {
 				logrus.Error(err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to S3"})
