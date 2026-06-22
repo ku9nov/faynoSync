@@ -60,6 +60,28 @@ func (v *SquirrelDarwinFileValidator) GetUpdaterType() string {
 	return v.updaterType
 }
 
+// RewriteReleasesToAbsoluteURLs rewrites the filename column of a Squirrel
+// RELEASES file to absolute URLs (baseURL + "/" + filename) so Squirrel fetches
+// each package directly from storage instead of through the API.
+func RewriteReleasesToAbsoluteURLs(content, baseURL string) string {
+	lines := strings.Split(content, "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		trimmed := strings.TrimRight(line, "\r")
+		fields := strings.Fields(trimmed)
+		if len(fields) >= 3 && !strings.Contains(fields[1], "://") {
+			fields[1] = baseURL + "/" + fields[1]
+			b.WriteString(strings.Join(fields, " "))
+		} else {
+			b.WriteString(trimmed)
+		}
+		if i < len(lines)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
 func ValidateSquirrelUpdater(updaterType string) error {
 	validTypes := []string{"squirrel_darwin", "squirrel_windows"}
 
