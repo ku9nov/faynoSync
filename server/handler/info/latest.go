@@ -8,18 +8,96 @@ import (
 	"faynoSync/server/utils/updaters"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+const squirrelReleasesContentType = "text/plain; charset=utf-8"
+
+func maybeSquirrelReleasesFeed(c *gin.Context, params map[string]interface{}, response gin.H, httpStatus int) (string, bool) {
+	if params["updater"].(string) != "squirrel_windows" || httpStatus != http.StatusFound {
+		return "", false
+	}
+	updateURL, ok := response["url"].(string)
+	if !ok || updateURL == "" {
+		return "", false
+	}
+	if strings.Contains(updateURL, "/download?key=") {
+		// Private app: cannot serve the package directly from storage.
+		return "", false
+	}
+	return buildSquirrelReleasesFeed(c, updateURL)
+}
+
+// buildSquirrelReleasesFeed reads the RELEASES file referenced by updateURL from
+// storage and rewrites its filename column to absolute URLs (the same storage
+// directory the RELEASES file lives in) so Squirrel downloads each .nupkg
+// directly from storage instead of through the API.
+func buildSquirrelReleasesFeed(c *gin.Context, updateURL string) (string, bool) {
+	env := viper.GetViper()
+
+	key, err := utils.ExtractS3Key(updateURL, false, env)
+	if err != nil {
+		logrus.Errorf("Failed to extract RELEASES key from %s: %v", updateURL, err)
+		return "", false
+	}
+
+	factory := utils.NewStorageFactory(env)
+	storageClient, err := factory.CreateStorageClient()
+	if err != nil {
+		logrus.Errorf("Failed to create storage client for RELEASES feed: %v", err)
+		return "", false
+	}
+
+	tmpFile, err := os.CreateTemp("", "faynosync-releases-*")
+	if err != nil {
+		logrus.Errorf("Failed to create temp file for RELEASES feed: %v", err)
+		return "", false
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	if err := storageClient.DownloadObject(c.Request.Context(), env.GetString("S3_BUCKET_NAME"), key, tmpPath); err != nil {
+		logrus.Errorf("Failed to download RELEASES %s: %v", key, err)
+		return "", false
+	}
+
+	content, err := os.ReadFile(tmpPath)
+	if err != nil {
+		logrus.Errorf("Failed to read RELEASES feed from %s: %v", tmpPath, err)
+		return "", false
+	}
+
+	baseURL := updateURL[:strings.LastIndex(updateURL, "/")]
+	logrus.Debugf("Built rewritten squirrel_windows RELEASES feed with base %s", baseURL)
+	return updaters.RewriteReleasesToAbsoluteURLs(string(content), baseURL), true
+}
+
 type CachedResponse struct {
-	Response   interface{} `json:"response"`
-	HTTPStatus int         `json:"http_status"`
+	Response    interface{} `json:"response"`
+	HTTPStatus  int         `json:"http_status"`
+	ContentType string      `json:"content_type,omitempty"`
+	HasUpdate   bool        `json:"has_update,omitempty"`
+}
+
+func resolveCachedHasUpdate(cachedData CachedResponse) bool {
+	hasUpdate := cachedData.HasUpdate
+	if responseMap, ok := cachedData.Response.(map[string]interface{}); ok {
+		if updateAvailable, exists := responseMap["update_available"]; exists {
+			if updateAvailableBool, ok := updateAvailable.(bool); ok {
+				hasUpdate = updateAvailableBool
+			}
+		}
+	}
+	return hasUpdate
 }
 
 func CreateCacheKey(params map[string]interface{}) string {
@@ -37,10 +115,12 @@ func CreateCacheKey(params map[string]interface{}) string {
 	return baseKey
 }
 
-func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, response interface{}, httpStatus int) {
+func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, response interface{}, httpStatus int, contentType string, hasUpdate bool) {
 	cachedData := CachedResponse{
-		Response:   response,
-		HTTPStatus: httpStatus,
+		Response:    response,
+		HTTPStatus:  httpStatus,
+		ContentType: contentType,
+		HasUpdate:   hasUpdate,
 	}
 
 	jsonData, err := json.Marshal(cachedData)
@@ -78,17 +158,30 @@ func BuildChangelogResponse(changelog []db.Changelog) string {
 	return ""
 }
 
+// ignoredArtifactPackages lists packages that are derived by updaters themselves
+// (e.g. electron-builder fetches .blockmap based on the yml, Squirrel fetches
+// .nupkg from the RELEASES feed) and must not be returned.
+var ignoredArtifactPackages = map[string]bool{
+	"blockmap": true,
+	"nupkg":    true,
+}
+
 // BuildArtifactUrls builds artifact URLs map from artifacts slice
 func BuildArtifactUrls(artifacts []db.Artifact, platform, arch string) map[string]string {
 	logrus.Debugf("Artifacts in BuildArtifactUrls: %v", artifacts)
 	urls := make(map[string]string)
 
 	for _, artifact := range artifacts {
+		pkg := strings.TrimPrefix(artifact.Package, ".")
+		if ignoredArtifactPackages[pkg] {
+			continue
+		}
+
 		var key string
 		if artifact.Package == "" {
 			key = "update_url"
 		} else if artifact.Package != "" && artifact.Link != "" {
-			key = "update_url_" + strings.TrimPrefix(artifact.Package, ".")
+			key = "update_url_" + pkg
 		}
 
 		if artifact.Link != "" && strings.Contains(artifact.Link, platform) && strings.Contains(artifact.Link, arch) {
@@ -124,15 +217,15 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			if json.Unmarshal([]byte(cachedResponse), &cachedData) == nil {
 				logrus.Debugln("Return cached data: ", cachedData)
 				deviceID := c.GetHeader("X-Device-ID")
-				hasUpdate := false
-				if responseMap, ok := cachedData.Response.(map[string]interface{}); ok {
-					if updateAvailable, exists := responseMap["update_available"]; exists {
-						if updateAvailableBool, ok := updateAvailable.(bool); ok {
-							hasUpdate = updateAvailableBool
-						}
+				logStatsToRedis(ctx, rdb, validatedParams, resolveCachedHasUpdate(cachedData), deviceID)
+
+				// Serve cached raw-body responses (e.g. squirrel_windows RELEASES feed)
+				if cachedData.ContentType != "" {
+					if body, ok := cachedData.Response.(string); ok {
+						c.Data(cachedData.HTTPStatus, cachedData.ContentType, []byte(body))
+						return
 					}
 				}
-				logStatsToRedis(ctx, rdb, validatedParams, hasUpdate, deviceID)
 
 				// Handle redirect for cached response
 				if cachedData.HTTPStatus == 302 {
@@ -180,14 +273,26 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 				response["changelog"] = changelog
 			}
 			response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
+			squirrelBody, isSquirrelFeed := maybeSquirrelReleasesFeed(c, validatedParams, response, httpStatus)
+			if isSquirrelFeed {
+				httpStatus = http.StatusOK
+			}
 			if checkResult.CdnEdge {
 				logrus.Debugf("Publishing response to CDN when not found: %v", response)
 				publishResponseToCDN(ctx, validatedParams, response)
 			}
 			if performanceMode && rdb != nil {
-				cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
+				if isSquirrelFeed {
+					cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType, checkResult.Found)
+				} else {
+					cacheResponse(ctx, rdb, cacheKey, response, httpStatus, "", checkResult.Found)
+				}
 			}
 
+			if isSquirrelFeed {
+				c.Data(httpStatus, squirrelReleasesContentType, []byte(squirrelBody))
+				return
+			}
 			if httpStatus == 302 {
 				if redirectURL, exists := response["url"]; exists {
 					c.Redirect(http.StatusFound, redirectURL.(string))
@@ -217,12 +322,24 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		response["changelog"] = changelog
 	}
 	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
+	squirrelBody, isSquirrelFeed := maybeSquirrelReleasesFeed(c, validatedParams, response, httpStatus)
+	if isSquirrelFeed {
+		httpStatus = http.StatusOK
+	}
 	if checkResult.CdnEdge {
 		logrus.Debugf("Publishing response to CDN when found: %v", response)
 		publishResponseToCDN(ctx, validatedParams, response)
 	}
 	if performanceMode && rdb != nil {
-		cacheResponse(ctx, rdb, cacheKey, response, httpStatus)
+		if isSquirrelFeed {
+			cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType, checkResult.Found)
+		} else {
+			cacheResponse(ctx, rdb, cacheKey, response, httpStatus, "", checkResult.Found)
+		}
+	}
+	if isSquirrelFeed {
+		c.Data(httpStatus, squirrelReleasesContentType, []byte(squirrelBody))
+		return
 	}
 	if httpStatus == 302 {
 		if redirectURL, exists := response["url"]; exists {
@@ -354,7 +471,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 	c.JSON(http.StatusOK, downloadUrls)
 
 	if performanceMode && rdb != nil {
-		cacheResponse(ctx, rdb, cacheKey, downloadUrls, http.StatusOK)
+		cacheResponse(ctx, rdb, cacheKey, downloadUrls, http.StatusOK, "", false)
 	}
 }
 
