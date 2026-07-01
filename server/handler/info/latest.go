@@ -145,9 +145,11 @@ func BuildChangelogResponse(changelog []db.Changelog) string {
 }
 
 // ignoredArtifactPackages lists packages that are derived by updaters themselves
-// (e.g. electron-builder fetches .blockmap based on the yml) and must not be returned.
+// (e.g. electron-builder fetches .blockmap based on the yml, Squirrel fetches
+// .nupkg from the RELEASES feed) and must not be returned.
 var ignoredArtifactPackages = map[string]bool{
 	"blockmap": true,
+	"nupkg":    true,
 }
 
 // BuildArtifactUrls builds artifact URLs map from artifacts slice

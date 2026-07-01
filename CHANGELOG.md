@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.6.3
+
+### Features
+
+- Added Redis caching for `squirrel_windows` updater responses, including the rewritten `RELEASES` feed served as a raw `text/plain` body (filename column rewritten to absolute storage URLs so Squirrel downloads each `.nupkg` directly from storage).
+- Added the `updater` parameter to the edge CDN object key so edge responses are cached per updater.
+
+### Fixes
+
+- Team users now store artifacts under their admin: `UpdateSpecificApp` resolves the request owner via `ResolveRequestOwner` before uploading to S3.
+- `.blockmap` and `.nupkg` artifacts are now excluded from the `checkLatest` response since they are derived by updaters (electron-builder from the `.yml`, Squirrel from the `RELEASES` feed) and must not be returned.
+
+### Security
+
+- Updated `go.mongodb.org/mongo-driver` to 1.17.7.
+- Bumped `github.com/ku9nov/faynosync-sdk-go` to 0.2.0.
+
 ## v1.6.2
 
 ### Security
