@@ -85,6 +85,19 @@ type CachedResponse struct {
 	Response    interface{} `json:"response"`
 	HTTPStatus  int         `json:"http_status"`
 	ContentType string      `json:"content_type,omitempty"`
+	HasUpdate   bool        `json:"has_update,omitempty"`
+}
+
+func resolveCachedHasUpdate(cachedData CachedResponse) bool {
+	hasUpdate := cachedData.HasUpdate
+	if responseMap, ok := cachedData.Response.(map[string]interface{}); ok {
+		if updateAvailable, exists := responseMap["update_available"]; exists {
+			if updateAvailableBool, ok := updateAvailable.(bool); ok {
+				hasUpdate = updateAvailableBool
+			}
+		}
+	}
+	return hasUpdate
 }
 
 func CreateCacheKey(params map[string]interface{}) string {
@@ -102,11 +115,12 @@ func CreateCacheKey(params map[string]interface{}) string {
 	return baseKey
 }
 
-func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, response interface{}, httpStatus int, contentType string) {
+func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, response interface{}, httpStatus int, contentType string, hasUpdate bool) {
 	cachedData := CachedResponse{
 		Response:    response,
 		HTTPStatus:  httpStatus,
 		ContentType: contentType,
+		HasUpdate:   hasUpdate,
 	}
 
 	jsonData, err := json.Marshal(cachedData)
@@ -203,15 +217,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			if json.Unmarshal([]byte(cachedResponse), &cachedData) == nil {
 				logrus.Debugln("Return cached data: ", cachedData)
 				deviceID := c.GetHeader("X-Device-ID")
-				hasUpdate := false
-				if responseMap, ok := cachedData.Response.(map[string]interface{}); ok {
-					if updateAvailable, exists := responseMap["update_available"]; exists {
-						if updateAvailableBool, ok := updateAvailable.(bool); ok {
-							hasUpdate = updateAvailableBool
-						}
-					}
-				}
-				logStatsToRedis(ctx, rdb, validatedParams, hasUpdate, deviceID)
+				logStatsToRedis(ctx, rdb, validatedParams, resolveCachedHasUpdate(cachedData), deviceID)
 
 				// Serve cached raw-body responses (e.g. squirrel_windows RELEASES feed)
 				if cachedData.ContentType != "" {
@@ -277,9 +283,9 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			if performanceMode && rdb != nil {
 				if isSquirrelFeed {
-					cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType)
+					cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType, checkResult.Found)
 				} else {
-					cacheResponse(ctx, rdb, cacheKey, response, httpStatus, "")
+					cacheResponse(ctx, rdb, cacheKey, response, httpStatus, "", checkResult.Found)
 				}
 			}
 
@@ -326,9 +332,9 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	}
 	if performanceMode && rdb != nil {
 		if isSquirrelFeed {
-			cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType)
+			cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType, checkResult.Found)
 		} else {
-			cacheResponse(ctx, rdb, cacheKey, response, httpStatus, "")
+			cacheResponse(ctx, rdb, cacheKey, response, httpStatus, "", checkResult.Found)
 		}
 	}
 	if isSquirrelFeed {
@@ -465,7 +471,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 	c.JSON(http.StatusOK, downloadUrls)
 
 	if performanceMode && rdb != nil {
-		cacheResponse(ctx, rdb, cacheKey, downloadUrls, http.StatusOK, "")
+		cacheResponse(ctx, rdb, cacheKey, downloadUrls, http.StatusOK, "", false)
 	}
 }
 

@@ -11,6 +11,7 @@
 
 - Team users now store artifacts under their admin: `UpdateSpecificApp` resolves the request owner via `ResolveRequestOwner` before uploading to S3.
 - `.blockmap` and `.nupkg` artifacts are now excluded from the `checkLatest` response since they are derived by updaters (electron-builder from the `.yml`, Squirrel from the `RELEASES` feed) and must not be returned.
+- Cached `squirrel_windows` `RELEASES` feeds no longer skew update analytics: the update status is now persisted in the cache entry (`HasUpdate`) and reused on cache hits, so outdated clients are correctly counted as outdated instead of falling through to `clients_using_latest_version` (the raw string body could not be inspected for `update_available`).
 
 ### Security
 
