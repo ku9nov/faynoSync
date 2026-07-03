@@ -320,6 +320,45 @@
       "response": []
     },
     {
+      "name": "Check latest version (velopack dynamic)",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/velopack/admin/HelloVelopackCS/darwin/arm64/releases.nightly.json?localVersion=1.0.0&id=HelloVelopackCS&stagingId=6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "velopack",
+            "admin",
+            "HelloVelopackCS",
+            "darwin",
+            "arm64",
+            "releases.nightly.json"
+          ],
+          "query": [
+            {
+              "key": "localVersion",
+              "value": "1.0.0"
+            },
+            {
+              "key": "id",
+              "value": "HelloVelopackCS"
+            },
+            {
+              "key": "stagingId",
+              "value": "6f9619ff-8b86-d011-b42d-00cf4fc964ff"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Login",
       "event": [
         {
