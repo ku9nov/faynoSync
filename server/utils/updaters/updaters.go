@@ -1,6 +1,7 @@
 package updaters
 
 import (
+	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
 	"net/url"
 	"strings"
@@ -115,6 +116,9 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 
 	switch updaterType {
 
+	case velopack.UpdaterType:
+		logrus.Debugf("Velopack specific S3 key structure")
+		return velopack.BuildS3Key(ctxQuery, owner, oldFileName)
 	case "squirrel_windows":
 		// Squirrel Windows specific S3 key structure
 		logrus.Debugf("Squirrel Windows specific S3 key structure")

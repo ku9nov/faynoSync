@@ -3,19 +3,22 @@ package model
 import (
 	"time"
 
+	"faynoSync/server/utils/updaters/velopack"
+
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type Artifact struct {
-	Link      string             `bson:"link"`
-	Platform  primitive.ObjectID `bson:"platform"`
-	Arch      primitive.ObjectID `bson:"arch"`
-	Package   string             `bson:"package"`
-	Signature string             `bson:"signature"`
-	Hashes    map[string]string  `bson:"hashes,omitempty"`
-	Length    int64              `bson:"length,omitempty"`
-	TufSigned bool               `bson:"tuf_signed,omitempty"`
-	TufTaskID *string            `bson:"tuf_task_id,omitempty"`
+	Link      string                 `bson:"link"`
+	Platform  primitive.ObjectID     `bson:"platform"`
+	Arch      primitive.ObjectID     `bson:"arch"`
+	Package   string                 `bson:"package"`
+	Signature string                 `bson:"signature"`
+	Hashes    map[string]string      `bson:"hashes,omitempty"`
+	Length    int64                  `bson:"length,omitempty"`
+	TufSigned bool                   `bson:"tuf_signed,omitempty"`
+	TufTaskID *string                `bson:"tuf_task_id,omitempty"`
+	Velopack  *velopack.VelopackMeta `bson:"velopack,omitempty"`
 }
 
 type App struct {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	db "faynoSync/mongod"
 	"faynoSync/server/handler/create"
+	"faynoSync/server/handler/info"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
@@ -261,6 +262,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	var fileHashes []map[string]string
 	var fileLengths []int64
 	var result bool
+	var isVelopack bool
 	if form != nil {
 		files := form.File["file"] // Assuming the field name is "file" not "files"
 		// Validate updater requirements
@@ -301,16 +303,18 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			fileCtxQuery["hashes"] = fileHashes[i]
 			fileCtxQuery["length"] = fileLengths[i]
-			result, err = repository.UpdateSpecificApp(objID, owner, fileCtxQuery, link, extensions[i], c.Request.Context())
+			var vp bool
+			result, vp, err = repository.UpdateSpecificApp(objID, owner, fileCtxQuery, link, extensions[i], c.Request.Context())
 			if err != nil {
 				logrus.Errorf("Error updating link %d: %v", i, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+			isVelopack = isVelopack || vp
 		}
 	} else {
 		// Handle the case when there are no files to upload
-		result, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, "", "", c.Request.Context())
+		result, isVelopack, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, "", "", c.Request.Context())
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -329,6 +333,10 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		viper.GetViper(),
 		"Updating app",
 	)
+
+	if isVelopack {
+		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), owner, appName)
+	}
 
 	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {
 		go func() {

@@ -2,6 +2,7 @@ package updaters
 
 import (
 	"faynoSync/server/model"
+	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
 	"mime/multipart"
 	"strings"
@@ -25,6 +26,7 @@ var ValidUpdaterTypes = []string{
 	"sparkle",
 	"electron-builder",
 	"tauri",
+	"velopack",
 }
 
 // ValidateUpdater validates a single updater
@@ -88,6 +90,8 @@ func CreateFileValidator(updaterType string) (FileValidator, error) {
 		return &SquirrelWindowsFileValidator{updaterType: updaterType}, nil
 	case strings.HasPrefix(updaterType, "squirrel_darwin"):
 		return &SquirrelDarwinFileValidator{updaterType: updaterType}, nil
+	case strings.HasPrefix(updaterType, velopack.UpdaterType):
+		return velopack.NewFileValidator(updaterType), nil
 	default:
 		return &NoOpFileValidator{updaterType: updaterType}, nil
 	}

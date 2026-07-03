@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Added a `velopack` updater type. Upload accepts the `vpk`-generated `*-full.nupkg`/`*-delta.nupkg` packages plus `releases.{channel}.json`; the feed's `SHA1`/`SHA256`/`Size` are ingested verbatim into a separate `velopack` block on each artifact (kept apart from the TUF `hashes`/`length`), packages are stored under `velopack/{app}-{owner}/{version}/{channel}/{platform}/{arch}/` with their original filenames preserved.
+- Added Velopack feed generation from MongoDB (`velopack.BuildFeed`): PascalCase `Assets` with absolute `FileName` URLs, published-only, all Fulls plus deltas whose immediate lower base is published (deltas across an unpublish/delete hole are dropped, Full remains as fallback).
+- Added Mode 1 (CDN) write-through materialization to `S3_BUCKET_NAME` at `velopack/{owner}/{app}/{platform}/{arch}/releases.{channel}.json`, regenerated on upload, publish/unpublish, changelog/edit, and version/artifact deletion (velopack apps only). Empty feeds (`{"Assets":[]}`) are written to flush stale versions.
+- Added Mode 2 (dynamic API) route `GET /velopack/:owner/:app/:platform/:arch/*feed` that builds the feed per request and caps it at the required intermediate version (via the existing migration-step lookup) when `localVersion` is supplied.
+
 ## v1.6.3
 
 ### Features

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
 	"reflect"
 	"strings"
@@ -273,6 +274,33 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 	return nil
 }
 
+// duplicateCheckIgnoredPackages lists package extensions that legitimately repeat
+// within the same version/platform/arch (e.g. velopack full+delta .nupkg) and must
+// be skipped by the duplicate-artifact check on upload.
+var duplicateCheckIgnoredPackages = map[string]bool{
+	"nupkg": true,
+}
+
+func lookupVelopackMeta(ctxQuery map[string]interface{}) *velopack.VelopackMeta {
+	metaVal, ok := ctxQuery["velopack_meta"]
+	if !ok {
+		return nil
+	}
+	metaMap, ok := metaVal.(map[string]velopack.VelopackMeta)
+	if !ok {
+		return nil
+	}
+	fileName, ok := ctxQuery["file_name"].(string)
+	if !ok {
+		return nil
+	}
+	meta, ok := metaMap[fileName]
+	if !ok {
+		return nil
+	}
+	return &meta
+}
+
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context, redisClient *redis.Client, env *viper.Viper, checkAppVisibility bool) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
@@ -399,11 +427,13 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			return nil, err
 		}
 
-		for _, artifact := range appData.Artifacts {
-			if artifact.Package == extension && artifact.Arch == archMeta.ID && artifact.Platform == platformMeta.ID {
-				msg := "app with this name, version, platform, architecture and extension already exists"
-				logrus.Debugf("Upload function in mongod/create.go: %s", msg)
-				return msg, errors.New(msg)
+		if !duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")] {
+			for _, artifact := range appData.Artifacts {
+				if artifact.Package == extension && artifact.Arch == archMeta.ID && artifact.Platform == platformMeta.ID {
+					msg := "app with this name, version, platform, architecture and extension already exists"
+					logrus.Debugf("Upload function in mongod/create.go: %s", msg)
+					return msg, errors.New(msg)
+				}
 			}
 		}
 
@@ -432,6 +462,9 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		if length > 0 {
 			newArtifact.Length = length
+		}
+		if velopackMeta := lookupVelopackMeta(ctxQuery); velopackMeta != nil {
+			newArtifact.Velopack = velopackMeta
 		}
 
 		appData.Artifacts = append(appData.Artifacts, newArtifact)
@@ -498,6 +531,9 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		if length > 0 {
 			artifact.Length = length
+		}
+		if velopackMeta := lookupVelopackMeta(ctxQuery); velopackMeta != nil {
+			artifact.Velopack = velopackMeta
 		}
 
 		changelog := model.Changelog{

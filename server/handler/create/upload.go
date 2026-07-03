@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	db "faynoSync/mongod"
+	"faynoSync/server/handler/info"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
+	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +24,25 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
+
+func parseVelopackFeed(files []*multipart.FileHeader) (map[string]velopack.VelopackMeta, error) {
+	for _, file := range files {
+		name := strings.ToLower(file.Filename)
+		if strings.HasPrefix(name, "releases.") && strings.HasSuffix(name, ".json") {
+			f, err := file.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer f.Close()
+			content, err := io.ReadAll(f)
+			if err != nil {
+				return nil, err
+			}
+			return velopack.ParseFeed(content)
+		}
+	}
+	return nil, fmt.Errorf("velopack updater requires a releases.*.json feed file")
+}
 
 func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *redis.Client) error {
 
@@ -210,6 +233,16 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Ingest velopack metadata from the releases.*.json feed (verbatim hashes)
+		if updaterStr == velopack.UpdaterType {
+			velopackMeta, err := parseVelopackFeed(files)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			ctxQueryMap["velopack_meta"] = velopackMeta
+		}
 	}
 	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
 	if err != nil {
@@ -250,6 +283,9 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		}
 		fileCtxQuery["hashes"] = fileHashes[i]
 		fileCtxQuery["length"] = fileLengths[i]
+		if _, ok := ctxQueryMap["velopack_meta"]; ok {
+			fileCtxQuery["file_name"] = files[i].Filename
+		}
 
 		result, err := repository.Upload(fileCtxQuery, link, extensions[i], owner, c.Request.Context(), rdb, viper.GetViper(), checkAppVisibility)
 		if err != nil {
@@ -271,6 +307,10 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		viper.GetViper(),
 		"Uploaded app",
 	)
+
+	if updater, _ := ctxQueryMap["updater"].(string); updater == velopack.UpdaterType {
+		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), owner, appName)
+	}
 
 	if len(results) == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no results found. Please check your files."})

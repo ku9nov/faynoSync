@@ -3,6 +3,7 @@ package delete
 import (
 	"context"
 	db "faynoSync/mongod"
+	"faynoSync/server/handler/info"
 	"faynoSync/server/utils"
 	"net/http"
 	"strings"
@@ -17,6 +18,15 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
+
+func hasVelopackLink(links []string) bool {
+	for _, l := range links {
+		if strings.Contains(l, "velopack/") {
+			return true
+		}
+	}
+	return false
+}
 
 func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client) {
 	env := viper.GetViper()
@@ -76,6 +86,10 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 		}
 	}
 
+	if hasVelopackLink(links) {
+		info.MaterializeVelopackForApp(c.Request.Context(), db, env, owner, appName)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
 }
 
@@ -117,6 +131,10 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 			return
 		}
 		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
+	}
+
+	if hasVelopackLink(links) {
+		info.MaterializeVelopackForApp(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string))
 	}
 
 	if result && len(links) > 0 && viper.GetBool("SLACK_ENABLE") && rdb != nil {
