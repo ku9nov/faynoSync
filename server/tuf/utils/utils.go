@@ -70,7 +70,7 @@ func ValidateExpiration(role string, days int) error {
 }
 
 func HelperExpireIn(days int) time.Time {
-	return time.Now().AddDate(0, 0, days).UTC()
+	return time.Now().AddDate(0, 0, days).UTC().Truncate(time.Second)
 }
 
 // HelperGetPathForTarget returns local and target paths for the named target.
