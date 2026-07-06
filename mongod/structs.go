@@ -92,6 +92,8 @@ type CheckResult struct {
 	PossibleRollback       bool
 	LatestVersion          string
 	Signature              string
+	RolloutPercent         int
+	RolloutSeed            string
 }
 
 func (c *appRepository) getBasePipeline() mongo.Pipeline {
@@ -140,6 +142,7 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 			"artifacts":             bson.M{"$push": "$artifacts"},
 			"changelog":             bson.M{"$first": "$changelog"},
 			"updated_at":            bson.M{"$first": "$updated_at"},
+			"rollout_percent":       bson.M{"$first": "$rollout_percent"},
 		}}},
 		bson.D{{Key: "$addFields", Value: bson.D{
 			{Key: "versions_arr", Value: bson.D{

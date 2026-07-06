@@ -2,6 +2,8 @@ package mongod
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
@@ -20,6 +22,14 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
+
+func generateRolloutSeed() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
 
 func (c *appRepository) CreateDocument(collectionName string, document bson.D, uniqueKey, keyType string, owner string, ctx context.Context) (interface{}, error) {
 	collection := c.client.Database(c.config.Database).Collection(collectionName)
@@ -536,6 +546,17 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			artifact.Velopack = velopackMeta
 		}
 
+		rolloutPercent := 100
+		if v, ok := ctxQuery["rollout"].(int); ok {
+			rolloutPercent = v
+		}
+		rolloutSeed, err := generateRolloutSeed()
+		if err != nil {
+			logrus.Errorf("Error generating rollout seed: %v", err)
+			return nil, err
+		}
+		logrus.Debugf("Setting rollout_percent to: %d", rolloutPercent)
+
 		changelog := model.Changelog{
 			Version: ctxQuery["version"].(string),
 			Changes: ctxQuery["changelog"].(string),
@@ -550,6 +571,8 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			{Key: "required_intermediate", Value: requiredIntermediate},
 			{Key: "artifacts", Value: []model.Artifact{artifact}},
 			{Key: "changelog", Value: []model.Changelog{changelog}},
+			{Key: "rollout_percent", Value: rolloutPercent},
+			{Key: "rollout_seed", Value: rolloutSeed},
 			{Key: "updated_at", Value: time.Now()},
 			{Key: "owner", Value: owner},
 		}

@@ -386,6 +386,19 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 			logrus.Debugf("Setting required_intermediate to: %t", requiredIntermediate)
 		}
 
+		if rolloutParam, rolloutExists := ctxQuery["rollout"].(int); rolloutExists {
+			updateFields = append(updateFields, bson.E{Key: "rollout_percent", Value: rolloutParam})
+			logrus.Debugf("Setting rollout_percent to: %d", rolloutParam)
+			if appData.RolloutSeed == "" {
+				seed, err := generateRolloutSeed()
+				if err != nil {
+					logrus.Errorf("Error generating rollout seed: %v", err)
+					return false, false, err
+				}
+				updateFields = append(updateFields, bson.E{Key: "rollout_seed", Value: seed})
+			}
+		}
+
 		if appLink != "" {
 			duplicateFound := false
 			for _, artifact := range appData.Artifacts {

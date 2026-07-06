@@ -67,7 +67,7 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 	publishStr := strconv.FormatBool(upReq.Publish)
 	criticalStr := strconv.FormatBool(upReq.Critical)
 	intermediateStr := strconv.FormatBool(upReq.Intermediate)
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"id":                  upReq.Id,
 		"app_name":            upReq.AppName,
 		"version":             upReq.Version,
@@ -81,7 +81,14 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 		"artifacts_to_delete": upReq.ArtifactsToDelete,
 		"updater":             upReq.Updater,
 		"signature":           upReq.Signature,
-	}, nil
+	}
+	if upReq.Rollout != nil {
+		if *upReq.Rollout < 0 || *upReq.Rollout > 100 {
+			return nil, errors.New("rollout must be an integer between 0 and 100")
+		}
+		result["rollout"] = *upReq.Rollout
+	}
+	return result, nil
 }
 
 func extractParamsFromGetOrDelete(c *gin.Context) (map[string]interface{}, error) {
