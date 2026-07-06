@@ -11,3 +11,4 @@ services:
       - "9000:9000"
     volumes:
       -  ../envs/backend.env:/app/.env
+      - ../../tuf_keys/:/app/tuf_keys/

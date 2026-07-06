@@ -7,3 +7,7 @@ services:
     # Example:
     deploy:
       replicas: 0
+
+  frontend:
+    deploy:
+      replicas: 0

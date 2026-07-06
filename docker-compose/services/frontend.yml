@@ -1,0 +1,14 @@
+services:
+  frontend:
+    image: registry.hub.docker.com/ku9nov/faynosync-dashboard:latest
+    platform: linux/amd64
+    container_name: "faynoSync_dashboard"
+    networks:
+      faynosync_network:
+        ipv4_address: 172.25.0.8
+    environment:
+      - VITE_API_URL=http://localhost:9000
+    restart: always
+    command: ["yarn", "dev", "--host", "0.0.0.0"]
+    ports:
+      - "3000:3000"
