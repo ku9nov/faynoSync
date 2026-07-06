@@ -135,7 +135,7 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 		}
 		s3PathSegments = append(s3PathSegments, oldFileName)
 
-		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		encodedPath := url.QueryEscape(strings.Join(s3PathSegments, "/"))
 		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
 		s3Key := strings.Join(s3PathSegments, "/")
 		return link, s3Key
@@ -159,7 +159,7 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 		}
 		s3PathSegments = append(s3PathSegments, oldFileName)
 
-		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		encodedPath := url.QueryEscape(strings.Join(s3PathSegments, "/"))
 		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
 		s3Key := strings.Join(s3PathSegments, "/")
 		return link, s3Key
@@ -183,7 +183,7 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 			s3PathSegments = append(s3PathSegments, newFileName)
 		}
 
-		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		encodedPath := url.QueryEscape(strings.Join(s3PathSegments, "/"))
 		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
 		s3Key := strings.Join(s3PathSegments, "/")
 		return link, s3Key

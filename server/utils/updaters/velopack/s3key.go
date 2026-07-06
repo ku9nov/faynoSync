@@ -69,7 +69,7 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, fileName string) 
 		segments = append(segments, fileName)
 	}
 
-	encodedPath := url.PathEscape(strings.Join(segments, "/"))
+	encodedPath := url.QueryEscape(strings.Join(segments, "/"))
 	link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
 	s3Key := strings.Join(segments, "/")
 	return link, s3Key
