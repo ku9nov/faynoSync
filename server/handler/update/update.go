@@ -10,6 +10,7 @@ import (
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -263,8 +264,9 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	var fileLengths []int64
 	var result bool
 	var isVelopack bool
+	var files []*multipart.FileHeader
 	if form != nil {
-		files := form.File["file"] // Assuming the field name is "file" not "files"
+		files = form.File["file"] // Assuming the field name is "file" not "files"
 		// Validate updater requirements
 		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
 			updaterStr := updater.(string)
@@ -333,6 +335,8 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		viper.GetViper(),
 		"Updating app",
 	)
+
+	create.CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, s3Owner, files, checkAppVisibility, viper.GetViper())
 
 	if isVelopack {
 		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), owner, appName)

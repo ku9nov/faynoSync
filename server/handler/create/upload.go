@@ -44,6 +44,54 @@ func parseVelopackFeed(files []*multipart.FileHeader) (map[string]velopack.Velop
 	return nil, fmt.Errorf("velopack updater requires a releases.*.json feed file")
 }
 
+// CopyVelopackInstallersToDefault materializes the flat, fixed-name installer
+// so the persisted artifact link points at the per-version installers/ object
+// while the default name keeps pointing at the newest upload. It self-gates on
+// the velopack updater, since only that path routes installers to versioned keys.
+func CopyVelopackInstallersToDefault(ctx context.Context, ctxQuery map[string]interface{}, owner string, files []*multipart.FileHeader, checkAppVisibility bool, env *viper.Viper) {
+	if updater, _ := ctxQuery["updater"].(string); updater != velopack.UpdaterType {
+		return
+	}
+
+	hasInstaller := false
+	for _, file := range files {
+		if velopack.IsInstallerFile(file.Filename) {
+			hasInstaller = true
+			break
+		}
+	}
+	if !hasInstaller {
+		return
+	}
+
+	factory := utils.NewStorageFactory(env)
+	storageClient, err := factory.CreateStorageClient()
+	if err != nil {
+		logrus.Errorf("Failed to create storage client for velopack installer copy: %v", err)
+		return
+	}
+
+	bucketName := env.GetString("S3_BUCKET_NAME")
+	public := true
+	if checkAppVisibility {
+		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
+		public = false
+	}
+
+	for _, file := range files {
+		if !velopack.IsInstallerFile(file.Filename) {
+			continue
+		}
+		srcKey := velopack.InstallerVersionedKey(ctxQuery, owner, file.Filename)
+		dstKey := velopack.InstallerDefaultKey(ctxQuery, owner, file.Filename)
+		if err := storageClient.CopyObject(ctx, bucketName, srcKey, dstKey, public); err != nil {
+			logrus.Errorf("Failed to copy velopack installer %s -> %s: %v", srcKey, dstKey, err)
+			continue
+		}
+		logrus.Debugf("Materialized default velopack installer: %s/%s", bucketName, dstKey)
+	}
+}
+
 func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *redis.Client) error {
 
 	appName, _ := params["app_name"].(string)
@@ -309,6 +357,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	)
 
 	if updater, _ := ctxQueryMap["updater"].(string); updater == velopack.UpdaterType {
+		CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, owner, files, checkAppVisibility, viper.GetViper())
 		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), owner, appName)
 	}
 

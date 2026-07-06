@@ -52,6 +52,10 @@ func (c *fsStorageClient) UploadObject(ctx context.Context, bucketName, objectKe
 	panic("not used")
 }
 
+func (c *fsStorageClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
+}
+
 func (c *fsStorageClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 	dst := filepath.Join(c.baseDir, objectKey)
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
@@ -367,6 +371,10 @@ func (c *failDownloadClient) DownloadObject(ctx context.Context, bucketName, obj
 func (c *failDownloadClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
 	panic("not used")
 }
+func (c *failDownloadClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
+}
+
 func (c *failDownloadClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 	panic("not used")
 }
@@ -392,6 +400,10 @@ func (c *failUploadClient) DownloadObject(ctx context.Context, bucketName, objec
 func (c *failUploadClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
 	panic("not used")
 }
+func (c *failUploadClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
+}
+
 func (c *failUploadClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 	return "", fmt.Errorf("upload failed")
 }

@@ -47,6 +47,10 @@ type downloadCall struct {
 	FilePath  string
 }
 
+func (m *mockStorageClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
+}
+
 func (m *mockStorageClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 	var body []byte
 	if fileReader != nil {

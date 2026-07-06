@@ -114,6 +114,22 @@ func (b *BaseS3Client) UploadObjectWithACL(ctx context.Context, bucketName, obje
 	return nil
 }
 
+func (b *BaseS3Client) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	input := &s3.CopyObjectInput{
+		Bucket:     aws.String(bucketName),
+		Key:        aws.String(dstKey),
+		CopySource: aws.String(bucketName + "/" + encodeObjectKeyForPublicURL(srcKey)),
+	}
+	if public && !b.env.GetBool("S3_DISABLE_OBJECT_ACL") {
+		input.ACL = types.ObjectCannedACLPublicRead
+	}
+	_, err := b.client.CopyObject(ctx, input)
+	if err != nil {
+		return &StorageError{Message: fmt.Sprintf("failed to copy object in %s", b.providerName), Err: err}
+	}
+	return nil
+}
+
 // DeleteObject deletes a file from S3-compatible storage
 func (b *BaseS3Client) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	_, err := b.client.DeleteObject(ctx, &s3.DeleteObjectInput{

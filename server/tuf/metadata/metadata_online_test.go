@@ -326,6 +326,10 @@ func (c *storageMockClientForForceUpdate) UploadObject(ctx context.Context, buck
 	return nil
 }
 
+func (c *storageMockClientForForceUpdate) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
+}
+
 func (c *storageMockClientForForceUpdate) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 	_, _ = io.Copy(io.Discard, fileReader)
 	return "", nil
@@ -368,6 +372,10 @@ func (c *multiBodyDownloadMock) DownloadObject(ctx context.Context, bucketName, 
 
 func (c *multiBodyDownloadMock) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
 	_, _ = io.Copy(io.Discard, fileReader)
+	return nil
+}
+
+func (c *multiBodyDownloadMock) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
 	return nil
 }
 

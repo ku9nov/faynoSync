@@ -181,3 +181,52 @@ func TestBuildS3Key(t *testing.T) {
 		t.Error("expected non-empty link")
 	}
 }
+
+func TestIsInstallerFile(t *testing.T) {
+	cases := map[string]bool{
+		"HelloVelopack-nightly-Setup.pkg":     true,
+		"HelloVelopack-nightly-Setup.exe":     true,
+		"HelloVelopack-nightly.AppImage":      true,
+		"HelloVelopack-1.0.3-osx-full.nupkg":  false,
+		"HelloVelopack-1.0.3-osx-delta.nupkg": false,
+		"releases.osx.json":                   false,
+	}
+	for name, want := range cases {
+		if got := IsInstallerFile(name); got != want {
+			t.Errorf("IsInstallerFile(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestInstallerKeys(t *testing.T) {
+	ctxQuery := map[string]interface{}{
+		"app_name": "HelloVelopack",
+		"version":  "1.2.3",
+		"channel":  "nightly",
+		"platform": "osx",
+		"arch":     "arm64",
+		"api_url":  "http://api.local",
+	}
+
+	if got := InstallerVersionedName("HelloVelopack-nightly-Setup.pkg", "1.2.3", "osx", "arm64"); got != "HelloVelopack-nightly-Setup-1.2.3-osx-arm64.pkg" {
+		t.Errorf("InstallerVersionedName = %q", got)
+	}
+	if got := InstallerVersionedName("HelloVelopack-nightly.AppImage", "1.2.3", "linux", "amd64"); got != "HelloVelopack-nightly-1.2.3-linux-amd64.AppImage" {
+		t.Errorf("InstallerVersionedName (AppImage) = %q", got)
+	}
+
+	wantVersioned := "velopack/acme/HelloVelopack/osx/arm64/installers/HelloVelopack-nightly-Setup-1.2.3-osx-arm64.pkg"
+	if got := InstallerVersionedKey(ctxQuery, "acme", "HelloVelopack-nightly-Setup.pkg"); got != wantVersioned {
+		t.Errorf("InstallerVersionedKey = %q, want %q", got, wantVersioned)
+	}
+
+	wantDefault := "velopack/acme/HelloVelopack/osx/arm64/HelloVelopack-nightly-Setup.pkg"
+	if got := InstallerDefaultKey(ctxQuery, "acme", "HelloVelopack-nightly-Setup.pkg"); got != wantDefault {
+		t.Errorf("InstallerDefaultKey = %q, want %q", got, wantDefault)
+	}
+
+	_, key := BuildS3Key(ctxQuery, "acme", "HelloVelopack-nightly-Setup.pkg")
+	if key != wantVersioned {
+		t.Errorf("BuildS3Key installer routed to %q, want %q", key, wantVersioned)
+	}
+}
