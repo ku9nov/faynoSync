@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.6.4
 
 ### Features (Velopack)
 
@@ -8,6 +8,7 @@
 - Added Velopack feed generation from MongoDB (`velopack.BuildFeed`): PascalCase `Assets` with absolute `FileName` URLs, published-only, all Fulls plus deltas whose immediate lower base is published (deltas across an unpublish/delete hole are dropped, Full remains as fallback).
 - Added Mode 1 (CDN) write-through materialization to `S3_BUCKET_NAME` at `velopack/{owner}/{app}/{platform}/{arch}/releases.{channel}.json`, regenerated on upload, publish/unpublish, changelog/edit, and version/artifact deletion (velopack apps only). Empty feeds (`{"Assets":[]}`) are written to flush stale versions.
 - Added Mode 2 (dynamic API) route `GET /velopack/:owner/:app/:platform/:arch/*feed` that builds the feed per request and caps it at the required intermediate version (via the existing migration-step lookup) when `localVersion` is supplied.
+- Separated velopack installers from packages: installer files (anything that is not a `.nupkg` or `releases.*.json`) are now stored under a versioned `installers/{stem}-{version}-{platform}-{arch}.{ext}` key so the persisted artifact link is stable per version, while the flat, fixed-name installer (`velopack/{owner}/{app}/{platform}/{arch}/{file}`) is materialized on upload/update to keep pointing at the newest build. Added `CopyObject` to the storage interface (S3/base, MinIO, GCS) to back this copy-through.
 
 ### Features (Global)
 
