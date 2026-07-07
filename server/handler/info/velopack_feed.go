@@ -1,6 +1,7 @@
 package info
 
 import (
+	"errors"
 	db "faynoSync/mongod"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters/velopack"
@@ -48,7 +49,11 @@ func FindVelopackFeed(c *gin.Context, repository db.AppRepository, database *mon
 
 	releases, err := loadVelopackReleases(c.Request.Context(), database, owner, app, channel, platform, arch)
 	if err != nil {
-		logrus.Debugf("velopack feed load failed for %s/%s/%s/%s/%s: %v", owner, app, platform, arch, channel, err)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			logrus.Debugf("velopack feed load failed for %s/%s/%s/%s/%s: %v", owner, app, platform, arch, channel, err)
+		} else {
+			logrus.Errorf("velopack feed load failed for %s/%s/%s/%s/%s: %v", owner, app, platform, arch, channel, err)
+		}
 		c.Data(http.StatusOK, velopackFeedContentType, emptyVelopackFeed)
 		return
 	}
@@ -67,7 +72,7 @@ func FindVelopackFeed(c *gin.Context, repository db.AppRepository, database *mon
 
 	feed, err := velopack.BuildFeed(app, releases)
 	if err != nil {
-		logrus.Debugf("velopack BuildFeed failed for %s/%s: %v", owner, app, err)
+		logrus.Errorf("velopack BuildFeed failed for %s/%s: %v", owner, app, err)
 		c.Data(http.StatusOK, velopackFeedContentType, emptyVelopackFeed)
 		return
 	}
