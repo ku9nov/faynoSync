@@ -339,7 +339,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	create.CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, s3Owner, files, checkAppVisibility, viper.GetViper())
 
 	if isVelopack {
-		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), owner, appName)
+		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), s3Owner, appName)
 	}
 
 	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {
