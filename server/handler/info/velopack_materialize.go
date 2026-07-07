@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"errors"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters/velopack"
@@ -48,21 +49,29 @@ func MaterializeVelopackFeeds(ctx context.Context, database *mongo.Database, sto
 	}
 
 	bucketName := env.GetString("S3_BUCKET_NAME")
+	var errs []error
 	for _, key := range tuples {
 		releases, err := loadVelopackReleases(ctx, database, owner, appName, key.channel, key.platform, key.arch)
 		if err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("load releases for %+v: %w", key, err))
+			continue
 		}
 
 		feed, err := velopack.BuildFeed(appName, releases)
 		if err != nil {
-			return fmt.Errorf("failed to build velopack feed for %+v: %w", key, err)
+			errs = append(errs, fmt.Errorf("build feed for %+v: %w", key, err))
+			continue
 		}
 
 		objectKey := velopack.FeedObjectKey(owner, appName, key.platform, key.arch, key.channel)
 		if err := writeVelopackFeed(ctx, storageClient, bucketName, objectKey, feed); err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("write feed %s: %w", objectKey, err))
+			continue
 		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("materialized %d/%d velopack feeds, %d failed: %w", len(tuples)-len(errs), len(tuples), len(errs), errors.Join(errs...))
 	}
 
 	return nil

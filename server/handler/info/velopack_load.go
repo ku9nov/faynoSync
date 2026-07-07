@@ -71,7 +71,8 @@ func resolveVelopackPackageLink(ctx context.Context, database *mongo.Database, o
 
 func loadVelopackReleases(ctx context.Context, database *mongo.Database, owner, app, channel, platform, arch string) ([]velopack.Release, error) {
 	metaCollection := database.Collection("apps_meta")
-
+	// Velopack releases in faynosync require channels, platforms, and architectures. However, faynosync can work without this metadata.
+	// Therefore, it’s important to set a rule. Different platforms and architectures have different release.${channel}.json.
 	appID, err := resolveMetaID(ctx, metaCollection, "app_name", app, owner)
 	if err != nil {
 		return nil, err
