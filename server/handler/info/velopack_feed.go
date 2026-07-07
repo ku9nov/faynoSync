@@ -62,7 +62,7 @@ func FindVelopackFeed(c *gin.Context, repository db.AppRepository, database *mon
 		if latest := latestPublishedVersion(releases); latest != "" {
 			intermediate, err := repository.RequiredIntermediateStep(c.Request.Context(), owner, app, channel, platform, arch, localVersion, latest)
 			if err != nil {
-				logrus.Debugf("velopack intermediate lookup failed: %v", err)
+				logrus.Warnf("velopack intermediate lookup failed for %s/%s/%s/%s/%s: %v", owner, app, platform, arch, channel, err)
 			} else if intermediate != "" {
 				logrus.Debugf("velopack capping feed at intermediate version %s for localVersion %s", intermediate, localVersion)
 				releases = velopack.CapAtVersion(releases, intermediate, velopack.CompareVersions)
