@@ -59,6 +59,7 @@ type AppHandler interface {
 	GetTelemetry(*gin.Context)
 	TelemetryBeacon(*gin.Context)
 	SquirrelReleases(*gin.Context)
+	FindVelopackFeed(*gin.Context)
 	CreateToken(*gin.Context)
 	ListTokens(*gin.Context)
 	DeleteToken(*gin.Context)
@@ -287,6 +288,10 @@ func (ch *appHandler) SquirrelReleases(c *gin.Context) {
 	c.Request.URL.RawQuery = q.Encode()
 
 	info.FindLatestVersion(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
+}
+
+func (ch *appHandler) FindVelopackFeed(c *gin.Context) {
+	info.FindVelopackFeed(c, ch.repository, ch.database)
 }
 
 func (ch *appHandler) CreateToken(c *gin.Context) {

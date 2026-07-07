@@ -22,7 +22,7 @@ Spin up the API with MongoDB, Redis, and a preconfigured S3-compatible storage (
 ```bash
 git clone https://github.com/ku9nov/faynoSync.git
 cd faynoSync
-docker compose up --build                                   # API + MongoDB + Redis + Garage
+docker compose up --build                                   # API + MongoDB + Redis + Garage + Dashboard
 docker compose exec -T backend /usr/bin/faynoSync migrate up # run after the stack is healthy
 ```
 
@@ -32,7 +32,7 @@ The API is now live at `http://localhost:9000`. Check for an update from any cli
 curl "http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin"
 ```
 
-Upload builds and manage versions via the [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) or the [REST API](https://github.com/ku9nov/faynoSync/blob/main/dev-notes/API.md). Full setup, env vars, and self-build instructions are below.
+Upload builds and manage versions via the bundled [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) at `http://localhost:3000` or the [REST API](https://github.com/ku9nov/faynoSync/blob/main/dev-notes/API.md). Full setup, env vars, and self-build instructions are below.
 
 ---
 
@@ -190,6 +190,8 @@ When you use the provided Docker Compose setup, these credentials are imported a
 
 Garage admin UI is available at `http://localhost:3909/` (user: `admin`, password: `BjjctVsoSg4FKkT81VKt18`).
 
+The faynoSync-dashboard is available at `http://localhost:3000/`. It talks to the API through the `VITE_API_URL` variable set in `docker-compose/services/frontend.yml` (defaults to `http://localhost:9000`).
+
 ```bash
 STORAGE_DRIVER=aws
 MINIO_SECURE=false
@@ -243,6 +245,8 @@ If you only want to run dependency services (for local development without Docke
 ```bash
 docker compose -f docker-compose.yaml -f docker-compose.development.yaml up
 ```
+
+The `docker-compose.development.yaml` override scales the `backend` and `frontend` services to `0` replicas, so you can run the API and dashboard from source while MongoDB, Redis, and Garage stay containerized.
 
 ---
 

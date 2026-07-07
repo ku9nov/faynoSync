@@ -11,10 +11,12 @@ require (
 	github.com/go-logr/stdr v1.2.2
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-version v1.6.0
+	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/secure-systems-lab/go-securesystemslib v0.10.0
 	github.com/sigstore/sigstore v1.10.4
 	github.com/spf13/viper v1.14.0
 	github.com/theupdateframework/go-tuf/v2 v2.4.1
+	github.com/yuin/goldmark v1.8.2
 	google.golang.org/api v0.239.0
 )
 
@@ -42,6 +44,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.29.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.6 // indirect
+	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bytedance/sonic v1.10.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -63,6 +66,7 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.2 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

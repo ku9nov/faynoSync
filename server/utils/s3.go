@@ -27,6 +27,10 @@ func getContentType(fileName string) string {
 		return "text/yaml"
 	}
 
+	if strings.HasSuffix(fileName, ".json") {
+		return "application/json"
+	}
+
 	return ""
 }
 

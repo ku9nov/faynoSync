@@ -182,6 +182,20 @@ func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx contex
 	return publicURL, nil
 }
 
+func (g *GoogleCloudStorageClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	bucket := g.client.Bucket(bucketName)
+	copier := bucket.Object(dstKey).CopierFrom(bucket.Object(srcKey))
+	if public {
+		if attrs, err := bucket.Attrs(ctx); err == nil && !attrs.UniformBucketLevelAccess.Enabled {
+			copier.PredefinedACL = "publicRead"
+		}
+	}
+	if _, err := copier.Run(ctx); err != nil {
+		return &StorageError{Message: "failed to copy object in GCS", Err: err}
+	}
+	return nil
+}
+
 func (g *GoogleCloudStorageClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	bucket := g.client.Bucket(bucketName)
 	obj := bucket.Object(objectKey)

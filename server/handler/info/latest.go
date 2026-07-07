@@ -322,6 +322,9 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		response["changelog"] = changelog
 	}
 	response, httpStatus = updaters.BuildResponse(response, checkResult.Found, checkResult.PossibleRollback, checkResult.LatestVersion, validatedParams["updater"].(string))
+	if checkResult.RolloutPercent < 100 {
+		response["rollout"] = gin.H{"percent": checkResult.RolloutPercent, "seed": checkResult.RolloutSeed}
+	}
 	squirrelBody, isSquirrelFeed := maybeSquirrelReleasesFeed(c, validatedParams, response, httpStatus)
 	if isSquirrelFeed {
 		httpStatus = http.StatusOK

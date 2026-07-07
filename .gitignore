@@ -34,3 +34,5 @@ faynoSync_tests
 tmp*
 
 tuf_keys/
+
+docs/

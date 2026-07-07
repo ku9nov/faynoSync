@@ -55,6 +55,9 @@ func StartServer(config *viper.Viper) {
 	// Add squirrel_windows updater compatibility
 	router.GET("/update/:owner/:app/:channel/:platform/:arch/:version/RELEASES", handler.SquirrelReleases)
 
+	// Velopack dynamic feed
+	router.GET("/velopack/:owner/:app/:platform/:arch/*feed", handler.FindVelopackFeed)
+
 	router.GET("/checkVersion", handler.FindLatestVersion)
 	router.GET("/apps/latest", handler.FetchLatestVersionOfApp)
 	router.GET("/telemetry/beacon", telemetryMiddleware(config), handler.TelemetryBeacon)

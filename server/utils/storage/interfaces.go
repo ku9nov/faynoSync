@@ -10,6 +10,7 @@ import (
 type StorageClient interface {
 	UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error
 	UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error)
+	CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error
 	DeleteObject(ctx context.Context, bucketName, objectKey string) error
 	DeleteObjects(ctx context.Context, bucketName string, objectKeys []string) error
 	GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error)

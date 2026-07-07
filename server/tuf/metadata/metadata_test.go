@@ -1782,6 +1782,10 @@ func TestPostMetadataSign_Targets_WithoutTrustedRoot_RejectsSignature(t *testing
 
 type uploadMockClient struct{}
 
+func (u *uploadMockClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
+}
+
 func (u *uploadMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 	return "https://mock/" + bucketName + "/" + objectKey, nil
 }
@@ -1812,6 +1816,10 @@ func (u *uploadMockClient) ListObjects(ctx context.Context, bucketName, prefix s
 
 type uploadCaptureMockClient struct {
 	objects map[string][]byte
+}
+
+func (u *uploadCaptureMockClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
 }
 
 func (u *uploadCaptureMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
@@ -1871,6 +1879,10 @@ type uploadFailingMockClient struct {
 	err error
 }
 
+func (u *uploadFailingMockClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
+}
+
 func (u *uploadFailingMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 	if u.err != nil {
 		return "", u.err
@@ -1906,6 +1918,10 @@ func (u *uploadFailingMockClient) ListObjects(ctx context.Context, bucketName, p
 type uploadFailOnSuffixMockClient struct {
 	failSuffix string
 	err        error
+}
+
+func (u *uploadFailOnSuffixMockClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
 }
 
 func (u *uploadFailOnSuffixMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
@@ -2277,6 +2293,10 @@ func (d *multiFileDownloadMockClient) UploadObject(ctx context.Context, bucketNa
 	panic("not used")
 }
 
+func (d *multiFileDownloadMockClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
+}
+
 func (d *multiFileDownloadMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 	panic("not used")
 }
@@ -2448,6 +2468,10 @@ func (d *downloadMockClient) DownloadObject(ctx context.Context, bucketName, obj
 
 func (d *downloadMockClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
 	panic("not used")
+}
+
+func (d *downloadMockClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	return nil
 }
 
 func (d *downloadMockClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {

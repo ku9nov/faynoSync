@@ -6,9 +6,11 @@ import (
 	"errors"
 	db "faynoSync/mongod"
 	"faynoSync/server/handler/create"
+	"faynoSync/server/handler/info"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -261,8 +263,10 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	var fileHashes []map[string]string
 	var fileLengths []int64
 	var result bool
+	var isVelopack bool
+	var files []*multipart.FileHeader
 	if form != nil {
-		files := form.File["file"] // Assuming the field name is "file" not "files"
+		files = form.File["file"] // Assuming the field name is "file" not "files"
 		// Validate updater requirements
 		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
 			updaterStr := updater.(string)
@@ -301,16 +305,18 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			fileCtxQuery["hashes"] = fileHashes[i]
 			fileCtxQuery["length"] = fileLengths[i]
-			result, err = repository.UpdateSpecificApp(objID, owner, fileCtxQuery, link, extensions[i], c.Request.Context())
+			var vp bool
+			result, vp, err = repository.UpdateSpecificApp(objID, owner, fileCtxQuery, link, extensions[i], c.Request.Context())
 			if err != nil {
 				logrus.Errorf("Error updating link %d: %v", i, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+			isVelopack = isVelopack || vp
 		}
 	} else {
 		// Handle the case when there are no files to upload
-		result, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, "", "", c.Request.Context())
+		result, isVelopack, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, "", "", c.Request.Context())
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -329,6 +335,12 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		viper.GetViper(),
 		"Updating app",
 	)
+
+	create.CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, s3Owner, files, checkAppVisibility, viper.GetViper())
+
+	if isVelopack {
+		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), s3Owner, appName)
+	}
 
 	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {
 		go func() {

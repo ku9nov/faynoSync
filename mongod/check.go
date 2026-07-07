@@ -35,6 +35,14 @@ func (c *appRepository) Get(ctx context.Context, limit int64, owner string) ([]*
 	return c.processApps(cur, ctx)
 }
 
+// version without the field means full rollout.
+func rolloutPercentOf(percent *int) int {
+	if percent == nil {
+		return 100
+	}
+	return *percent
+}
+
 func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64, owner string, filters map[string]interface{}) (*model.PaginatedResponse, error) {
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	metaFilter := bson.D{
@@ -390,6 +398,8 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 					Changelog:              changelog,
 					Critical:               requiredApp.Critical,
 					IsRequiredIntermediate: true,
+					RolloutPercent:         rolloutPercentOf(requiredApp.RolloutPercent),
+					RolloutSeed:            requiredApp.RolloutSeed,
 				}, nil
 			}
 		}
@@ -419,7 +429,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 		} else if requestedVersion.GreaterThan(latestAppVersion) {
 			return CheckResult{Found: false, CdnEdge: appMeta.CdnEdge, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, PossibleRollback: true, LatestVersion: latestApp.Version}, nil
 		} else {
-			return CheckResult{Found: true, CdnEdge: appMeta.CdnEdge, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, LatestVersion: latestApp.Version}, nil
+			return CheckResult{Found: true, CdnEdge: appMeta.CdnEdge, Artifacts: artifacts, Changelog: changelog, Critical: latestApp.Critical, LatestVersion: latestApp.Version, RolloutPercent: rolloutPercentOf(latestApp.RolloutPercent), RolloutSeed: latestApp.RolloutSeed}, nil
 		}
 
 	} else {
@@ -509,16 +519,17 @@ func (c *appRepository) processApps(cur *mongo.Cursor, ctx context.Context) ([]*
 			return nil, err
 		}
 		app := &model.SpecificAppWithoutIDs{
-			ID:           tempApp.ID,
-			AppName:      tempApp.AppName,
-			Version:      tempApp.Version,
-			Channel:      tempApp.Channel,
-			Published:    tempApp.Published,
-			Critical:     tempApp.Critical,
-			Intermediate: tempApp.Intermediate,
-			Artifacts:    tempApp.Artifacts,
-			Changelog:    tempApp.Changelog,
-			UpdatedAt:    tempApp.UpdatedAt,
+			ID:             tempApp.ID,
+			AppName:        tempApp.AppName,
+			Version:        tempApp.Version,
+			Channel:        tempApp.Channel,
+			Published:      tempApp.Published,
+			Critical:       tempApp.Critical,
+			Intermediate:   tempApp.Intermediate,
+			Artifacts:      tempApp.Artifacts,
+			Changelog:      tempApp.Changelog,
+			UpdatedAt:      tempApp.UpdatedAt,
+			RolloutPercent: tempApp.RolloutPercent,
 		}
 		apps = append(apps, app)
 	}

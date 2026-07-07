@@ -76,6 +76,17 @@ func (m *MinioClient) UploadPublicObjectWithCacheControl(ctx context.Context, bu
 	return uploadInfo.Location, nil
 }
 
+func (m *MinioClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
+	_, err := m.client.CopyObject(ctx,
+		minio.CopyDestOptions{Bucket: bucketName, Object: dstKey},
+		minio.CopySrcOptions{Bucket: bucketName, Object: srcKey},
+	)
+	if err != nil {
+		return &StorageError{Message: "failed to copy object in MinIO", Err: err}
+	}
+	return nil
+}
+
 // DeleteObject deletes a file from MinIO
 func (m *MinioClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	opts := minio.RemoveObjectOptions{

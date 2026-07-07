@@ -218,7 +218,7 @@ func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo st
 	return c.UpdateDocument("apps_meta", filter, update, "app_name_sort_by_asc_updated", "app", owner, ctx)
 }
 
-func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, error) {
+func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, bool, error) {
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	var err error
@@ -238,7 +238,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		// Check if the team user has permission to edit apps
 		if !teamUser.Permissions.Apps.Edit {
 			logrus.Debugf("Team user %s does not have permission to edit apps", teamUser.Username)
-			return false, errors.New("you don't have permission to edit apps")
+			return false, false, errors.New("you don't have permission to edit apps")
 		}
 
 		// Set owner to the team user's admin for database operations
@@ -252,7 +252,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 	err = c.getMeta(ctx, metaCollection, "app_name", ctxQuery["app_name"].(string), &appMeta, owner)
 	if err != nil {
 		logrus.Debugf("Error finding app meta: %v", err)
-		return false, err
+		return false, false, err
 	}
 	logrus.Debugf("Found app meta with ID: %s", appMeta.ID.Hex())
 	logrus.Debugf("teamUserID: %+v, and primitive.NilObjectID: %+v", teamUser.ID, primitive.NilObjectID)
@@ -272,7 +272,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		}
 		if !hasAccess {
 			logrus.Debugf("Team user %s does not have access to app ID: %s", teamUser.Username, appID)
-			return false, errors.New("you don't have access to this app")
+			return false, false, errors.New("you don't have access to this app")
 		}
 		logrus.Debugf("Team user has access to app ID: %s", appID)
 	}
@@ -283,7 +283,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		err = c.getMeta(ctx, metaCollection, "channel_name", channelName, &channelMeta, owner)
 		if err != nil {
 			logrus.Debugf("Error finding channel meta: %v", err)
-			return false, err
+			return false, false, err
 		}
 		logrus.Debugf("Found channel meta with ID: %s", channelMeta.ID.Hex())
 
@@ -291,7 +291,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		if teamUser.ID != primitive.NilObjectID {
 			channelID := channelMeta.ID.Hex()
 			if err := checkEntityAccess(teamUser, channelID, teamUser.Permissions.Channels.Allowed, "channel"); err != nil {
-				return false, err
+				return false, false, err
 			}
 		}
 	}
@@ -302,7 +302,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		err = c.getMeta(ctx, metaCollection, "platform_name", platformName, &platformMeta, owner)
 		if err != nil {
 			logrus.Debugf("Error finding platform meta: %v", err)
-			return false, err
+			return false, false, err
 		}
 		logrus.Debugf("Found platform meta with ID: %s", platformMeta.ID.Hex())
 
@@ -310,7 +310,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		if teamUser.ID != primitive.NilObjectID {
 			platformID := platformMeta.ID.Hex()
 			if err := checkEntityAccess(teamUser, platformID, teamUser.Permissions.Platforms.Allowed, "platform"); err != nil {
-				return false, err
+				return false, false, err
 			}
 		}
 	}
@@ -321,7 +321,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		err = c.getMeta(ctx, metaCollection, "arch_id", archName, &archMeta, owner)
 		if err != nil {
 			logrus.Debugf("Error finding arch meta: %v", err)
-			return false, err
+			return false, false, err
 		}
 		logrus.Debugf("Found arch meta with ID: %s", archMeta.ID.Hex())
 
@@ -329,7 +329,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		if teamUser.ID != primitive.NilObjectID {
 			archID := archMeta.ID.Hex()
 			if err := checkEntityAccess(teamUser, archID, teamUser.Permissions.Archs.Allowed, "architecture"); err != nil {
-				return false, err
+				return false, false, err
 			}
 		}
 	}
@@ -350,12 +350,20 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		var appData model.SpecificApp
 		if err := existingDoc.Decode(&appData); err != nil {
 			logrus.Debugf("Error decoding existing document: %v", err)
-			return false, err
+			return false, false, err
+		}
+
+		isVelopack := false
+		for _, artifact := range appData.Artifacts {
+			if artifact.Velopack != nil {
+				isVelopack = true
+				break
+			}
 		}
 
 		if channelMeta.ID != appData.ChannelID {
 			logrus.Debugf("Channel ID mismatch: %s != %s", channelMeta.ID.Hex(), appData.ChannelID.Hex())
-			return false, errors.New("updating the channel is not allowed")
+			return false, false, errors.New("updating the channel is not allowed")
 		}
 
 		updateFields := bson.D{{Key: "updated_at", Value: time.Now()}}
@@ -376,6 +384,19 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 			requiredIntermediate := utils.GetBoolParam(intermediateParam)
 			updateFields = append(updateFields, bson.E{Key: "required_intermediate", Value: requiredIntermediate})
 			logrus.Debugf("Setting required_intermediate to: %t", requiredIntermediate)
+		}
+
+		if rolloutParam, rolloutExists := ctxQuery["rollout"].(int); rolloutExists {
+			updateFields = append(updateFields, bson.E{Key: "rollout_percent", Value: rolloutParam})
+			logrus.Debugf("Setting rollout_percent to: %d", rolloutParam)
+			if appData.RolloutSeed == "" {
+				seed, err := generateRolloutSeed()
+				if err != nil {
+					logrus.Errorf("Error generating rollout seed: %v", err)
+					return false, false, err
+				}
+				updateFields = append(updateFields, bson.E{Key: "rollout_seed", Value: seed})
+			}
 		}
 
 		if appLink != "" {
@@ -451,14 +472,14 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		)
 		if err != nil {
 			logrus.Debugf("Error updating document: %v", err)
-			return false, err
+			return false, false, err
 		}
 
 		logrus.Debugf("Document updated successfully")
-		return true, nil
+		return true, isVelopack, nil
 	} else {
 		logrus.Debugf("Document does not exist with app_id: %s, version: %s, owner: %s",
 			appMeta.ID.Hex(), ctxQuery["version"].(string), owner)
-		return false, errors.New("app with this parameters doesn't exist")
+		return false, false, errors.New("app with this parameters doesn't exist")
 	}
 }

@@ -21,7 +21,7 @@ rpc_secret = "4dcf0ea5de46bca5d6cf4d1555f2b9d99f5936d17a0f5d6cc7300f2458862f72" 
 
 # S3 API endpoint configuration
 [s3_api]
-s3_region = "garage"
+s3_region = "us-east-1"
 api_bind_addr = "[::]:3900"
 #root_domain = ".s3.garage.localhost"
 

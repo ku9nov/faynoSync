@@ -1,6 +1,7 @@
 package updaters
 
 import (
+	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
 	"net/url"
 	"strings"
@@ -115,6 +116,9 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 
 	switch updaterType {
 
+	case velopack.UpdaterType:
+		logrus.Debugf("Velopack specific S3 key structure")
+		return velopack.BuildS3Key(ctxQuery, owner, oldFileName)
 	case "squirrel_windows":
 		// Squirrel Windows specific S3 key structure
 		logrus.Debugf("Squirrel Windows specific S3 key structure")
@@ -131,7 +135,7 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 		}
 		s3PathSegments = append(s3PathSegments, oldFileName)
 
-		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		encodedPath := url.QueryEscape(strings.Join(s3PathSegments, "/"))
 		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
 		s3Key := strings.Join(s3PathSegments, "/")
 		return link, s3Key
@@ -155,7 +159,7 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 		}
 		s3PathSegments = append(s3PathSegments, oldFileName)
 
-		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		encodedPath := url.QueryEscape(strings.Join(s3PathSegments, "/"))
 		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
 		s3Key := strings.Join(s3PathSegments, "/")
 		return link, s3Key
@@ -179,7 +183,7 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 			s3PathSegments = append(s3PathSegments, newFileName)
 		}
 
-		encodedPath := url.PathEscape(strings.Join(s3PathSegments, "/"))
+		encodedPath := url.QueryEscape(strings.Join(s3PathSegments, "/"))
 		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
 		s3Key := strings.Join(s3PathSegments, "/")
 		return link, s3Key

@@ -3,19 +3,22 @@ package model
 import (
 	"time"
 
+	"faynoSync/server/utils/updaters/velopack"
+
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type Artifact struct {
-	Link      string             `bson:"link"`
-	Platform  primitive.ObjectID `bson:"platform"`
-	Arch      primitive.ObjectID `bson:"arch"`
-	Package   string             `bson:"package"`
-	Signature string             `bson:"signature"`
-	Hashes    map[string]string  `bson:"hashes,omitempty"`
-	Length    int64              `bson:"length,omitempty"`
-	TufSigned bool               `bson:"tuf_signed,omitempty"`
-	TufTaskID *string            `bson:"tuf_task_id,omitempty"`
+	Link      string                 `bson:"link"`
+	Platform  primitive.ObjectID     `bson:"platform"`
+	Arch      primitive.ObjectID     `bson:"arch"`
+	Package   string                 `bson:"package"`
+	Signature string                 `bson:"signature"`
+	Hashes    map[string]string      `bson:"hashes,omitempty"`
+	Length    int64                  `bson:"length,omitempty"`
+	TufSigned bool                   `bson:"tuf_signed,omitempty"`
+	TufTaskID *string                `bson:"tuf_task_id,omitempty"`
+	Velopack  *velopack.VelopackMeta `bson:"velopack,omitempty"`
 }
 
 type App struct {
@@ -32,19 +35,21 @@ type App struct {
 }
 
 type SpecificApp struct {
-	ID           primitive.ObjectID `bson:"_id"`
-	AppID        primitive.ObjectID `bson:"app_id"`
-	AppName      string             `bson:"app_name,omitempty" json:"AppName,omitempty"`
-	Version      string             `bson:"version"`
-	ChannelID    primitive.ObjectID `bson:"channel_id"`
-	Channel      string             `bson:"channel,omitempty" json:"channel,omitempty"`
-	Published    bool               `bson:"published"`
-	Critical     bool               `bson:"critical"`
-	Intermediate bool               `bson:"required_intermediate"`
-	Artifacts    []Artifact         `bson:"artifacts"`
-	Changelog    []Changelog        `bson:"changelog"`
-	Updated_at   primitive.DateTime `bson:"updated_at"`
-	Owner        string             `bson:"owner"`
+	ID             primitive.ObjectID `bson:"_id"`
+	AppID          primitive.ObjectID `bson:"app_id"`
+	AppName        string             `bson:"app_name,omitempty" json:"AppName,omitempty"`
+	Version        string             `bson:"version"`
+	ChannelID      primitive.ObjectID `bson:"channel_id"`
+	Channel        string             `bson:"channel,omitempty" json:"channel,omitempty"`
+	Published      bool               `bson:"published"`
+	Critical       bool               `bson:"critical"`
+	Intermediate   bool               `bson:"required_intermediate"`
+	Artifacts      []Artifact         `bson:"artifacts"`
+	Changelog      []Changelog        `bson:"changelog"`
+	Updated_at     primitive.DateTime `bson:"updated_at"`
+	Owner          string             `bson:"owner"`
+	RolloutPercent *int               `bson:"rollout_percent,omitempty"`
+	RolloutSeed    string             `bson:"rollout_seed,omitempty"`
 }
 
 type SpecificArtifactsWithoutIDs struct {
@@ -57,16 +62,17 @@ type SpecificArtifactsWithoutIDs struct {
 }
 
 type SpecificAppWithoutIDs struct {
-	ID           primitive.ObjectID            `bson:"_id,omitempty" json:"ID"`
-	AppName      string                        `bson:"app_name" json:"AppName"`
-	Version      string                        `bson:"version" json:"Version"`
-	Channel      string                        `bson:"channel" json:"Channel"`
-	Published    bool                          `bson:"published" json:"Published"`
-	Critical     bool                          `bson:"critical" json:"Critical"`
-	Intermediate bool                          `bson:"required_intermediate" json:"Intermediate"`
-	Artifacts    []SpecificArtifactsWithoutIDs `bson:"artifacts" json:"Artifacts"`
-	Changelog    []Changelog                   `bson:"changelog" json:"Changelog"`
-	UpdatedAt    primitive.DateTime            `bson:"updated_at" json:"Updated_at"`
+	ID             primitive.ObjectID            `bson:"_id,omitempty" json:"ID"`
+	AppName        string                        `bson:"app_name" json:"AppName"`
+	Version        string                        `bson:"version" json:"Version"`
+	Channel        string                        `bson:"channel" json:"Channel"`
+	Published      bool                          `bson:"published" json:"Published"`
+	Critical       bool                          `bson:"critical" json:"Critical"`
+	Intermediate   bool                          `bson:"required_intermediate" json:"Intermediate"`
+	Artifacts      []SpecificArtifactsWithoutIDs `bson:"artifacts" json:"Artifacts"`
+	Changelog      []Changelog                   `bson:"changelog" json:"Changelog"`
+	UpdatedAt      primitive.DateTime            `bson:"updated_at" json:"Updated_at"`
+	RolloutPercent *int                          `bson:"rollout_percent,omitempty" json:"RolloutPercent,omitempty"`
 }
 
 type Channel struct {
@@ -117,6 +123,7 @@ type UpRequest struct {
 	ArtifactsToDelete []string `json:"artifacts_to_delete"`
 	Updater           string   `json:"updater"`
 	Signature         string   `json:"signature"`
+	Rollout           *int     `json:"rollout"`
 }
 
 type PaginatedResponse struct {

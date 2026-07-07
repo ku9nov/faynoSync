@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	db "faynoSync/mongod"
+	"faynoSync/server/handler/info"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
+	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +24,73 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
+
+func parseVelopackFeed(files []*multipart.FileHeader) (map[string]velopack.VelopackMeta, error) {
+	for _, file := range files {
+		name := strings.ToLower(file.Filename)
+		if strings.HasPrefix(name, "releases.") && strings.HasSuffix(name, ".json") {
+			f, err := file.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer f.Close()
+			content, err := io.ReadAll(f)
+			if err != nil {
+				return nil, err
+			}
+			return velopack.ParseFeed(content)
+		}
+	}
+	return nil, fmt.Errorf("velopack updater requires a releases.*.json feed file")
+}
+
+// CopyVelopackInstallersToDefault materializes the flat, fixed-name installer
+// so the persisted artifact link points at the per-version installers/ object
+// while the default name keeps pointing at the newest upload. It self-gates on
+// the velopack updater, since only that path routes installers to versioned keys.
+func CopyVelopackInstallersToDefault(ctx context.Context, ctxQuery map[string]interface{}, owner string, files []*multipart.FileHeader, checkAppVisibility bool, env *viper.Viper) {
+	if updater, _ := ctxQuery["updater"].(string); updater != velopack.UpdaterType {
+		return
+	}
+
+	hasInstaller := false
+	for _, file := range files {
+		if velopack.IsInstallerFile(file.Filename) {
+			hasInstaller = true
+			break
+		}
+	}
+	if !hasInstaller {
+		return
+	}
+
+	factory := utils.NewStorageFactory(env)
+	storageClient, err := factory.CreateStorageClient()
+	if err != nil {
+		logrus.Errorf("Failed to create storage client for velopack installer copy: %v", err)
+		return
+	}
+
+	bucketName := env.GetString("S3_BUCKET_NAME")
+	public := true
+	if checkAppVisibility {
+		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
+		public = false
+	}
+
+	for _, file := range files {
+		if !velopack.IsInstallerFile(file.Filename) {
+			continue
+		}
+		srcKey := velopack.InstallerVersionedKey(ctxQuery, owner, file.Filename)
+		dstKey := velopack.InstallerDefaultKey(ctxQuery, owner, file.Filename)
+		if err := storageClient.CopyObject(ctx, bucketName, srcKey, dstKey, public); err != nil {
+			logrus.Errorf("Failed to copy velopack installer %s -> %s: %v", srcKey, dstKey, err)
+			continue
+		}
+		logrus.Debugf("Materialized default velopack installer: %s/%s", bucketName, dstKey)
+	}
+}
 
 func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *redis.Client) error {
 
@@ -210,6 +281,16 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Ingest velopack metadata from the releases.*.json feed (verbatim hashes)
+		if updaterStr == velopack.UpdaterType {
+			velopackMeta, err := parseVelopackFeed(files)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			ctxQueryMap["velopack_meta"] = velopackMeta
+		}
 	}
 	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
 	if err != nil {
@@ -250,6 +331,9 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		}
 		fileCtxQuery["hashes"] = fileHashes[i]
 		fileCtxQuery["length"] = fileLengths[i]
+		if _, ok := ctxQueryMap["velopack_meta"]; ok {
+			fileCtxQuery["file_name"] = files[i].Filename
+		}
 
 		result, err := repository.Upload(fileCtxQuery, link, extensions[i], owner, c.Request.Context(), rdb, viper.GetViper(), checkAppVisibility)
 		if err != nil {
@@ -271,6 +355,11 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		viper.GetViper(),
 		"Uploaded app",
 	)
+
+	if updater, _ := ctxQueryMap["updater"].(string); updater == velopack.UpdaterType {
+		CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, owner, files, checkAppVisibility, viper.GetViper())
+		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), owner, appName)
+	}
 
 	if len(results) == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no results found. Please check your files."})
