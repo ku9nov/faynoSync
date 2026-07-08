@@ -132,6 +132,8 @@ func StartServer(config *viper.Viper) {
 	if config.GetBool("REPORTS_ENABLED") {
 		router.GET("/reports/groups", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.ListReportGroups)
 		router.GET("/reports/groups/:groupHash/blobs", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.ListReportGroupBlobs)
+		router.PATCH("/reports/groups/:groupHash", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.UpdateReportGroup)
+		router.DELETE("/reports/groups/:groupHash", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), handler.DeleteReportGroup)
 	}
 
 	// TUF routes
@@ -163,7 +165,7 @@ func corsMiddleware(allowedOrigins []string) gin.HandlerFunc {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 		}
 
 		if c.Request.Method == "OPTIONS" {

@@ -71,6 +71,7 @@ func (c *appRepository) IncrementReportGroup(ctx context.Context, appID primitiv
 			"application":           app,
 			"system":                system,
 			"event":                 event,
+			"status":                model.ReportGroupStatusOpen,
 			"stats.firstSeen":       dt,
 			"stats.detailsStored":   0,
 			"stats.detailsRejected": 0,
@@ -87,6 +88,19 @@ func (c *appRepository) IncrementReportGroup(ctx context.Context, appID primitiv
 		// exists, so this becomes a plain $inc update with no insert.
 		_, err = collection.UpdateOne(ctx, filter, update, opts)
 	}
+	if err != nil {
+		return err
+	}
+
+	// A new event on a resolved group reopens it (regression). The filter matches
+	// only resolved groups, so muted groups stay suppressed and open groups are
+	// untouched.
+	reopen := bson.M{
+		"$set":   bson.M{"status": model.ReportGroupStatusOpen, "updatedAt": dt},
+		"$unset": bson.M{"resolvedAt": "", "resolvedBy": ""},
+	}
+	reopenFilter := bson.M{"app_id": appID, "groupHash": hash, "status": model.ReportGroupStatusResolved}
+	_, err = collection.UpdateOne(ctx, reopenFilter, reopen)
 	return err
 }
 
@@ -207,6 +221,14 @@ func applyReportGroupFilters(filter bson.M, filters map[string]string) {
 		}
 	}
 
+	if v := filters["status"]; v != "" && v != "all" {
+		if v == model.ReportGroupStatusOpen {
+			filter["$or"] = []bson.M{{"status": v}, {"status": bson.M{"$exists": false}}}
+		} else {
+			filter["status"] = v
+		}
+	}
+
 	lastSeen := bson.M{}
 	if v := filters["from"]; v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
@@ -266,6 +288,96 @@ func (c *appRepository) GetReportGroups(ctx context.Context, requester string, f
 		return nil, err
 	}
 	return result, nil
+}
+
+func (c *appRepository) UpdateReportGroup(ctx context.Context, requester, groupHash string, status *string, tags *[]string, note *string, resolvedBy string, now time.Time) (bool, error) {
+	appIDs, err := c.resolveAccessibleAppIDs(ctx, requester)
+	if err != nil {
+		return false, err
+	}
+	if len(appIDs) == 0 {
+		return false, nil
+	}
+
+	dt := primitive.NewDateTimeFromTime(now)
+	set := bson.M{"updatedAt": dt}
+	unset := bson.M{}
+
+	if status != nil {
+		set["status"] = *status
+		if *status == model.ReportGroupStatusResolved {
+			set["resolvedAt"] = dt
+			set["resolvedBy"] = resolvedBy
+		} else {
+			unset["resolvedAt"] = ""
+			unset["resolvedBy"] = ""
+		}
+	}
+	if tags != nil {
+		if len(*tags) == 0 {
+			unset["tags"] = ""
+		} else {
+			set["tags"] = *tags
+		}
+	}
+	if note != nil {
+		if *note == "" {
+			unset["note"] = ""
+		} else {
+			set["note"] = *note
+		}
+	}
+
+	update := bson.M{"$set": set}
+	if len(unset) > 0 {
+		update["$unset"] = unset
+	}
+
+	collection := c.client.Database(c.config.Database).Collection("report_groups")
+	res, err := collection.UpdateOne(ctx, bson.M{"app_id": bson.M{"$in": appIDs}, "groupHash": groupHash}, update)
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount > 0, nil
+}
+
+func (c *appRepository) DeleteReportGroup(ctx context.Context, requester, groupHash string) (bool, []string, error) {
+	appIDs, err := c.resolveAccessibleAppIDs(ctx, requester)
+	if err != nil {
+		return false, nil, err
+	}
+	if len(appIDs) == 0 {
+		return false, nil, nil
+	}
+
+	scope := bson.M{"app_id": bson.M{"$in": appIDs}, "groupHash": groupHash}
+
+	blobColl := c.client.Database(c.config.Database).Collection("report_blobs")
+	cursor, err := blobColl.Find(ctx, scope, options.Find().SetProjection(bson.M{"storage.key": 1}))
+	if err != nil {
+		return false, nil, err
+	}
+	var blobs []model.ReportBlob
+	if err := cursor.All(ctx, &blobs); err != nil {
+		return false, nil, err
+	}
+	keys := make([]string, 0, len(blobs))
+	for _, b := range blobs {
+		if b.Storage.Key != "" {
+			keys = append(keys, b.Storage.Key)
+		}
+	}
+
+	if _, err := blobColl.DeleteMany(ctx, scope); err != nil {
+		return false, nil, err
+	}
+
+	groupColl := c.client.Database(c.config.Database).Collection("report_groups")
+	res, err := groupColl.DeleteOne(ctx, scope)
+	if err != nil {
+		return false, nil, err
+	}
+	return res.DeletedCount > 0, keys, nil
 }
 
 func (c *appRepository) GetReportBlobsByGroupHash(ctx context.Context, requester, groupHash string, limit int64) ([]*model.ReportBlob, error) {

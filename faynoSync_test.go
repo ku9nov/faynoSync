@@ -8912,6 +8912,299 @@ func TestReportGroupBlobsInvalidHash(t *testing.T) {
 	}
 }
 
+func serveUpdateReportGroup(token, groupHash, body string) *httptest.ResponseRecorder {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.PATCH("/reports/groups/:groupHash", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		h.UpdateReportGroup(c)
+	})
+
+	req, _ := http.NewRequest("PATCH", "/reports/groups/"+groupHash, bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func serveDeleteReportGroup(token, groupHash string) *httptest.ResponseRecorder {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/reports/groups/:groupHash", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		h.DeleteReportGroup(c)
+	})
+
+	req, _ := http.NewRequest("DELETE", "/reports/groups/"+groupHash, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestReportGroupResolveAndStatusFilter(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "resolve_and_filter"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-resolve", reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)).Code)
+
+	// New group defaults to open.
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, model.ReportGroupStatusOpen, g.Status)
+
+	w := serveUpdateReportGroup(authToken, hash, `{"status":"resolved"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	g = getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, model.ReportGroupStatusResolved, g.Status)
+	require.NotNil(t, g.ResolvedAt, "resolvedAt must be set")
+	assert.NotEmpty(t, g.ResolvedBy, "resolvedBy must be set")
+
+	// status=open excludes the resolved group; resolved/all include it.
+	countFor := func(status string) int64 {
+		q := "reason=" + reason
+		if status != "" {
+			q += "&status=" + status
+		}
+		res := serveListReportGroups(authToken, q)
+		require.Equal(t, http.StatusOK, res.Code, res.Body.String())
+		var p model.PaginatedReportGroups
+		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &p))
+		return p.Total
+	}
+	assert.Equal(t, int64(0), countFor("open"), "resolved group must be hidden from status=open")
+	assert.Equal(t, int64(1), countFor("resolved"))
+	assert.Equal(t, int64(1), countFor("all"))
+	assert.Equal(t, int64(1), countFor(""), "no status filter returns all")
+}
+
+func TestReportGroupAutoReopenOnRegression(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "regression_reopen"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-regress-1", body).Code)
+	require.Equal(t, http.StatusOK, serveUpdateReportGroup(authToken, hash, `{"status":"resolved"}`).Code)
+
+	// A new event on a resolved group reopens it and clears the resolution markers.
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-regress-2", body).Code)
+
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, model.ReportGroupStatusOpen, g.Status, "resolved group must reopen on a new event")
+	assert.Nil(t, g.ResolvedAt, "resolvedAt must be cleared on reopen")
+	assert.Empty(t, g.ResolvedBy, "resolvedBy must be cleared on reopen")
+	assert.Equal(t, int64(2), g.Stats.Count, "the regression event is still counted")
+}
+
+func TestReportGroupMutedStaysMuted(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "muted_noise"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-mute-1", body).Code)
+	require.Equal(t, http.StatusOK, serveUpdateReportGroup(authToken, hash, `{"status":"muted"}`).Code)
+
+	// New events keep counting but must not resurrect a muted group.
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-mute-2", body).Code)
+
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, model.ReportGroupStatusMuted, g.Status, "muted group must stay muted on a new event")
+	assert.Equal(t, int64(2), g.Stats.Count)
+}
+
+func TestReportGroupUpdateValidation(t *testing.T) {
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "update_validation"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-updateval", reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)).Code)
+
+	t.Run("invalid status", func(t *testing.T) {
+		w := serveUpdateReportGroup(authToken, hash, `{"status":"closed"}`)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+	t.Run("empty status", func(t *testing.T) {
+		w := serveUpdateReportGroup(authToken, hash, `{}`)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+	t.Run("invalid hash", func(t *testing.T) {
+		w := serveUpdateReportGroup(authToken, "nothex", `{"status":"resolved"}`)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+	t.Run("unknown hash", func(t *testing.T) {
+		w := serveUpdateReportGroup(authToken, strings.Repeat("f", 64), `{"status":"resolved"}`)
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+}
+
+func TestReportGroupTagsAndNote(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "tags_and_note"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-tagnote", reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)).Code)
+
+	t.Run("set without status", func(t *testing.T) {
+		w := serveUpdateReportGroup(authToken, hash, `{"tags":["ui","needs-repro"],"note":"tracked in JIRA-123"}`)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		g := getReportGroupDoc(t, idTestappApp, hash)
+		require.NotNil(t, g)
+		assert.Equal(t, []string{"ui", "needs-repro"}, g.Tags)
+		assert.Equal(t, "tracked in JIRA-123", g.Note)
+		assert.Equal(t, model.ReportGroupStatusOpen, g.Status, "metadata edit must not change status")
+	})
+
+	t.Run("clear tags and note", func(t *testing.T) {
+		w := serveUpdateReportGroup(authToken, hash, `{"tags":[],"note":""}`)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		g := getReportGroupDoc(t, idTestappApp, hash)
+		require.NotNil(t, g)
+		assert.Empty(t, g.Tags)
+		assert.Empty(t, g.Note)
+	})
+
+	t.Run("invalid tag", func(t *testing.T) {
+		assert.Equal(t, http.StatusBadRequest, serveUpdateReportGroup(authToken, hash, `{"tags":["bad tag"]}`).Code)
+	})
+	t.Run("too many tags", func(t *testing.T) {
+		tags := make([]string, 21)
+		for i := range tags {
+			tags[i] = fmt.Sprintf("t%d", i)
+		}
+		b, _ := json.Marshal(map[string][]string{"tags": tags})
+		assert.Equal(t, http.StatusBadRequest, serveUpdateReportGroup(authToken, hash, string(b)).Code)
+	})
+	t.Run("note too long", func(t *testing.T) {
+		b, _ := json.Marshal(map[string]string{"note": strings.Repeat("a", 2001)})
+		assert.Equal(t, http.StatusBadRequest, serveUpdateReportGroup(authToken, hash, string(b)).Code)
+	})
+}
+
+func TestReportGroupTagsNotePersistOnReopen(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "tags_persist_reopen"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	body := reportBody(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-tagpersist-1", body).Code)
+	require.Equal(t, http.StatusOK, serveUpdateReportGroup(authToken, hash, `{"status":"resolved","tags":["flaky"],"note":"third-party"}`).Code)
+
+	// A regression reopens the group but must preserve triage metadata.
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-tagpersist-2", body).Code)
+
+	g := getReportGroupDoc(t, idTestappApp, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, model.ReportGroupStatusOpen, g.Status)
+	assert.Nil(t, g.ResolvedAt, "resolution markers cleared on reopen")
+	assert.Equal(t, []string{"flaky"}, g.Tags, "tags survive reopen")
+	assert.Equal(t, "third-party", g.Note, "note survives reopen")
+}
+
+func TestReportGroupUpdateCrossOwnerDenied(t *testing.T) {
+	flushReportRateLimits(t)
+	appID := createReportEnabledApp(t, authTokenSecondUser, "owner2update")
+	key := reportKeyForApp(t, appID)
+	reason := "cross_owner_update"
+	hash := computeReportGroupHash("owner2update", rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-crossupd", reportBody("owner2update", rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)).Code)
+
+	// Admin (a different owner) must not be able to change another owner's group.
+	w := serveUpdateReportGroup(authToken, hash, `{"status":"resolved"}`)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	g := getReportGroupDoc(t, appID, hash)
+	require.NotNil(t, g)
+	assert.Equal(t, model.ReportGroupStatusOpen, g.Status, "group must be untouched by a non-owner")
+}
+
+func TestReportGroupUpdateTeamUserScoping(t *testing.T) {
+	flushReportRateLimits(t)
+
+	// Allowed app (testapp is in the team user's allowed_apps).
+	allowedKey := reportKeyForApp(t, idTestappApp)
+	allowedName := reportAppName(t, idTestappApp)
+	allowedReason := "team_update_allowed"
+	allowedHash := computeReportGroupHash(allowedName, rpVersion, rpChannel, rpPlatform, rpArch, rpType, allowedReason)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(allowedKey, "dev-teamupd-a", reportBody(allowedName, rpVersion, rpChannel, rpPlatform, rpArch, rpType, allowedReason)).Code)
+
+	// Denied app (public testapp is NOT in allowed_apps).
+	deniedKey := reportKeyForApp(t, idPublicTestappApp)
+	deniedName := reportAppName(t, idPublicTestappApp)
+	deniedReason := "team_update_denied"
+	deniedHash := computeReportGroupHash(deniedName, rpVersion, rpChannel, rpPlatform, rpArch, rpType, deniedReason)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(deniedKey, "dev-teamupd-d", reportBody(deniedName, rpVersion, rpChannel, rpPlatform, rpArch, rpType, deniedReason)).Code)
+
+	wAllowed := serveUpdateReportGroup(teamUserToken, allowedHash, `{"status":"resolved"}`)
+	assert.Equal(t, http.StatusOK, wAllowed.Code, "team user may update a group of an allowed app")
+
+	wDenied := serveUpdateReportGroup(teamUserToken, deniedHash, `{"status":"resolved"}`)
+	assert.Equal(t, http.StatusNotFound, wDenied.Code, "team user must not update a group of a non-allowed app")
+
+	g := getReportGroupDoc(t, idPublicTestappApp, deniedHash)
+	require.NotNil(t, g)
+	assert.Equal(t, model.ReportGroupStatusOpen, g.Status)
+}
+
+func TestReportGroupDelete(t *testing.T) {
+	flushReportRateLimits(t)
+	key := reportKeyForApp(t, idTestappApp)
+	name := reportAppName(t, idTestappApp)
+	reason := "delete_group"
+	hash := computeReportGroupHash(name, rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+
+	payload := gzipBase64(t, []byte(`{"trace":"boom"}`))
+	body := reportBodyWithDetails(name, reason, "gzip+base64", "application/json", payload)
+	require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-delete", body).Code)
+	require.NotNil(t, getReportGroupDoc(t, idTestappApp, hash))
+	require.Equal(t, int64(1), countReportBlobDocs(t, idTestappApp, hash))
+
+	w := serveDeleteReportGroup(authToken, hash)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	assert.Nil(t, getReportGroupDoc(t, idTestappApp, hash), "group doc must be removed")
+	assert.Equal(t, int64(0), countReportBlobDocs(t, idTestappApp, hash), "blob metadata must be removed")
+
+	// Deleting again is a no-op -> 404.
+	assert.Equal(t, http.StatusNotFound, serveDeleteReportGroup(authToken, hash).Code)
+}
+
+func TestReportGroupDeleteValidationAndScoping(t *testing.T) {
+	flushReportRateLimits(t)
+
+	t.Run("invalid hash", func(t *testing.T) {
+		assert.Equal(t, http.StatusBadRequest, serveDeleteReportGroup(authToken, "nothex").Code)
+	})
+	t.Run("unknown hash", func(t *testing.T) {
+		assert.Equal(t, http.StatusNotFound, serveDeleteReportGroup(authToken, strings.Repeat("f", 64)).Code)
+	})
+	t.Run("cross owner denied", func(t *testing.T) {
+		appID := createReportEnabledApp(t, authTokenSecondUser, "owner2delete")
+		key := reportKeyForApp(t, appID)
+		reason := "cross_owner_delete"
+		hash := computeReportGroupHash("owner2delete", rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)
+		require.Equal(t, http.StatusAccepted, ingestWithKey(key, "dev-crossdel", reportBody("owner2delete", rpVersion, rpChannel, rpPlatform, rpArch, rpType, reason)).Code)
+
+		assert.Equal(t, http.StatusNotFound, serveDeleteReportGroup(authToken, hash).Code)
+		assert.NotNil(t, getReportGroupDoc(t, appID, hash), "a non-owner delete must not remove the group")
+	})
+}
+
 func TestRegenerateReportKeyTeamUser(t *testing.T) {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())

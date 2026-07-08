@@ -68,6 +68,8 @@ type AppHandler interface {
 	IngestReport(*gin.Context)
 	ListReportGroups(*gin.Context)
 	ListReportGroupBlobs(*gin.Context)
+	UpdateReportGroup(*gin.Context)
+	DeleteReportGroup(*gin.Context)
 }
 
 type appHandler struct {
@@ -324,6 +326,14 @@ func (ch *appHandler) ListReportGroups(c *gin.Context) {
 
 func (ch *appHandler) ListReportGroupBlobs(c *gin.Context) {
 	report.ListReportGroupBlobs(c, ch.repository)
+}
+
+func (ch *appHandler) UpdateReportGroup(c *gin.Context) {
+	report.UpdateReportGroup(c, ch.repository)
+}
+
+func (ch *appHandler) DeleteReportGroup(c *gin.Context) {
+	report.DeleteReportGroup(c, ch.repository)
 }
 
 func (ch *appHandler) reloadTelemetryAllowListAfterSuccess(c *gin.Context, reason string) {

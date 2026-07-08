@@ -31,8 +31,13 @@ func ListReportGroups(c *gin.Context, repository db.AppRepository) {
 	page, _ := strconv.ParseInt(c.Query("page"), 10, 64)
 	limit, _ := strconv.ParseInt(c.Query("limit"), 10, 64)
 
+	if status := c.Query("status"); status != "" && status != "all" && !isValidReportGroupStatus(status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status"})
+		return
+	}
+
 	filters := map[string]string{}
-	for _, k := range []string{"app", "version", "channel", "platform", "arch", "type", "reason", "from", "to"} {
+	for _, k := range []string{"app", "version", "channel", "platform", "arch", "type", "reason", "status", "from", "to"} {
 		if v := c.Query(k); v != "" {
 			filters[k] = v
 		}

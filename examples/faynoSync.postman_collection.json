@@ -2389,6 +2389,99 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Update report status",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PATCH",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"status\":\"resolved\",\"tags\":[\"ui\",\"needs-repro\"],\"note\":\"tracked in JIRA-123\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/reports/groups/9c460a0d02a7a80a1456b49d88033100cad27266848feb2a1cdd7480d50efbcc",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "reports",
+            "groups",
+            "9c460a0d02a7a80a1456b49d88033100cad27266848feb2a1cdd7480d50efbcc"
+          ],
+          "query": [
+            {
+              "key": "app",
+              "value": "test",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "version",
+              "value": "1.4.17",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "type",
+              "value": "update_failure",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "reason",
+              "value": "panic",
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Report delete",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/reports/groups/9c460a0d02a7a80a1456b49d88033100cad27266848feb2a1cdd7480d50efbcc",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "reports",
+            "groups",
+            "9c460a0d02a7a80a1456b49d88033100cad27266848feb2a1cdd7480d50efbcc"
+          ]
+        }
+      },
+      "response": []
     }
   ],
   "auth": {

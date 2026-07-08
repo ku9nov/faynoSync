@@ -4,6 +4,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+const (
+	ReportGroupStatusOpen     = "open"
+	ReportGroupStatusResolved = "resolved"
+	ReportGroupStatusMuted    = "muted"
+)
+
 type ReportApplication struct {
 	Name    string `bson:"name" json:"name"`
 	Version string `bson:"version" json:"version"`
@@ -62,16 +68,27 @@ type ReportGroupStats struct {
 }
 
 type ReportGroup struct {
-	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	GroupHash   string             `bson:"groupHash" json:"group_hash"`
-	AppID       primitive.ObjectID `bson:"app_id" json:"app_id"`
-	Owner       string             `bson:"owner" json:"-"`
-	Application ReportApplication  `bson:"application" json:"application"`
-	System      ReportSystem       `bson:"system" json:"system"`
-	Event       ReportEvent        `bson:"event" json:"event"`
-	Stats       ReportGroupStats   `bson:"stats" json:"stats"`
-	CreatedAt   primitive.DateTime `bson:"createdAt" json:"created_at"`
-	UpdatedAt   primitive.DateTime `bson:"updatedAt" json:"updated_at"`
+	ID          primitive.ObjectID  `bson:"_id,omitempty" json:"id"`
+	GroupHash   string              `bson:"groupHash" json:"group_hash"`
+	AppID       primitive.ObjectID  `bson:"app_id" json:"app_id"`
+	Owner       string              `bson:"owner" json:"-"`
+	Application ReportApplication   `bson:"application" json:"application"`
+	System      ReportSystem        `bson:"system" json:"system"`
+	Event       ReportEvent         `bson:"event" json:"event"`
+	Stats       ReportGroupStats    `bson:"stats" json:"stats"`
+	Status      string              `bson:"status,omitempty" json:"status"`
+	Tags        []string            `bson:"tags,omitempty" json:"tags,omitempty"`
+	Note        string              `bson:"note,omitempty" json:"note,omitempty"`
+	ResolvedAt  *primitive.DateTime `bson:"resolvedAt,omitempty" json:"resolved_at,omitempty"`
+	ResolvedBy  string              `bson:"resolvedBy,omitempty" json:"resolved_by,omitempty"`
+	CreatedAt   primitive.DateTime  `bson:"createdAt" json:"created_at"`
+	UpdatedAt   primitive.DateTime  `bson:"updatedAt" json:"updated_at"`
+}
+
+type UpdateReportGroupRequest struct {
+	Status *string   `json:"status"`
+	Tags   *[]string `json:"tags"`
+	Note   *string   `json:"note"`
 }
 
 type ReportBlobStorage struct {
