@@ -54,6 +54,8 @@ type AppRepository interface {
 	DeleteReportBlobsByIDs(ctx context.Context, ids []primitive.ObjectID) (int64, error)
 	GetReportGroups(ctx context.Context, requester string, filters map[string]string, page, limit int64) (*model.PaginatedReportGroups, error)
 	GetReportBlobsByGroupHash(ctx context.Context, requester, groupHash string, limit int64) ([]*model.ReportBlob, error)
+	UpdateReportGroup(ctx context.Context, requester, groupHash string, status *string, tags *[]string, note *string, resolvedBy string, now time.Time) (bool, error)
+	DeleteReportGroup(ctx context.Context, requester, groupHash string) (bool, []string, error)
 }
 
 type appRepository struct {

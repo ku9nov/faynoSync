@@ -67,9 +67,9 @@ Not just "send update to 10% of users", but ensure:
 - deterministic bucketing;
 - sticky assignment;
 - platform-aware rollout;
-- failure-rate monitoring;
-- automatic pause;
-- automatic rollback threshold (for example, pause when crash_rate > 3%).
+- ~~failure-rate monitoring;~~
+- ~~automatic pause;~~
+- ~~automatic rollback threshold (for example, pause when crash_rate > 3%).~~
 
 ### 5.3 Cohorts and targeting
 
@@ -90,8 +90,8 @@ Status: idea under review, not a priority for the next iteration.
 ### 5.4 Safe rollout control mechanisms
 
 - throttling;
-- kill switches;
-- emergency rollback;
+- ~~kill switches;~~
+- ~~emergency rollback;~~
 - canary populations (internal staff -> QA -> opt-in users -> beta cohort).
 
 ### 5.5 Channel management
@@ -163,7 +163,9 @@ Actions:
   - throttle
   - alert
 
-### 6.4 Decision Engine (draft logic)
+### ~~6.4 Decision Engine (draft logic)~~
+
+~~Dropped — no telemetry-driven decision engine / auto-pause / auto-rollback for staged rollouts. Rollout adoption is computed on the dashboard from existing telemetry (no extra API); see `faynoSync-site/docs/rollout.mdx`.~~
 
 Example rule:
 
@@ -192,7 +194,7 @@ Raw event example in MongoDB:
 
 Prometheus metrics exposed by server:
 - faynosync_update_failures_total
-- faynosync_rollout_pause_triggered
+- ~~faynosync_rollout_pause_triggered~~
 - faynosync_client_outdated_total
 
 Dashboard scope (control plane):
@@ -200,8 +202,8 @@ Dashboard scope (control plane):
 - Failure rate
 - Crash rate
 - Adoption %
-- Pause rollout
-- Trigger rollback
+- ~~Pause rollout~~
+- ~~Trigger rollback~~
 
 Grafana scope (observability plane):
 - deep metrics;

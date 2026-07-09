@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.6.5
+
+### Features
+
+- Added a lifecycle status to report groups (`open`/`resolved`/`muted`, defaulting to `open`). New groups are created `open`; the list API accepts a `status` filter (`status=open` also matches pre-existing groups that have no status field, `status=all` disables the filter).
+- Added `PATCH /reports/groups/:groupHash` (permission `edit`) as a partial-update endpoint for a group's `status`, `tags`, and `note` (any combination; at least one required). Resolving records `resolvedAt`/`resolvedBy`, any other status clears them.
+- Added free-form triage metadata independent of status: `tags` (up to 20, each `^[a-zA-Z0-9._-]{1,64}$`) and a `note` (up to 2000 chars). An empty tags array or empty note clears the field; both survive an auto-reopen.
+- Added regression auto-reopen: a new event on a `resolved` group flips it back to `open` and clears the resolution markers (tags/note are preserved), while `muted` groups stay suppressed.
+- Added `DELETE /reports/groups/:groupHash` (permission `delete`) to hard-delete a group together with its blob metadata and the underlying storage objects (best-effort, falling back to the storage lifecycle/TTL). All three endpoints are scoped to the requester's accessible apps.
+
 ## v1.6.4
 
 ### Features (Velopack)
