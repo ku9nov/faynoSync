@@ -59,6 +59,11 @@ It’s ideal for managing updates in Electron apps, native desktop applications,
 | **API Framework** | Go (Golang) | Main application server built with Go |
 | **Database** | MongoDB | Primary database for storing application metadata, users, and configurations |
 | **Cache & Performance** | Redis | Used for performance mode and statistics caching |
+| **Updaters** | electron-builder | Update feeds for Electron apps (auto-generated `latest*.yml` / `latest-mac.yml`) |
+| | Tauri | Updater for Tauri apps (signature-based verification) |
+| | Squirrel | Update support for Squirrel.Windows and Squirrel.Mac |
+| | Velopack | Cross-platform installer/updater framework |
+| | Manual | Direct download without a framework-specific update feed |
 | **Storage** | S3-Compatible | Supports multiple cloud storage providers: |
 | | AWS S3 | Amazon Web Services Simple Storage Service |
 | | Garage | Recommended local S3-compatible storage, used via the AWS SDK |
@@ -364,10 +369,3 @@ Then run migrations with the built-in command:
 - **Migration Tool**: [golang-migrate](https://github.com/golang-migrate/migrate/blob/master/cmd/migrate/README.md) - Database migration utility
 
 ---
-
-## 📄 License
-
-This application is licensed under the Apache license. See the LICENSE file for more details.
-
-### 🔗 License Link
-- **License File**: [LICENSE](LICENSE) - Apache License 2.0
