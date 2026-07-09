@@ -76,7 +76,7 @@ type ReportGroup struct {
 	System      ReportSystem        `bson:"system" json:"system"`
 	Event       ReportEvent         `bson:"event" json:"event"`
 	Stats       ReportGroupStats    `bson:"stats" json:"stats"`
-	Status      string              `bson:"status,omitempty" json:"status"`
+	Status      string              `bson:"status,omitempty" json:"status,omitempty"`
 	Tags        []string            `bson:"tags,omitempty" json:"tags,omitempty"`
 	Note        string              `bson:"note,omitempty" json:"note,omitempty"`
 	ResolvedAt  *primitive.DateTime `bson:"resolvedAt,omitempty" json:"resolved_at,omitempty"`
