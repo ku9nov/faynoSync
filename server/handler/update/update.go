@@ -10,6 +10,8 @@ import (
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
+	"faynoSync/server/utils/updaters/sparkle"
+	"faynoSync/server/utils/updaters/velopack"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -264,6 +266,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	var fileLengths []int64
 	var result bool
 	var isVelopack bool
+	var isSparkle bool
 	var files []*multipart.FileHeader
 	if form != nil {
 		files = form.File["file"] // Assuming the field name is "file" not "files"
@@ -273,6 +276,30 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			if err := updaters.ValidateFiles(files, updaterStr); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
+			}
+
+			// Ingest updater metadata from the uploaded feed so artifacts added to
+			// an existing version (e.g. a new platform/arch via the edit modal)
+			// carry it and get materialized, mirroring the create flow.
+			if updaterStr == velopack.UpdaterType {
+				velopackMeta, err := create.ParseVelopackFeed(files)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				ctxQueryMap["velopack_meta"] = velopackMeta
+			}
+			if updaterStr == sparkle.UpdaterType {
+				sparkleMeta, err := create.ParseSparkleAppcast(files)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				if err := sparkle.ValidateArchivesInAppcast(files, sparkleMeta); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				ctxQueryMap["sparkle_meta"] = sparkleMeta
 			}
 		}
 		for _, file := range files {
@@ -305,18 +332,25 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			fileCtxQuery["hashes"] = fileHashes[i]
 			fileCtxQuery["length"] = fileLengths[i]
-			var vp bool
-			result, vp, err = repository.UpdateSpecificApp(objID, owner, fileCtxQuery, link, extensions[i], c.Request.Context())
+			if _, ok := ctxQueryMap["velopack_meta"]; ok {
+				fileCtxQuery["file_name"] = files[i].Filename
+			}
+			if _, ok := ctxQueryMap["sparkle_meta"]; ok {
+				fileCtxQuery["file_name"] = files[i].Filename
+			}
+			var vp, sp bool
+			result, vp, sp, err = repository.UpdateSpecificApp(objID, owner, fileCtxQuery, link, extensions[i], c.Request.Context())
 			if err != nil {
 				logrus.Errorf("Error updating link %d: %v", i, err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 			isVelopack = isVelopack || vp
+			isSparkle = isSparkle || sp
 		}
 	} else {
 		// Handle the case when there are no files to upload
-		result, isVelopack, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, "", "", c.Request.Context())
+		result, isVelopack, isSparkle, err = repository.UpdateSpecificApp(objID, owner, ctxQueryMap, "", "", c.Request.Context())
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -340,6 +374,10 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 
 	if isVelopack {
 		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), s3Owner, appName)
+	}
+
+	if isSparkle {
+		info.MaterializeSparkleForApp(c.Request.Context(), db, viper.GetViper(), s3Owner, appName)
 	}
 
 	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {

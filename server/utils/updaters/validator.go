@@ -2,6 +2,7 @@ package updaters
 
 import (
 	"faynoSync/server/model"
+	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
 	"mime/multipart"
@@ -92,6 +93,8 @@ func CreateFileValidator(updaterType string) (FileValidator, error) {
 		return &SquirrelDarwinFileValidator{updaterType: updaterType}, nil
 	case strings.HasPrefix(updaterType, velopack.UpdaterType):
 		return velopack.NewFileValidator(updaterType), nil
+	case strings.HasPrefix(updaterType, sparkle.UpdaterType):
+		return sparkle.NewFileValidator(updaterType), nil
 	default:
 		return &NoOpFileValidator{updaterType: updaterType}, nil
 	}
