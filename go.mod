@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.15
 	github.com/aws/smithy-go v1.24.2
+	github.com/beevik/etree v1.7.0
 	github.com/go-logr/stdr v1.2.2
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-version v1.6.0

@@ -1,29 +1,22 @@
 package sparkle
 
 import (
-	"bytes"
-	"encoding/xml"
+	"fmt"
 	"sort"
+	"strings"
 
 	"faynoSync/server/utils/updaters/velopack"
+
+	"github.com/beevik/etree"
 )
 
-const (
-	sparkleNamespace     = "http://www.andymatuschak.org/xml-namespaces/sparkle"
-	defaultEnclosureType = "application/octet-stream"
-	xmlDeclaration       = `<?xml version="1.0" encoding="UTF-8"?>` + "\n"
-)
+const sparkleNamespace = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 
-// Asset pairs a stored SparkleMeta with the faynoSync artifact link that
-// replaces the uploaded appcast's original enclosure url. edSignature signs the
-// archive bytes, not the xml, so rewriting the url keeps the signature valid.
 type Asset struct {
 	Meta SparkleMeta
 	Link string
 }
 
-// Release is one version's Sparkle content: a required full archive plus any
-// deltas, overlaid with faynoSync-managed fields (published/critical/changelog).
 type Release struct {
 	Version       string
 	Published     bool
@@ -34,141 +27,128 @@ type Release struct {
 	Deltas        []Asset
 }
 
-type xmlRSS struct {
-	XMLName xml.Name   `xml:"rss"`
-	Sparkle string     `xml:"xmlns:sparkle,attr"`
-	Version string     `xml:"version,attr"`
-	Channel xmlChannel `xml:"channel"`
-}
-
-type xmlChannel struct {
-	Title string    `xml:"title"`
-	Items []xmlItem `xml:"item"`
-}
-
-type xmlItem struct {
-	Title                 string       `xml:"title"`
-	PubDate               string       `xml:"pubDate,omitempty"`
-	Critical              *struct{}    `xml:"sparkle:criticalUpdate"`
-	PhasedRolloutInterval string       `xml:"sparkle:phasedRolloutInterval,omitempty"`
-	SparkleVersion        string       `xml:"sparkle:version,omitempty"`
-	ShortVersionString    string       `xml:"sparkle:shortVersionString,omitempty"`
-	MinimumSystemVersion  string       `xml:"sparkle:minimumSystemVersion,omitempty"`
-	Description           *xmlCDATA    `xml:"description,omitempty"`
-	Enclosure             xmlEnclosure `xml:"enclosure"`
-	Deltas                *xmlDeltas   `xml:"sparkle:deltas,omitempty"`
-}
-
-type xmlCDATA struct {
-	Value string `xml:",cdata"`
-}
-
-type xmlEnclosure struct {
-	XMLName                 xml.Name `xml:"enclosure"`
-	URL                     string   `xml:"url,attr"`
-	Length                  int64    `xml:"length,attr"`
-	Type                    string   `xml:"type,attr"`
-	EdSignature             string   `xml:"sparkle:edSignature,attr,omitempty"`
-	DeltaFrom               string   `xml:"sparkle:deltaFrom,attr,omitempty"`
-	DeltaFromExecutableSize string   `xml:"sparkle:deltaFromSparkleExecutableSize,attr,omitempty"`
-	DeltaFromLocales        string   `xml:"sparkle:deltaFromSparkleLocales,attr,omitempty"`
-}
-
-type xmlDeltas struct {
-	Enclosures []xmlEnclosure `xml:"enclosure"`
-}
-
-// BuildAppcast materializes an RSS 2.0 + Sparkle appcast: one <item> per
-// published release, newest first. Managed fields (publish/critical/changelog)
-// override the uploaded appcast; everything Sparkle-specific (edSignature,
-// sparkle:version, deltas, ...) is passed through verbatim from stored metadata.
+// BuildAppcast materializes an RSS 2.0 + Sparkle appcast by re-emitting each published release's raw <item>
 func BuildAppcast(appTitle string, releases []Release) ([]byte, error) {
 	sorted := make([]Release, len(releases))
 	copy(sorted, releases)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		return velopack.CompareVersions(sorted[i].Version, sorted[j].Version) > 0
+		return velopack.CompareVersions(releaseSortKey(sorted[i]), releaseSortKey(sorted[j])) > 0
 	})
 
-	items := make([]xmlItem, 0, len(sorted))
+	doc := etree.NewDocument()
+	doc.CreateProcInst("xml", `version="1.0" encoding="UTF-8"`)
+	rss := doc.CreateElement("rss")
+	rss.CreateAttr("xmlns:sparkle", sparkleNamespace)
+	rss.CreateAttr("version", "2.0")
+	channel := rss.CreateElement("channel")
+	channel.CreateElement("title").SetText(appTitle)
+
 	for _, r := range sorted {
-		if !r.Published || r.Full == nil {
+		if !r.Published || r.Full == nil || strings.TrimSpace(r.Full.Meta.RawItem) == "" {
 			continue
 		}
 
-		full := r.Full.Meta
-		item := xmlItem{
-			Title:                 itemTitle(full, r.Version),
-			PubDate:               r.PubDate,
-			PhasedRolloutInterval: full.PhasedRolloutInterval,
-			SparkleVersion:        full.SparkleVersion,
-			ShortVersionString:    full.ShortVersionString,
-			MinimumSystemVersion:  full.MinimumSystemVersion,
-			Enclosure: xmlEnclosure{
-				URL:         r.Full.Link,
-				Length:      full.Length,
-				Type:        enclosureType(full.Type),
-				EdSignature: full.EdSignature,
-			},
+		itemDoc := etree.NewDocument()
+		if err := itemDoc.ReadFromString(r.Full.Meta.RawItem); err != nil {
+			return nil, fmt.Errorf("failed to parse stored sparkle item for %s: %w", r.Version, err)
 		}
-		if r.Critical {
-			item.Critical = &struct{}{}
-		}
-		if html := velopack.RenderNotesHTML(r.NotesMarkdown); html != "" {
-			item.Description = &xmlCDATA{Value: html}
-		}
-		if deltas := buildDeltas(r.Deltas); deltas != nil {
-			item.Deltas = deltas
+		item := itemDoc.Root()
+		if item == nil {
+			continue
 		}
 
-		items = append(items, item)
+		rewriteEnclosureURLs(item, r)
+		overlayCritical(item, r.Critical)
+		overlayChangelog(item, r.NotesMarkdown)
+		overlayPubDate(item, r.PubDate)
+		dropChannel(item)
+
+		channel.AddChild(item.Copy())
 	}
 
-	feed := xmlRSS{
-		Sparkle: sparkleNamespace,
-		Version: "2.0",
-		Channel: xmlChannel{Title: appTitle, Items: items},
-	}
-
-	body, err := xml.MarshalIndent(feed, "", "    ")
-	if err != nil {
-		return nil, err
-	}
-
-	var buf bytes.Buffer
-	buf.WriteString(xmlDeclaration)
-	buf.Write(body)
-	return buf.Bytes(), nil
+	doc.Indent(4)
+	return doc.WriteToBytes()
 }
 
-func buildDeltas(deltas []Asset) *xmlDeltas {
-	if len(deltas) == 0 {
-		return nil
+func releaseSortKey(r Release) string {
+	if r.Full != nil && r.Full.Meta.SparkleVersion != "" {
+		return r.Full.Meta.SparkleVersion
 	}
-	enclosures := make([]xmlEnclosure, 0, len(deltas))
-	for _, d := range deltas {
-		enclosures = append(enclosures, xmlEnclosure{
-			URL:                     d.Link,
-			Length:                  d.Meta.Length,
-			Type:                    enclosureType(d.Meta.Type),
-			EdSignature:             d.Meta.EdSignature,
-			DeltaFrom:               d.Meta.DeltaFrom,
-			DeltaFromExecutableSize: d.Meta.DeltaFromExecutableSize,
-			DeltaFromLocales:        d.Meta.DeltaFromLocales,
-		})
-	}
-	return &xmlDeltas{Enclosures: enclosures}
+	return r.Version
 }
 
-func itemTitle(full SparkleMeta, version string) string {
-	if full.ShortVersionString != "" {
-		return full.ShortVersionString
+// rewriteEnclosureURLs points every enclosure (full + nested deltas) at its stored
+// faynoSync link by basename, leaving sparkle:edSignature and length untouched.
+func rewriteEnclosureURLs(item *etree.Element, r Release) {
+	links := make(map[string]string)
+	if r.Full != nil {
+		links[r.Full.Meta.FileName] = r.Full.Link
 	}
-	return version
+	for _, d := range r.Deltas {
+		links[d.Meta.FileName] = d.Link
+	}
+
+	for _, enc := range item.FindElements(".//enclosure") {
+		urlAttr := enc.SelectAttr("url")
+		if urlAttr == nil {
+			continue
+		}
+		if link, ok := links[enclosureBasename(urlAttr.Value)]; ok && link != "" {
+			urlAttr.Value = link
+		}
+	}
 }
 
-func enclosureType(t string) string {
-	if t == "" {
-		return defaultEnclosureType
+// overlayCritical enforces the faynoSync critical flag: keep an existing
+// <sparkle:criticalUpdate> as-is (including a sparkle:version threshold) when
+// critical, add a bare one only if absent; drop any when not critical.
+func overlayCritical(item *etree.Element, critical bool) {
+	existing := item.SelectElement("sparkle:criticalUpdate")
+	if critical {
+		if existing == nil {
+			el := item.CreateElement("criticalUpdate")
+			el.Space = "sparkle"
+		}
+		return
 	}
-	return t
+	if existing != nil {
+		item.RemoveChild(existing)
+	}
+}
+
+// overlayChangelog replaces/inserts <description> with the faynoSync changelog
+// (CDATA HTML) only when it is non-empty; an empty changelog leaves the uploaded
+// item's release notes (<description>/releaseNotesLink) untouched.
+func overlayChangelog(item *etree.Element, markdown string) {
+	html := velopack.RenderNotesHTML(markdown)
+	if html == "" {
+		return
+	}
+	for _, d := range item.SelectElements("description") {
+		item.RemoveChild(d)
+	}
+	desc := item.CreateElement("description")
+	desc.CreateCData(html)
+}
+
+// overlayPubDate stamps the faynoSync publication date (version Updated_at): the
+// date a release is available is owned by faynoSync, not the build tool. Replaces
+// the raw item's <pubDate> in place (or inserts one when absent).
+func overlayPubDate(item *etree.Element, pubDate string) {
+	if pubDate == "" {
+		return
+	}
+	el := item.SelectElement("pubDate")
+	if el == nil {
+		el = item.CreateElement("pubDate")
+	}
+	el.SetText(pubDate)
+}
+
+// dropChannel removes <sparkle:channel>: the materialized feed is already
+// per-channel, so the tag is faynoSync-owned and redundant.
+func dropChannel(item *etree.Element) {
+	if ch := item.SelectElement("sparkle:channel"); ch != nil {
+		item.RemoveChild(ch)
+	}
 }

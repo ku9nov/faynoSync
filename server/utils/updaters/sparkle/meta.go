@@ -7,22 +7,14 @@ const (
 	KindDelta = "delta"
 )
 
-// SparkleMeta is one artifact's Sparkle metadata, stored verbatim from the
-// uploaded appcast so it can be re-emitted on materialization. Kind separates a
-// full archive from a delta (nested <sparkle:deltas> enclosure).
+// SparkleMeta is one artifact's Sparkle metadata. To reach full parity with
+// vanilla Sparkle, the whole <item> is preserved verbatim (RawItem) on the full
+// artifact and re-emitted on materialization with only faynoSync-managed fields
+// overlaid. Only what faynoSync actually computes on stays typed: SparkleVersion
+// (sorting) and FileName (enclosure basename → artifact link matching).
 type SparkleMeta struct {
-	FileName    string `bson:"file_name"`
-	Kind        string `bson:"kind"`
-	EdSignature string `bson:"ed_signature,omitempty"`
-	Length      int64  `bson:"length,omitempty"`
-	Type        string `bson:"type,omitempty"`
-	// full-only:
-	SparkleVersion        string `bson:"sparkle_version,omitempty"` // CFBundleVersion
-	ShortVersionString    string `bson:"short_version_string,omitempty"`
-	MinimumSystemVersion  string `bson:"minimum_system_version,omitempty"`
-	PhasedRolloutInterval string `bson:"phased_rollout_interval,omitempty"` // native, pass-through
-	// delta-only (from <sparkle:deltas> nested enclosure):
-	DeltaFrom               string `bson:"delta_from,omitempty"`
-	DeltaFromExecutableSize string `bson:"delta_from_executable_size,omitempty"`
-	DeltaFromLocales        string `bson:"delta_from_locales,omitempty"`
+	FileName       string `bson:"file_name"`
+	Kind           string `bson:"kind"`
+	SparkleVersion string `bson:"sparkle_version,omitempty"` // CFBundleVersion, full only
+	RawItem        string `bson:"raw_item,omitempty"`        // verbatim <item> XML, full only
 }

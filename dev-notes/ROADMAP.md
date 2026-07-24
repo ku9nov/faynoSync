@@ -15,7 +15,7 @@
 
 - ~~**Squirrel**~~
 - ~~**Electron Builder**~~
-- **Sparkle** 
+- ~~**Sparkle**~~ (materialized appcast. deviceId/percent rollout + intermediate deferred to a dynamic route) (?)
 - ~~**Tauri**~~
 - ~~**[go-tuf](https://github.com/theupdateframework/go-tuf)**~~ (Partially implemented - pilot version)
 - **etc...**

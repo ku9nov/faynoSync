@@ -1,9 +1,10 @@
 package sparkle
 
 import (
-	"encoding/xml"
 	"strings"
 	"testing"
+
+	"github.com/beevik/etree"
 )
 
 const realAppcast = `<?xml version="1.0" standalone="yes"?>
@@ -16,6 +17,8 @@ const realAppcast = `<?xml version="1.0" standalone="yes"?>
             <sparkle:version>2</sparkle:version>
             <sparkle:shortVersionString>0.0.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://example.com/notes/0.0.2.html</sparkle:releaseNotesLink>
+            <hardwareRequirements><requirement>arm64</requirement></hardwareRequirements>
             <enclosure url="http://cdn/faynosyncSparkleExample-0.0.2.zip" length="1063996" type="application/octet-stream" sparkle:edSignature="FULLSIG=="/>
             <sparkle:deltas>
                 <enclosure url="http://cdn/faynosyncSparkleExample2-1.delta" sparkle:deltaFrom="1" length="1446" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977840" sparkle:deltaFromSparkleLocales="de,he,ar" sparkle:edSignature="DELTASIG=="/>
@@ -25,7 +28,6 @@ const realAppcast = `<?xml version="1.0" standalone="yes"?>
             <title>0.0.1</title>
             <sparkle:version>1</sparkle:version>
             <sparkle:shortVersionString>0.0.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
             <enclosure url="http://cdn/faynosyncSparkleExample-0.0.1.zip" length="1063998" type="application/octet-stream" sparkle:edSignature="FULLSIG1=="/>
         </item>
     </channel>
@@ -37,21 +39,21 @@ func TestParseAppcast(t *testing.T) {
 		t.Fatalf("ParseAppcast error: %v", err)
 	}
 	if len(metas) != 3 {
-		t.Fatalf("got %d metas, want 3: %+v", len(metas), metas)
+		t.Fatalf("got %d metas, want 3: %v", len(metas), keys(metas))
 	}
 
 	full, ok := metas["faynosyncSparkleExample-0.0.2.zip"]
 	if !ok {
 		t.Fatal("missing full meta for 0.0.2")
 	}
-	if full.Kind != KindFull {
-		t.Errorf("Kind = %q, want full", full.Kind)
+	if full.Kind != KindFull || full.SparkleVersion != "2" {
+		t.Errorf("full meta wrong: %+v", full)
 	}
-	if full.SparkleVersion != "2" || full.ShortVersionString != "0.0.2" || full.MinimumSystemVersion != "11.0" {
-		t.Errorf("item-level fields not parsed: %+v", full)
-	}
-	if full.EdSignature != "FULLSIG==" || full.Length != 1063996 {
-		t.Errorf("enclosure fields not parsed: %+v", full)
+	// RawItem must preserve the whole item, including non-modeled elements.
+	for _, want := range []string{"sparkle:releaseNotesLink", "hardwareRequirements", "sparkle:deltas", "FULLSIG==", "sparkle:minimumSystemVersion"} {
+		if !strings.Contains(full.RawItem, want) {
+			t.Errorf("RawItem missing %q:\n%s", want, full.RawItem)
+		}
 	}
 
 	delta, ok := metas["faynosyncSparkleExample2-1.delta"]
@@ -59,13 +61,10 @@ func TestParseAppcast(t *testing.T) {
 		t.Fatal("missing delta meta")
 	}
 	if delta.Kind != KindDelta {
-		t.Errorf("Kind = %q, want delta", delta.Kind)
+		t.Errorf("delta Kind = %q, want delta", delta.Kind)
 	}
-	if delta.DeltaFrom != "1" || delta.DeltaFromExecutableSize != "977840" || delta.DeltaFromLocales != "de,he,ar" {
-		t.Errorf("delta fields not parsed: %+v", delta)
-	}
-	if delta.EdSignature != "DELTASIG==" || delta.Length != 1446 {
-		t.Errorf("delta enclosure fields not parsed: %+v", delta)
+	if delta.RawItem != "" {
+		t.Errorf("delta meta must not carry RawItem")
 	}
 }
 
@@ -89,156 +88,202 @@ func TestParseAppcastEmpty(t *testing.T) {
 	}
 }
 
-func decodeAppcast(t *testing.T, data []byte) appcastFeed {
+func parseOut(t *testing.T, data []byte) *etree.Document {
 	t.Helper()
-	var feed appcastFeed
-	if err := xml.Unmarshal(data, &feed); err != nil {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(data); err != nil {
 		t.Fatalf("invalid appcast xml: %v\n%s", err, data)
 	}
-	return feed
+	return doc
 }
 
-func fullAsset(version string) *Asset {
+// fullAsset builds a full Asset whose RawItem carries an <item> with an optional
+// block of extra (non-modeled) elements, an enclosure named zip, and a stored link.
+func fullAsset(short, cf, zip, extra string) *Asset {
+	raw := `<item>
+  <title>` + short + `</title>
+  <sparkle:version>` + cf + `</sparkle:version>
+  <sparkle:shortVersionString>` + short + `</sparkle:shortVersionString>
+  ` + extra + `
+  <enclosure url="http://orig/` + zip + `" length="100" type="application/octet-stream" sparkle:edSignature="SIG-` + cf + `"/>
+</item>`
 	return &Asset{
-		Link: "http://cdn/" + version + ".zip",
-		Meta: SparkleMeta{
-			FileName:             version + ".zip",
-			Kind:                 KindFull,
-			EdSignature:          "SIG-" + version,
-			Length:               100,
-			SparkleVersion:       version + "-cf",
-			ShortVersionString:   version,
-			MinimumSystemVersion: "11.0",
-		},
+		Link: "http://cdn/" + zip,
+		Meta: SparkleMeta{FileName: zip, Kind: KindFull, SparkleVersion: cf, RawItem: raw},
 	}
 }
 
-func TestBuildAppcastRoundTripPassThrough(t *testing.T) {
+func itemsByTitle(doc *etree.Document) map[string]*etree.Element {
+	out := map[string]*etree.Element{}
+	for _, it := range doc.FindElements("//item") {
+		if t := it.SelectElement("title"); t != nil {
+			out[t.Text()] = it
+		}
+	}
+	return out
+}
+
+func TestBuildAppcastPreservesUnknownAndRewritesURL(t *testing.T) {
 	releases := []Release{
-		{Version: "0.0.1", Published: true, Full: fullAsset("0.0.1")},
-		{Version: "0.0.2", Published: true, Full: fullAsset("0.0.2")},
+		{Version: "0.0.1", Published: true, Full: fullAsset("0.0.1", "1", "app-0.0.1.zip", "")},
+		{Version: "0.0.2", Published: true, Full: fullAsset("0.0.2", "2", "app-0.0.2.zip",
+			`<sparkle:releaseNotesLink>https://x/n.html</sparkle:releaseNotesLink><hardwareRequirements><requirement>arm64</requirement></hardwareRequirements><minimumAutoupdateVersion>3</minimumAutoupdateVersion>`)},
 	}
-	data, err := BuildAppcast("MyApp", releases)
-	if err != nil {
-		t.Fatalf("BuildAppcast error: %v", err)
+	data := mustBuild(t, releases)
+	s := string(data)
+
+	// unknown / non-modeled elements survive verbatim
+	for _, want := range []string{"sparkle:releaseNotesLink", "hardwareRequirements", "minimumAutoupdateVersion"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("build dropped %q:\n%s", want, s)
+		}
 	}
-	if !strings.HasPrefix(string(data), "<?xml") {
-		t.Error("missing xml declaration")
+
+	doc := parseOut(t, data)
+	items := doc.FindElements("//item")
+	if len(items) != 2 {
+		t.Fatalf("got %d items, want 2", len(items))
 	}
-	feed := decodeAppcast(t, data)
-	if len(feed.Items) != 2 {
-		t.Fatalf("got %d items, want 2", len(feed.Items))
+	// newest first by sparkle:version
+	if first := items[0].SelectElement("title").Text(); first != "0.0.2" {
+		t.Errorf("items not sorted desc, first = %q", first)
 	}
-	// newest first
-	if feed.Items[0].Title != "0.0.2" {
-		t.Errorf("items not sorted desc: first title = %q", feed.Items[0].Title)
+
+	it := itemsByTitle(doc)["0.0.2"]
+	enc := it.SelectElement("enclosure")
+	if got := enc.SelectAttrValue("url", ""); got != "http://cdn/app-0.0.2.zip" {
+		t.Errorf("enclosure url = %q, want rewritten faynoSync link", got)
 	}
-	// sparkle:version (CFBundleVersion) passed through, NOT the marketing version
-	if feed.Items[0].SparkleVersion != "0.0.2-cf" {
-		t.Errorf("sparkle:version = %q, want pass-through 0.0.2-cf", feed.Items[0].SparkleVersion)
+	if got := enc.SelectAttrValue("sparkle:edSignature", ""); got != "SIG-2" {
+		t.Errorf("edSignature not preserved: %q", got)
 	}
-	if feed.Items[0].Enclosure.EdSignature != "SIG-0.0.2" {
-		t.Errorf("edSignature not passed through: %q", feed.Items[0].Enclosure.EdSignature)
+	if got := enc.SelectAttrValue("length", ""); got != "100" {
+		t.Errorf("length not preserved: %q", got)
 	}
-	if feed.Items[0].Enclosure.URL != "http://cdn/0.0.2.zip" {
-		t.Errorf("enclosure url = %q, want the faynoSync link", feed.Items[0].Enclosure.URL)
+	if got := it.SelectElement("sparkle:version").Text(); got != "2" {
+		t.Errorf("sparkle:version not preserved: %q", got)
 	}
 }
 
 func TestBuildAppcastUnpublishedOmitted(t *testing.T) {
 	releases := []Release{
-		{Version: "0.0.1", Published: true, Full: fullAsset("0.0.1")},
-		{Version: "0.0.2", Published: false, Full: fullAsset("0.0.2")},
+		{Version: "0.0.1", Published: true, Full: fullAsset("0.0.1", "1", "a-1.zip", "")},
+		{Version: "0.0.2", Published: false, Full: fullAsset("0.0.2", "2", "a-2.zip", "")},
 	}
-	feed := decodeAppcast(t, mustBuild(t, releases))
-	for _, it := range feed.Items {
-		if it.Title == "0.0.2" {
-			t.Error("unpublished 0.0.2 must be omitted")
-		}
+	doc := parseOut(t, mustBuild(t, releases))
+	if _, ok := itemsByTitle(doc)["0.0.2"]; ok {
+		t.Error("unpublished 0.0.2 must be omitted")
 	}
-	if len(feed.Items) != 1 {
-		t.Fatalf("got %d items, want 1", len(feed.Items))
+	if len(doc.FindElements("//item")) != 1 {
+		t.Fatalf("want 1 item")
 	}
 }
 
-func TestBuildAppcastCritical(t *testing.T) {
-	releases := []Release{
-		{Version: "0.0.2", Published: true, Critical: true, Full: fullAsset("0.0.2")},
+func TestBuildAppcastCriticalToggle(t *testing.T) {
+	// bare add
+	r := []Release{{Version: "0.0.2", Published: true, Critical: true, Full: fullAsset("0.0.2", "2", "a.zip", "")}}
+	if !strings.Contains(string(mustBuild(t, r)), "sparkle:criticalUpdate") {
+		t.Error("critical=true must emit sparkle:criticalUpdate")
 	}
-	data := mustBuild(t, releases)
-	if !strings.Contains(string(data), "<sparkle:criticalUpdate>") {
-		t.Errorf("critical release must emit sparkle:criticalUpdate:\n%s", data)
-	}
-
-	releases[0].Critical = false
-	data = mustBuild(t, releases)
-	if strings.Contains(string(data), "criticalUpdate") {
-		t.Errorf("non-critical release must not emit criticalUpdate:\n%s", data)
+	// removal
+	r[0].Critical = false
+	if strings.Contains(string(mustBuild(t, r)), "criticalUpdate") {
+		t.Error("critical=false must remove criticalUpdate")
 	}
 }
 
-func TestBuildAppcastChangelogCDATA(t *testing.T) {
-	releases := []Release{
-		{Version: "0.0.2", Published: true, NotesMarkdown: "## Fixed\n- a bug", Full: fullAsset("0.0.2")},
+func TestBuildAppcastCriticalThresholdPreserved(t *testing.T) {
+	r := []Release{{Version: "0.0.2", Published: true, Critical: true,
+		Full: fullAsset("0.0.2", "2", "a.zip", `<sparkle:criticalUpdate sparkle:version="1.5"></sparkle:criticalUpdate>`)}}
+	doc := parseOut(t, mustBuild(t, r))
+	cu := doc.FindElement("//item/sparkle:criticalUpdate")
+	if cu == nil {
+		t.Fatal("criticalUpdate missing")
 	}
-	data := mustBuild(t, releases)
-	s := string(data)
-	if !strings.Contains(s, "<description><![CDATA[") {
-		t.Errorf("changelog must render as CDATA description:\n%s", s)
+	if got := cu.SelectAttrValue("sparkle:version", ""); got != "1.5" {
+		t.Errorf("threshold not preserved, sparkle:version = %q", got)
 	}
-	if !strings.Contains(s, "<h2>Fixed</h2>") {
-		t.Errorf("markdown must be rendered to HTML:\n%s", s)
-	}
-}
-
-func TestBuildAppcastDeltasPassThrough(t *testing.T) {
-	r := Release{
-		Version:   "0.0.2",
-		Published: true,
-		Full:      fullAsset("0.0.2"),
-		Deltas: []Asset{{
-			Link: "http://cdn/app-1.delta",
-			Meta: SparkleMeta{
-				Kind:                    KindDelta,
-				EdSignature:             "DSIG==",
-				Length:                  1446,
-				DeltaFrom:               "1",
-				DeltaFromExecutableSize: "977840",
-				DeltaFromLocales:        "de,he",
-			},
-		}},
-	}
-	feed := decodeAppcast(t, mustBuild(t, []Release{r}))
-	if len(feed.Items) != 1 {
-		t.Fatalf("got %d items", len(feed.Items))
-	}
-	if len(feed.Items[0].Deltas.Enclosures) != 1 {
-		t.Fatalf("delta enclosure missing")
-	}
-	d := feed.Items[0].Deltas.Enclosures[0]
-	if d.URL != "http://cdn/app-1.delta" || d.EdSignature != "DSIG==" || d.DeltaFrom != "1" {
-		t.Errorf("delta not passed through: %+v", d)
-	}
-	if d.DeltaFromExecutableSize != "977840" || d.DeltaFromLocales != "de,he" {
-		t.Errorf("delta size/locales not passed through: %+v", d)
+	// must not have duplicated the element
+	if n := len(doc.FindElements("//item/sparkle:criticalUpdate")); n != 1 {
+		t.Errorf("got %d criticalUpdate elements, want 1", n)
 	}
 }
 
-func TestBuildAppcastNoFullSkipped(t *testing.T) {
-	releases := []Release{
-		{Version: "0.0.2", Published: true, Deltas: []Asset{{Link: "x", Meta: SparkleMeta{Kind: KindDelta}}}},
+func TestBuildAppcastChangelogOverlay(t *testing.T) {
+	// non-empty changelog -> CDATA description overlaid
+	r := []Release{{Version: "0.0.2", Published: true, NotesMarkdown: "## Fixed\n- bug",
+		Full: fullAsset("0.0.2", "2", "a.zip", "")}}
+	s := string(mustBuild(t, r))
+	if !strings.Contains(s, "<description><![CDATA[") || !strings.Contains(s, "<h2>Fixed</h2>") {
+		t.Errorf("changelog not rendered as CDATA description:\n%s", s)
 	}
-	feed := decodeAppcast(t, mustBuild(t, releases))
-	if len(feed.Items) != 0 {
-		t.Errorf("release without a full archive must be skipped, got %d items", len(feed.Items))
+
+	// empty changelog -> raw release notes kept untouched, no description synthesized
+	r2 := []Release{{Version: "0.0.2", Published: true, NotesMarkdown: "",
+		Full: fullAsset("0.0.2", "2", "a.zip", `<sparkle:releaseNotesLink>https://x/n.html</sparkle:releaseNotesLink>`)}}
+	s2 := string(mustBuild(t, r2))
+	if !strings.Contains(s2, "sparkle:releaseNotesLink") {
+		t.Errorf("empty changelog must keep raw releaseNotesLink:\n%s", s2)
+	}
+	if strings.Contains(s2, "<description>") {
+		t.Errorf("empty changelog must not synthesize <description>:\n%s", s2)
 	}
 }
 
-func TestAppcastObjectKey(t *testing.T) {
-	got := AppcastObjectKey("acme", "MyApp", "osx", "arm64", "nightly")
-	want := "sparkle/acme/MyApp/osx/arm64/appcast.nightly.xml"
-	if got != want {
-		t.Errorf("AppcastObjectKey = %q, want %q", got, want)
+func TestBuildAppcastOverlaysPubDate(t *testing.T) {
+	faynoDate := "Fri, 24 Jul 2026 15:17:29 +0300"
+	r := []Release{{Version: "0.0.2", Published: true, PubDate: faynoDate,
+		Full: fullAsset("0.0.2", "2", "a.zip", `<pubDate>Mon, 01 Jan 2020 00:00:00 +0000</pubDate>`)}}
+	doc := parseOut(t, mustBuild(t, r))
+	pd := doc.FindElement("//item/pubDate")
+	if pd == nil || pd.Text() != faynoDate {
+		t.Errorf("pubDate not overlaid with faynoSync date, got %q", textOf(pd))
+	}
+	if n := len(doc.FindElements("//item/pubDate")); n != 1 {
+		t.Errorf("got %d pubDate elements, want 1", n)
+	}
+}
+
+func textOf(el *etree.Element) string {
+	if el == nil {
+		return ""
+	}
+	return el.Text()
+}
+
+func TestBuildAppcastDropsChannel(t *testing.T) {
+	r := []Release{{Version: "0.0.2", Published: true,
+		Full: fullAsset("0.0.2", "2", "a.zip", `<sparkle:channel>nightly</sparkle:channel>`)}}
+	if strings.Contains(string(mustBuild(t, r)), "sparkle:channel") {
+		t.Error("sparkle:channel must be dropped (feed is per-channel)")
+	}
+}
+
+func TestBuildAppcastDeltasRewrittenAndPreserved(t *testing.T) {
+	full := fullAsset("0.0.2", "2", "app-0.0.2.zip", "")
+	// inject a <sparkle:deltas> block into the raw item
+	full.Meta.RawItem = strings.Replace(full.Meta.RawItem, "</item>",
+		`  <sparkle:deltas>
+    <enclosure url="http://orig/app2-1.delta" length="1446" type="application/octet-stream" sparkle:deltaFrom="1" sparkle:deltaFromSparkleExecutableSize="9" sparkle:edSignature="DSIG=="/>
+  </sparkle:deltas>
+</item>`, 1)
+
+	r := []Release{{Version: "0.0.2", Published: true, Full: full,
+		Deltas: []Asset{{Link: "http://cdn/app2-1.delta", Meta: SparkleMeta{FileName: "app2-1.delta", Kind: KindDelta}}}}}
+
+	doc := parseOut(t, mustBuild(t, r))
+	d := doc.FindElement("//sparkle:deltas/enclosure")
+	if d == nil {
+		t.Fatal("delta enclosure missing")
+	}
+	if got := d.SelectAttrValue("url", ""); got != "http://cdn/app2-1.delta" {
+		t.Errorf("delta url not rewritten: %q", got)
+	}
+	if got := d.SelectAttrValue("sparkle:edSignature", ""); got != "DSIG==" {
+		t.Errorf("delta edSignature not preserved: %q", got)
+	}
+	if got := d.SelectAttrValue("sparkle:deltaFromSparkleExecutableSize", ""); got != "9" {
+		t.Errorf("delta extra attr not preserved: %q", got)
 	}
 }
 
