@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.7.0
+
+### Features (Sparkle)
+
+- Added a `sparkle` updater type for macOS Sparkle apps. Upload accepts a `generate_appcast` appcast (`appcast.{channel}.xml`) plus the referenced archives (`.zip`/`.dmg`/`.tar.*`/`.aar`) and any `.delta` files. Each `<item>` is stored verbatim on its full artifact and re-emitted on materialization, so every appcast element — including ones faynoSync does not model (`hardwareRequirements`, `minimumAutoupdateVersion`, `releaseNotesLink`, `maximumSystemVersion`, unknown namespaces, …) — round-trips faithfully via `github.com/beevik/etree`.
+- Added materialized appcast generation to `S3_BUCKET_NAME` at `sparkle/{owner}/{app}/{platform}/{arch}/appcast.{channel}.xml`, regenerated on upload, publish/critical/changelog edit, and version/artifact deletion (sparkle apps only). Archives and deltas are stored under `sparkle/{owner}/{app}/{platform}/{arch}/` with original filenames; the uploaded appcast lands on the materialized key so the managed feed overwrites the raw upload (skip-if-unchanged via ETag).
+- faynoSync overlays only the managed fields onto each stored raw item: publish (include/omit the item), critical (`<sparkle:criticalUpdate>` — keeps an existing version-threshold tag, adds a bare one if absent, drops when off), changelog (`<description>` CDATA, only when non-empty; an empty changelog keeps the uploaded release notes), and `<pubDate>` (stamped from the version's `Updated_at`). `<sparkle:channel>` is dropped (the feed is already per-channel). Everything else — `sparkle:edSignature`, `sparkle:version`, `minimumSystemVersion`, the whole `<sparkle:deltas>` subtree — passes through verbatim; every enclosure URL (full and deltas) is rewritten to its faynoSync link by basename with `edSignature`/`length` left untouched so signatures stay valid.
+- Added upload validation rejecting an appcast that has no matching `<enclosure>` for a supplied archive/delta, preventing an archive from being stored silently without metadata (e.g. a stale appcast that predates the uploaded version).
+- Extended the edit flow (`POST /apps/update`) to ingest sparkle metadata as well, so adding a platform/arch to an existing version carries it into the materialized feed instead of leaking the raw uploaded appcast.
+
 ## v1.6.5
 
 ### Features

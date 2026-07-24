@@ -31,6 +31,7 @@ import (
 
 	faynosync "github.com/ku9nov/faynosync-sdk-go"
 
+	"github.com/beevik/etree"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
@@ -2748,6 +2749,281 @@ func TestCheckVersionWithUpdaters(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ============================================================================
+// Sparkle & Velopack full interactive flow (self-contained block).
+// Two dedicated apps, 5 versions each, mixed publish/critical/changelog across
+// two platforms, publish/unpublish toggles, and materialized-feed verification
+// on S3 — including per-platform/per-channel isolation (regression for the
+// multi-platform materialization bug). Cleans up its own app + version docs.
+// Reuses channels (nightly/stable), platforms (macos/macosSquirrel/windows) and
+// arch (universalArch) created earlier in the ordered suite.
+// ============================================================================
+
+type updaterFeedFile struct {
+	name    string
+	content []byte
+}
+
+func updaterFlowRouter() *gin.Engine {
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/app/create", func(c *gin.Context) { h.CreateApp(c) })
+	router.POST("/upload", func(c *gin.Context) { h.UploadApp(c) })
+	router.POST("/apps/update", func(c *gin.Context) { h.UpdateSpecificApp(c) })
+	return router
+}
+
+func doUpdaterRequest(t *testing.T, router *gin.Engine, path, payload string, files []updaterFeedFile) *httptest.ResponseRecorder {
+	t.Helper()
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for _, f := range files {
+		part, err := writer.CreateFormFile("file", f.name)
+		require.NoError(t, err)
+		_, err = part.Write(f.content)
+		require.NoError(t, err)
+	}
+	dataPart, err := writer.CreateFormField("data")
+	require.NoError(t, err)
+	_, err = dataPart.Write([]byte(payload))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	req, err := http.NewRequest("POST", path, body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func cleanupUpdaterApp(appName string) {
+	ctx := context.Background()
+	var meta struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+	err := mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.M{"app_name": appName, "owner": "admin"}).Decode(&meta)
+	if err == nil {
+		mongoDatabase.Collection("apps").DeleteMany(ctx, bson.M{"app_id": meta.ID})
+	}
+	mongoDatabase.Collection("apps_meta").DeleteMany(ctx, bson.M{"app_name": appName, "owner": "admin"})
+}
+
+func createUpdaterApp(t *testing.T, router *gin.Engine, appName string) {
+	t.Helper()
+	w := doUpdaterRequest(t, router, "/app/create", fmt.Sprintf(`{"app": "%s"}`, appName), nil)
+	require.Equal(t, http.StatusOK, w.Code, "create %s: %s", appName, w.Body.String())
+}
+
+func parseAppcastItems(t *testing.T, feed string) map[string]*etree.Element {
+	t.Helper()
+	doc := etree.NewDocument()
+	require.NoError(t, doc.ReadFromString(feed), "feed is not valid xml:\n%s", feed)
+	out := map[string]*etree.Element{}
+	for _, it := range doc.FindElements("//item") {
+		if v := it.SelectElement("sparkle:version"); v != nil {
+			out[strings.TrimSpace(v.Text())] = it
+		}
+	}
+	return out
+}
+
+func TestSparkleUpdaterFlow(t *testing.T) {
+	cleanupUpdaterApp("sparkleapp")
+	defer cleanupUpdaterApp("sparkleapp")
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, "sparkleapp")
+
+	appcast := func(zip, sv string) []byte {
+		return []byte(fmt.Sprintf(`<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>sparkleapp</title>
+<item><title>%s</title><sparkle:version>%s</sparkle:version><sparkle:shortVersionString>%s</sparkle:shortVersionString>
+<enclosure url="http://orig/%s" length="100" type="application/octet-stream" sparkle:edSignature="SIG=="/></item></channel></rss>`, sv, sv, sv, zip))
+	}
+
+	versions := []struct {
+		version, channel, platform, sparkleVer, changelog string
+		publish, critical                                 bool
+	}{
+		{"0.0.1", "nightly", "macos", "1", "Initial release", true, false},
+		{"0.0.2", "nightly", "macos", "2", "Security fix critical", true, true},
+		{"0.0.3", "nightly", "macos", "3", "WIP not ready", false, false},
+		{"0.0.4", "stable", "macos", "4", "Stable build", true, false},
+		{"0.0.5", "nightly", "macosSquirrel", "5", "Other platform build", true, false},
+	}
+	ids := map[string]string{}
+	for _, v := range versions {
+		zip := fmt.Sprintf("sparkleapp-%s.zip", v.version)
+		files := []updaterFeedFile{
+			{name: "appcast." + v.channel + ".xml", content: appcast(zip, v.sparkleVer)},
+			{name: zip, content: []byte("fake zip payload")},
+		}
+		payload := fmt.Sprintf(`{"app_name":"sparkleapp","version":"%s","channel":"%s","publish":%v,"critical":%v,"platform":"%s","arch":"universalArch","updater":"sparkle","changelog":"%s"}`,
+			v.version, v.channel, v.publish, v.critical, v.platform, v.changelog)
+		w := doUpdaterRequest(t, router, "/upload", payload, files)
+		require.Equal(t, http.StatusOK, w.Code, "upload %s: %s", v.version, w.Body.String())
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		id, _ := resp["uploadResult.Uploaded"].(string)
+		require.NotEmpty(t, id, "no upload id for %s", v.version)
+		ids[v.version] = id
+	}
+
+	nightlyMacURL := fmt.Sprintf("%s/sparkle/admin/sparkleapp/macos/universalArch/appcast.nightly.xml", s3Endpoint)
+
+	t.Run("nightly_macos_feed", func(t *testing.T) {
+		items := parseAppcastItems(t, checkFileContent(t, nightlyMacURL))
+		require.Contains(t, items, "1", "published v0.0.1 must be in feed")
+		require.Contains(t, items, "2", "published v0.0.2 must be in feed")
+		require.NotContains(t, items, "3", "unpublished v0.0.3 must be excluded")
+		require.NotContains(t, items, "5", "macosSquirrel v0.0.5 must not leak into macos feed")
+		assert.Nil(t, items["1"].SelectElement("sparkle:criticalUpdate"), "non-critical v0.0.1 must have no criticalUpdate")
+		assert.NotNil(t, items["2"].SelectElement("sparkle:criticalUpdate"), "critical v0.0.2 must carry criticalUpdate")
+	})
+
+	t.Run("changelog_rendered", func(t *testing.T) {
+		feed := checkFileContent(t, nightlyMacURL)
+		assert.Contains(t, feed, "Initial release")
+		assert.Contains(t, feed, "Security fix critical")
+	})
+
+	t.Run("channel_and_platform_isolation", func(t *testing.T) {
+		stable := parseAppcastItems(t, checkFileContent(t, fmt.Sprintf("%s/sparkle/admin/sparkleapp/macos/universalArch/appcast.stable.xml", s3Endpoint)))
+		require.Contains(t, stable, "4")
+		require.NotContains(t, stable, "1", "nightly build must not appear in stable feed")
+
+		other := parseAppcastItems(t, checkFileContent(t, fmt.Sprintf("%s/sparkle/admin/sparkleapp/macosSquirrel/universalArch/appcast.nightly.xml", s3Endpoint)))
+		require.Contains(t, other, "5")
+		require.NotContains(t, other, "1", "macos build must not appear in macosSquirrel feed")
+		require.NotContains(t, other, "2")
+	})
+
+	toggle := func(version, channel, platform string, publish bool) {
+		payload := fmt.Sprintf(`{"id":"%s","app_name":"sparkleapp","version":"%s","channel":"%s","publish":%v,"platform":"%s","arch":"universalArch"}`,
+			ids[version], version, channel, publish, platform)
+		w := doUpdaterRequest(t, router, "/apps/update", payload, nil)
+		require.Equal(t, http.StatusOK, w.Code, "toggle %s publish=%v: %s", version, publish, w.Body.String())
+	}
+
+	t.Run("unpublish_removes_from_feed", func(t *testing.T) {
+		toggle("0.0.2", "nightly", "macos", false)
+		items := parseAppcastItems(t, checkFileContent(t, nightlyMacURL))
+		require.NotContains(t, items, "2", "unpublished v0.0.2 must disappear from feed")
+		require.Contains(t, items, "1")
+	})
+
+	t.Run("publish_adds_to_feed", func(t *testing.T) {
+		toggle("0.0.3", "nightly", "macos", true)
+		items := parseAppcastItems(t, checkFileContent(t, nightlyMacURL))
+		require.Contains(t, items, "3", "newly published v0.0.3 must appear in feed")
+	})
+}
+
+type velopackFeedAsset struct {
+	Version   string
+	Type      string
+	FileName  string
+	NotesHTML string
+}
+
+type velopackFeedDoc struct {
+	Assets []velopackFeedAsset
+}
+
+func parseVelopackFeed(t *testing.T, feed string) map[string]velopackFeedAsset {
+	t.Helper()
+	var doc velopackFeedDoc
+	require.NoError(t, json.Unmarshal([]byte(feed), &doc), "feed is not valid json:\n%s", feed)
+	out := map[string]velopackFeedAsset{}
+	for _, a := range doc.Assets {
+		if a.Type == "Full" {
+			out[a.Version] = a
+		}
+	}
+	return out
+}
+
+func TestVelopackUpdaterFlow(t *testing.T) {
+	cleanupUpdaterApp("velopackapp")
+	defer cleanupUpdaterApp("velopackapp")
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, "velopackapp")
+
+	releases := func(nupkg string) []byte {
+		return []byte(fmt.Sprintf(`{"Assets":[{"Type":"Full","FileName":"%s","SHA1":"a","SHA256":"b","Size":100}]}`, nupkg))
+	}
+
+	versions := []struct {
+		version, channel, platform, changelog string
+		publish                               bool
+	}{
+		{"1.0.0", "nightly", "windows", "First release", true},
+		{"1.0.1", "nightly", "windows", "Second release notes", true},
+		{"1.0.2", "nightly", "windows", "Unpublished wip", false},
+		{"1.0.3", "stable", "windows", "Stable build", true},
+		{"1.0.4", "nightly", "macos", "Mac build", true},
+	}
+	ids := map[string]string{}
+	for _, v := range versions {
+		nupkg := fmt.Sprintf("velopackapp-%s-full.nupkg", v.version)
+		files := []updaterFeedFile{
+			{name: "releases." + v.channel + ".json", content: releases(nupkg)},
+			{name: nupkg, content: []byte("fake nupkg payload")},
+		}
+		payload := fmt.Sprintf(`{"app_name":"velopackapp","version":"%s","channel":"%s","publish":%v,"critical":false,"platform":"%s","arch":"universalArch","updater":"velopack","changelog":"%s"}`,
+			v.version, v.channel, v.publish, v.platform, v.changelog)
+		w := doUpdaterRequest(t, router, "/upload", payload, files)
+		require.Equal(t, http.StatusOK, w.Code, "upload %s: %s", v.version, w.Body.String())
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		id, _ := resp["uploadResult.Uploaded"].(string)
+		require.NotEmpty(t, id, "no upload id for %s", v.version)
+		ids[v.version] = id
+	}
+
+	nightlyWinURL := fmt.Sprintf("%s/velopack/admin/velopackapp/windows/universalArch/releases.nightly.json", s3Endpoint)
+
+	t.Run("nightly_windows_feed", func(t *testing.T) {
+		assets := parseVelopackFeed(t, checkFileContent(t, nightlyWinURL))
+		require.Contains(t, assets, "1.0.0", "published 1.0.0 must be in feed")
+		require.Contains(t, assets, "1.0.1", "published 1.0.1 must be in feed")
+		require.NotContains(t, assets, "1.0.2", "unpublished 1.0.2 must be excluded")
+		require.NotContains(t, assets, "1.0.4", "macos 1.0.4 must not leak into windows feed")
+		assert.Contains(t, assets["1.0.1"].NotesHTML, "Second release notes", "changelog must render into NotesHTML")
+	})
+
+	t.Run("channel_and_platform_isolation", func(t *testing.T) {
+		stable := parseVelopackFeed(t, checkFileContent(t, fmt.Sprintf("%s/velopack/admin/velopackapp/windows/universalArch/releases.stable.json", s3Endpoint)))
+		require.Contains(t, stable, "1.0.3")
+		require.NotContains(t, stable, "1.0.0", "nightly build must not appear in stable feed")
+
+		mac := parseVelopackFeed(t, checkFileContent(t, fmt.Sprintf("%s/velopack/admin/velopackapp/macos/universalArch/releases.nightly.json", s3Endpoint)))
+		require.Contains(t, mac, "1.0.4")
+		require.NotContains(t, mac, "1.0.0", "windows build must not appear in macos feed")
+	})
+
+	toggle := func(version, channel, platform string, publish bool) {
+		payload := fmt.Sprintf(`{"id":"%s","app_name":"velopackapp","version":"%s","channel":"%s","publish":%v,"platform":"%s","arch":"universalArch"}`,
+			ids[version], version, channel, publish, platform)
+		w := doUpdaterRequest(t, router, "/apps/update", payload, nil)
+		require.Equal(t, http.StatusOK, w.Code, "toggle %s publish=%v: %s", version, publish, w.Body.String())
+	}
+
+	t.Run("unpublish_removes_from_feed", func(t *testing.T) {
+		toggle("1.0.0", "nightly", "windows", false)
+		assets := parseVelopackFeed(t, checkFileContent(t, nightlyWinURL))
+		require.NotContains(t, assets, "1.0.0", "unpublished 1.0.0 must disappear from feed")
+		require.Contains(t, assets, "1.0.1")
+	})
+
+	t.Run("publish_adds_to_feed", func(t *testing.T) {
+		toggle("1.0.2", "nightly", "windows", true)
+		assets := parseVelopackFeed(t, checkFileContent(t, nightlyWinURL))
+		require.Contains(t, assets, "1.0.2", "newly published 1.0.2 must appear in feed")
+	})
 }
 
 // func TestSquirrelReleases(t *testing.T) {

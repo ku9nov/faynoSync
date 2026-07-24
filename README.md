@@ -63,6 +63,7 @@ It’s ideal for managing updates in Electron apps, native desktop applications,
 | | Tauri | Updater for Tauri apps (signature-based verification) |
 | | Squirrel | Update support for Squirrel.Windows and Squirrel.Mac |
 | | Velopack | Cross-platform installer/updater framework |
+| | Sparkle | MacOS only installer/updater framework |
 | | Manual | Direct download without a framework-specific update feed |
 | **Storage** | S3-Compatible | Supports multiple cloud storage providers: |
 | | AWS S3 | Amazon Web Services Simple Storage Service |
