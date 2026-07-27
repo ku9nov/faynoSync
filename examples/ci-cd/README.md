@@ -1,17 +1,8 @@
-# CI/CD Example: Github Actions
-This workflow is an example of a CI/CD pipeline for building a Rust application on multiple platforms and uploading assets to `faynoSync`. The workflow updates the version in `Cargo.toml` based on the input provided and handles authentication with faynoSync.
+# CI/CD
 
-## Prerequisites
-You need to create two secrets in your GitHub repository:
+Better and more polished CI/CD examples live in [faynoSync-cli](https://github.com/ku9nov/faynoSync-cli):
 
-- `USERNAME`: Your faynoSync username.
+- [GitHub Actions](https://github.com/ku9nov/faynoSync-cli/blob/main/examples/github-actions/upload.yml) — uses the `ku9nov/faynoSync-cli@v1` composite action.
+- [Jenkins](https://github.com/ku9nov/faynoSync-cli/tree/main/examples/jenkins) — a shared-library `faynosyncUpload` step.
 
-- `PASSWORD`: Your faynoSync password.
-
-## Trigger
-Manual Dispatch (workflow_dispatch): Requires a `VERSION` input to set in the `Cargo.toml` file.
-
-### Command example
-```
-gh workflow run "Build app and upload assets to faynoSync" --ref branch_name --repo github.com/owner_name/repo_name -f VERSION="0.2.5-6"
-```
+Both authenticate with a scoped API token (`FAYNOSYNC_TOKEN`) instead of a username and password.

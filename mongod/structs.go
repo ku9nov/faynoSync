@@ -20,7 +20,7 @@ type AppRepository interface {
 	DeleteSpecificVersionOfApp(id primitive.ObjectID, owner string, ctx context.Context) ([]string, int64, string, error)
 	DeleteChannel(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context, redisClient *redis.Client, env *viper.Viper, checkAppVisibility bool) (interface{}, error)
-	UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, bool, error)
+	UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, bool, bool, error)
 	CheckLatestVersion(appName, version, channel, platform, arch string, ctx context.Context, owner string) (CheckResult, error)
 	RequiredIntermediateStep(ctx context.Context, owner, appName, channel, platform, arch, currentVersion, latestVersion string) (string, error)
 	FetchLatestVersionOfApp(appName, channel string, ctx context.Context, owner string) ([]*model.SpecificAppWithoutIDs, error)

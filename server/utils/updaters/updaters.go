@@ -1,6 +1,7 @@
 package updaters
 
 import (
+	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
 	"net/url"
@@ -51,10 +52,6 @@ func BuildResponse(response gin.H, found bool, possibleRollback bool, latestVers
 		logrus.Debugf("Return http redirect to Release URL: %s", releaseURL)
 		// Return redirect response with RELEASES URL
 		return gin.H{"status": "redirect", "url": releaseURL}, 302
-
-	case "sparkle":
-		// Test stub for sparkle
-		return gin.H{"status": "test_stub", "updater": "sparkle"}, 200
 
 	case "electron-builder":
 		if !found && !possibleRollback {
@@ -139,10 +136,34 @@ func BuildS3Key(ctxQuery map[string]interface{}, owner string, newFileName strin
 		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
 		s3Key := strings.Join(s3PathSegments, "/")
 		return link, s3Key
-	case "sparkle":
-		// Sparkle specific S3 key structure
+	case sparkle.UpdaterType:
+		// Sparkle lays archives and deltas flat in one folder per (owner, app,
+		// platform, arch): sparkle/{owner}/{app}/{platform}/{arch}/{file}. The
+		// uploaded appcast is routed onto the exact key MaterializeSparkleFeeds
+		// writes to (regardless of its uploaded name), so the managed feed
+		// overwrites the raw upload instead of leaving a second, unmanaged appcast.
 		logrus.Debugf("Sparkle specific S3 key structure")
-		fallthrough
+		appName := ctxQuery["app_name"].(string)
+		platform := ctxQuery["platform"].(string)
+		arch := ctxQuery["arch"].(string)
+		var s3Key string
+		if sparkle.IsAppcastFile(oldFileName) {
+			s3Key = sparkle.AppcastObjectKey(owner, appName, platform, arch, ctxQuery["channel"].(string))
+		} else {
+			segments := []string{fmt.Sprintf("sparkle/%s", owner), appName}
+			if platform != "" {
+				segments = append(segments, platform)
+			}
+			if arch != "" {
+				segments = append(segments, arch)
+			}
+			segments = append(segments, oldFileName)
+			s3Key = strings.Join(segments, "/")
+		}
+
+		encodedPath := url.QueryEscape(s3Key)
+		link := fmt.Sprintf("%s/download?key=%s", ctxQuery["api_url"].(string), encodedPath)
+		return link, s3Key
 	case "electron-builder":
 		// Electron Builder specific S3 key structure
 		logrus.Debugf("Electron Builder specific S3 key structure")

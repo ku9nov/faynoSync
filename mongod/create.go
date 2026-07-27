@@ -7,6 +7,7 @@ import (
 	"errors"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
 	"reflect"
@@ -285,10 +286,12 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 }
 
 // duplicateCheckIgnoredPackages lists package extensions that legitimately repeat
-// within the same version/platform/arch (e.g. velopack full+delta .nupkg) and must
+// within the same version/platform/arch (e.g. velopack full+delta .nupkg, or
+// several sparkle .delta files stepping from different prior versions) and must
 // be skipped by the duplicate-artifact check on upload.
 var duplicateCheckIgnoredPackages = map[string]bool{
 	"nupkg": true,
+	"delta": true,
 }
 
 func lookupVelopackMeta(ctxQuery map[string]interface{}) *velopack.VelopackMeta {
@@ -297,6 +300,26 @@ func lookupVelopackMeta(ctxQuery map[string]interface{}) *velopack.VelopackMeta 
 		return nil
 	}
 	metaMap, ok := metaVal.(map[string]velopack.VelopackMeta)
+	if !ok {
+		return nil
+	}
+	fileName, ok := ctxQuery["file_name"].(string)
+	if !ok {
+		return nil
+	}
+	meta, ok := metaMap[fileName]
+	if !ok {
+		return nil
+	}
+	return &meta
+}
+
+func lookupSparkleMeta(ctxQuery map[string]interface{}) *sparkle.SparkleMeta {
+	metaVal, ok := ctxQuery["sparkle_meta"]
+	if !ok {
+		return nil
+	}
+	metaMap, ok := metaVal.(map[string]sparkle.SparkleMeta)
 	if !ok {
 		return nil
 	}
@@ -476,6 +499,9 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		if velopackMeta := lookupVelopackMeta(ctxQuery); velopackMeta != nil {
 			newArtifact.Velopack = velopackMeta
 		}
+		if sparkleMeta := lookupSparkleMeta(ctxQuery); sparkleMeta != nil {
+			newArtifact.Sparkle = sparkleMeta
+		}
 
 		appData.Artifacts = append(appData.Artifacts, newArtifact)
 		logrus.Debugf("Adding new artifact to existing document")
@@ -544,6 +570,9 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 		if velopackMeta := lookupVelopackMeta(ctxQuery); velopackMeta != nil {
 			artifact.Velopack = velopackMeta
+		}
+		if sparkleMeta := lookupSparkleMeta(ctxQuery); sparkleMeta != nil {
+			artifact.Sparkle = sparkleMeta
 		}
 
 		rolloutPercent := 100

@@ -3,6 +3,7 @@ package model
 import (
 	"time"
 
+	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -19,6 +20,7 @@ type Artifact struct {
 	TufSigned bool                   `bson:"tuf_signed,omitempty"`
 	TufTaskID *string                `bson:"tuf_task_id,omitempty"`
 	Velopack  *velopack.VelopackMeta `bson:"velopack,omitempty"`
+	Sparkle   *sparkle.SparkleMeta   `bson:"sparkle,omitempty"`
 }
 
 type App struct {

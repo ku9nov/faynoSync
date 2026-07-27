@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.0.0
+
+### Important Notes
+
+- **Milestone release**, not a rewrite. `v1.0.0` was an upload API with channels and a latest-version check; `v2.0.0` is a full update backend. See "The road from 1.0 to 2.0" below.
+- **No breaking changes** — a drop-in upgrade from `v1.6.5`. Deploy the new binary and run `./faynoSync migrate up`.
+
+### Features (Sparkle)
+
+- Added a `sparkle` updater type for macOS Sparkle apps: upload a `generate_appcast` appcast plus its archives and `.delta` files. Each `<item>` is stored verbatim and re-emitted on materialization, so elements faynoSync does not model round-trip faithfully — `sparkle:edSignature` and the whole `<sparkle:deltas>` subtree pass through untouched, while every enclosure URL is rewritten to its faynoSync link. Only publish, critical, changelog and `<pubDate>` are overlaid.
+- Feeds are materialized to `sparkle/{owner}/{app}/{platform}/{arch}/appcast.{channel}.xml` and regenerated on upload, edit and deletion. `POST /apps/update` ingests sparkle metadata too, and an appcast with no `<enclosure>` for a supplied archive is rejected.
+
+### Performance
+
+- Feed materialization (sparkle and velopack) now rebuilds only the affected `(channel, platform, arch)` feeds instead of every feed of the app, turning a synchronous publish from `O(app feeds × versions)` into `O(touched feeds × versions)` — tens of milliseconds instead of ~0.5–1.5 s on a 20k–50k-version app. Falls back to a full regen when the touched tuples cannot be determined, so no feed is served stale.
+
+### Security
+
+- Upgraded `google.golang.org/grpc` to v1.82.1
+
+### The road from 1.0 to 2.0
+
+Per-release detail is in the `v1.x` sections below.
+
+- **Updaters** — native feeds for `electron-builder`, `squirrel_windows`, `squirrel_darwin`, `tauri`, `velopack` and `sparkle`, plus `default`. Binary and browser-extension app types.
+- **TUF** — signed metadata on `go-tuf/v2`: bootstrap, per-app isolation, the full root/targets/snapshot/timestamp and delegated lifecycle, offline signing, key rotation, per-role thresholds and expirations, Ed25519/ECDSA/RSA-PSS keys. Hardened in `v1.5.16`–`v1.5.17`; the `v1.5.0` pilot caveat no longer applies.
+- **Telemetry and reports** — per-app usage aggregation, crash/event ingest with signature-hash grouping, presigned detail blobs, rate limiting, and a triage lifecycle (`open`/`resolved`/`muted`, tags, notes, regression auto-reopen).
+- **Rollouts** — staged rollouts, intermediate required builds, and `possible_rollback` for clients ahead of the published version.
+- **Storage** — one `StorageClient` interface over AWS S3, MinIO/Garage, DigitalOcean Spaces and GCS; public/private/CDN bucket split with presigned URLs; Redis caching of `checkVersion` and `RELEASES` responses.
+- **Access control** — JWT auth, a team authorization matrix, scoped API tokens, `whoami`.
+- **Operations** — semver with build numbers, changelogs and critical flags, Slack notifications, explicit `migrate up`/`down`, and a grown integration plus TUF unit test suite.
+
 ## v1.6.5
 
 ### Features

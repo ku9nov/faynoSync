@@ -28,6 +28,15 @@ func hasVelopackLink(links []string) bool {
 	return false
 }
 
+func hasSparkleLink(links []string) bool {
+	for _, l := range links {
+		if strings.Contains(l, "sparkle/") || strings.Contains(l, "sparkle%2F") {
+			return true
+		}
+	}
+	return false
+}
+
 func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client) {
 	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
@@ -90,6 +99,10 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 		info.MaterializeVelopackForApp(c.Request.Context(), db, env, owner, appName)
 	}
 
+	if hasSparkleLink(links) {
+		info.MaterializeSparkleForApp(c.Request.Context(), db, env, owner, appName)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
 }
 
@@ -133,8 +146,15 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
 	}
 
+	// Deleting one artifact only changes its own (channel, platform, arch) feed.
+	deleteTuples := info.TupleFromContext(ctxQueryMap)
+
 	if hasVelopackLink(links) {
-		info.MaterializeVelopackForApp(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string))
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string), deleteTuples)
+	}
+
+	if hasSparkleLink(links) {
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string), deleteTuples)
 	}
 
 	if result && len(links) > 0 && viper.GetBool("SLACK_ENABLE") && rdb != nil {

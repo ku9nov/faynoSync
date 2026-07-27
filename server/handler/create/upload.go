@@ -8,6 +8,7 @@ import (
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
+	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
 	"io"
@@ -25,7 +26,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func parseVelopackFeed(files []*multipart.FileHeader) (map[string]velopack.VelopackMeta, error) {
+func ParseVelopackFeed(files []*multipart.FileHeader) (map[string]velopack.VelopackMeta, error) {
 	for _, file := range files {
 		name := strings.ToLower(file.Filename)
 		if strings.HasPrefix(name, "releases.") && strings.HasSuffix(name, ".json") {
@@ -42,6 +43,25 @@ func parseVelopackFeed(files []*multipart.FileHeader) (map[string]velopack.Velop
 		}
 	}
 	return nil, fmt.Errorf("velopack updater requires a releases.*.json feed file")
+}
+
+func ParseSparkleAppcast(files []*multipart.FileHeader) (map[string]sparkle.SparkleMeta, error) {
+	for _, file := range files {
+		name := strings.ToLower(file.Filename)
+		if strings.HasPrefix(name, "appcast") && strings.HasSuffix(name, ".xml") {
+			f, err := file.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer f.Close()
+			content, err := io.ReadAll(f)
+			if err != nil {
+				return nil, err
+			}
+			return sparkle.ParseAppcast(content)
+		}
+	}
+	return nil, fmt.Errorf("sparkle updater requires an appcast.*.xml feed file")
 }
 
 // CopyVelopackInstallersToDefault materializes the flat, fixed-name installer
@@ -284,12 +304,26 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 
 		// Ingest velopack metadata from the releases.*.json feed (verbatim hashes)
 		if updaterStr == velopack.UpdaterType {
-			velopackMeta, err := parseVelopackFeed(files)
+			velopackMeta, err := ParseVelopackFeed(files)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 			ctxQueryMap["velopack_meta"] = velopackMeta
+		}
+
+		// Ingest sparkle metadata from the appcast.*.xml feed (verbatim edSignature)
+		if updaterStr == sparkle.UpdaterType {
+			sparkleMeta, err := ParseSparkleAppcast(files)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if err := sparkle.ValidateArchivesInAppcast(files, sparkleMeta); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			ctxQueryMap["sparkle_meta"] = sparkleMeta
 		}
 	}
 	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
@@ -334,6 +368,9 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		if _, ok := ctxQueryMap["velopack_meta"]; ok {
 			fileCtxQuery["file_name"] = files[i].Filename
 		}
+		if _, ok := ctxQueryMap["sparkle_meta"]; ok {
+			fileCtxQuery["file_name"] = files[i].Filename
+		}
 
 		result, err := repository.Upload(fileCtxQuery, link, extensions[i], owner, c.Request.Context(), rdb, viper.GetViper(), checkAppVisibility)
 		if err != nil {
@@ -356,9 +393,17 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		"Uploaded app",
 	)
 
+	// An upload adds one artifact for one (channel, platform, arch), so only that
+	// tuple's feed changes — regenerate just it, not every feed of the app.
+	uploadTuples := info.TupleFromContext(ctxQueryMap)
+
 	if updater, _ := ctxQueryMap["updater"].(string); updater == velopack.UpdaterType {
 		CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, owner, files, checkAppVisibility, viper.GetViper())
-		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), owner, appName)
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples)
+	}
+
+	if updater, _ := ctxQueryMap["updater"].(string); updater == sparkle.UpdaterType {
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples)
 	}
 
 	if len(results) == 0 {

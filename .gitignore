@@ -36,3 +36,7 @@ tmp*
 tuf_keys/
 
 docs/
+
+# Local perf/index probes (build tag: indexbench)
+server/handler/info/index_bench_test.go
+server/handler/info/materialize_bench_test.go

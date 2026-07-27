@@ -7,7 +7,7 @@ on:
 
 jobs:
   unit-tests:
-    name: Go unit tests (TUF)
+    name: Go unit tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -21,7 +21,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          go test ./server/tuf/... ./server/utils ./server/handler/report ./server/handler/info -race
+          go test ./server/tuf/... ./server/utils/... ./server/handler/... -race
         continue-on-error: false
 
   integration-tests:
