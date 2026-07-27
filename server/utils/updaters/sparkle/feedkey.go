@@ -1,7 +1,18 @@
 package sparkle
 
-import "fmt"
+import "strings"
 
 func AppcastObjectKey(owner, app, platform, arch, channel string) string {
-	return fmt.Sprintf("sparkle/%s/%s/%s/%s/appcast.%s.xml", owner, app, platform, arch, channel)
+	segments := []string{"sparkle", owner, app}
+	if platform != "" {
+		segments = append(segments, platform)
+	}
+	if arch != "" {
+		segments = append(segments, arch)
+	}
+	fileName := "appcast.xml"
+	if channel != "" {
+		fileName = "appcast." + channel + ".xml"
+	}
+	return strings.Join(append(segments, fileName), "/")
 }

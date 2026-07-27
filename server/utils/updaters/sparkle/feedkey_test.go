@@ -35,6 +35,25 @@ func TestAppcastObjectKeyDistinctPerPlatform(t *testing.T) {
 	}
 }
 
+// Owners with no created channels (and uploads without platform/arch) must not
+// produce "appcast..xml" or empty path segments.
+func TestAppcastObjectKeyOmitsEmptyComponents(t *testing.T) {
+	cases := []struct {
+		platform, arch, channel string
+		want                    string
+	}{
+		{"darwin", "arm64", "", "sparkle/acme/MyApp/darwin/arm64/appcast.xml"},
+		{"", "", "nightly", "sparkle/acme/MyApp/appcast.nightly.xml"},
+		{"", "", "", "sparkle/acme/MyApp/appcast.xml"},
+		{"darwin", "", "", "sparkle/acme/MyApp/darwin/appcast.xml"},
+	}
+	for _, c := range cases {
+		if got := AppcastObjectKey("acme", "MyApp", c.platform, c.arch, c.channel); got != c.want {
+			t.Errorf("AppcastObjectKey(platform=%q, arch=%q, channel=%q) = %q, want %q", c.platform, c.arch, c.channel, got, c.want)
+		}
+	}
+}
+
 func TestGetUpdaterType(t *testing.T) {
 	if got := NewFileValidator(UpdaterType).GetUpdaterType(); got != UpdaterType {
 		t.Errorf("GetUpdaterType = %q, want %q", got, UpdaterType)
