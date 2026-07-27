@@ -372,12 +372,23 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 
 	create.CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, s3Owner, files, checkAppVisibility, viper.GetViper())
 
+	// A version-level change (publish/critical/changelog) or an added artifact can
+	// affect every feed the version has artifacts in — regenerate exactly those
+	// tuples, not the whole app. On any error deriving them, fall back to full.
 	if isVelopack {
-		info.MaterializeVelopackForApp(c.Request.Context(), db, viper.GetViper(), s3Owner, appName)
+		var tuples []info.FeedTuple
+		if t, err := info.VelopackVersionTuples(c.Request.Context(), db, objID); err == nil {
+			tuples = t
+		}
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples)
 	}
 
 	if isSparkle {
-		info.MaterializeSparkleForApp(c.Request.Context(), db, viper.GetViper(), s3Owner, appName)
+		var tuples []info.FeedTuple
+		if t, err := info.SparkleVersionTuples(c.Request.Context(), db, objID); err == nil {
+			tuples = t
+		}
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples)
 	}
 
 	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {

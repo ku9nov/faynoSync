@@ -2920,6 +2920,42 @@ func TestSparkleUpdaterFlow(t *testing.T) {
 		items := parseAppcastItems(t, checkFileContent(t, nightlyMacURL))
 		require.Contains(t, items, "3", "newly published v0.0.3 must appear in feed")
 	})
+
+	// Regression for targeted regeneration: a single version with artifacts on
+	// TWO platforms. A version-level unpublish must clear it from BOTH platform
+	// feeds — proving targeted regen covers every tuple the version spans, not
+	// just the one in the request payload.
+	t.Run("multiplatform_version_unpublish_clears_all_feeds", func(t *testing.T) {
+		sqURL := fmt.Sprintf("%s/sparkle/admin/sparkleapp/macosSquirrel/universalArch/appcast.nightly.xml", s3Endpoint)
+
+		zipMac := "sparkleapp-0.0.9.zip"
+		wUp := doUpdaterRequest(t, router, "/upload",
+			`{"app_name":"sparkleapp","version":"0.0.9","channel":"nightly","publish":true,"critical":false,"platform":"macos","arch":"universalArch","updater":"sparkle","changelog":"multi platform"}`,
+			[]updaterFeedFile{{name: "appcast.nightly.xml", content: appcast(zipMac, "9")}, {name: zipMac, content: []byte("z")}})
+		require.Equal(t, http.StatusOK, wUp.Code, wUp.Body.String())
+		var upResp map[string]interface{}
+		require.NoError(t, json.Unmarshal(wUp.Body.Bytes(), &upResp))
+		id, _ := upResp["uploadResult.Uploaded"].(string)
+		require.NotEmpty(t, id)
+
+		// add a second platform (macosSquirrel) to the SAME version via update
+		zipSq := "sparkleapp-0.0.9-sq.zip"
+		wAdd := doUpdaterRequest(t, router, "/apps/update",
+			fmt.Sprintf(`{"id":"%s","app_name":"sparkleapp","version":"0.0.9","channel":"nightly","publish":true,"critical":false,"platform":"macosSquirrel","arch":"universalArch","updater":"sparkle","changelog":"multi platform"}`, id),
+			[]updaterFeedFile{{name: "appcast.nightly.xml", content: appcast(zipSq, "9")}, {name: zipSq, content: []byte("z")}})
+		require.Equal(t, http.StatusOK, wAdd.Code, wAdd.Body.String())
+
+		require.Contains(t, parseAppcastItems(t, checkFileContent(t, nightlyMacURL)), "9", "v0.0.9 must be in macos feed")
+		require.Contains(t, parseAppcastItems(t, checkFileContent(t, sqURL)), "9", "v0.0.9 must be in macosSquirrel feed")
+
+		// version-level unpublish (payload names only macos) must still clear BOTH
+		wUnpub := doUpdaterRequest(t, router, "/apps/update",
+			fmt.Sprintf(`{"id":"%s","app_name":"sparkleapp","version":"0.0.9","channel":"nightly","publish":false,"platform":"macos","arch":"universalArch"}`, id),
+			nil)
+		require.Equal(t, http.StatusOK, wUnpub.Code, wUnpub.Body.String())
+		require.NotContains(t, parseAppcastItems(t, checkFileContent(t, nightlyMacURL)), "9", "unpublish must remove v0.0.9 from macos feed")
+		require.NotContains(t, parseAppcastItems(t, checkFileContent(t, sqURL)), "9", "unpublish must remove v0.0.9 from macosSquirrel feed (all tuples)")
+	})
 }
 
 type velopackFeedAsset struct {

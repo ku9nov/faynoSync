@@ -146,12 +146,15 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
 	}
 
+	// Deleting one artifact only changes its own (channel, platform, arch) feed.
+	deleteTuples := info.TupleFromContext(ctxQueryMap)
+
 	if hasVelopackLink(links) {
-		info.MaterializeVelopackForApp(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string))
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string), deleteTuples)
 	}
 
 	if hasSparkleLink(links) {
-		info.MaterializeSparkleForApp(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string))
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string), deleteTuples)
 	}
 
 	if result && len(links) > 0 && viper.GetBool("SLACK_ENABLE") && rdb != nil {

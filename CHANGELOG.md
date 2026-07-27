@@ -10,6 +10,11 @@
 - Added upload validation rejecting an appcast that has no matching `<enclosure>` for a supplied archive/delta, preventing an archive from being stored silently without metadata (e.g. a stale appcast that predates the uploaded version).
 - Extended the edit flow (`POST /apps/update`) to ingest sparkle metadata as well, so adding a platform/arch to an existing version carries it into the materialized feed instead of leaking the raw uploaded appcast.
 
+### Performance
+
+- Feed materialization (sparkle and velopack) now regenerates only the affected `(channel, platform, arch)` feed(s) instead of rebuilding every feed of the app on each change. An upload or single-artifact deletion rebuilds just its own tuple; a version-level change (publish/unpublish, critical, changelog) rebuilds exactly the tuples the version's artifacts span (`SparkleVersionTuples`/`VelopackVersionTuples`); a whole-version deletion still does a full regen. When the affected tuples cannot be determined the code falls back to a full regen, so no feed is ever served stale.
+- This turns a synchronous publish from `O(app feeds × versions)` into `O(touched feeds × versions)`. On an app with many channel/platform/arch feeds the win scales as `app feeds / touched feeds`; in local benchmarks a publish on a 20k–50k-version app dropped from ~0.5–1.5 s (full regen) to tens of milliseconds (~7–10× less work), keeping the publish request path responsive.
+
 ## v1.6.5
 
 ### Features
