@@ -1,19 +1,36 @@
 # Changelog
 
-## v1.7.0
+## v2.0.0
+
+### Important Notes
+
+- **Milestone release**, not a rewrite. `v1.0.0` was an upload API with channels and a latest-version check; `v2.0.0` is a full update backend. See "The road from 1.0 to 2.0" below.
+- **No breaking changes** — a drop-in upgrade from `v1.6.5`. Deploy the new binary and run `./faynoSync migrate up`.
 
 ### Features (Sparkle)
 
-- Added a `sparkle` updater type for macOS Sparkle apps. Upload accepts a `generate_appcast` appcast (`appcast.{channel}.xml`) plus the referenced archives (`.zip`/`.dmg`/`.tar.*`/`.aar`) and any `.delta` files. Each `<item>` is stored verbatim on its full artifact and re-emitted on materialization, so every appcast element — including ones faynoSync does not model (`hardwareRequirements`, `minimumAutoupdateVersion`, `releaseNotesLink`, `maximumSystemVersion`, unknown namespaces, …) — round-trips faithfully via `github.com/beevik/etree`.
-- Added materialized appcast generation to `S3_BUCKET_NAME` at `sparkle/{owner}/{app}/{platform}/{arch}/appcast.{channel}.xml`, regenerated on upload, publish/critical/changelog edit, and version/artifact deletion (sparkle apps only). Archives and deltas are stored under `sparkle/{owner}/{app}/{platform}/{arch}/` with original filenames; the uploaded appcast lands on the materialized key so the managed feed overwrites the raw upload (skip-if-unchanged via ETag).
-- faynoSync overlays only the managed fields onto each stored raw item: publish (include/omit the item), critical (`<sparkle:criticalUpdate>` — keeps an existing version-threshold tag, adds a bare one if absent, drops when off), changelog (`<description>` CDATA, only when non-empty; an empty changelog keeps the uploaded release notes), and `<pubDate>` (stamped from the version's `Updated_at`). `<sparkle:channel>` is dropped (the feed is already per-channel). Everything else — `sparkle:edSignature`, `sparkle:version`, `minimumSystemVersion`, the whole `<sparkle:deltas>` subtree — passes through verbatim; every enclosure URL (full and deltas) is rewritten to its faynoSync link by basename with `edSignature`/`length` left untouched so signatures stay valid.
-- Added upload validation rejecting an appcast that has no matching `<enclosure>` for a supplied archive/delta, preventing an archive from being stored silently without metadata (e.g. a stale appcast that predates the uploaded version).
-- Extended the edit flow (`POST /apps/update`) to ingest sparkle metadata as well, so adding a platform/arch to an existing version carries it into the materialized feed instead of leaking the raw uploaded appcast.
+- Added a `sparkle` updater type for macOS Sparkle apps: upload a `generate_appcast` appcast plus its archives and `.delta` files. Each `<item>` is stored verbatim and re-emitted on materialization, so elements faynoSync does not model round-trip faithfully — `sparkle:edSignature` and the whole `<sparkle:deltas>` subtree pass through untouched, while every enclosure URL is rewritten to its faynoSync link. Only publish, critical, changelog and `<pubDate>` are overlaid.
+- Feeds are materialized to `sparkle/{owner}/{app}/{platform}/{arch}/appcast.{channel}.xml` and regenerated on upload, edit and deletion. `POST /apps/update` ingests sparkle metadata too, and an appcast with no `<enclosure>` for a supplied archive is rejected.
 
 ### Performance
 
-- Feed materialization (sparkle and velopack) now regenerates only the affected `(channel, platform, arch)` feed(s) instead of rebuilding every feed of the app on each change. An upload or single-artifact deletion rebuilds just its own tuple; a version-level change (publish/unpublish, critical, changelog) rebuilds exactly the tuples the version's artifacts span (`SparkleVersionTuples`/`VelopackVersionTuples`); a whole-version deletion still does a full regen. When the affected tuples cannot be determined the code falls back to a full regen, so no feed is ever served stale.
-- This turns a synchronous publish from `O(app feeds × versions)` into `O(touched feeds × versions)`. On an app with many channel/platform/arch feeds the win scales as `app feeds / touched feeds`; in local benchmarks a publish on a 20k–50k-version app dropped from ~0.5–1.5 s (full regen) to tens of milliseconds (~7–10× less work), keeping the publish request path responsive.
+- Feed materialization (sparkle and velopack) now rebuilds only the affected `(channel, platform, arch)` feeds instead of every feed of the app, turning a synchronous publish from `O(app feeds × versions)` into `O(touched feeds × versions)` — tens of milliseconds instead of ~0.5–1.5 s on a 20k–50k-version app. Falls back to a full regen when the touched tuples cannot be determined, so no feed is served stale.
+
+### Security
+
+- Upgraded `google.golang.org/grpc` to v1.82.1
+
+### The road from 1.0 to 2.0
+
+Per-release detail is in the `v1.x` sections below.
+
+- **Updaters** — native feeds for `electron-builder`, `squirrel_windows`, `squirrel_darwin`, `tauri`, `velopack` and `sparkle`, plus `default`. Binary and browser-extension app types.
+- **TUF** — signed metadata on `go-tuf/v2`: bootstrap, per-app isolation, the full root/targets/snapshot/timestamp and delegated lifecycle, offline signing, key rotation, per-role thresholds and expirations, Ed25519/ECDSA/RSA-PSS keys. Hardened in `v1.5.16`–`v1.5.17`; the `v1.5.0` pilot caveat no longer applies.
+- **Telemetry and reports** — per-app usage aggregation, crash/event ingest with signature-hash grouping, presigned detail blobs, rate limiting, and a triage lifecycle (`open`/`resolved`/`muted`, tags, notes, regression auto-reopen).
+- **Rollouts** — staged rollouts, intermediate required builds, and `possible_rollback` for clients ahead of the published version.
+- **Storage** — one `StorageClient` interface over AWS S3, MinIO/Garage, DigitalOcean Spaces and GCS; public/private/CDN bucket split with presigned URLs; Redis caching of `checkVersion` and `RELEASES` responses.
+- **Access control** — JWT auth, a team authorization matrix, scoped API tokens, `whoami`.
+- **Operations** — semver with build numbers, changelogs and critical flags, Slack notifications, explicit `migrate up`/`down`, and a grown integration plus TUF unit test suite.
 
 ## v1.6.5
 
