@@ -21,10 +21,13 @@ import (
 
 // BaseS3Client provides common S3-compatible storage functionality
 type BaseS3Client struct {
-	client        *s3.Client
-	presignClient *s3.PresignClient
-	env           *viper.Viper
-	providerName  string
+	client         *s3.Client
+	presignClient  *s3.PresignClient
+	privateClient  *s3.Client
+	privatePresign *s3.PresignClient
+	privateBucket  string
+	env            *viper.Viper
+	providerName   string
 }
 
 // S3Config holds configuration for S3-compatible storage
@@ -32,6 +35,7 @@ type S3Config struct {
 	AccessKey      string
 	SecretKey      string
 	Region         string
+	PrivateRegion  string
 	Endpoint       string
 	ForcePathStyle bool
 }
@@ -44,35 +48,68 @@ func NewBaseS3Client(env *viper.Viper, providerName string, s3Config S3Config) (
 		"",
 	)
 
-	var cfg aws.Config
-	var err error
-
-	cfg, err = config.LoadDefaultConfig(
-		context.TODO(),
-		config.WithCredentialsProvider(creds),
-		config.WithRegion(s3Config.Region),
-	)
-
+	client, err := newRegionalS3Client(creds, s3Config, s3Config.Region)
 	if err != nil {
 		return nil, &StorageError{Message: fmt.Sprintf("failed to create %s client", providerName), Err: err}
 	}
 
-	client := s3.NewFromConfig(cfg, func(options *s3.Options) {
+	baseClient := &BaseS3Client{
+		client:        client,
+		presignClient: s3.NewPresignClient(client),
+		env:           env,
+		providerName:  providerName,
+	}
+
+	// The private bucket may live in another region than the public one, which needs its own signing region.
+	privateBucket := env.GetString("S3_BUCKET_NAME_PRIVATE")
+	if s3Config.PrivateRegion != "" && s3Config.PrivateRegion != s3Config.Region && privateBucket != "" {
+		privateClient, err := newRegionalS3Client(creds, s3Config, s3Config.PrivateRegion)
+		if err != nil {
+			return nil, &StorageError{Message: fmt.Sprintf("failed to create %s client for private bucket region", providerName), Err: err}
+		}
+
+		baseClient.privateClient = privateClient
+		baseClient.privatePresign = s3.NewPresignClient(privateClient)
+		baseClient.privateBucket = privateBucket
+	}
+
+	return baseClient, nil
+}
+
+func newRegionalS3Client(creds aws.CredentialsProvider, s3Config S3Config, region string) (*s3.Client, error) {
+	cfg, err := config.LoadDefaultConfig(
+		context.TODO(),
+		config.WithCredentialsProvider(creds),
+		config.WithRegion(region),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return s3.NewFromConfig(cfg, func(options *s3.Options) {
 		if s3Config.Endpoint == "" {
 			return
 		}
 
 		options.BaseEndpoint = aws.String(normalizeEndpointURL(s3Config.Endpoint))
 		options.UsePathStyle = s3Config.ForcePathStyle
-	})
-	presignClient := s3.NewPresignClient(client)
+	}), nil
+}
 
-	return &BaseS3Client{
-		client:        client,
-		presignClient: presignClient,
-		env:           env,
-		providerName:  providerName,
-	}, nil
+func (b *BaseS3Client) clientFor(bucketName string) *s3.Client {
+	if b.privateClient != nil && bucketName == b.privateBucket {
+		return b.privateClient
+	}
+
+	return b.client
+}
+
+func (b *BaseS3Client) presignClientFor(bucketName string) *s3.PresignClient {
+	if b.privatePresign != nil && bucketName == b.privateBucket {
+		return b.privatePresign
+	}
+
+	return b.presignClient
 }
 
 func normalizeEndpointURL(endpoint string) string {
@@ -93,7 +130,7 @@ func (b *BaseS3Client) UploadObject(ctx context.Context, bucketName, objectKey s
 	if contentType != "" {
 		input.ContentType = aws.String(contentType)
 	}
-	_, err := b.client.PutObject(ctx, input)
+	_, err := b.clientFor(bucketName).PutObject(ctx, input)
 	if err != nil {
 		return &StorageError{Message: fmt.Sprintf("failed to upload object to %s", b.providerName), Err: err}
 	}
@@ -102,7 +139,7 @@ func (b *BaseS3Client) UploadObject(ctx context.Context, bucketName, objectKey s
 
 // UploadObjectWithACL uploads a file to S3-compatible storage with specified ACL
 func (b *BaseS3Client) UploadObjectWithACL(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, acl string) error {
-	_, err := b.client.PutObject(ctx, &s3.PutObjectInput{
+	_, err := b.clientFor(bucketName).PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 		Body:   fileReader,
@@ -123,7 +160,7 @@ func (b *BaseS3Client) CopyObject(ctx context.Context, bucketName, srcKey, dstKe
 	if public && !b.env.GetBool("S3_DISABLE_OBJECT_ACL") {
 		input.ACL = types.ObjectCannedACLPublicRead
 	}
-	_, err := b.client.CopyObject(ctx, input)
+	_, err := b.clientFor(bucketName).CopyObject(ctx, input)
 	if err != nil {
 		return &StorageError{Message: fmt.Sprintf("failed to copy object in %s", b.providerName), Err: err}
 	}
@@ -132,7 +169,7 @@ func (b *BaseS3Client) CopyObject(ctx context.Context, bucketName, srcKey, dstKe
 
 // DeleteObject deletes a file from S3-compatible storage
 func (b *BaseS3Client) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
-	_, err := b.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+	_, err := b.clientFor(bucketName).DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 	})
@@ -167,7 +204,7 @@ func (b *BaseS3Client) DeleteObjects(ctx context.Context, bucketName string, obj
 			continue
 		}
 
-		output, err := b.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		output, err := b.clientFor(bucketName).DeleteObjects(ctx, &s3.DeleteObjectsInput{
 			Bucket: aws.String(bucketName),
 			Delete: &types.Delete{
 				Objects: objects,
@@ -194,7 +231,7 @@ func (b *BaseS3Client) DeleteObjects(ctx context.Context, bucketName string, obj
 
 // GeneratePresignedURL generates a presigned URL for S3-compatible storage
 func (b *BaseS3Client) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
-	request, err := b.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+	request, err := b.presignClientFor(bucketName).PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 	}, func(opts *s3.PresignOptions) {
@@ -208,7 +245,7 @@ func (b *BaseS3Client) GeneratePresignedURL(ctx context.Context, bucketName, obj
 
 // DownloadObject downloads a file from S3-compatible storage to a local file path
 func (b *BaseS3Client) DownloadObject(ctx context.Context, bucketName, objectKey string, filePath string) error {
-	result, err := b.client.GetObject(ctx, &s3.GetObjectInput{
+	result, err := b.clientFor(bucketName).GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 	})
@@ -239,7 +276,7 @@ func (b *BaseS3Client) ListObjects(ctx context.Context, bucketName, prefix strin
 	}
 
 	var objectKeys []string
-	paginator := s3.NewListObjectsV2Paginator(b.client, input)
+	paginator := s3.NewListObjectsV2Paginator(b.clientFor(bucketName), input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
@@ -256,7 +293,7 @@ func (b *BaseS3Client) ListObjects(ctx context.Context, bucketName, prefix strin
 
 // GetObjectETag returns object ETag and existence for S3-compatible storage.
 func (b *BaseS3Client) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
-	output, err := b.client.HeadObject(ctx, &s3.HeadObjectInput{
+	output, err := b.clientFor(bucketName).HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 	})

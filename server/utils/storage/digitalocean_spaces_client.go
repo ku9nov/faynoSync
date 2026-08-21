@@ -20,10 +20,11 @@ type DigitalOceanSpacesClient struct {
 // NewDigitalOceanSpacesClient creates a new DigitalOcean Spaces client
 func NewDigitalOceanSpacesClient(env *viper.Viper) (*DigitalOceanSpacesClient, error) {
 	s3Config := S3Config{
-		AccessKey: env.GetString("S3_ACCESS_KEY"),
-		SecretKey: env.GetString("S3_SECRET_KEY"),
-		Region:    env.GetString("S3_REGION"),
-		Endpoint:  env.GetString("S3_ENDPOINT"),
+		AccessKey:     env.GetString("S3_ACCESS_KEY"),
+		SecretKey:     env.GetString("S3_SECRET_KEY"),
+		Region:        env.GetString("S3_REGION"),
+		PrivateRegion: env.GetString("S3_REGION_PRIVATE"),
+		Endpoint:      env.GetString("S3_ENDPOINT"),
 	}
 
 	baseClient, err := NewBaseS3Client(env, "DigitalOcean Spaces", s3Config)
@@ -45,7 +46,7 @@ func (d *DigitalOceanSpacesClient) UploadObject(ctx context.Context, bucketName,
 	if contentType != "" {
 		input.ContentType = aws.String(contentType)
 	}
-	_, err := d.client.PutObject(ctx, input)
+	_, err := d.clientFor(bucketName).PutObject(ctx, input)
 	if err != nil {
 		return &StorageError{Message: "failed to upload object to DigitalOcean Spaces", Err: err}
 	}
@@ -63,7 +64,7 @@ func (d *DigitalOceanSpacesClient) UploadPublicObject(ctx context.Context, bucke
 	if contentType != "" {
 		input.ContentType = aws.String(contentType)
 	}
-	_, err := d.client.PutObject(ctx, input)
+	_, err := d.clientFor(bucketName).PutObject(ctx, input)
 	if err != nil {
 		return "", &StorageError{Message: "failed to upload public object to DigitalOcean Spaces", Err: err}
 	}
@@ -84,7 +85,7 @@ func (d *DigitalOceanSpacesClient) UploadPublicObjectWithCacheControl(ctx contex
 	if contentType != "" {
 		input.ContentType = aws.String(contentType)
 	}
-	_, err := d.client.PutObject(ctx, input)
+	_, err := d.clientFor(bucketName).PutObject(ctx, input)
 	if err != nil {
 		return "", &StorageError{Message: "failed to upload public object to DigitalOcean Spaces", Err: err}
 	}
@@ -96,7 +97,7 @@ func (d *DigitalOceanSpacesClient) UploadPublicObjectWithCacheControl(ctx contex
 
 // DeleteObject deletes a file from DigitalOcean Spaces
 func (d *DigitalOceanSpacesClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
-	_, err := d.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+	_, err := d.clientFor(bucketName).DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 	})
@@ -108,7 +109,7 @@ func (d *DigitalOceanSpacesClient) DeleteObject(ctx context.Context, bucketName,
 
 // GeneratePresignedURL generates a presigned URL for DigitalOcean Spaces
 func (d *DigitalOceanSpacesClient) GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error) {
-	request, err := d.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+	request, err := d.presignClientFor(bucketName).PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
 	}, func(opts *s3.PresignOptions) {
