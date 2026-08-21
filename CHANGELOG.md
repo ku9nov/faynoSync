@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.1.0
+
+### Maintenance
+
+- Added new 'S3_REGION_PRIVATE' env.
+
 ## v2.0.0
 
 ### Important Notes
