@@ -20,11 +20,12 @@ type DigitalOceanSpacesClient struct {
 // NewDigitalOceanSpacesClient creates a new DigitalOcean Spaces client
 func NewDigitalOceanSpacesClient(env *viper.Viper) (*DigitalOceanSpacesClient, error) {
 	s3Config := S3Config{
-		AccessKey:     env.GetString("S3_ACCESS_KEY"),
-		SecretKey:     env.GetString("S3_SECRET_KEY"),
-		Region:        env.GetString("S3_REGION"),
-		PrivateRegion: env.GetString("S3_REGION_PRIVATE"),
-		Endpoint:      env.GetString("S3_ENDPOINT"),
+		AccessKey:       env.GetString("S3_ACCESS_KEY"),
+		SecretKey:       env.GetString("S3_SECRET_KEY"),
+		Region:          env.GetString("S3_REGION"),
+		PrivateRegion:   env.GetString("S3_REGION_PRIVATE"),
+		Endpoint:        env.GetString("S3_ENDPOINT"),
+		PrivateEndpoint: env.GetString("S3_ENDPOINT_PRIVATE"),
 	}
 
 	baseClient, err := NewBaseS3Client(env, "DigitalOcean Spaces", s3Config)
@@ -70,7 +71,7 @@ func (d *DigitalOceanSpacesClient) UploadPublicObject(ctx context.Context, bucke
 	}
 
 	spacesEndpoint := d.env.GetString("S3_ENDPOINT")
-	publicURL := fmt.Sprintf("https://%s.%s/%s", bucketName, spacesEndpoint, objectKey)
+	publicURL := fmt.Sprintf("https://%s.%s/%s", bucketName, spacesEndpoint, encodeObjectKeyForPublicURL(objectKey))
 	return publicURL, nil
 }
 
@@ -91,7 +92,7 @@ func (d *DigitalOceanSpacesClient) UploadPublicObjectWithCacheControl(ctx contex
 	}
 
 	spacesEndpoint := d.env.GetString("S3_ENDPOINT")
-	publicURL := fmt.Sprintf("https://%s.%s/%s", bucketName, spacesEndpoint, objectKey)
+	publicURL := fmt.Sprintf("https://%s.%s/%s", bucketName, spacesEndpoint, encodeObjectKeyForPublicURL(objectKey))
 	return publicURL, nil
 }
 

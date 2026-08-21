@@ -32,12 +32,13 @@ type BaseS3Client struct {
 
 // S3Config holds configuration for S3-compatible storage
 type S3Config struct {
-	AccessKey      string
-	SecretKey      string
-	Region         string
-	PrivateRegion  string
-	Endpoint       string
-	ForcePathStyle bool
+	AccessKey       string
+	SecretKey       string
+	Region          string
+	PrivateRegion   string
+	Endpoint        string
+	PrivateEndpoint string
+	ForcePathStyle  bool
 }
 
 // NewBaseS3Client creates a new base S3 client with custom configuration
@@ -48,7 +49,7 @@ func NewBaseS3Client(env *viper.Viper, providerName string, s3Config S3Config) (
 		"",
 	)
 
-	client, err := newRegionalS3Client(creds, s3Config, s3Config.Region)
+	client, err := newRegionalS3Client(creds, s3Config, s3Config.Region, s3Config.Endpoint)
 	if err != nil {
 		return nil, &StorageError{Message: fmt.Sprintf("failed to create %s client", providerName), Err: err}
 	}
@@ -63,7 +64,13 @@ func NewBaseS3Client(env *viper.Viper, providerName string, s3Config S3Config) (
 	// The private bucket may live in another region than the public one, which needs its own signing region.
 	privateBucket := env.GetString("S3_BUCKET_NAME_PRIVATE")
 	if s3Config.PrivateRegion != "" && s3Config.PrivateRegion != s3Config.Region && privateBucket != "" {
-		privateClient, err := newRegionalS3Client(creds, s3Config, s3Config.PrivateRegion)
+		// Providers with regional endpoints (DigitalOcean Spaces) need the endpoint to match the signing region.
+		privateEndpoint := s3Config.PrivateEndpoint
+		if privateEndpoint == "" {
+			privateEndpoint = s3Config.Endpoint
+		}
+
+		privateClient, err := newRegionalS3Client(creds, s3Config, s3Config.PrivateRegion, privateEndpoint)
 		if err != nil {
 			return nil, &StorageError{Message: fmt.Sprintf("failed to create %s client for private bucket region", providerName), Err: err}
 		}
@@ -76,7 +83,7 @@ func NewBaseS3Client(env *viper.Viper, providerName string, s3Config S3Config) (
 	return baseClient, nil
 }
 
-func newRegionalS3Client(creds aws.CredentialsProvider, s3Config S3Config, region string) (*s3.Client, error) {
+func newRegionalS3Client(creds aws.CredentialsProvider, s3Config S3Config, region, endpoint string) (*s3.Client, error) {
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithCredentialsProvider(creds),
@@ -87,11 +94,11 @@ func newRegionalS3Client(creds aws.CredentialsProvider, s3Config S3Config, regio
 	}
 
 	return s3.NewFromConfig(cfg, func(options *s3.Options) {
-		if s3Config.Endpoint == "" {
+		if endpoint == "" {
 			return
 		}
 
-		options.BaseEndpoint = aws.String(normalizeEndpointURL(s3Config.Endpoint))
+		options.BaseEndpoint = aws.String(normalizeEndpointURL(endpoint))
 		options.UsePathStyle = s3Config.ForcePathStyle
 	}), nil
 }

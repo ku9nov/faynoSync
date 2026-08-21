@@ -164,8 +164,11 @@ func setup() {
 		panic(err)
 	}
 	// Create a single database connection
-	s3Endpoint = viper.GetString("S3_ENDPOINT")
 	s3Bucket = viper.GetString("S3_BUCKET_NAME")
+	s3Endpoint = viper.GetString("S3_ENDPOINT")
+	if viper.GetString("STORAGE_DRIVER") == "digitalocean" {
+		s3Endpoint = fmt.Sprintf("https://%s.%s", s3Bucket, s3Endpoint)
+	}
 	apiUrl = viper.GetString("API_URL")
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"))
 	if err := mongod.RunMigrationsUp(client, configDB.Database); err != nil {
@@ -5484,7 +5487,8 @@ func TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted(t *testing.T
 			resp, err := http.DefaultClient.Do(cdnReq)
 			require.NoError(t, err)
 			defer resp.Body.Close()
-			assert.Equal(t, http.StatusNotFound, resp.StatusCode, "CDN response JSON should be deleted after publish=false update: %s", cdnResponseURL.String())
+			// Providers that keep s3:ListBucket private answer a missing key with 403 instead of 404.
+			assert.Contains(t, []int{http.StatusNotFound, http.StatusForbidden}, resp.StatusCode, "CDN response JSON should be deleted after publish=false update: %s", cdnResponseURL.String())
 		}
 	}
 }
