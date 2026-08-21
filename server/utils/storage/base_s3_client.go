@@ -94,12 +94,12 @@ func newRegionalS3Client(creds aws.CredentialsProvider, s3Config S3Config, regio
 	}
 
 	return s3.NewFromConfig(cfg, func(options *s3.Options) {
+		options.UsePathStyle = s3Config.ForcePathStyle
 		if endpoint == "" {
 			return
 		}
 
 		options.BaseEndpoint = aws.String(normalizeEndpointURL(endpoint))
-		options.UsePathStyle = s3Config.ForcePathStyle
 	}), nil
 }
 
