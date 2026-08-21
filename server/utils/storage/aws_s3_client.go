@@ -37,6 +37,7 @@ func NewAWSS3Client(env *viper.Viper) (*AWSS3Client, error) {
 		AccessKey:      env.GetString("S3_ACCESS_KEY"),
 		SecretKey:      env.GetString("S3_SECRET_KEY"),
 		Region:         env.GetString("S3_REGION"),
+		PrivateRegion:  env.GetString("S3_REGION_PRIVATE"),
 		Endpoint:       apiEndpoint,
 		ForcePathStyle: env.GetBool("S3_FORCE_PATH_STYLE"),
 	}
@@ -63,7 +64,7 @@ func (a *AWSS3Client) UploadPublicObject(ctx context.Context, bucketName, object
 	if contentType != "" {
 		input.ContentType = aws.String(contentType)
 	}
-	_, err := a.client.PutObject(ctx, input)
+	_, err := a.clientFor(bucketName).PutObject(ctx, input)
 	if err != nil {
 		return "", &StorageError{Message: "failed to upload public object to AWS S3", Err: err}
 	}
@@ -85,7 +86,7 @@ func (a *AWSS3Client) UploadPublicObjectWithCacheControl(ctx context.Context, bu
 	if contentType != "" {
 		input.ContentType = aws.String(contentType)
 	}
-	_, err := a.client.PutObject(ctx, input)
+	_, err := a.clientFor(bucketName).PutObject(ctx, input)
 	if err != nil {
 		return "", &StorageError{Message: "failed to upload public object to AWS S3", Err: err}
 	}

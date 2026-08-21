@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.1.0
+
+### Fixes
+
+- DigitalOcean Spaces: the private bucket client now signs against `S3_ENDPOINT_PRIVATE`, so a private bucket in another region is reached at its own regional endpoint instead of the public one. AWS S3 is unaffected — it keeps deriving the endpoint from the region.
+- DigitalOcean Spaces: public object URLs are now percent-encoded like the AWS driver already did, so keys containing spaces or special characters no longer produce broken links.
+
+### Maintenance
+
+- Added new 'S3_REGION_PRIVATE' env.
+
 ## v2.0.0
 
 ### Important Notes
