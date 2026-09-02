@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.1.1
+
+### Security
+
+- Upgraded `google.golang.org/grpc` to v1.83.1
+
 ## v2.1.0
 
 ### Fixes
