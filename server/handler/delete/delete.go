@@ -157,9 +157,18 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-	owner, err := utils.GetUsernameFromContext(c)
+	username, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Versions are owned by the admin behind a team user, the same way an upload
+	// stores them.
+	owner, err := utils.ResolveRequestOwner(ctx, username, db)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve owner"})
 		return
 	}
 
@@ -228,6 +237,12 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	}
 	appName := appNames[0]
 
+	if err := utils.EnsureTeamUserAppAccess(ctx, username, appName, db); err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
 	//request on repository
 	result, err := repository.DeleteVersionsByIDs(ids, owner, ctx)
 	if err != nil {
@@ -292,11 +307,25 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	owner, err := utils.GetUsernameFromContext(c)
+	username, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
+
+	owner, err := utils.ResolveRequestOwner(c.Request.Context(), username, db)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve owner"})
+		return
+	}
+
+	if err := utils.EnsureTeamUserAppAccess(c.Request.Context(), username, ctxQueryMap["app_name"].(string), db); err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
 	// Convert string to ObjectID
 	objID, err := primitive.ObjectIDFromHex(ctxQueryMap["id"].(string))
 	if err != nil {

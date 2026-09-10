@@ -9193,6 +9193,126 @@ func TestUpdateTeamUser(t *testing.T) {
 // At this point the team user has apps.download and allowed_apps = [testapp, teamApp],
 // so the read API becomes exercisable for both admin and a scoped team user.
 
+func uploadVersionAsAdmin(t *testing.T, appName, version string) string {
+	t.Helper()
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.POST("/upload", func(c *gin.Context) {
+		handler.UploadApp(c)
+	})
+
+	file, err := os.Open("LICENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", filepath.Base("LICENSE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.Copy(part, file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataPart, err := writer.CreateFormField("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "stable", "publish": false, "critical": false, "platform": "universalPlatform", "arch": "universalArch"}`, appName, version)
+	_, err = dataPart.Write([]byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = writer.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequest("POST", "/upload", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, idExists := response["uploadResult.Uploaded"]
+	assert.True(t, idExists)
+
+	return id.(string)
+}
+
+func serveDeleteVersion(t *testing.T, token string, appIDs ...string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/apps/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), func(c *gin.Context) {
+		handler.DeleteSpecificVersionOfApp(c)
+	})
+
+	req, err := http.NewRequest("DELETE", bulkDeleteQuery(appIDs), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// The team user now has apps.delete and "teamapp" in the allowed apps list, so a
+// version of it is theirs to remove even though the version is owned by the admin.
+func TestDeleteVersionUsingTeamUser(t *testing.T) {
+	appID := uploadVersionAsAdmin(t, "teamapp", "1.0.0.0")
+
+	w := serveDeleteVersion(t, teamUserToken, appID)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deleteSpecificAppResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestFailedDeleteVersionUsingTeamUserOfNotAllowedApp(t *testing.T) {
+	// "public testapp" is not in the allowed apps list of the team user.
+	appID := uploadVersionAsAdmin(t, "public testapp", "1.0.0.0")
+
+	w := serveDeleteVersion(t, teamUserToken, appID)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	expected := `{"error":"you don't have access to this app"}`
+	assert.Equal(t, expected, w.Body.String())
+
+	// Nothing was deleted, so the admin still removes it.
+	w = serveDeleteVersion(t, authToken, appID)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected = `{"deleteSpecificAppResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
+}
+
 func serveListReportGroups(token, rawQuery string) *httptest.ResponseRecorder {
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
