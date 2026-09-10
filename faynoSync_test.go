@@ -2776,6 +2776,8 @@ func updaterFlowRouter() *gin.Engine {
 	router.POST("/app/create", func(c *gin.Context) { h.CreateApp(c) })
 	router.POST("/upload", func(c *gin.Context) { h.UploadApp(c) })
 	router.POST("/apps/update", func(c *gin.Context) { h.UpdateSpecificApp(c) })
+	router.DELETE("/apps/delete", func(c *gin.Context) { h.DeleteSpecificVersionOfApp(c) })
+	router.DELETE("/app/delete", func(c *gin.Context) { h.DeleteApp(c) })
 	return router
 }
 
@@ -2803,16 +2805,43 @@ func doUpdaterRequest(t *testing.T, router *gin.Engine, path, payload string, fi
 	return w
 }
 
-func cleanupUpdaterApp(appName string) {
+// cleanupUpdaterApp removes the app through the delete API, so the feed files and
+// artifacts it materialized in storage are erased the same way a real delete does.
+func cleanupUpdaterApp(t *testing.T, appName string) {
+	t.Helper()
 	ctx := context.Background()
 	var meta struct {
 		ID primitive.ObjectID `bson:"_id"`
 	}
-	err := mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.M{"app_name": appName, "owner": "admin"}).Decode(&meta)
-	if err == nil {
-		mongoDatabase.Collection("apps").DeleteMany(ctx, bson.M{"app_id": meta.ID})
+	if err := mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.M{"app_name": appName, "owner": "admin"}).Decode(&meta); err != nil {
+		return
 	}
-	mongoDatabase.Collection("apps_meta").DeleteMany(ctx, bson.M{"app_name": appName, "owner": "admin"})
+
+	cursor, err := mongoDatabase.Collection("apps").Find(ctx, bson.M{"app_id": meta.ID})
+	require.NoError(t, err)
+	var versions []struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+	require.NoError(t, cursor.All(ctx, &versions))
+
+	router := updaterFlowRouter()
+	for _, v := range versions {
+		w := doUpdaterDelete(t, router, "/apps/delete?id="+v.ID.Hex())
+		require.Equal(t, http.StatusOK, w.Code, "delete version %s: %s", v.ID.Hex(), w.Body.String())
+	}
+
+	w := doUpdaterDelete(t, router, "/app/delete?id="+meta.ID.Hex())
+	require.Equal(t, http.StatusOK, w.Code, "delete app %s: %s", appName, w.Body.String())
+}
+
+func doUpdaterDelete(t *testing.T, router *gin.Engine, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req, err := http.NewRequest("DELETE", path, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
 }
 
 func createUpdaterApp(t *testing.T, router *gin.Engine, appName string) {
@@ -2835,8 +2864,8 @@ func parseAppcastItems(t *testing.T, feed string) map[string]*etree.Element {
 }
 
 func TestSparkleUpdaterFlow(t *testing.T) {
-	cleanupUpdaterApp("sparkleapp")
-	defer cleanupUpdaterApp("sparkleapp")
+	cleanupUpdaterApp(t, "sparkleapp")
+	defer cleanupUpdaterApp(t, "sparkleapp")
 	router := updaterFlowRouter()
 	createUpdaterApp(t, router, "sparkleapp")
 
@@ -2986,8 +3015,8 @@ func parseVelopackFeed(t *testing.T, feed string) map[string]velopackFeedAsset {
 }
 
 func TestVelopackUpdaterFlow(t *testing.T) {
-	cleanupUpdaterApp("velopackapp")
-	defer cleanupUpdaterApp("velopackapp")
+	cleanupUpdaterApp(t, "velopackapp")
+	defer cleanupUpdaterApp(t, "velopackapp")
 	router := updaterFlowRouter()
 	createUpdaterApp(t, router, "velopackapp")
 
@@ -3360,6 +3389,24 @@ func TestTokenExpiresImmediatelyAndReturnsUnauthorized(t *testing.T) {
 	shortLivedToken, ok := createResponse["token"].(string)
 	assert.True(t, ok)
 	assert.NotEmpty(t, shortLivedToken)
+
+	shortLivedTokenID, ok := createResponse["id"].(string)
+	assert.True(t, ok)
+	defer func() {
+		deleteRouter := gin.Default()
+		deleteRouter.Use(utils.AuthMiddleware(mongoDatabase))
+		deleteRouter.DELETE("/token/delete", utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) {
+			appHandler.DeleteToken(c)
+		})
+
+		deleteReq, deleteErr := http.NewRequest("DELETE", "/token/delete", bytes.NewBufferString(fmt.Sprintf(`{"id":"%s"}`, shortLivedTokenID)))
+		assert.NoError(t, deleteErr)
+		deleteReq.Header.Set("Content-Type", "application/json")
+		deleteReq.Header.Set("Authorization", "Bearer "+authToken)
+		deleteW := httptest.NewRecorder()
+		deleteRouter.ServeHTTP(deleteW, deleteReq)
+		assert.Equal(t, http.StatusOK, deleteW.Code, deleteW.Body.String())
+	}()
 
 	time.Sleep(500 * time.Millisecond)
 	useRouter := gin.Default()
@@ -8602,12 +8649,29 @@ func flushReportRateLimits(t *testing.T) {
 
 // cleanupReportApp removes a test-created app and all of its report artifacts so
 // later legacy tests (e.g. the "no report keys remain" assertion) are unaffected.
-func cleanupReportApp(appIDHex string) {
+// Groups go through the delete API because that is what erases their stored blobs;
+// the direct deletes below only cover what the API cannot reach.
+func cleanupReportApp(token, appIDHex string) {
 	oid, err := primitive.ObjectIDFromHex(appIDHex)
 	if err != nil {
 		return
 	}
 	ctx := context.TODO()
+
+	hashes, err := mongoDatabase.Collection("report_groups").Distinct(ctx, "groupHash", bson.M{"app_id": oid})
+	if err != nil {
+		logrus.Errorf("Failed to list report groups of %s: %v", appIDHex, err)
+	}
+	for _, h := range hashes {
+		hash, ok := h.(string)
+		if !ok {
+			continue
+		}
+		if w := serveDeleteReportGroup(token, hash); w.Code != http.StatusOK {
+			logrus.Errorf("Failed to delete report group %s: %s", hash, w.Body.String())
+		}
+	}
+
 	mongoDatabase.Collection("report_keys").DeleteMany(ctx, bson.M{"app_id": oid})
 	mongoDatabase.Collection("report_groups").DeleteMany(ctx, bson.M{"app_id": oid})
 	mongoDatabase.Collection("report_blobs").DeleteMany(ctx, bson.M{"app_id": oid})
@@ -8642,7 +8706,7 @@ func createReportEnabledApp(t *testing.T, token, name string) string {
 	id, ok := resp["createAppResult.Created"]
 	require.True(t, ok, w.Body.String())
 	appID := id.(string)
-	t.Cleanup(func() { cleanupReportApp(appID) })
+	t.Cleanup(func() { cleanupReportApp(token, appID) })
 	return appID
 }
 
@@ -9743,6 +9807,37 @@ func TestReportGroupDeleteValidationAndScoping(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, serveDeleteReportGroup(authToken, hash).Code)
 		assert.NotNil(t, getReportGroupDoc(t, appID, hash), "a non-owner delete must not remove the group")
 	})
+}
+
+// App deletion does not cascade into report data, so the groups the ingest tests
+// produced have to be removed through the delete API while their app still exists -
+// that is also what erases their blobs from storage.
+func TestReportGroupsCleanup(t *testing.T) {
+	listGroups := func() model.PaginatedReportGroups {
+		res := serveListReportGroups(authToken, "status=all&limit=500")
+		require.Equal(t, http.StatusOK, res.Code, res.Body.String())
+		var page model.PaginatedReportGroups
+		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &page))
+		return page
+	}
+
+	page := listGroups()
+	require.Equal(t, page.Total, int64(len(page.Items)), "every group must fit on one page")
+
+	for _, group := range page.Items {
+		w := serveDeleteReportGroup(authToken, group.GroupHash)
+		require.Equal(t, http.StatusOK, w.Code, "delete group %s: %s", group.GroupHash, w.Body.String())
+	}
+
+	assert.Equal(t, int64(0), listGroups().Total)
+
+	for _, appIDHex := range []string{idTestappApp, idPublicTestappApp} {
+		oid, err := primitive.ObjectIDFromHex(appIDHex)
+		require.NoError(t, err)
+		blobs, err := mongoDatabase.Collection("report_blobs").CountDocuments(context.TODO(), bson.M{"app_id": oid})
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), blobs, "blob metadata of %s must go with its groups", appIDHex)
+	}
 }
 
 func TestRegenerateReportKeyTeamUser(t *testing.T) {
@@ -11599,6 +11694,9 @@ func TestDeletePublicAppMeta(t *testing.T) {
 	router.DELETE("/app/delete", func(c *gin.Context) {
 		handler.DeleteApp(c)
 	})
+
+	// Deleting an app leaves its report key behind, so turn reports off first.
+	setAppReports(t, authToken, idPublicTestappApp, "public testapp", false)
 
 	// Create a DELETE request for the /app/delete endpoint.
 	req, err := http.NewRequest("DELETE", "/app/delete?id="+idPublicTestappApp, nil)
