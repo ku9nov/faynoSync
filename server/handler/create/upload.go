@@ -214,6 +214,19 @@ func InvalidatePublishCaches(
 		return
 	}
 
+	InvalidateAppCaches(ctx, params, database, rdb, performanceMode, owner, appName, env)
+}
+
+func InvalidateAppCaches(
+	ctx context.Context,
+	params map[string]interface{},
+	database *mongo.Database,
+	rdb *redis.Client,
+	performanceMode bool,
+	owner string,
+	appName string,
+	env *viper.Viper,
+) {
 	if performanceMode && rdb != nil {
 		if err := InvalidateCache(ctx, params, rdb); err != nil {
 			logrus.Error("Error invalidating cache:", err)

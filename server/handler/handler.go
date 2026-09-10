@@ -182,7 +182,7 @@ func (ch *appHandler) DeleteApp(c *gin.Context) {
 
 func (ch *appHandler) DeleteSpecificVersionOfApp(c *gin.Context) {
 	// Call the DeleteSpecificVersionOfApp function from the delete package
-	delete.DeleteSpecificVersionOfApp(c, ch.repository, ch.database, ch.redisClient)
+	delete.DeleteSpecificVersionOfApp(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
 	ch.reloadTelemetryAllowListAfterSuccess(c, "deleting app version")
 }
 

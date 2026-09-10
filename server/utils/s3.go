@@ -135,22 +135,20 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	return link, extension, nil
 }
 
-func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bool) {
+func DeleteFromS3(objectKey string, env *viper.Viper, private bool) error {
 	logrus.Debugf("DeleteFromS3 called with objectKey: %s, private: %v", objectKey, private)
 
 	storageClient, err := getStorageClient(env)
 	if err != nil {
 		logrus.Errorf("failed to create storage client: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
-		return
+		return fmt.Errorf("failed to create storage client: %w", err)
 	}
 
 	objectKey = strings.TrimPrefix(objectKey, "/")
 	decodedKey, err := url.QueryUnescape(objectKey)
 	if err != nil {
 		logrus.Error("Failed to decode object key: ", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode object key"})
-		return
+		return fmt.Errorf("failed to decode object key: %w", err)
 	}
 
 	logrus.Debugf("decodedKey in delete from s3: %s", decodedKey)
@@ -168,11 +166,11 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bo
 	err = storageClient.DeleteObject(context.Background(), bucketName, decodedKey)
 	if err != nil {
 		logrus.Errorf("Failed to delete object '%s' from bucket '%s': %v", decodedKey, bucketName, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from storage"})
-		return
+		return fmt.Errorf("failed to delete file from storage: %w", err)
 	}
 
 	logrus.Infof("Object '%s' deleted from bucket '%s'", decodedKey, bucketName)
+	return nil
 }
 
 func GeneratePresignedURL(c *gin.Context, objectKey string, expiration time.Duration) (string, error) {

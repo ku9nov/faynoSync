@@ -3,6 +3,7 @@ package delete
 import (
 	"context"
 	db "faynoSync/mongod"
+	"faynoSync/server/handler/create"
 	"faynoSync/server/handler/info"
 	"faynoSync/server/utils"
 	"net/http"
@@ -37,7 +38,23 @@ func hasSparkleLink(links []string) bool {
 	return false
 }
 
-func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client) {
+func deleteLinksFromStorage(links []string, private bool, env *viper.Viper) []string {
+	var failed []string
+	for _, link := range links {
+		subLink, err := utils.ExtractS3Key(link, private, env)
+		if err != nil {
+			logrus.Errorf("Failed to extract storage key from link '%s': %v", link, err)
+			failed = append(failed, link)
+			continue
+		}
+		if err := utils.DeleteFromS3(subLink, env, private); err != nil {
+			failed = append(failed, link)
+		}
+	}
+	return failed
+}
+
+func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
 	env := viper.GetViper()
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
@@ -53,16 +70,15 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 		return
 	}
 
-	var slackAppName, slackChannel, slackVersion string
-	if viper.GetBool("SLACK_ENABLE") && rdb != nil {
-		humanReadableData, fetchErr := repository.FetchAppByID(objID, ctx)
-		if fetchErr != nil {
-			logrus.Error("Error fetching app data before version deletion for Slack cleanup: ", fetchErr)
-		} else if len(humanReadableData) > 0 {
-			slackAppName = humanReadableData[0].AppName
-			slackChannel = humanReadableData[0].Channel
-			slackVersion = humanReadableData[0].Version
-		}
+	// Channel and version are only resolvable before the document is removed.
+	var deletedAppName, deletedChannel, deletedVersion string
+	humanReadableData, fetchErr := repository.FetchAppByID(objID, ctx)
+	if fetchErr != nil {
+		logrus.Error("Error fetching app data before version deletion: ", fetchErr)
+	} else if len(humanReadableData) > 0 {
+		deletedAppName = humanReadableData[0].AppName
+		deletedChannel = humanReadableData[0].Channel
+		deletedVersion = humanReadableData[0].Version
 	}
 
 	//request on repository
@@ -80,19 +96,19 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 		return
 	}
 
-	for _, link := range links {
-		subLink, err := utils.ExtractS3Key(link, checkAppVisibility, env)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
-	}
+	failedLinks := deleteLinksFromStorage(links, checkAppVisibility, env)
 
-	if slackAppName != "" && slackVersion != "" {
-		if err := utils.DeleteSlackNotificationState(owner, slackChannel, slackAppName, slackVersion, rdb); err != nil {
+	if viper.GetBool("SLACK_ENABLE") && rdb != nil && deletedAppName != "" && deletedVersion != "" {
+		if err := utils.DeleteSlackNotificationState(owner, deletedChannel, deletedAppName, deletedVersion, rdb); err != nil {
 			logrus.Error("Error cleaning Slack notification state after version deletion: ", err)
 		}
+	}
+
+	if appName != "" {
+		invalidationParams := map[string]interface{}{"app_name": appName, "channel": deletedChannel}
+		create.InvalidateAppCaches(ctx, invalidationParams, db, rdb, performanceMode, owner, appName, env)
+	} else {
+		logrus.Debug("Skipping cache invalidation after version deletion: app name is unknown.")
 	}
 
 	if hasVelopackLink(links) {
@@ -103,7 +119,12 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 		info.MaterializeSparkleForApp(c.Request.Context(), db, env, owner, appName)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"deleteSpecificAppResult.DeletedCount": result})
+	response := gin.H{"deleteSpecificAppResult.DeletedCount": result}
+	if len(failedLinks) > 0 {
+		logrus.Errorf("Failed to delete %d artifact(s) from storage after removing version %s of %s", len(failedLinks), deletedVersion, appName)
+		response["orphaned_links"] = failedLinks
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client) {
@@ -137,14 +158,7 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		return
 	}
 
-	for _, link := range links {
-		subLink, err := utils.ExtractS3Key(link, checkAppVisibility, env)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		utils.DeleteFromS3(subLink, c, viper.GetViper(), checkAppVisibility)
-	}
+	failedLinks := deleteLinksFromStorage(links, checkAppVisibility, env)
 
 	// Deleting one artifact only changes its own (channel, platform, arch) feed.
 	deleteTuples := info.TupleFromContext(ctxQueryMap)
@@ -204,7 +218,12 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		}()
 	}
 
-	c.JSON(http.StatusOK, gin.H{"deleteSpecificArtifactResult": result})
+	artifactResponse := gin.H{"deleteSpecificArtifactResult": result}
+	if len(failedLinks) > 0 {
+		logrus.Errorf("Failed to delete %d artifact(s) from storage for app %s", len(failedLinks), ctxQueryMap["app_name"].(string))
+		artifactResponse["orphaned_links"] = failedLinks
+	}
+	c.JSON(http.StatusOK, artifactResponse)
 }
 
 func DeleteApp(c *gin.Context, repository db.AppRepository) {

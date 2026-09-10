@@ -4,7 +4,6 @@ import (
 	"context"
 	"faynoSync/server/model"
 	"fmt"
-	"log"
 	"strconv"
 	"time"
 
@@ -41,10 +40,16 @@ func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, owner 
 	}
 
 	appName, err := c.FetchAppByID(app.ID, ctx)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("error fetching app with ID %s: %w", id, err)
+	}
+	if len(appName) == 0 {
+		return nil, 0, "", fmt.Errorf("no app found with ID %s", id)
+	}
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		logrus.Fatal(err)
+		logrus.Error(err)
 
 		return nil, 0, "", err
 	}
@@ -105,7 +110,7 @@ func (c *appRepository) DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQu
 			bson.D{{Key: "$set", Value: updateFields}},
 		)
 		if err != nil {
-			logrus.Fatal(err)
+			logrus.Error(err)
 
 			return nil, false, err
 		}
@@ -299,7 +304,7 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 
 	deleteResult, err := collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Fatalf("error deleting document with ID %s: %s", id, err.Error())
+		logrus.Errorf("error deleting document with ID %s: %s", id, err.Error())
 		return 0, err
 	}
 
