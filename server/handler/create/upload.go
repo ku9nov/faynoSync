@@ -214,22 +214,26 @@ func InvalidatePublishCaches(
 		return
 	}
 
-	InvalidateAppCaches(ctx, params, database, rdb, performanceMode, owner, appName, env)
+	channel, _ := params["channel"].(string)
+	InvalidateAppCaches(ctx, database, rdb, performanceMode, owner, appName, []string{channel}, env)
 }
 
 func InvalidateAppCaches(
 	ctx context.Context,
-	params map[string]interface{},
 	database *mongo.Database,
 	rdb *redis.Client,
 	performanceMode bool,
 	owner string,
 	appName string,
+	channels []string,
 	env *viper.Viper,
 ) {
 	if performanceMode && rdb != nil {
-		if err := InvalidateCache(ctx, params, rdb); err != nil {
-			logrus.Error("Error invalidating cache:", err)
+		for _, channel := range channels {
+			params := map[string]interface{}{"app_name": appName, "channel": channel}
+			if err := InvalidateCache(ctx, params, rdb); err != nil {
+				logrus.Error("Error invalidating cache:", err)
+			}
 		}
 	}
 

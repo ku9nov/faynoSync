@@ -5493,10 +5493,16 @@ func TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted(t *testing.T
 	}
 }
 
-func TestMultipleDelete(t *testing.T) {
+// bulkDeleteQuery builds the "?id=a&id=b" form of the delete request.
+func bulkDeleteQuery(appIDs []string) string {
+	return "/apps/delete?id=" + strings.Join(appIDs, "&id=")
+}
+
+func TestMultipleDeleteOfDifferentApps(t *testing.T) {
 
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
 
 	// Define the route for the /apps/delete endpoint.
 	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
@@ -5504,26 +5510,124 @@ func TestMultipleDelete(t *testing.T) {
 		handler.DeleteSpecificVersionOfApp(c)
 	})
 
-	// Iterate over the uploadedAppIDs and send a DELETE request for each ID.
-	for _, appID := range uploadedAppIDs {
-		w := httptest.NewRecorder()
-
-		req, err := http.NewRequest("DELETE", "/apps/delete?id="+appID, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Set the Authorization header.
-		req.Header.Set("Authorization", "Bearer "+authToken)
-		// Serve the request using the Gin router.
-		router.ServeHTTP(w, req)
-
-		// Check the response status code for each request.
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		expected := `{"deleteSpecificAppResult.DeletedCount":1}`
-		assert.Equal(t, expected, w.Body.String())
+	// uploadedAppIDs[0] is a version of "public testapp", the rest belong to
+	// "testapp", and one request may only touch a single application.
+	req, err := http.NewRequest("DELETE", bulkDeleteQuery([]string{uploadedAppIDs[0], uploadedAppIDs[1]}), nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "all versions must belong to the same application", response["error"])
+	assert.ElementsMatch(t, []interface{}{"public testapp", "testapp"}, response["apps"])
+}
+
+func TestMultipleDeleteWithSecondUser(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /apps/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/apps/delete", func(c *gin.Context) {
+		handler.DeleteSpecificVersionOfApp(c)
+	})
+
+	req, err := http.NewRequest("DELETE", bulkDeleteQuery([]string{uploadedAppIDs[1], uploadedAppIDs[2]}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	expected := fmt.Sprintf(`{"error":"you don't have permission to delete these items","forbidden":["%s","%s"]}`, uploadedAppIDs[1], uploadedAppIDs[2])
+	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestMultipleDelete(t *testing.T) {
+
+	router := gin.Default()
+	router.Use(utils.AuthMiddleware())
+	w := httptest.NewRecorder()
+
+	// Define the route for the /apps/delete endpoint.
+	handler := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.DELETE("/apps/delete", func(c *gin.Context) {
+		handler.DeleteSpecificVersionOfApp(c)
+	})
+
+	// Every version of "testapp" goes away in a single request. The rejected
+	// requests above must have left all of them in place.
+	publicAppID, testAppIDs := uploadedAppIDs[0], uploadedAppIDs[1:]
+
+	req, err := http.NewRequest("DELETE", bulkDeleteQuery(testAppIDs), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set the Authorization header.
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	// Serve the request using the Gin router.
+	router.ServeHTTP(w, req)
+
+	// Check the response status code.
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, float64(len(testAppIDs)), response["deleteSpecificAppResult.DeletedCount"])
+	assert.Equal(t, "testapp", response["app_name"])
+	assert.Nil(t, response["orphaned_links"])
+
+	deleted, deletedExists := response["deleted"].([]interface{})
+	assert.True(t, deletedExists)
+
+	var deletedIDs []string
+	for _, item := range deleted {
+		version, ok := item.(map[string]interface{})
+		assert.True(t, ok)
+		deletedIDs = append(deletedIDs, version["id"].(string))
+	}
+	assert.ElementsMatch(t, testAppIDs, deletedIDs)
+
+	// A single id keeps the original response of this endpoint.
+	w = httptest.NewRecorder()
+	req, err = http.NewRequest("DELETE", "/apps/delete?id="+publicAppID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{"deleteSpecificAppResult.DeletedCount":1}`
+	assert.Equal(t, expected, w.Body.String())
 }
 
 func TestMultipleDeleteWithUpdaters(t *testing.T) {

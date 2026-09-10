@@ -515,7 +515,7 @@ func (c *appRepository) processApps(cur *mongo.Cursor, ctx context.Context) ([]*
 	for cur.Next(ctx) {
 		var tempApp model.SpecificAppWithoutIDs
 		if err := cur.Decode(&tempApp); err != nil {
-			logrus.Fatal(err)
+			logrus.Error(err)
 			return nil, err
 		}
 		app := &model.SpecificAppWithoutIDs{

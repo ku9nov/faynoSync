@@ -11,56 +11,79 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func (c *appRepository) DeleteSpecificVersionOfApp(id primitive.ObjectID, owner string, ctx context.Context) ([]string, int64, string, error) {
+func (c *appRepository) FetchVersionsByIDs(ids []primitive.ObjectID, owner string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
 
 	collection := c.client.Database(c.config.Database).Collection("apps")
 
-	filter := bson.D{primitive.E{Key: "_id", Value: id}}
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"_id": bson.M{"$in": ids}, "owner": owner}}},
+	}
+	pipeline = append(pipeline, c.getBasePipeline()...)
 
-	// Retrieve the document before deletion
-	var app *model.SpecificApp
-	err := collection.FindOne(ctx, filter).Decode(&app)
+	logrus.Debug("MongoDB Pipeline for FetchVersionsByIDs: ", pipeline)
+
+	cur, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return nil, 0, "", fmt.Errorf("no app found with ID %s", id)
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	return c.processApps(cur, ctx)
+}
+
+func (c *appRepository) FetchVersionOwners(ids []primitive.ObjectID, ctx context.Context) (map[primitive.ObjectID]string, error) {
+	owners := make(map[primitive.ObjectID]string, len(ids))
+	if len(ids) == 0 {
+		return owners, nil
+	}
+
+	collection := c.client.Database(c.config.Database).Collection("apps")
+
+	cur, err := collection.Find(
+		ctx,
+		bson.M{"_id": bson.M{"$in": ids}},
+		options.Find().SetProjection(bson.M{"owner": 1}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	for cur.Next(ctx) {
+		var doc struct {
+			ID    primitive.ObjectID `bson:"_id"`
+			Owner string             `bson:"owner"`
 		}
-		return nil, 0, "", fmt.Errorf("error retrieving app with ID %s: %s", id, err.Error())
-	}
-	// Check ownership
-	var docMap bson.M
-	err = collection.FindOne(ctx, filter).Decode(&docMap)
-	if err != nil {
-		return nil, 0, "", err
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		owners[doc.ID] = doc.Owner
 	}
 
-	if docOwner, ok := docMap["owner"].(string); !ok || docOwner != owner {
-		return nil, 0, "", fmt.Errorf("you don't have permission to delete this item")
+	return owners, cur.Err()
+}
+
+func (c *appRepository) DeleteVersionsByIDs(ids []primitive.ObjectID, owner string, ctx context.Context) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
 	}
 
-	appName, err := c.FetchAppByID(app.ID, ctx)
-	if err != nil {
-		return nil, 0, "", fmt.Errorf("error fetching app with ID %s: %w", id, err)
-	}
-	if len(appName) == 0 {
-		return nil, 0, "", fmt.Errorf("no app found with ID %s", id)
-	}
+	collection := c.client.Database(c.config.Database).Collection("apps")
 
-	deleteResult, err := collection.DeleteOne(ctx, filter)
+	deleteResult, err := collection.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": ids}, "owner": owner})
 	if err != nil {
 		logrus.Error(err)
 
-		return nil, 0, "", err
+		return 0, err
 	}
 
-	var links []string
-	for _, artifact := range app.Artifacts {
-		link := string(artifact.Link)
-		links = append(links, link)
-	}
-
-	return links, deleteResult.DeletedCount, appName[0].AppName, nil
+	return deleteResult.DeletedCount, nil
 }
 
 func (c *appRepository) DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context, owner string) ([]string, bool, error) {

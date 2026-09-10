@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.2.0
+
+### Features
+
+- `DELETE /apps/delete` now accepts several version ids in one request (`?id=<a>&id=<b>`). One application per request, and nothing is deleted unless every id is valid. The limit is set by `MAX_BULK_DELETE_VERSIONS` (default: `10`).
+
+### Fixes
+
+- Deleting a version now invalidates the response and CDN caches, so a deleted version is no longer served as the latest one.
+- A storage failure during deletion no longer aborts the remaining cleanup; the links left in the bucket are returned as `orphaned_links`.
+- Replaced `Fatal` logs in the delete and read paths, where a single database error shut the server down.
+
 ## v2.1.1
 
 ### Security
