@@ -343,9 +343,13 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 			ctxQueryMap["sparkle_meta"] = sparkleMeta
 		}
 	}
-	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
+	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), owner, db, c)
 	if err != nil {
 		logrus.Error(err)
+		if errors.Is(err, utils.ErrAppNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
 		return
 	}

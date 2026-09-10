@@ -11,6 +11,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// ErrAppNotFound reports that the requested app does not belong to the caller.
+var ErrAppNotFound = errors.New("app_name not found in apps_meta collection")
+
 func DumpRequest(c *gin.Context) {
 	requestDump, err := httputil.DumpRequest(c.Request, true)
 	if err != nil {
@@ -260,23 +263,17 @@ func CheckPlatformsLatest(input string, updater string, db *mongo.Database, ctx 
 	return input, "", nil
 }
 
-func CheckPrivate(input string, db *mongo.Database, ctx *gin.Context) (bool, error) {
-	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"app_name": input})
+// CheckPrivate resolves the visibility of the caller's own app.
+func CheckPrivate(appName, owner string, db *mongo.Database, ctx *gin.Context) (bool, error) {
+	var appMeta struct {
+		Private bool `bson:"private"`
+	}
+	err := db.Collection("apps_meta").FindOne(ctx, bson.M{"app_name": appName, "owner": owner}).Decode(&appMeta)
 	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, ErrAppNotFound
+		}
 		return false, err
 	}
-	defer cursor.Close(ctx)
-	for cursor.Next(ctx) {
-		var document bson.M
-		if err := cursor.Decode(&document); err != nil {
-			logrus.Errorln("Error decoding document:", err)
-			continue
-		}
-		if privateValue, ok := document["private"].(bool); ok {
-			return privateValue, nil
-		} else {
-			return false, nil
-		}
-	}
-	return false, nil
+	return appMeta.Private, nil
 }

@@ -252,7 +252,7 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	}
 	logrus.Infof("Deleted %d version(s) of app %s requested by %s", result, appName, owner)
 
-	checkAppVisibility, err := utils.CheckPrivate(appName, db, c)
+	checkAppVisibility, err := utils.CheckPrivate(appName, owner, db, c)
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
@@ -338,7 +338,7 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	if err != nil {
 		logrus.Error(err)
 	}
-	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), db, c)
+	checkAppVisibility, err := utils.CheckPrivate(ctxQueryMap["app_name"].(string), owner, db, c)
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
