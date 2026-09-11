@@ -11,6 +11,12 @@
 - Deleting a version now invalidates the response and CDN caches, so a deleted version is no longer served as the latest one.
 - A storage failure during deletion no longer aborts the remaining cleanup; the links left in the bucket are returned as `orphaned_links`.
 - Replaced `Fatal` logs in the delete and read paths, where a single database error shut the server down.
+- Deletion now resolves the app owner behind a team user, so a team user with the `delete` permission can remove versions and artifacts of the apps allowed to them instead of hitting an empty result. Access to the app is verified against the team user's allowed apps.
+- `CheckPrivate` now looks up the app by `app_name` **and** owner. 
+
+### Security
+
+- Upgraded `google.golang.org/grpc` to v1.83.2
 
 ## v2.1.1
 
