@@ -3705,7 +3705,7 @@ func TestUpdateSpecificAppWithSecondUser(t *testing.T) {
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
 			// Check the response status code.
-			assert.Equal(t, http.StatusInternalServerError, w.Code)
+			assert.Equal(t, http.StatusNotFound, w.Code)
 
 			expected := `{"error":"app_name not found in apps_meta collection"}`
 			assert.Equal(t, expected, w.Body.String())

@@ -533,5 +533,5 @@ func (c *appRepository) processApps(cur *mongo.Cursor, ctx context.Context) ([]*
 		}
 		apps = append(apps, app)
 	}
-	return apps, nil
+	return apps, cur.Err()
 }
