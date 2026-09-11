@@ -154,6 +154,9 @@ JWT_SECRET (Secret used to sign and validate JWT tokens. Generate with 'openssl 
 # Performance Configuration
 PERFORMANCE_MODE (Set to `true` to enable performance mode)
 
+# Deletion Configuration
+MAX_BULK_DELETE_VERSIONS (Maximum number of version ids accepted by one `DELETE /apps/delete` request, default: `10`)
+
 # Redis Configuration
 REDIS_HOST (The hostname for the Redis server, default: `localhost`)
 REDIS_PORT (The port for the Redis server, default: `6379`)

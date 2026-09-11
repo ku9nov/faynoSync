@@ -135,22 +135,20 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	return link, extension, nil
 }
 
-func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bool) {
+func DeleteFromS3(objectKey string, env *viper.Viper, private bool) error {
 	logrus.Debugf("DeleteFromS3 called with objectKey: %s, private: %v", objectKey, private)
 
 	storageClient, err := getStorageClient(env)
 	if err != nil {
 		logrus.Errorf("failed to create storage client: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
-		return
+		return fmt.Errorf("failed to create storage client: %w", err)
 	}
 
 	objectKey = strings.TrimPrefix(objectKey, "/")
 	decodedKey, err := url.QueryUnescape(objectKey)
 	if err != nil {
 		logrus.Error("Failed to decode object key: ", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode object key"})
-		return
+		return fmt.Errorf("failed to decode object key: %w", err)
 	}
 
 	logrus.Debugf("decodedKey in delete from s3: %s", decodedKey)
@@ -168,11 +166,73 @@ func DeleteFromS3(objectKey string, c *gin.Context, env *viper.Viper, private bo
 	err = storageClient.DeleteObject(context.Background(), bucketName, decodedKey)
 	if err != nil {
 		logrus.Errorf("Failed to delete object '%s' from bucket '%s': %v", decodedKey, bucketName, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file from storage"})
-		return
+		return fmt.Errorf("failed to delete file from storage: %w", err)
 	}
 
 	logrus.Infof("Object '%s' deleted from bucket '%s'", decodedKey, bucketName)
+	return nil
+}
+
+// DeleteManyFromS3 removes several objects with a single storage call.
+func DeleteManyFromS3(objectKeys []string, env *viper.Viper, private bool) []string {
+	if len(objectKeys) == 0 {
+		return nil
+	}
+
+	logrus.Debugf("DeleteManyFromS3 called with %d object(s), private: %v", len(objectKeys), private)
+
+	storageClient, err := getStorageClient(env)
+	if err != nil {
+		logrus.Errorf("failed to create storage client: %v", err)
+		return objectKeys
+	}
+
+	var bucketName string
+	if private {
+		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
+		logrus.Debugf("Using private bucket: %s", bucketName)
+	} else {
+		bucketName = env.GetString("S3_BUCKET_NAME")
+		logrus.Debugf("Using public bucket: %s", bucketName)
+	}
+
+	var failed []string
+	decodedKeys := make([]string, 0, len(objectKeys))
+	originalKeys := make(map[string]string, len(objectKeys))
+	for _, objectKey := range objectKeys {
+		decodedKey, err := url.QueryUnescape(strings.TrimPrefix(objectKey, "/"))
+		if err != nil {
+			logrus.Error("Failed to decode object key: ", err)
+			failed = append(failed, objectKey)
+			continue
+		}
+		logrus.Debugf("decodedKey in delete from s3: %s", decodedKey)
+		decodedKeys = append(decodedKeys, decodedKey)
+		originalKeys[decodedKey] = objectKey
+	}
+
+	if len(decodedKeys) == 0 {
+		return failed
+	}
+
+	logrus.Debugf("Attempting to delete %d object(s) from bucket '%s'", len(decodedKeys), bucketName)
+	if err := storageClient.DeleteObjects(context.Background(), bucketName, decodedKeys); err != nil {
+		logrus.Errorf("Failed to delete %d object(s) from bucket '%s': %v. Falling back to deleting them one by one.", len(decodedKeys), bucketName, err)
+
+		for _, decodedKey := range decodedKeys {
+			if err := storageClient.DeleteObject(context.Background(), bucketName, decodedKey); err != nil {
+				logrus.Errorf("Failed to delete object '%s' from bucket '%s': %v", decodedKey, bucketName, err)
+				failed = append(failed, originalKeys[decodedKey])
+				continue
+			}
+			logrus.Infof("Object '%s' deleted from bucket '%s'", decodedKey, bucketName)
+		}
+
+		return failed
+	}
+
+	logrus.Infof("%d object(s) deleted from bucket '%s'", len(decodedKeys), bucketName)
+	return failed
 }
 
 func GeneratePresignedURL(c *gin.Context, objectKey string, expiration time.Duration) (string, error) {

@@ -17,7 +17,9 @@ import (
 type AppRepository interface {
 	Get(ctx context.Context, limit int64, owner string) ([]*model.SpecificAppWithoutIDs, error)
 	GetAppByName(appName string, ctx context.Context, page, limit int64, owner string, filters map[string]interface{}) (*model.PaginatedResponse, error)
-	DeleteSpecificVersionOfApp(id primitive.ObjectID, owner string, ctx context.Context) ([]string, int64, string, error)
+	FetchVersionsByIDs(ids []primitive.ObjectID, owner string, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
+	FetchVersionOwners(ids []primitive.ObjectID, ctx context.Context) (map[primitive.ObjectID]string, error)
+	DeleteVersionsByIDs(ids []primitive.ObjectID, owner string, ctx context.Context) (int64, error)
 	DeleteChannel(id primitive.ObjectID, owner string, ctx context.Context) (int64, error)
 	Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context, redisClient *redis.Client, env *viper.Viper, checkAppVisibility bool) (interface{}, error)
 	UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, bool, bool, error)
