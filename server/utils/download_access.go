@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -28,6 +29,16 @@ func DefaultDownloadMode(env *viper.Viper) string {
 func ValidateDownloadMode(mode string) error {
 	if mode != DownloadModeUnlisted && mode != DownloadModeStrict {
 		return fmt.Errorf("download_mode must be %q or %q", DownloadModeUnlisted, DownloadModeStrict)
+	}
+	return nil
+}
+
+var ErrPrivateCdnEdge = errors.New("cdn cannot be enabled for private apps")
+
+// ValidatePrivateCdnEdge rejects cdn_edge on private apps: CDN responses are public, so they would publish the private app's versions and links.
+func ValidatePrivateCdnEdge(private, cdnEdge bool) error {
+	if private && cdnEdge {
+		return ErrPrivateCdnEdge
 	}
 	return nil
 }

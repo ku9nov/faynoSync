@@ -30,6 +30,19 @@ func backfillPrivateDownloads(ctx context.Context, database *mongo.Database, def
 		return fmt.Errorf("backfill download modes: %w", err)
 	}
 	logrus.Debugf("Set download_mode=%s on %d private apps", defaultDownloadMode, result.ModifiedCount)
+
+	result, err = database.Collection("apps_meta").UpdateMany(ctx,
+		bson.M{
+			"app_name": bson.M{"$exists": true},
+			"private":  true,
+			"cdn_edge": true,
+		},
+		bson.M{"$set": bson.M{"cdn_edge": false}},
+	)
+	if err != nil {
+		return fmt.Errorf("disable cdn_edge on private apps: %w", err)
+	}
+	logrus.Debugf("Disabled cdn_edge on %d private apps", result.ModifiedCount)
 	return nil
 }
 

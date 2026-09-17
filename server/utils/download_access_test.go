@@ -50,3 +50,14 @@ func TestValidateDownloadMode(t *testing.T) {
 		}
 	}
 }
+
+func TestValidatePrivateCdnEdge(t *testing.T) {
+	if err := ValidatePrivateCdnEdge(true, true); err == nil {
+		t.Fatal("private app with cdn accepted")
+	}
+	for _, tc := range [][2]bool{{true, false}, {false, true}, {false, false}} {
+		if err := ValidatePrivateCdnEdge(tc[0], tc[1]); err != nil {
+			t.Fatalf("private=%v cdn=%v rejected: %v", tc[0], tc[1], err)
+		}
+	}
+}

@@ -8,6 +8,7 @@
 - `ENABLE_PRIVATE_APP_DOWNLOADING` is deprecated: it only sets the default `download_mode` for new private apps.
 - `GET /download` is no longer behind the auth middleware. A denied request returns the same `404` as an unknown key. A JWT with access gets `{"download_url": ...}`; every other allowed request gets `302` to the presigned URL, regardless of the old flag.
 - `fns_` API tokens are not accepted on `/download` (they were already rejected with `403`).
+- A private app can no longer enable `cdn_edge`
 
 ### Features
 

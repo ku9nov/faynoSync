@@ -9531,6 +9531,25 @@ func TestCreatePrivateAppDownloadMode(t *testing.T) {
 	assert.Equal(t, utils.DownloadModeUnlisted, mode)
 }
 
+func TestPrivateAppRejectsCdnEdge(t *testing.T) {
+	w := serveAppForm(t, authToken, "/app/create", `{"app": "privatecdn", "private": "true", "cdn": "true"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, `{"error":"cdn cannot be enabled for private apps"}`, w.Body.String())
+	count, err := mongoDatabase.Collection("apps_meta").CountDocuments(context.Background(), bson.M{"app_name": "privatecdn"})
+	require.NoError(t, err)
+	assert.Zero(t, count)
+
+	w = serveAppForm(t, authToken, "/app/update", fmt.Sprintf(`{"id": "%s", "app": "testapp", "cdn": "true"}`, idTestappApp))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, `{"error":"cdn cannot be enabled for private apps"}`, w.Body.String())
+
+	oid, err := primitive.ObjectIDFromHex(idTestappApp)
+	require.NoError(t, err)
+	var app model.App
+	require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(context.Background(), bson.M{"_id": oid}).Decode(&app))
+	assert.False(t, app.CdnEdge)
+}
+
 func TestUpdateAppDownloadModeValidation(t *testing.T) {
 	w := serveAppForm(t, authToken, "/app/update", fmt.Sprintf(`{"id": "%s", "app": "public testapp", "download_mode": "strict"}`, idPublicTestappApp))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -9711,7 +9730,7 @@ func TestPrivateDownloadBackfill(t *testing.T) {
 
 	_, err = mongoDatabase.Collection("apps").UpdateOne(ctx, bson.M{"artifacts.s3_key": key}, bson.M{"$unset": bson.M{"artifacts.$.s3_key": ""}})
 	require.NoError(t, err)
-	_, err = mongoDatabase.Collection("apps_meta").UpdateOne(ctx, bson.M{"_id": appOID}, bson.M{"$unset": bson.M{"download_mode": ""}})
+	_, err = mongoDatabase.Collection("apps_meta").UpdateOne(ctx, bson.M{"_id": appOID}, bson.M{"$unset": bson.M{"download_mode": ""}, "$set": bson.M{"cdn_edge": true}})
 	require.NoError(t, err)
 
 	w := serveDownload(t, key, map[string]string{"Authorization": "Bearer " + authToken})
@@ -9727,6 +9746,10 @@ func TestPrivateDownloadBackfill(t *testing.T) {
 		backfilledMode, ok := appDownloadMode(t, idTestappApp)
 		assert.True(t, ok, "run %d", run)
 		assert.Equal(t, utils.DefaultDownloadMode(viper.GetViper()), backfilledMode, "run %d", run)
+
+		var app model.App
+		require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.M{"_id": appOID}).Decode(&app))
+		assert.False(t, app.CdnEdge, "run %d: private apps must not keep cdn_edge", run)
 	}
 
 	w = serveDownload(t, key, map[string]string{"Authorization": "Bearer " + authToken})

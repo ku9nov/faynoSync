@@ -141,6 +141,12 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			return
 		}
 
+		if cdnParam, cdnParamExists := params["cdn"]; cdnParamExists {
+			if err := utils.ValidatePrivateCdnEdge(currentApp.Private, utils.GetBoolParam(cdnParam)); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
 		downloadMode, downloadModeExists := params["download_mode"]
 		if downloadModeExists {
 			if !currentApp.Private {
