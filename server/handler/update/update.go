@@ -277,6 +277,10 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		// Validate updater requirements
 		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
 			updaterStr := updater.(string)
+			if err := updaters.ValidatePrivate(updaterStr, checkAppVisibility); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
 			if err := updaters.ValidateFiles(files, updaterStr); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
@@ -384,7 +388,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		if t, err := info.VelopackVersionTuples(c.Request.Context(), db, objID); err == nil {
 			tuples = t
 		}
-		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples)
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples, checkAppVisibility)
 	}
 
 	if isSparkle {
@@ -392,7 +396,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		if t, err := info.SparkleVersionTuples(c.Request.Context(), db, objID); err == nil {
 			tuples = t
 		}
-		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples)
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples, checkAppVisibility)
 	}
 
 	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {

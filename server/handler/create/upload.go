@@ -347,11 +347,17 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	if err != nil {
 		logrus.Error(err)
 		if errors.Is(err, utils.ErrAppNotFound) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
 		return
+	}
+	if updater, _ := ctxQueryMap["updater"].(string); updater != "" {
+		if err := updaters.ValidatePrivate(updater, checkAppVisibility); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	var links []string
 	var extensions []string
@@ -420,11 +426,11 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 
 	if updater, _ := ctxQueryMap["updater"].(string); updater == velopack.UpdaterType {
 		CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, owner, files, checkAppVisibility, viper.GetViper())
-		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples)
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples, checkAppVisibility)
 	}
 
 	if updater, _ := ctxQueryMap["updater"].(string); updater == sparkle.UpdaterType {
-		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples)
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples, checkAppVisibility)
 	}
 
 	if len(results) == 0 {
