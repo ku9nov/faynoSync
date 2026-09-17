@@ -170,7 +170,7 @@ SLACK_CHANNEL (Slack channel identifier where notifications will be sent.)
 SLACK_NOTIFICATION_TTL (How long Slack notifications are considered valid, for example `24h`.)
 
 # Feature Flags
-ENABLE_PRIVATE_APP_DOWNLOADING=false (if enabled, then apps located in private S3 can be downloaded using the public API; if disabled, then download links require authentication)
+ENABLE_PRIVATE_APP_DOWNLOADING=false (deprecated: if enabled, then apps located in private S3 can be downloaded using the public API; if disabled, then download links require authentication)
 ENABLE_TELEMETRY (Set to `true` to enable telemetry)
 
 # TUF Configuration

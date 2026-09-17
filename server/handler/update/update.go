@@ -141,6 +141,18 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			return
 		}
 
+		downloadMode, downloadModeExists := params["download_mode"]
+		if downloadModeExists {
+			if !currentApp.Private {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "download_mode is only supported for private apps"})
+				return
+			}
+			if err := utils.ValidateDownloadMode(downloadMode); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
 		var logoLink string
 		form, _ := c.MultipartForm()
 		if form != nil {
@@ -171,7 +183,7 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			cdnEdge = utils.GetBoolParam(cdnParam)
 		}
 		requestedReports = reports
-		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, reports, cdnEdge, owner, ctx)
+		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, reports, cdnEdge, downloadMode, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return

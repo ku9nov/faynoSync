@@ -2,6 +2,17 @@
 
 ## v2.3.0
 
+### Breaking changes
+
+- Private artifact access is now decided per app instead of per instance. Private apps get `download_mode`: `unlisted` (anyone with the key, the old `ENABLE_PRIVATE_APP_DOWNLOADING=true` behaviour) or `strict` (download token, or JWT of the owning admin / a team user with `download` permission and the app in their allowed list). It can be set on `POST /app/create` and changed on `POST /app/update`.
+- `ENABLE_PRIVATE_APP_DOWNLOADING` is deprecated: it only sets the default `download_mode` for new private apps.
+- `GET /download` is no longer behind the auth middleware. A denied request returns the same `404` as an unknown key. A JWT with access gets `{"download_url": ...}`; every other allowed request gets `302` to the presigned URL, regardless of the old flag.
+- `fns_` API tokens are not accepted on `/download` (they were already rejected with `403`).
+
+### Features
+
+- Download tokens (`fnd_…`), scoped to an app and channel, sent in the `X-Download-Token` header. `POST /download-tokens/regenerate` (`{"app_id", "channel_id"}`) creates or rotates one and returns the value once; only its hash is stored. `GET /download-tokens/list` lists them without values.
+
 ### Fixes
 
 - Uploading or updating an artifact of a private app with a feed-based updater (`velopack`, `sparkle`, `electron-builder`, `squirrel_windows`) is now rejected with `400` and an explicit error. This combination never worked — clients could not fetch a private app's feed — the API now reports it at upload time instead of accepting a configuration that silently fails on update checks. Use `manual`, `tauri` or `squirrel_darwin`, or a public app.

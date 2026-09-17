@@ -663,7 +663,7 @@
           "formdata": [
             {
               "key": "data",
-              "value": "{\"id\":\"\", \"app\":\"newname\", \"reports\": \"false\", \"tuf\": \"false\", \"cdn\": \"false\"}",
+              "value": "{\"id\":\"\", \"app\":\"newname\", \"reports\": \"false\", \"tuf\": \"false\", \"cdn\": \"false\", \"download_mode\": \"strict\"}",
               "type": "text",
               "uuid": "caec69c4-0a55-419b-b5c1-24b6c126c5b9"
             }
@@ -813,7 +813,7 @@
           "formdata": [
             {
               "key": "data",
-              "value": "{\"app\":\"{{app_name}}\", \"description\": \"description of app\"}",
+              "value": "{\"app\":\"{{app_name}}\", \"description\": \"description of app\", \"private\": \"true\", \"download_mode\": \"strict\"}",
               "type": "text",
               "uuid": "7eb0a953-2083-4db9-bfac-b349d14035f6"
             }
@@ -1044,7 +1044,21 @@
       "name": "Download",
       "request": {
         "method": "GET",
-        "header": [],
+        "header": [
+          {
+            "key": "X-Download-Token",
+            "value": "{{downloadToken}}",
+            "type": "text",
+            "description": "Download token of the artifact's app and channel. Not needed for unlisted apps."
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{faynoSyncToken}}",
+            "type": "text",
+            "disabled": true,
+            "description": "Admin or team user JWT. Returns JSON with download_url instead of a 302 redirect."
+          }
+        ],
         "url": {
           "raw": "{{URL}}/download?key=",
           "host": [
@@ -1224,6 +1238,71 @@
           ],
           "path": [
             "report-keys",
+            "regenerate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Download Tokens",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{URL}}/download-tokens/list",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "download-tokens",
+            "list"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Regenerate Download Token",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"app_id\": \"\",\n    \"channel_id\": \"\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/download-tokens/regenerate",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "download-tokens",
             "regenerate"
           ]
         }
@@ -2552,6 +2631,10 @@
     {
       "key": "api_key",
       "value": "UHp3aKb40fwpoKZluZByWQ"
+    },
+    {
+      "key": "downloadToken",
+      "value": ""
     }
   ]
 }

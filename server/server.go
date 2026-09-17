@@ -41,7 +41,6 @@ func StartServer(config *viper.Viper) {
 
 	handler := handler.NewAppHandler(client, db, mongoDatabase, redisClient, config.GetBool("PERFORMANCE_MODE"))
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
-	os.Setenv("ENABLE_PRIVATE_APP_DOWNLOADING", config.GetString("ENABLE_PRIVATE_APP_DOWNLOADING"))
 	// Add authentication middleware to required paths
 	authMiddleware := utils.AuthMiddleware(mongoDatabase)
 
@@ -68,13 +67,9 @@ func StartServer(config *viper.Viper) {
 		router.POST("/reports/ingest", handler.IngestReport)
 	}
 
-	if config.GetBool("ENABLE_PRIVATE_APP_DOWNLOADING") {
-		router.GET("/download", handler.DownloadArtifact)
-		router.Use(authMiddleware)
-	} else {
-		router.Use(authMiddleware)
-		router.GET("/download", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.DownloadArtifact)
-	}
+	// Access to private artifacts is decided per app inside the handler, so the route stays outside authMiddleware.
+	router.GET("/download", handler.DownloadArtifact)
+	router.Use(authMiddleware)
 
 	// App routes
 	// router.GET("/", handler.GetAllApps)
@@ -128,6 +123,10 @@ func StartServer(config *viper.Viper) {
 	router.GET("/report-keys/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.ListReportKeys)
 	router.POST("/report-keys/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.RegenerateReportKey)
 
+	// Download token routes
+	router.GET("/download-tokens/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.ListDownloadTokens)
+	router.POST("/download-tokens/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.RegenerateDownloadToken)
+
 	// Reports read API (admin + team users scoped to their allowed apps)
 	if config.GetBool("REPORTS_ENABLED") {
 		router.GET("/reports/groups", utils.CheckPermission(utils.PermissionDownload, utils.ResourceApps, mongoDatabase), handler.ListReportGroups)
@@ -164,7 +163,7 @@ func corsMiddleware(allowedOrigins []string) gin.HandlerFunc {
 		if allowed {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Download-Token, accept, origin, Cache-Control, X-Requested-With")
 			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 		}
 

@@ -126,19 +126,17 @@ func (c *appRepository) DeleteReportKey(appID primitive.ObjectID, requester stri
 	return result.DeletedCount > 0, nil
 }
 
-func (c *appRepository) ListReportKeys(requester string, ctx context.Context) ([]*model.ReportKeyListItem, error) {
+// editableAppsFilter scopes per-app key collections to apps the requester may edit; ok is false when that set is empty.
+func (c *appRepository) editableAppsFilter(ctx context.Context, requester string) (bson.M, bool, error) {
 	owner, teamUser, err := c.resolveOwnerAndTeamUser(ctx, requester)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	filter := bson.M{"owner": owner}
 	if teamUser != nil {
 		if !teamUser.Permissions.Apps.Edit {
-			return nil, errors.New("you don't have permission to edit apps")
-		}
-		if len(teamUser.Permissions.Apps.Allowed) == 0 {
-			return []*model.ReportKeyListItem{}, nil
+			return nil, false, errors.New("you don't have permission to edit apps")
 		}
 
 		allowedObjectIDs := make([]primitive.ObjectID, 0, len(teamUser.Permissions.Apps.Allowed))
@@ -150,10 +148,22 @@ func (c *appRepository) ListReportKeys(requester string, ctx context.Context) ([
 			allowedObjectIDs = append(allowedObjectIDs, objectID)
 		}
 		if len(allowedObjectIDs) == 0 {
-			return []*model.ReportKeyListItem{}, nil
+			return nil, false, nil
 		}
 
 		filter["app_id"] = bson.M{"$in": allowedObjectIDs}
+	}
+
+	return filter, true, nil
+}
+
+func (c *appRepository) ListReportKeys(requester string, ctx context.Context) ([]*model.ReportKeyListItem, error) {
+	filter, ok, err := c.editableAppsFilter(ctx, requester)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return []*model.ReportKeyListItem{}, nil
 	}
 
 	collection := c.client.Database(c.config.Database).Collection("report_keys")

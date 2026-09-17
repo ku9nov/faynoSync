@@ -1,0 +1,45 @@
+[
+  {
+    "createIndexes": "apps",
+    "indexes": [
+      {
+        "key": {
+          "artifacts.s3_key": 1
+        },
+        "name": "index_on_artifacts_s3_key",
+        "sparse": true,
+        "background": true
+      }
+    ]
+  },
+  {
+    "createIndexes": "download_tokens",
+    "indexes": [
+      {
+        "key": {
+          "app_id": 1,
+          "channel_id": 1
+        },
+        "name": "download_tokens_unique_app_channel",
+        "unique": true,
+        "background": true
+      },
+      {
+        "key": {
+          "token_hash": 1
+        },
+        "name": "download_tokens_unique_token_hash",
+        "unique": true,
+        "background": true
+      },
+      {
+        "key": {
+          "owner": 1,
+          "updated_at": -1
+        },
+        "name": "download_tokens_owner_updated_desc",
+        "background": true
+      }
+    ]
+  }
+]

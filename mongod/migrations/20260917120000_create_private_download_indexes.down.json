@@ -1,0 +1,18 @@
+[
+  {
+    "dropIndexes": "apps",
+    "index": "index_on_artifacts_s3_key"
+  },
+  {
+    "dropIndexes": "download_tokens",
+    "index": "download_tokens_unique_app_channel"
+  },
+  {
+    "dropIndexes": "download_tokens",
+    "index": "download_tokens_unique_token_hash"
+  },
+  {
+    "dropIndexes": "download_tokens",
+    "index": "download_tokens_owner_updated_desc"
+  }
+]
