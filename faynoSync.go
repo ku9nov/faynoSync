@@ -32,7 +32,8 @@ func main() {
 	}
 	logrus.SetLevel(level)
 	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
 	})
 
 	// Set the file name of the configuration file

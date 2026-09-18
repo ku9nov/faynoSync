@@ -47,6 +47,7 @@ func publishResponseToCDN(ctx context.Context, params map[string]interface{}, re
 		logrus.Errorf("Failed to create storage client for CDN response publish: %v", err)
 		return
 	}
+	logrus.Debug("Created storage client for CDN response publish")
 
 	objectKeyParts := []string{
 		"responses",
@@ -75,6 +76,7 @@ func publishResponseToCDN(ctx context.Context, params map[string]interface{}, re
 			logrus.Errorf("Failed to stat existing CDN response object: %v", err)
 			return
 		}
+		logrus.Debugf("Checked existing CDN response object %s/%s: exists=%v", bucketName, objectKey, exists)
 
 		if exists && existingETag != "" {
 			newMD5 := md5.Sum(responseData)
