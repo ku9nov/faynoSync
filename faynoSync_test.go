@@ -5240,6 +5240,7 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			req.Header.Set(utils.DownloadTokenHeader, testappDownloadToken(t, scenario.ChannelName))
 
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
@@ -5397,6 +5398,7 @@ func TestCheckVersion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			req.Header.Set(utils.DownloadTokenHeader, testappDownloadToken(t, scenario.ChannelName))
 
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
@@ -5422,6 +5424,8 @@ func TestCheckVersion(t *testing.T) {
 					Channel:  decodeScenarioValue(scenario.ChannelName),
 					Platform: decodeScenarioValue(scenario.Platform),
 					Arch:     decodeScenarioValue(scenario.Arch),
+					DownloadToken: scenarioDownloadToken(t, decodeScenarioValue(scenario.AppName),
+						decodeScenarioValue(scenario.ChannelName)),
 				},
 			)
 			require.NoError(t, err)
@@ -5950,6 +5954,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
+			req.Header.Set(utils.DownloadTokenHeader, testappDownloadToken(t, scenario.ChannelName))
 			req.Header.Set("X-Device-ID", scenario.DeviceID)
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
@@ -5975,6 +5980,8 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 					Platform: decodeScenarioValue(scenario.Platform),
 					Arch:     decodeScenarioValue(scenario.Arch),
 					DeviceID: decodeScenarioValue(scenario.DeviceID),
+					DownloadToken: scenarioDownloadToken(t, decodeScenarioValue(scenario.AppName),
+						decodeScenarioValue(scenario.ChannelName)),
 				},
 			)
 			require.NoError(t, err)
@@ -9264,6 +9271,11 @@ func uploadVersionAsAdmin(t *testing.T, appName, version string) string {
 
 func uploadVersionToChannelAsAdmin(t *testing.T, appName, version, channel string) string {
 	t.Helper()
+	return uploadVersionToChannelAsAdminPublished(t, appName, version, channel, false)
+}
+
+func uploadVersionToChannelAsAdminPublished(t *testing.T, appName, version, channel string, publish bool) string {
+	t.Helper()
 
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
@@ -9294,7 +9306,7 @@ func uploadVersionToChannelAsAdmin(t *testing.T, appName, version, channel strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "%s", "publish": false, "critical": false, "platform": "universalPlatform", "arch": "universalArch"}`, appName, version, channel)
+	payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "%s", "publish": %t, "critical": false, "platform": "universalPlatform", "arch": "universalArch"}`, appName, version, channel, publish)
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -9489,6 +9501,30 @@ func uploadPrivateVersion(t *testing.T, version, channel string) string {
 	return doc.Artifacts[0].S3Key
 }
 
+// scenarioDownloadToken returns the token a scenario needs: testapp is private and strict, and it is renamed
+// to newApp partway through the suite. Public apps are checked without a token.
+func scenarioDownloadToken(t *testing.T, appName, channel string) string {
+	t.Helper()
+	if appName != "testapp" && appName != "newApp" {
+		return ""
+	}
+	if channel == "" {
+		return ""
+	}
+	return testappDownloadToken(t, channel)
+}
+
+// testappDownloadToken returns a download token for testapp in the given channel. testapp is private with the
+// default strict mode, so version checks without the header are answered as if the app did not exist.
+func testappDownloadToken(t *testing.T, channel string) string {
+	t.Helper()
+	channelIDs := map[string]string{"nightly": idNightlyChannel, "stable": idStableChannel}
+	channelID, ok := channelIDs[channel]
+	require.True(t, ok, "no channel id for %q", channel)
+	// Regenerated per request: other tests drop the app's tokens, and a cached value would then be dead.
+	return regenerateDownloadToken(t, idTestappApp, channelID)
+}
+
 func cleanupDownloadTokens(t *testing.T) {
 	t.Cleanup(func() {
 		oid, err := primitive.ObjectIDFromHex(idTestappApp)
@@ -9590,7 +9626,7 @@ func TestRegenerateDownloadToken(t *testing.T) {
 		"public app":         {authToken, idPublicTestappApp, idStableChannel, http.StatusBadRequest, `{"error":"download tokens are only available for private apps"}`},
 		"unknown channel":    {authToken, idTestappApp, primitive.NewObjectID().Hex(), http.StatusNotFound, `{"error":"channel not found"}`},
 		"other owner":        {authTokenSecondUser, idTestappApp, idStableChannel, http.StatusNotFound, `{"error":"app not found"}`},
-		"team user channel":  {teamUserToken, idTestappApp, idNightlyChannel, http.StatusInternalServerError, `{"error":"you don't have access to this channel"}`},
+		"team user channel":  {teamUserToken, idTestappApp, idNightlyChannel, http.StatusForbidden, `{"error":"you don't have access to this channel"}`},
 		"invalid channel id": {authToken, idTestappApp, "nope", http.StatusBadRequest, `{"error":"Invalid channel ID format"}`},
 	}
 	for name, tc := range cases {
@@ -9716,6 +9752,119 @@ func TestPrivateDownloadAccess(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, "a JWT with access keeps getting JSON in unlisted mode")
 	w = serveDownload(t, "testapp-admin/stable/missing.dmg", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code, "unlisted mode must not open keys that belong to no artifact")
+}
+
+func serveVersionCheck(t *testing.T, path string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	router := gin.Default()
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/checkVersion", func(c *gin.Context) { h.FindLatestVersion(c) })
+	router.GET("/apps/latest", func(c *gin.Context) { h.FetchLatestVersionOfApp(c) })
+
+	req, err := http.NewRequest("GET", path, nil)
+	require.NoError(t, err)
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func checkVersionPath(appName, channel string) string {
+	return fmt.Sprintf("/checkVersion?app_name=%s&version=0.0.1.137&channel=%s&platform=universalPlatform&arch=universalArch&owner=admin", appName, channel)
+}
+
+// TestPrivateVersionCheckAccess covers the read paths that tell a client what to download: for a strict app they
+// must answer exactly as they do for an app that does not exist, and the response cache must not leak past that.
+func TestPrivateVersionCheckAccess(t *testing.T) {
+	cleanupDownloadTokens(t)
+	versionID := uploadVersionToChannelAsAdminPublished(t, "testapp", "9.5.0.1", "stable", true)
+	t.Cleanup(func() {
+		if w := serveDeleteVersion(t, authToken, versionID); w.Code != http.StatusOK {
+			t.Errorf("cleanup of version %s: %s", versionID, w.Body.String())
+		}
+	})
+	token := regenerateDownloadToken(t, idTestappApp, idStableChannel)
+	tokenHeader := map[string]string{utils.DownloadTokenHeader: token}
+
+	unknownApp := serveVersionCheck(t, checkVersionPath("nosuchapp", "stable"), nil)
+	unknownLatest := serveVersionCheck(t, "/apps/latest?app_name=nosuchapp&channel=stable&owner=admin", nil)
+
+	assertLooksUnknown := func(t *testing.T, w, unknown *httptest.ResponseRecorder, what string) {
+		t.Helper()
+		assert.Equal(t, unknown.Code, w.Code, what)
+		assert.Equal(t, unknown.Body.String(), w.Body.String(), what)
+	}
+
+	t.Run("anonymous is answered as an unknown app", func(t *testing.T) {
+		assertLooksUnknown(t, serveVersionCheck(t, checkVersionPath("testapp", "stable"), nil), unknownApp, "checkVersion")
+		assertLooksUnknown(t, serveVersionCheck(t, "/apps/latest?app_name=testapp&channel=stable&owner=admin", nil), unknownLatest, "apps/latest")
+	})
+
+	t.Run("wrong credentials are answered as an unknown app", func(t *testing.T) {
+		nightlyToken := regenerateDownloadToken(t, idTestappApp, idNightlyChannel)
+		cases := map[string]struct {
+			channel string
+			headers map[string]string
+		}{
+			"token of another channel":   {"stable", map[string]string{utils.DownloadTokenHeader: nightlyToken}},
+			"unknown token":              {"stable", map[string]string{utils.DownloadTokenHeader: "fnd_nope"}},
+			"jwt of another owner":       {"stable", map[string]string{"Authorization": "Bearer " + authTokenSecondUser}},
+			"team user, channel denied":  {"nightly", map[string]string{"Authorization": "Bearer " + teamUserToken}},
+			"no credential on a channel": {"nightly", nil},
+		}
+		for name, tc := range cases {
+			t.Run(name, func(t *testing.T) {
+				assertLooksUnknown(t, serveVersionCheck(t, checkVersionPath("testapp", tc.channel), tc.headers), unknownApp, name)
+			})
+		}
+	})
+
+	t.Run("token of the channel is served", func(t *testing.T) {
+		w := serveVersionCheck(t, checkVersionPath("testapp", "stable"), tokenHeader)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var response map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		assert.Contains(t, response, "update_available")
+	})
+
+	t.Run("a private app is never cached", func(t *testing.T) {
+		if !viper.GetBool("PERFORMANCE_MODE") || redisClient == nil {
+			t.Skip("this needs PERFORMANCE_MODE and Redis")
+		}
+		require.Equal(t, http.StatusOK, serveVersionCheck(t, checkVersionPath("testapp", "stable"), tokenHeader).Code)
+
+		// A cached response would be served to whoever asks for the same key next, credential or not.
+		keys, err := redisClient.Keys(context.Background(), "owner=admin&app_name=testapp&*").Result()
+		require.NoError(t, err)
+		assert.Empty(t, keys, "a private app must not reach the response cache")
+
+		assertLooksUnknown(t, serveVersionCheck(t, checkVersionPath("testapp", "stable"), nil), unknownApp, "after a token request")
+	})
+
+	t.Run("a denied request is not counted as a client", func(t *testing.T) {
+		if redisClient == nil {
+			t.Skip("telemetry needs Redis")
+		}
+		deviceID := "denied-device-" + primitive.NewObjectID().Hex()
+		headers := map[string]string{"X-Device-ID": deviceID}
+		require.Equal(t, unknownApp.Code, serveVersionCheck(t, checkVersionPath("testapp", "stable"), headers).Code)
+
+		clientsKey := fmt.Sprintf("stats:admin:testapp:unique_clients:%s", time.Now().UTC().Format("2006-01-02"))
+		member, err := redisClient.SIsMember(context.Background(), clientsKey, deviceID).Result()
+		require.NoError(t, err)
+		assert.False(t, member, "a denied request must not reach telemetry")
+	})
+
+	t.Run("changing the mode takes effect without waiting for the cache to expire", func(t *testing.T) {
+		setTestappDownloadMode(t, utils.DownloadModeUnlisted)
+		w := serveVersionCheck(t, checkVersionPath("testapp", "stable"), nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+		setTestappDownloadMode(t, utils.DownloadModeStrict)
+		assertLooksUnknown(t, serveVersionCheck(t, checkVersionPath("testapp", "stable"), nil), unknownApp, "after switching back to strict")
+	})
 }
 
 func TestPrivateDownloadBackfill(t *testing.T) {
@@ -11136,6 +11285,7 @@ func TestCheckVersionWithIntermediate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			req.Header.Set(utils.DownloadTokenHeader, testappDownloadToken(t, scenario.ChannelName))
 
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
@@ -11160,6 +11310,8 @@ func TestCheckVersionWithIntermediate(t *testing.T) {
 					Channel:  decodeScenarioValue(scenario.ChannelName),
 					Platform: decodeScenarioValue(scenario.Platform),
 					Arch:     decodeScenarioValue(scenario.Arch),
+					DownloadToken: scenarioDownloadToken(t, decodeScenarioValue(scenario.AppName),
+						decodeScenarioValue(scenario.ChannelName)),
 				},
 			)
 			require.NoError(t, err)

@@ -215,6 +215,15 @@ type RegenerateDownloadTokenRequest struct {
 }
 
 // PrivateArtifact is what /download needs to decide on access to a private-bucket object.
+// AppAccess is the policy a read path needs before it serves anything about an app.
+type AppAccess struct {
+	AppID        primitive.ObjectID `bson:"_id"`
+	ChannelID    primitive.ObjectID `bson:"-"`
+	Owner        string             `bson:"-"`
+	Private      bool               `bson:"private"`
+	DownloadMode string             `bson:"download_mode"`
+}
+
 type PrivateArtifact struct {
 	AppID        primitive.ObjectID `bson:"app_id"`
 	ChannelID    primitive.ObjectID `bson:"channel_id"`

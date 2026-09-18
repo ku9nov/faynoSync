@@ -221,10 +221,17 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
+	access, allowed := authorizeReadRequest(ctx, c, repository, validatedParams, http.StatusBadRequest)
+	if !allowed {
+		return
+	}
+
 	cacheKey := CreateCacheKey(validatedParams)
 	logrus.Debugf("Generated cache key: %s", cacheKey)
-	// Check Redis only if PERFORMANCE_MODE is true and Redis client is not nil
-	if performanceMode && rdb != nil {
+	// A private app is never cached: its response depends on the caller's credential, and the gate above
+	// already cost one lookup. Check Redis only if PERFORMANCE_MODE is true and Redis client is not nil.
+	useCache := performanceMode && rdb != nil && !access.Private
+	if useCache {
 		cachedResponse, err := rdb.Get(ctx, cacheKey).Result()
 		if err == nil {
 			// If cache exists, return the cached response
@@ -296,7 +303,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 				logrus.Debugf("Publishing response to CDN when not found: %v", response)
 				publishResponseToCDN(ctx, validatedParams, response)
 			}
-			if performanceMode && rdb != nil {
+			if useCache {
 				if isSquirrelFeed {
 					cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType, checkResult.Found)
 				} else {
@@ -348,7 +355,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		logrus.Debugf("Publishing response to CDN when found: %v", response)
 		publishResponseToCDN(ctx, validatedParams, response)
 	}
-	if performanceMode && rdb != nil {
+	if useCache {
 		if isSquirrelFeed {
 			cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType, checkResult.Found)
 		} else {
@@ -387,10 +394,16 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
+	access, allowed := authorizeReadRequest(ctx, c, repository, params, http.StatusInternalServerError)
+	if !allowed {
+		return
+	}
+
 	cacheKey := CreateCacheKey(params)
 	logrus.Debugf("Generated cache key: %s", cacheKey)
 
-	if performanceMode && rdb != nil {
+	useCache := performanceMode && rdb != nil && !access.Private
+	if useCache {
 		cachedResponse, err := rdb.Get(ctx, cacheKey).Result()
 		if err == nil {
 			var cachedData CachedResponse
@@ -488,7 +501,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 
 	c.JSON(http.StatusOK, downloadUrls)
 
-	if performanceMode && rdb != nil {
+	if useCache {
 		cacheResponse(ctx, rdb, cacheKey, downloadUrls, http.StatusOK, "", false)
 	}
 }

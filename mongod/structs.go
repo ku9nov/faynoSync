@@ -48,6 +48,7 @@ type AppRepository interface {
 	DeleteReportKey(appID primitive.ObjectID, requester string, ctx context.Context) (bool, error)
 	ListReportKeys(requester string, ctx context.Context) ([]*model.ReportKeyListItem, error)
 	RegenerateReportKey(appID primitive.ObjectID, requester string, ctx context.Context) (string, error)
+	ResolveAppAccess(ctx context.Context, owner, appName, channelName string) (*model.AppAccess, error)
 	FindPrivateArtifact(ctx context.Context, key string) (*model.PrivateArtifact, error)
 	CanDownloadPrivateArtifact(ctx context.Context, username string, artifact *model.PrivateArtifact) (bool, error)
 	HasDownloadToken(ctx context.Context, token string, artifact *model.PrivateArtifact) (bool, error)

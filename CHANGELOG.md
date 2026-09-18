@@ -9,6 +9,7 @@
 - `GET /download` is no longer behind the auth middleware. A denied request returns the same `404` as an unknown key. A JWT with access gets `{"download_url": ...}`; every other allowed request gets `302` to the presigned URL, regardless of the old flag.
 - `fns_` API tokens are not accepted on `/download` (they were already rejected with `403`).
 - A private app can no longer enable `cdn_edge`
+- `GET /checkVersion` and `GET /apps/latest` now gate private apps in `strict` mode: without an `X-Download-Token` for the app and channel (or a JWT with access) they answer exactly as they do for an unknown app. They used to hand out the version, changelog, `critical` flag and private-bucket keys to anyone. Clients of a `strict` app must send the header on update checks as well, not only on `/download`; an `unlisted` app is unchanged.
 
 ### Features
 
@@ -20,6 +21,7 @@
 - Velopack feeds and Sparkle appcasts are no longer materialized for private apps. They were written to the public bucket and exposed the app's version list and private-bucket keys. Feeds left there by earlier versions are not removed automatically (`velopack/<owner>/<app>/.../releases.<channel>.json`, `sparkle/<owner>/<app>/.../appcast*.xml`).
 - `POST /upload` now returns `404` instead of `500` when the app does not exist, matching `POST /apps/update`.
 - Deleting an app or a channel now deletes its download tokens as well; deleting an app also deletes its report key.
+- Responses of a private app are no longer cached under `PERFORMANCE_MODE`: the cache is read before any credential is known, so a cached response would be served to whoever asked next. Public apps are unaffected.
 - `POST /report-keys/regenerate` and `POST /download-tokens/regenerate` now answer `403` when the requester lacks access to the app or channel, instead of `500`. `POST /report-keys/regenerate` answers `404` for an unknown app, matching `/download-tokens/regenerate`.
 
 ## v2.2.0
