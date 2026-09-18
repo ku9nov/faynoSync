@@ -279,7 +279,7 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 	// Check if entityID exists in the map
 	if _, hasAccess := allowedMap[entityID]; !hasAccess {
 		logrus.Debugf("Team user %s does not have access to %s ID: %s", teamUser.ID.Hex(), entityType, entityID)
-		return fmt.Errorf("you don't have access to this %s", entityType)
+		return accessDenied("you don't have access to this %s", entityType)
 	}
 
 	logrus.Debugf("Team user has access to %s ID: %s", entityType, entityID)

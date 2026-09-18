@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,6 +16,19 @@ import (
 )
 
 var ErrAppNotFound = errors.New("app not found")
+
+// AccessDeniedError marks a refusal caused by the requester's permissions, so handlers can answer 403 instead of 500.
+type AccessDeniedError struct {
+	Message string
+}
+
+func (e *AccessDeniedError) Error() string {
+	return e.Message
+}
+
+func accessDenied(format string, args ...interface{}) error {
+	return &AccessDeniedError{Message: fmt.Sprintf(format, args...)}
+}
 
 func (c *appRepository) resolveOwnerAndTeamUser(ctx context.Context, requester string) (string, *model.TeamUser, error) {
 	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
@@ -36,7 +50,7 @@ func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx 
 	}
 	if teamUser != nil {
 		if !teamUser.Permissions.Apps.Edit {
-			return nil, errors.New("you don't have permission to edit apps")
+			return nil, accessDenied("you don't have permission to edit apps")
 		}
 
 		appAllowed := false
@@ -47,7 +61,7 @@ func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx 
 			}
 		}
 		if !appAllowed {
-			return nil, errors.New("you don't have access to this app")
+			return nil, accessDenied("you don't have access to this app")
 		}
 	}
 
@@ -232,4 +246,18 @@ func (c *appRepository) RegenerateReportKey(appID primitive.ObjectID, requester 
 	}
 
 	return newKeyValue, nil
+}
+
+// deleteReportKeys drops the key of a deleted app: report keys are scoped to an app only.
+func (c *appRepository) deleteReportKeys(ctx context.Context, keyType string, id primitive.ObjectID) error {
+	if keyType != "app" {
+		return nil
+	}
+
+	result, err := c.client.Database(c.config.Database).Collection("report_keys").DeleteMany(ctx, bson.M{"app_id": id})
+	if err != nil {
+		return err
+	}
+	logrus.Debugf("Deleted %d report keys of app %s", result.DeletedCount, id.Hex())
+	return nil
 }

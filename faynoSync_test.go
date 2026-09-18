@@ -750,7 +750,7 @@ func TestFailedRegenerateReportKeyWithSecondaryUser(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 	var response map[string]interface{}
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	if err != nil {

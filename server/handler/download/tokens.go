@@ -68,7 +68,10 @@ func RegenerateDownloadToken(c *gin.Context, repository db.AppRepository) {
 	token, err := repository.RegenerateDownloadToken(appID, channelID, requester, ctx)
 	if err != nil {
 		logrus.Errorf("Failed to regenerate download token for app %s: %v", req.AppID, err)
+		var accessErr *db.AccessDeniedError
 		switch {
+		case errors.As(err, &accessErr):
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		case errors.Is(err, db.ErrAppNotFound), errors.Is(err, db.ErrChannelNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		case errors.Is(err, db.ErrDownloadTokenPublicApp):
