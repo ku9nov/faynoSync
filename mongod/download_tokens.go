@@ -7,6 +7,8 @@ import (
 	"faynoSync/server/utils"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -209,4 +211,24 @@ func (c *appRepository) ListDownloadTokens(requester string, ctx context.Context
 	}
 
 	return downloadTokens, nil
+}
+
+// deleteDownloadTokens drops the tokens of a deleted app or channel: their scope can never be resolved again.
+func (c *appRepository) deleteDownloadTokens(ctx context.Context, keyType string, id primitive.ObjectID) error {
+	var filter bson.M
+	switch keyType {
+	case "app":
+		filter = bson.M{"app_id": id}
+	case "channel":
+		filter = bson.M{"channel_id": id}
+	default:
+		return nil
+	}
+
+	result, err := c.client.Database(c.config.Database).Collection("download_tokens").DeleteMany(ctx, filter)
+	if err != nil {
+		return err
+	}
+	logrus.Debugf("Deleted %d download tokens of %s %s", result.DeletedCount, keyType, id.Hex())
+	return nil
 }

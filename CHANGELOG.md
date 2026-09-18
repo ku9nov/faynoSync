@@ -19,6 +19,7 @@
 - Uploading or updating an artifact of a private app with a feed-based updater (`velopack`, `sparkle`, `electron-builder`, `squirrel_windows`) is now rejected with `400` and an explicit error. This combination never worked — clients could not fetch a private app's feed — the API now reports it at upload time instead of accepting a configuration that silently fails on update checks. Use `manual`, `tauri` or `squirrel_darwin`, or a public app.
 - Velopack feeds and Sparkle appcasts are no longer materialized for private apps. They were written to the public bucket and exposed the app's version list and private-bucket keys. Feeds left there by earlier versions are not removed automatically (`velopack/<owner>/<app>/.../releases.<channel>.json`, `sparkle/<owner>/<app>/.../appcast*.xml`).
 - `POST /upload` now returns `404` instead of `500` when the app does not exist, matching `POST /apps/update`.
+- Deleting an app or a channel now deletes its download tokens as well.
 
 ## v2.2.0
 
