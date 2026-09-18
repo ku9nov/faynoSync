@@ -114,15 +114,19 @@ func CopyVelopackInstallersToDefault(ctx context.Context, ctxQuery map[string]in
 
 func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *redis.Client) error {
 
+	owner, _ := params["owner"].(string)
 	appName, _ := params["app_name"].(string)
 	channel, _ := params["channel"].(string)
 
-	pattern := fmt.Sprintf("app_name=%s&version=*&channel=%s&platform=*&arch=*",
-		appName, channel)
+	pattern := info.CacheKeyPattern(owner, appName, channel)
 	logrus.Debugf("Redis pattern %s will be invalidated.", pattern)
 
-	keys, err := rdb.Keys(ctx, pattern).Result()
-	if err != nil {
+	var keys []string
+	iter := rdb.Scan(ctx, 0, pattern, 1000).Iterator()
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+	}
+	if err := iter.Err(); err != nil {
 		return fmt.Errorf("failed to fetch keys for invalidation: %w", err)
 	}
 
@@ -230,7 +234,7 @@ func InvalidateAppCaches(
 ) {
 	if performanceMode && rdb != nil {
 		for _, channel := range channels {
-			params := map[string]interface{}{"app_name": appName, "channel": channel}
+			params := map[string]interface{}{"owner": owner, "app_name": appName, "channel": channel}
 			if err := InvalidateCache(ctx, params, rdb); err != nil {
 				logrus.Error("Error invalidating cache:", err)
 			}

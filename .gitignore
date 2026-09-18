@@ -43,3 +43,4 @@ server/handler/info/materialize_bench_test.go
 
 ROADMAP.md
 PRIVATE_FEATURE.md
+PRESIGNED_UPLOADS.md

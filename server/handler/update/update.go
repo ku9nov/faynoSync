@@ -390,7 +390,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		db,
 		rdb,
 		performanceMode,
-		owner,
+		s3Owner,
 		appName,
 		viper.GetViper(),
 		"Updating app",

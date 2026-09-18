@@ -8,6 +8,7 @@ import (
 	"faynoSync/server/utils/updaters"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -100,19 +101,33 @@ func resolveCachedHasUpdate(cachedData CachedResponse) bool {
 	return hasUpdate
 }
 
+// CreateCacheKey scopes cached responses by owner: app names are unique only per owner.
+// Values are query-escaped so they cannot forge another key or inject glob characters into CacheKeyPattern.
 func CreateCacheKey(params map[string]interface{}) string {
-	baseKey := fmt.Sprintf("app_name=%s&version=%s&channel=%s&platform=%s&arch=%s",
-		params["app_name"], params["version"], params["channel"], params["platform"], params["arch"])
+	baseKey := fmt.Sprintf("owner=%s&app_name=%s&version=%s&channel=%s&platform=%s&arch=%s",
+		cacheKeyPart(params["owner"]), cacheKeyPart(params["app_name"]), cacheKeyPart(params["version"]),
+		cacheKeyPart(params["channel"]), cacheKeyPart(params["platform"]), cacheKeyPart(params["arch"]))
 
-	if updater, exists := params["updater"]; exists && updater != "" {
+	if updater := cacheKeyPart(params["updater"]); updater != "" {
 		baseKey += fmt.Sprintf("&updater=%s", updater)
 	}
 
-	if pkg, exists := params["package"]; exists && pkg != "" {
+	if pkg := cacheKeyPart(params["package"]); pkg != "" {
 		baseKey += fmt.Sprintf("&package=%s", pkg)
 	}
 
 	return baseKey
+}
+
+// CacheKeyPattern matches every cached response of one app channel, across versions, platforms, archs, updaters and packages.
+func CacheKeyPattern(owner, appName, channel string) string {
+	return fmt.Sprintf("owner=%s&app_name=%s&version=*&channel=%s&platform=*&arch=*",
+		url.QueryEscape(owner), url.QueryEscape(appName), url.QueryEscape(channel))
+}
+
+func cacheKeyPart(value interface{}) string {
+	s, _ := value.(string)
+	return url.QueryEscape(s)
 }
 
 func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, response interface{}, httpStatus int, contentType string, hasUpdate bool) {
