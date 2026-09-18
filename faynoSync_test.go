@@ -5415,25 +5415,28 @@ func TestCheckVersion(t *testing.T) {
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
 
-			sdkResp, err := sdkClient.CheckForUpdates(
-				context.Background(),
-				faynosync.CheckOptions{
-					Owner:    decodeScenarioValue(scenario.Owner),
-					AppName:  decodeScenarioValue(scenario.AppName),
-					Version:  decodeScenarioValue(scenario.Version),
-					Channel:  decodeScenarioValue(scenario.ChannelName),
-					Platform: decodeScenarioValue(scenario.Platform),
-					Arch:     decodeScenarioValue(scenario.Arch),
-					DownloadToken: scenarioDownloadToken(t, decodeScenarioValue(scenario.AppName),
-						decodeScenarioValue(scenario.ChannelName)),
-				},
-			)
-			require.NoError(t, err)
-			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
+			checkOpts := faynosync.CheckOptions{
+				Owner:    decodeScenarioValue(scenario.Owner),
+				AppName:  decodeScenarioValue(scenario.AppName),
+				Version:  decodeScenarioValue(scenario.Version),
+				Channel:  decodeScenarioValue(scenario.ChannelName),
+				Platform: decodeScenarioValue(scenario.Platform),
+				Arch:     decodeScenarioValue(scenario.Arch),
+				DownloadToken: scenarioDownloadToken(t, decodeScenarioValue(scenario.AppName),
+					decodeScenarioValue(scenario.ChannelName)),
+			}
 			expectedSource := faynosync.SourceAPI
 			if scenario.AppName == "public%20testapp" && scenario.Version == "0.0.1.137" && scenario.ChannelName == "nightly" {
 				expectedSource = faynosync.SourceEdge
+				// The API publishes the CDN copy in the background, so the edge serves it shortly after the response.
+				require.Eventually(t, func() bool {
+					resp, err := sdkClient.CheckForUpdates(context.Background(), checkOpts)
+					return err == nil && resp.Source == faynosync.SourceEdge
+				}, 5*time.Second, 50*time.Millisecond)
 			}
+			sdkResp, err := sdkClient.CheckForUpdates(context.Background(), checkOpts)
+			require.NoError(t, err)
+			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
 			require.Equal(t, expectedSource, sdkResp.Source)
 		})
 	}

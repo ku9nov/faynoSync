@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"mime/multipart"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -27,7 +29,16 @@ type cdnPublicUploaderWithCacheControl interface {
 	UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error)
 }
 
-const latestResponseCacheControl = "public, max-age=60, must-revalidate"
+const (
+	latestResponseCacheControl = "public, max-age=60, must-revalidate"
+	cdnPublishTimeout          = 30 * time.Second
+)
+
+var (
+	cdnPublishSlots = make(chan struct{}, 32)
+	cdnClientMu     sync.Mutex
+	cdnClient       utils.StorageClient
+)
 
 func (m *memoryFile) Close() error {
 	return nil
@@ -38,13 +49,6 @@ func publishResponseToCDN(ctx context.Context, params map[string]interface{}, re
 	bucketName := viper.GetString("S3_BUCKET_NAME_CDN")
 	if bucketName == "" {
 		logrus.Debug("S3_BUCKET_NAME_CDN is not configured, skipping CDN response publish")
-		return
-	}
-
-	factory := utils.NewStorageFactory(viper.GetViper())
-	storageClient, err := factory.CreateStorageClient()
-	if err != nil {
-		logrus.Errorf("Failed to create storage client for CDN response publish: %v", err)
 		return
 	}
 
@@ -66,6 +70,29 @@ func publishResponseToCDN(ctx context.Context, params map[string]interface{}, re
 	responseData, err := json.Marshal(response)
 	if err != nil {
 		logrus.Errorf("Failed to marshal latest response for CDN publish: %v", err)
+		return
+	}
+
+	// The CDN bucket can be in another region than the API, so a cache miss must not wait for its round trips.
+	publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cdnPublishTimeout)
+	select {
+	case cdnPublishSlots <- struct{}{}:
+		go func() {
+			defer func() { <-cdnPublishSlots }()
+			defer cancel()
+			uploadResponseToCDN(publishCtx, bucketName, objectKey, responseData)
+		}()
+	default:
+		logrus.Debugf("CDN publish slots are busy, publishing synchronously: %s/%s", bucketName, objectKey)
+		defer cancel()
+		uploadResponseToCDN(publishCtx, bucketName, objectKey, responseData)
+	}
+}
+
+func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, responseData []byte) {
+	storageClient, err := cdnStorageClient()
+	if err != nil {
+		logrus.Errorf("Failed to create storage client for CDN response publish: %v", err)
 		return
 	}
 
@@ -98,6 +125,21 @@ func publishResponseToCDN(ctx context.Context, params map[string]interface{}, re
 	}
 
 	logrus.Debugf("Published latest response to CDN bucket: %s/%s", bucketName, objectKey)
+}
+
+// cdnStorageClient reuses one client so its connections to the CDN bucket stay open between publishes.
+func cdnStorageClient() (utils.StorageClient, error) {
+	cdnClientMu.Lock()
+	defer cdnClientMu.Unlock()
+	if cdnClient != nil {
+		return cdnClient, nil
+	}
+	storageClient, err := utils.NewStorageFactory(viper.GetViper()).CreateStorageClient()
+	if err != nil {
+		return nil, err
+	}
+	cdnClient = storageClient
+	return cdnClient, nil
 }
 
 func normalizeETag(etag string) string {
