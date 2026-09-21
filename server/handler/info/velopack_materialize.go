@@ -26,19 +26,22 @@ type velopackFeedKey struct {
 
 // MaterializeVelopackForApp regenerates and writes all velopack feeds for an app.
 // It self-gates: apps without velopack artifacts produce no work and no writes.
-func MaterializeVelopackForApp(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string) {
+func MaterializeVelopackForApp(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, private bool) {
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		logrus.Errorf("Failed to create storage client for velopack feed materialization: %v", err)
 		return
 	}
-	if err := MaterializeVelopackFeeds(ctx, database, storageClient, env, owner, appName); err != nil {
+	if err := MaterializeVelopackFeeds(ctx, database, storageClient, env, owner, appName, private); err != nil {
 		logrus.Errorf("Failed to materialize velopack feeds for %s/%s: %v", owner, appName, err)
 	}
 }
 
-func MaterializeVelopackFeeds(ctx context.Context, database *mongo.Database, storageClient utils.StorageClient, env *viper.Viper, owner, appName string) error {
+func MaterializeVelopackFeeds(ctx context.Context, database *mongo.Database, storageClient utils.StorageClient, env *viper.Viper, owner, appName string, private bool) error {
+	if skipPrivateMaterialization("velopack feed", owner, appName, private) {
+		return nil
+	}
 	tuples, err := discoverVelopackTuples(ctx, database, owner, appName)
 	if err != nil {
 		return err
@@ -50,27 +53,30 @@ func MaterializeVelopackFeeds(ctx context.Context, database *mongo.Database, sto
 	return materializeVelopackKeys(ctx, database, storageClient, env, owner, appName, tuples)
 }
 
-func MaterializeVelopackForTuples(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, tuples []FeedTuple) {
+func MaterializeVelopackForTuples(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, tuples []FeedTuple, private bool) {
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		logrus.Errorf("Failed to create storage client for velopack feed materialization: %v", err)
 		return
 	}
-	if err := MaterializeVelopackFeedsForTuples(ctx, database, storageClient, env, owner, appName, tuples); err != nil {
+	if err := MaterializeVelopackFeedsForTuples(ctx, database, storageClient, env, owner, appName, tuples, private); err != nil {
 		logrus.Errorf("Failed to materialize velopack feeds for %s/%s: %v", owner, appName, err)
 	}
 }
 
-func MaterializeVelopackForTuplesOrFull(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, tuples []FeedTuple) {
+func MaterializeVelopackForTuplesOrFull(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, tuples []FeedTuple, private bool) {
 	if len(tuples) == 0 {
-		MaterializeVelopackForApp(ctx, database, env, owner, appName)
+		MaterializeVelopackForApp(ctx, database, env, owner, appName, private)
 		return
 	}
-	MaterializeVelopackForTuples(ctx, database, env, owner, appName, tuples)
+	MaterializeVelopackForTuples(ctx, database, env, owner, appName, tuples, private)
 }
 
-func MaterializeVelopackFeedsForTuples(ctx context.Context, database *mongo.Database, storageClient utils.StorageClient, env *viper.Viper, owner, appName string, tuples []FeedTuple) error {
+func MaterializeVelopackFeedsForTuples(ctx context.Context, database *mongo.Database, storageClient utils.StorageClient, env *viper.Viper, owner, appName string, tuples []FeedTuple, private bool) error {
+	if skipPrivateMaterialization("velopack feed", owner, appName, private) {
+		return nil
+	}
 	keys := velopackKeysFromTuples(tuples)
 	if len(keys) == 0 {
 		return nil

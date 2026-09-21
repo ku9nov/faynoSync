@@ -225,7 +225,7 @@ func (c *appRepository) CreateArch(archID string, owner string, ctx context.Cont
 }
 
 // CreateApp creates a new app_name document
-func (c *appRepository) CreateApp(appName string, logo string, description string, private bool, tuf bool, reports bool, cdnEdge bool, owner string, ctx context.Context) (interface{}, error) {
+func (c *appRepository) CreateApp(appName string, logo string, description string, private bool, downloadMode string, tuf bool, reports bool, cdnEdge bool, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "app_name", Value: appName}}
 	if logo != "" {
 		document = append(document, bson.E{Key: "logo", Value: logo})
@@ -235,6 +235,7 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 	}
 	if private == true {
 		document = append(document, bson.E{Key: "private", Value: private})
+		document = append(document, bson.E{Key: "download_mode", Value: downloadMode})
 	}
 
 	if tuf == true {
@@ -278,7 +279,7 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 	// Check if entityID exists in the map
 	if _, hasAccess := allowedMap[entityID]; !hasAccess {
 		logrus.Debugf("Team user %s does not have access to %s ID: %s", teamUser.ID.Hex(), entityType, entityID)
-		return fmt.Errorf("you don't have access to this %s", entityType)
+		return accessDenied("you don't have access to this %s", entityType)
 	}
 
 	logrus.Debugf("Team user has access to %s ID: %s", entityType, entityID)
@@ -485,6 +486,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 
 		newArtifact := model.Artifact{
 			Link:      appLink,
+			S3Key:     utils.PrivateObjectKey(appLink),
 			Platform:  platformMeta.ID,
 			Arch:      archMeta.ID,
 			Package:   extension,
@@ -557,6 +559,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 
 		artifact := model.Artifact{
 			Link:      appLink,
+			S3Key:     utils.PrivateObjectKey(appLink),
 			Platform:  platformMeta.ID,
 			Arch:      archMeta.ID,
 			Package:   extension,

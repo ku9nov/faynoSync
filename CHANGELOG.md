@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.3.0
+
+### Breaking changes
+
+- Private access is now decided per app, not per instance. Private apps get `download_mode`: `unlisted` (anyone with the key — the old `ENABLE_PRIVATE_APP_DOWNLOADING=true` behaviour) or `strict` (download token, or JWT of the owning admin / a team user with `download` permission and the app allowed). Set on `POST /app/create`, changed on `POST /app/update`.
+- `ENABLE_PRIVATE_APP_DOWNLOADING` is deprecated — it now only sets the default `download_mode` for new private apps.
+- `GET /download` left the auth middleware. A denied request returns the same `404` as an unknown key. A JWT with access gets `{"download_url": ...}`; every other allowed request gets a `302` to the presigned URL.
+- `fns_` API tokens are not accepted on `/download`.
+- `GET /checkVersion` and `GET /apps/latest` now gate `strict` apps: without an `X-Download-Token` for the app and channel (or a JWT with access) they answer exactly as for an unknown app. They used to expose version, changelog, `critical` and private-bucket keys to anyone. `unlisted` apps are unchanged.
+- A private app can no longer enable `cdn_edge`.
+
+### Features
+
+- Download tokens (`fnd_…`), scoped to an app and channel, sent in the `X-Download-Token` header. `POST /download-tokens/regenerate` creates or rotates one and returns the value once (only the hash is stored); `GET /download-tokens/list` lists them without values. `channel_id` may be omitted only while the app has no channel, otherwise `400`.
+
+### Fixes
+
+- A private app with a feed-based updater (`velopack`, `sparkle`, `electron-builder`, `squirrel_windows`) is now rejected with `400` on upload and update. The combination never worked — clients cannot fetch a private app's feed. Use `manual`, `tauri` or `squirrel_darwin`, or a public app.
+- Velopack feeds and Sparkle appcasts are no longer materialized for private apps; they were written to the public bucket and exposed the version list and private-bucket keys. Feeds left by earlier versions are not removed automatically.
+- Responses of a private app are no longer cached under `PERFORMANCE_MODE` — the cache is read before any credential is known. Public apps are unaffected.
+- `POST /upload` returns `404` instead of `500` when the app does not exist.
+- The `404` of `POST /apps/update` now carries the same `app_name not found in apps_meta collection` message as every other unknown-app answer; the two `ErrAppNotFound` values were merged into one.
+- `POST /report-keys/regenerate` and `POST /download-tokens/regenerate` no longer answer `500`: `404` when the app or channel does not exist or belongs to another owner, `403` when a team user is refused by their permissions.
+- Deleting an app or a channel also deletes its download tokens; deleting an app also deletes its report key.
+
+### Security
+
+- Upgraded `go.opentelemetry.io/otel/sdk` to v1.46.0
+
 ## v2.2.0
 
 ### Features
