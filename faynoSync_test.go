@@ -756,7 +756,7 @@ func TestFailedRegenerateReportKeyWithSecondaryUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "app not found", response["error"].(string))
+	assert.Equal(t, "app_name not found in apps_meta collection", response["error"].(string))
 }
 func TestListReportKeysWithSecondaryUser(t *testing.T) {
 	router := gin.Default()
@@ -6765,7 +6765,7 @@ func TestUpdateAppWithSecondUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := `{"error":"app not found"}`
+	expected := `{"error":"app_name not found in apps_meta collection"}`
 	assert.Equal(t, expected, w.Body.String())
 }
 
@@ -9628,7 +9628,7 @@ func TestRegenerateDownloadToken(t *testing.T) {
 	}{
 		"public app":         {authToken, idPublicTestappApp, idStableChannel, http.StatusBadRequest, `{"error":"download tokens are only available for private apps"}`},
 		"unknown channel":    {authToken, idTestappApp, primitive.NewObjectID().Hex(), http.StatusNotFound, `{"error":"channel not found"}`},
-		"other owner":        {authTokenSecondUser, idTestappApp, idStableChannel, http.StatusNotFound, `{"error":"app not found"}`},
+		"other owner":        {authTokenSecondUser, idTestappApp, idStableChannel, http.StatusNotFound, `{"error":"app_name not found in apps_meta collection"}`},
 		"team user channel":  {teamUserToken, idTestappApp, idNightlyChannel, http.StatusForbidden, `{"error":"you don't have access to this channel"}`},
 		"invalid channel id": {authToken, idTestappApp, "nope", http.StatusBadRequest, `{"error":"Invalid channel ID format"}`},
 	}

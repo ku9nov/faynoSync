@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	ErrPrivateArtifactNotFound = errors.New("artifact not found")
-	ErrDownloadTokenPublicApp  = errors.New("download tokens are only available for private apps")
-	ErrChannelNotFound         = errors.New("channel not found")
+	ErrPrivateArtifactNotFound      = errors.New("artifact not found")
+	ErrDownloadTokenPublicApp       = errors.New("download tokens are only available for private apps")
+	ErrChannelNotFound              = errors.New("channel not found")
+	ErrDownloadTokenChannelRequired = errors.New("channel_id is required while channels exist")
 )
 
 func (c *appRepository) FindPrivateArtifact(ctx context.Context, key string) (*model.PrivateArtifact, error) {
@@ -99,6 +100,15 @@ func (c *appRepository) HasDownloadToken(ctx context.Context, token string, arti
 	return count > 0, nil
 }
 
+func (c *appRepository) channelsExist(ctx context.Context) (bool, error) {
+	count, err := c.client.Database(c.config.Database).Collection("apps_meta").
+		CountDocuments(ctx, bson.M{"channel_name": bson.M{"$exists": true}}, options.Count().SetLimit(1))
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // RegenerateDownloadToken creates the token for (app, channel) on first call and rotates it afterwards.
 func (c *appRepository) RegenerateDownloadToken(appID, channelID primitive.ObjectID, requester string, ctx context.Context) (string, error) {
 	app, err := c.GetAppByID(appID, requester, ctx)
@@ -107,6 +117,16 @@ func (c *appRepository) RegenerateDownloadToken(appID, channelID primitive.Objec
 	}
 	if !app.Private {
 		return "", ErrDownloadTokenPublicApp
+	}
+
+	if channelID.IsZero() {
+		channelsExist, err := c.channelsExist(ctx)
+		if err != nil {
+			return "", err
+		}
+		if channelsExist {
+			return "", ErrDownloadTokenChannelRequired
+		}
 	}
 
 	if !channelID.IsZero() {

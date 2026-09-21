@@ -2,8 +2,8 @@ package report
 
 import (
 	"context"
-	"errors"
 	db "faynoSync/mongod"
+	"faynoSync/server/handler/apierr"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"net/http"
@@ -39,15 +39,7 @@ func RegenerateReportKey(c *gin.Context, repository db.AppRepository) {
 	newKeyValue, err := repository.RegenerateReportKey(appID, requester, ctx)
 	if err != nil {
 		logrus.Errorf("Failed to regenerate report key for app %s: %v", req.AppID, err)
-		var accessErr *db.AccessDeniedError
-		switch {
-		case errors.As(err, &accessErr):
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-		case errors.Is(err, db.ErrAppNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
+		apierr.Respond(c, err)
 		return
 	}
 

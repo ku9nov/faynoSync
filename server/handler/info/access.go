@@ -12,15 +12,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// errAppNotFound is aliased because FindLatestVersion shadows the mongod package alias with its own db parameter.
-var errAppNotFound = db.ErrAppNotFound
-
 // authorizeReadRequest is the gate shared by /checkVersion and /apps/latest. It runs before the response cache,
-// so a private app never reaches the cache at all: one indexed lookup per request is cheaper than any scheme that
-// would let a private app share a cache with anonymous callers.
-//
-// It answers the request itself when the app is unknown or the caller is denied, and reports whether the handler
-// may go on to build a response.
+// so a private app never reaches the cache at all
 func authorizeReadRequest(ctx context.Context, c *gin.Context, repository db.AppRepository, params map[string]interface{}, notFoundStatus int) (*model.AppAccess, bool) {
 	owner, _ := params["owner"].(string)
 	appName, _ := params["app_name"].(string)
@@ -28,7 +21,7 @@ func authorizeReadRequest(ctx context.Context, c *gin.Context, repository db.App
 
 	access, err := repository.ResolveAppAccess(ctx, owner, appName, channel)
 	if err != nil {
-		if errors.Is(err, errAppNotFound) {
+		if errors.Is(err, utils.ErrAppNotFound) {
 			respondAppNotFound(c, notFoundStatus)
 			return nil, false
 		}

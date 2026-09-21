@@ -15,8 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var ErrAppNotFound = errors.New("app not found")
-
 // AccessDeniedError marks a refusal caused by the requester's permissions, so handlers can answer 403 instead of 500.
 type AccessDeniedError struct {
 	Message string
@@ -75,7 +73,7 @@ func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx 
 	var app model.App
 	if err := collection.FindOne(ctx, filter).Decode(&app); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrAppNotFound
+			return nil, utils.ErrAppNotFound
 		}
 		return nil, err
 	}
@@ -150,7 +148,7 @@ func (c *appRepository) editableAppsFilter(ctx context.Context, requester string
 	filter := bson.M{"owner": owner}
 	if teamUser != nil {
 		if !teamUser.Permissions.Apps.Edit {
-			return nil, false, errors.New("you don't have permission to edit apps")
+			return nil, false, accessDenied("you don't have permission to edit apps")
 		}
 
 		allowedObjectIDs := make([]primitive.ObjectID, 0, len(teamUser.Permissions.Apps.Allowed))

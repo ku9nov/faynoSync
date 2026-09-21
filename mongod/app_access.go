@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"faynoSync/server/model"
+	"faynoSync/server/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -22,7 +23,7 @@ func (c *appRepository) ResolveAppAccess(ctx context.Context, owner, appName, ch
 	).Decode(&access)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrAppNotFound
+			return nil, utils.ErrAppNotFound
 		}
 		return nil, err
 	}

@@ -132,7 +132,7 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		appObjectID = objectID
 		currentApp, appErr := repository.GetAppByID(objectID, owner, ctx)
 		if appErr != nil {
-			if errors.Is(appErr, db.ErrAppNotFound) {
+			if errors.Is(appErr, utils.ErrAppNotFound) {
 				c.JSON(http.StatusNotFound, gin.H{"error": appErr.Error()})
 				return
 			}

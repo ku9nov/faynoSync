@@ -2,8 +2,8 @@ package download
 
 import (
 	"context"
-	"errors"
 	db "faynoSync/mongod"
+	"faynoSync/server/handler/apierr"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"net/http"
@@ -27,7 +27,7 @@ func ListDownloadTokens(c *gin.Context, repository db.AppRepository) {
 	downloadTokens, err := repository.ListDownloadTokens(requester, ctx)
 	if err != nil {
 		logrus.Errorf("Failed to list download tokens: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierr.Respond(c, err)
 		return
 	}
 
@@ -68,17 +68,7 @@ func RegenerateDownloadToken(c *gin.Context, repository db.AppRepository) {
 	token, err := repository.RegenerateDownloadToken(appID, channelID, requester, ctx)
 	if err != nil {
 		logrus.Errorf("Failed to regenerate download token for app %s: %v", req.AppID, err)
-		var accessErr *db.AccessDeniedError
-		switch {
-		case errors.As(err, &accessErr):
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-		case errors.Is(err, db.ErrAppNotFound), errors.Is(err, db.ErrChannelNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		case errors.Is(err, db.ErrDownloadTokenPublicApp):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
+		apierr.Respond(c, err)
 		return
 	}
 

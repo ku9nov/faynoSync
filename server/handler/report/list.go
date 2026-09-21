@@ -3,6 +3,7 @@ package report
 import (
 	"context"
 	db "faynoSync/mongod"
+	"faynoSync/server/handler/apierr"
 	"faynoSync/server/utils"
 	"net/http"
 	"time"
@@ -24,7 +25,7 @@ func ListReportKeys(c *gin.Context, repository db.AppRepository) {
 	reportKeys, err := repository.ListReportKeys(requester, ctx)
 	if err != nil {
 		logrus.Errorf("Failed to list report keys: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierr.Respond(c, err)
 		return
 	}
 
