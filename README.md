@@ -170,7 +170,7 @@ SLACK_CHANNEL (Slack channel identifier where notifications will be sent.)
 SLACK_NOTIFICATION_TTL (How long Slack notifications are considered valid, for example `24h`.)
 
 # Feature Flags
-ENABLE_PRIVATE_APP_DOWNLOADING=false (if enabled, then apps located in private S3 can be downloaded using the public API; if disabled, then download links require authentication)
+ENABLE_PRIVATE_APP_DOWNLOADING=false (deprecated: only picks the default `download_mode` for newly created private apps — `true` selects `unlisted` (anyone holding the link key can download), `false` selects `strict` (a download token, or the JWT of the owning admin / a team user with the `download` permission). Apps that already store a `download_mode` keep it; the one-time migration used this value to backfill private apps created before `download_mode` existed)
 ENABLE_TELEMETRY (Set to `true` to enable telemetry)
 
 # TUF Configuration

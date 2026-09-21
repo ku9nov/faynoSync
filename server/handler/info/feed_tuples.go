@@ -4,6 +4,7 @@ import (
 	"context"
 	"faynoSync/server/model"
 
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -13,6 +14,13 @@ type FeedTuple struct {
 	Channel  string
 	Platform string
 	Arch     string
+}
+
+func skipPrivateMaterialization(kind, owner, appName string, private bool) bool {
+	if private {
+		logrus.Debugf("Skipping %s materialization for private app %s/%s", kind, owner, appName)
+	}
+	return private
 }
 
 func TupleFromContext(ctxQueryMap map[string]interface{}) []FeedTuple {

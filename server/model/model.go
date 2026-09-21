@@ -11,6 +11,7 @@ import (
 
 type Artifact struct {
 	Link      string                 `bson:"link"`
+	S3Key     string                 `bson:"s3_key,omitempty"`
 	Platform  primitive.ObjectID     `bson:"platform"`
 	Arch      primitive.ObjectID     `bson:"arch"`
 	Package   string                 `bson:"package"`
@@ -24,16 +25,17 @@ type Artifact struct {
 }
 
 type App struct {
-	ID          primitive.ObjectID `bson:"_id"`
-	AppName     string             `bson:"app_name"`
-	Logo        string             `bson:"logo"`
-	Private     bool               `bson:"private"`
-	Tuf         bool               `bson:"tuf"`
-	Reports     bool               `bson:"reports"`
-	CdnEdge     bool               `bson:"cdn_edge"`
-	Description string             `bson:"description"`
-	Owner       string             `bson:"owner"`
-	Updated_at  primitive.DateTime `bson:"updated_at"`
+	ID           primitive.ObjectID `bson:"_id"`
+	AppName      string             `bson:"app_name"`
+	Logo         string             `bson:"logo"`
+	Private      bool               `bson:"private"`
+	DownloadMode string             `bson:"download_mode,omitempty"`
+	Tuf          bool               `bson:"tuf"`
+	Reports      bool               `bson:"reports"`
+	CdnEdge      bool               `bson:"cdn_edge"`
+	Description  string             `bson:"description"`
+	Owner        string             `bson:"owner"`
+	Updated_at   primitive.DateTime `bson:"updated_at"`
 }
 
 type SpecificApp struct {
@@ -195,6 +197,39 @@ type ReportKeyListItem struct {
 
 type RegenerateReportKeyRequest struct {
 	AppID string `json:"app_id" binding:"required"`
+}
+
+type DownloadTokenListItem struct {
+	ID          primitive.ObjectID `bson:"_id" json:"id"`
+	AppID       primitive.ObjectID `bson:"app_id" json:"app_id"`
+	AppName     string             `bson:"app_name" json:"app_name"`
+	ChannelID   primitive.ObjectID `bson:"channel_id" json:"channel_id"`
+	ChannelName string             `bson:"channel_name,omitempty" json:"channel_name,omitempty"`
+	TokenPrefix string             `bson:"token_prefix" json:"token_prefix"`
+	UpdatedAt   primitive.DateTime `bson:"updated_at" json:"updated_at"`
+}
+
+type RegenerateDownloadTokenRequest struct {
+	AppID     string `json:"app_id" binding:"required"`
+	ChannelID string `json:"channel_id"`
+}
+
+// PrivateArtifact is what /download needs to decide on access to a private-bucket object.
+// AppAccess is the policy a read path needs before it serves anything about an app.
+type AppAccess struct {
+	AppID        primitive.ObjectID `bson:"_id"`
+	ChannelID    primitive.ObjectID `bson:"-"`
+	Owner        string             `bson:"-"`
+	Private      bool               `bson:"private"`
+	CdnEdge      bool               `bson:"cdn_edge"`
+	DownloadMode string             `bson:"download_mode"`
+}
+
+type PrivateArtifact struct {
+	AppID        primitive.ObjectID `bson:"app_id"`
+	ChannelID    primitive.ObjectID `bson:"channel_id"`
+	Owner        string             `bson:"owner"`
+	DownloadMode string             `bson:"download_mode"`
 }
 
 type Permissions struct {

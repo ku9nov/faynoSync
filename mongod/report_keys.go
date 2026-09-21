@@ -8,13 +8,25 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var ErrAppNotFound = errors.New("app not found")
+// AccessDeniedError marks a refusal caused by the requester's permissions, so handlers can answer 403 instead of 500.
+type AccessDeniedError struct {
+	Message string
+}
+
+func (e *AccessDeniedError) Error() string {
+	return e.Message
+}
+
+func accessDenied(format string, args ...interface{}) error {
+	return &AccessDeniedError{Message: fmt.Sprintf(format, args...)}
+}
 
 func (c *appRepository) resolveOwnerAndTeamUser(ctx context.Context, requester string) (string, *model.TeamUser, error) {
 	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
@@ -36,7 +48,7 @@ func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx 
 	}
 	if teamUser != nil {
 		if !teamUser.Permissions.Apps.Edit {
-			return nil, errors.New("you don't have permission to edit apps")
+			return nil, accessDenied("you don't have permission to edit apps")
 		}
 
 		appAllowed := false
@@ -47,7 +59,7 @@ func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx 
 			}
 		}
 		if !appAllowed {
-			return nil, errors.New("you don't have access to this app")
+			return nil, accessDenied("you don't have access to this app")
 		}
 	}
 
@@ -61,7 +73,7 @@ func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx 
 	var app model.App
 	if err := collection.FindOne(ctx, filter).Decode(&app); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrAppNotFound
+			return nil, utils.ErrAppNotFound
 		}
 		return nil, err
 	}
@@ -126,19 +138,17 @@ func (c *appRepository) DeleteReportKey(appID primitive.ObjectID, requester stri
 	return result.DeletedCount > 0, nil
 }
 
-func (c *appRepository) ListReportKeys(requester string, ctx context.Context) ([]*model.ReportKeyListItem, error) {
+// editableAppsFilter scopes per-app key collections to apps the requester may edit; ok is false when that set is empty.
+func (c *appRepository) editableAppsFilter(ctx context.Context, requester string) (bson.M, bool, error) {
 	owner, teamUser, err := c.resolveOwnerAndTeamUser(ctx, requester)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	filter := bson.M{"owner": owner}
 	if teamUser != nil {
 		if !teamUser.Permissions.Apps.Edit {
-			return nil, errors.New("you don't have permission to edit apps")
-		}
-		if len(teamUser.Permissions.Apps.Allowed) == 0 {
-			return []*model.ReportKeyListItem{}, nil
+			return nil, false, accessDenied("you don't have permission to edit apps")
 		}
 
 		allowedObjectIDs := make([]primitive.ObjectID, 0, len(teamUser.Permissions.Apps.Allowed))
@@ -150,10 +160,22 @@ func (c *appRepository) ListReportKeys(requester string, ctx context.Context) ([
 			allowedObjectIDs = append(allowedObjectIDs, objectID)
 		}
 		if len(allowedObjectIDs) == 0 {
-			return []*model.ReportKeyListItem{}, nil
+			return nil, false, nil
 		}
 
 		filter["app_id"] = bson.M{"$in": allowedObjectIDs}
+	}
+
+	return filter, true, nil
+}
+
+func (c *appRepository) ListReportKeys(requester string, ctx context.Context) ([]*model.ReportKeyListItem, error) {
+	filter, ok, err := c.editableAppsFilter(ctx, requester)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return []*model.ReportKeyListItem{}, nil
 	}
 
 	collection := c.client.Database(c.config.Database).Collection("report_keys")
@@ -222,4 +244,18 @@ func (c *appRepository) RegenerateReportKey(appID primitive.ObjectID, requester 
 	}
 
 	return newKeyValue, nil
+}
+
+// deleteReportKeys drops the key of a deleted app: report keys are scoped to an app only.
+func (c *appRepository) deleteReportKeys(ctx context.Context, keyType string, id primitive.ObjectID) error {
+	if keyType != "app" {
+		return nil
+	}
+
+	result, err := c.client.Database(c.config.Database).Collection("report_keys").DeleteMany(ctx, bson.M{"app_id": id})
+	if err != nil {
+		return err
+	}
+	logrus.Debugf("Deleted %d report keys of app %s", result.DeletedCount, id.Hex())
+	return nil
 }

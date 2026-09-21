@@ -132,13 +132,31 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 		appObjectID = objectID
 		currentApp, appErr := repository.GetAppByID(objectID, owner, ctx)
 		if appErr != nil {
-			if errors.Is(appErr, db.ErrAppNotFound) {
+			if errors.Is(appErr, utils.ErrAppNotFound) {
 				c.JSON(http.StatusNotFound, gin.H{"error": appErr.Error()})
 				return
 			}
 			logrus.WithError(appErr).Error("failed to fetch app for update")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 			return
+		}
+
+		if cdnParam, cdnParamExists := params["cdn"]; cdnParamExists {
+			if err := utils.ValidatePrivateCdnEdge(currentApp.Private, utils.GetBoolParam(cdnParam)); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
+		downloadMode, downloadModeExists := params["download_mode"]
+		if downloadModeExists {
+			if !currentApp.Private {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "download_mode is only supported for private apps"})
+				return
+			}
+			if err := utils.ValidateDownloadMode(downloadMode); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
 		}
 
 		var logoLink string
@@ -171,7 +189,7 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			cdnEdge = utils.GetBoolParam(cdnParam)
 		}
 		requestedReports = reports
-		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, reports, cdnEdge, owner, ctx)
+		result, resultError = repository.UpdateApp(objectID, paramValue, logoLink, tuf, description, reports, cdnEdge, downloadMode, owner, ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
 		return
@@ -277,6 +295,10 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		// Validate updater requirements
 		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
 			updaterStr := updater.(string)
+			if err := updaters.ValidatePrivate(updaterStr, checkAppVisibility); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
 			if err := updaters.ValidateFiles(files, updaterStr); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
@@ -368,7 +390,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		db,
 		rdb,
 		performanceMode,
-		owner,
+		s3Owner,
 		appName,
 		viper.GetViper(),
 		"Updating app",
@@ -384,7 +406,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		if t, err := info.VelopackVersionTuples(c.Request.Context(), db, objID); err == nil {
 			tuples = t
 		}
-		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples)
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples, checkAppVisibility)
 	}
 
 	if isSparkle {
@@ -392,7 +414,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		if t, err := info.SparkleVersionTuples(c.Request.Context(), db, objID); err == nil {
 			tuples = t
 		}
-		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples)
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples, checkAppVisibility)
 	}
 
 	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {

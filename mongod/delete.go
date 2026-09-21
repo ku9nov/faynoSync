@@ -333,6 +333,13 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 
 	// After successful deletion, remove the resource ID from all team users' allowed lists
 	if deleteResult.DeletedCount > 0 {
+		if err := c.deleteDownloadTokens(ctx, keyType, id); err != nil {
+			logrus.Errorf("Error deleting download tokens of %s %s: %v", keyType, id.Hex(), err)
+		}
+		if err := c.deleteReportKeys(ctx, keyType, id); err != nil {
+			logrus.Errorf("Error deleting report keys of %s %s: %v", keyType, id.Hex(), err)
+		}
+
 		// Get the resource ID as a string
 		resourceID := id.Hex()
 

@@ -114,15 +114,19 @@ func CopyVelopackInstallersToDefault(ctx context.Context, ctxQuery map[string]in
 
 func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *redis.Client) error {
 
+	owner, _ := params["owner"].(string)
 	appName, _ := params["app_name"].(string)
 	channel, _ := params["channel"].(string)
 
-	pattern := fmt.Sprintf("app_name=%s&version=*&channel=%s&platform=*&arch=*",
-		appName, channel)
+	pattern := info.CacheKeyPattern(owner, appName, channel)
 	logrus.Debugf("Redis pattern %s will be invalidated.", pattern)
 
-	keys, err := rdb.Keys(ctx, pattern).Result()
-	if err != nil {
+	var keys []string
+	iter := rdb.Scan(ctx, 0, pattern, 1000).Iterator()
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+	}
+	if err := iter.Err(); err != nil {
 		return fmt.Errorf("failed to fetch keys for invalidation: %w", err)
 	}
 
@@ -160,12 +164,16 @@ func IsCdnEdgeEnabled(ctx context.Context, database *mongo.Database, owner, appN
 	return appMeta.CdnEdge, nil
 }
 
-func InvalidateCDNResponseCache(ctx context.Context, owner, appName string, env *viper.Viper) error {
+func InvalidateCDNResponseCache(ctx context.Context, owner, appName string, rdb *redis.Client, env *viper.Viper) error {
 	bucketName := env.GetString("S3_BUCKET_NAME_CDN")
 	if bucketName == "" {
 		logrus.Debug("S3_BUCKET_NAME_CDN is not configured, skipping CDN response invalidation")
 		return nil
 	}
+
+	// Bumped before the sweep, so a publish that is already in flight or that races the list/delete below is
+	// dropped instead of recreating an object this sweep removes.
+	info.BumpCDNEpoch(ctx, rdb, owner, appName)
 
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
@@ -230,7 +238,7 @@ func InvalidateAppCaches(
 ) {
 	if performanceMode && rdb != nil {
 		for _, channel := range channels {
-			params := map[string]interface{}{"app_name": appName, "channel": channel}
+			params := map[string]interface{}{"owner": owner, "app_name": appName, "channel": channel}
 			if err := InvalidateCache(ctx, params, rdb); err != nil {
 				logrus.Error("Error invalidating cache:", err)
 			}
@@ -243,7 +251,7 @@ func InvalidateAppCaches(
 		return
 	}
 	if isCdnEdgeEnabled {
-		if err := InvalidateCDNResponseCache(ctx, owner, appName, env); err != nil {
+		if err := InvalidateCDNResponseCache(ctx, owner, appName, rdb, env); err != nil {
 			logrus.Error("Error invalidating CDN response cache:", err)
 		}
 	}
@@ -347,11 +355,17 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	if err != nil {
 		logrus.Error(err)
 		if errors.Is(err, utils.ErrAppNotFound) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check private"})
 		return
+	}
+	if updater, _ := ctxQueryMap["updater"].(string); updater != "" {
+		if err := updaters.ValidatePrivate(updater, checkAppVisibility); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	var links []string
 	var extensions []string
@@ -420,11 +434,11 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 
 	if updater, _ := ctxQueryMap["updater"].(string); updater == velopack.UpdaterType {
 		CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, owner, files, checkAppVisibility, viper.GetViper())
-		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples)
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples, checkAppVisibility)
 	}
 
 	if updater, _ := ctxQueryMap["updater"].(string); updater == sparkle.UpdaterType {
-		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples)
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), owner, appName, uploadTuples, checkAppVisibility)
 	}
 
 	if len(results) == 0 {

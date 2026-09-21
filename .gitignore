@@ -40,3 +40,8 @@ docs/
 # Local perf/index probes (build tag: indexbench)
 server/handler/info/index_bench_test.go
 server/handler/info/materialize_bench_test.go
+server/handler/info/checkversion_bench_test.go
+
+ROADMAP.md
+PRIVATE_FEATURE.md
+PRESIGNED_UPLOADS.md

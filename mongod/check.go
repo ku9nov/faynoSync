@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"faynoSync/server/model"
+	"faynoSync/server/utils"
 	"fmt"
 	"sort"
 
@@ -72,7 +73,7 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 
 	err = metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
 	if err != nil {
-		return nil, errors.New("app_name not found in apps_meta collection")
+		return nil, utils.ErrAppNotFound
 	}
 
 	// If user is a team user, verify the app is in their allowed list
@@ -442,7 +443,7 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 	metaFilter := bson.D{{Key: "app_name", Value: appName}, {Key: "owner", Value: owner}}
 	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)
 	if err != nil {
-		return nil, errors.New("app_name not found in apps_meta collection")
+		return nil, utils.ErrAppNotFound
 	}
 	var channelMeta struct {
 		ID primitive.ObjectID `bson:"_id"`

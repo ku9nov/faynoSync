@@ -28,33 +28,20 @@ func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 			return
 		}
 
-		// Extract the token from the "Bearer" scheme
-		tokenParts := strings.Fields(authHeader)
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+		tokenString, ok := BearerToken(authHeader)
+		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token format"})
 			return
 		}
 
-		tokenString := tokenParts[1]
-
-		// Validate the JWT token
-		token, err := ValidateJWT(tokenString)
+		username, err := UsernameFromJWT(tokenString)
 		if err == nil {
-			// Extract claims and set the username in the context
-			claims, ok := token.Claims.(jwt.MapClaims)
-			if !ok || !token.Valid {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid claims"})
-				return
-			}
-
-			username, ok := claims["username"].(string)
-			if !ok {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "username not found in claims"})
-				return
-			}
-
 			c.Set("username", username)
 			c.Next()
+			return
+		}
+		if errors.Is(err, errInvalidClaims) || errors.Is(err, errUsernameNotInClaims) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
 
@@ -115,4 +102,33 @@ func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 		c.Set("allowed_apps", apiToken.AllowedApps)
 		c.Next()
 	}
+}
+
+var (
+	errInvalidClaims       = errors.New("invalid claims")
+	errUsernameNotInClaims = errors.New("username not found in claims")
+)
+
+func BearerToken(authHeader string) (string, bool) {
+	tokenParts := strings.Fields(authHeader)
+	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+		return "", false
+	}
+	return tokenParts[1], true
+}
+
+func UsernameFromJWT(tokenString string) (string, error) {
+	token, err := ValidateJWT(tokenString)
+	if err != nil {
+		return "", err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return "", errInvalidClaims
+	}
+	username, ok := claims["username"].(string)
+	if !ok {
+		return "", errUsernameNotInClaims
+	}
+	return username, nil
 }

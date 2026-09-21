@@ -1,6 +1,7 @@
 package updaters
 
 import (
+	"errors"
 	"faynoSync/server/model"
 	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
@@ -28,6 +29,28 @@ var ValidUpdaterTypes = []string{
 	"electron-builder",
 	"tauri",
 	"velopack",
+}
+
+// feedUpdaterTypes need a publicly served update feed, which private apps cannot have yet.
+var feedUpdaterTypes = []string{
+	"squirrel_windows",
+	"sparkle",
+	"electron-builder",
+	"velopack",
+}
+
+var ErrPrivateFeedUpdater = errors.New("updater is not supported for private apps")
+
+func ValidatePrivate(updaterType string, private bool) error {
+	if !private {
+		return nil
+	}
+	for _, feedType := range feedUpdaterTypes {
+		if strings.HasPrefix(updaterType, feedType) {
+			return fmt.Errorf("%w: %s requires a publicly served update feed; use manual, tauri or squirrel_darwin, or a public app", ErrPrivateFeedUpdater, updaterType)
+		}
+	}
+	return nil
 }
 
 // ValidateUpdater validates a single updater

@@ -8,6 +8,7 @@ import (
 	"faynoSync/server/utils/updaters"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -100,19 +101,33 @@ func resolveCachedHasUpdate(cachedData CachedResponse) bool {
 	return hasUpdate
 }
 
+// CreateCacheKey scopes cached responses by owner: app names are unique only per owner.
+// Values are query-escaped so they cannot forge another key or inject glob characters into CacheKeyPattern.
 func CreateCacheKey(params map[string]interface{}) string {
-	baseKey := fmt.Sprintf("app_name=%s&version=%s&channel=%s&platform=%s&arch=%s",
-		params["app_name"], params["version"], params["channel"], params["platform"], params["arch"])
+	baseKey := fmt.Sprintf("owner=%s&app_name=%s&version=%s&channel=%s&platform=%s&arch=%s",
+		cacheKeyPart(params["owner"]), cacheKeyPart(params["app_name"]), cacheKeyPart(params["version"]),
+		cacheKeyPart(params["channel"]), cacheKeyPart(params["platform"]), cacheKeyPart(params["arch"]))
 
-	if updater, exists := params["updater"]; exists && updater != "" {
+	if updater := cacheKeyPart(params["updater"]); updater != "" {
 		baseKey += fmt.Sprintf("&updater=%s", updater)
 	}
 
-	if pkg, exists := params["package"]; exists && pkg != "" {
+	if pkg := cacheKeyPart(params["package"]); pkg != "" {
 		baseKey += fmt.Sprintf("&package=%s", pkg)
 	}
 
 	return baseKey
+}
+
+// CacheKeyPattern matches every cached response of one app channel, across versions, platforms, archs, updaters and packages.
+func CacheKeyPattern(owner, appName, channel string) string {
+	return fmt.Sprintf("owner=%s&app_name=%s&version=*&channel=%s&platform=*&arch=*",
+		url.QueryEscape(owner), url.QueryEscape(appName), url.QueryEscape(channel))
+}
+
+func cacheKeyPart(value interface{}) string {
+	s, _ := value.(string)
+	return url.QueryEscape(s)
 }
 
 func cacheResponse(ctx context.Context, rdb *redis.Client, cacheKey string, response interface{}, httpStatus int, contentType string, hasUpdate bool) {
@@ -206,10 +221,17 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
+	access, allowed := authorizeReadRequest(ctx, c, repository, validatedParams, http.StatusBadRequest)
+	if !allowed {
+		return
+	}
+
 	cacheKey := CreateCacheKey(validatedParams)
 	logrus.Debugf("Generated cache key: %s", cacheKey)
-	// Check Redis only if PERFORMANCE_MODE is true and Redis client is not nil
-	if performanceMode && rdb != nil {
+	// A private app is never cached: its response depends on the caller's credential, and the gate above
+	// already cost one lookup. Check Redis only if PERFORMANCE_MODE is true and Redis client is not nil.
+	useCache := performanceMode && rdb != nil && !access.Private
+	if useCache {
 		cachedResponse, err := rdb.Get(ctx, cacheKey).Result()
 		if err == nil {
 			// If cache exists, return the cached response
@@ -241,6 +263,12 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 				return
 			}
 		}
+	}
+
+	// Captured before the response is read, so an upload that invalidates the CDN afterwards wins over this publish.
+	cdnEpoch := ""
+	if access.CdnEdge {
+		cdnEpoch = ReadCDNEpoch(ctx, rdb, validatedParams["owner"].(string), validatedParams["app_name"].(string))
 	}
 
 	// Request on repository
@@ -279,9 +307,9 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			if checkResult.CdnEdge {
 				logrus.Debugf("Publishing response to CDN when not found: %v", response)
-				publishResponseToCDN(ctx, validatedParams, response)
+				publishResponseToCDN(ctx, rdb, cdnEpoch, validatedParams, response)
 			}
-			if performanceMode && rdb != nil {
+			if useCache {
 				if isSquirrelFeed {
 					cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType, checkResult.Found)
 				} else {
@@ -331,9 +359,9 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	}
 	if checkResult.CdnEdge {
 		logrus.Debugf("Publishing response to CDN when found: %v", response)
-		publishResponseToCDN(ctx, validatedParams, response)
+		publishResponseToCDN(ctx, rdb, cdnEpoch, validatedParams, response)
 	}
-	if performanceMode && rdb != nil {
+	if useCache {
 		if isSquirrelFeed {
 			cacheResponse(ctx, rdb, cacheKey, squirrelBody, httpStatus, squirrelReleasesContentType, checkResult.Found)
 		} else {
@@ -372,10 +400,16 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
+	access, allowed := authorizeReadRequest(ctx, c, repository, params, http.StatusInternalServerError)
+	if !allowed {
+		return
+	}
+
 	cacheKey := CreateCacheKey(params)
 	logrus.Debugf("Generated cache key: %s", cacheKey)
 
-	if performanceMode && rdb != nil {
+	useCache := performanceMode && rdb != nil && !access.Private
+	if useCache {
 		cachedResponse, err := rdb.Get(ctx, cacheKey).Result()
 		if err == nil {
 			var cachedData CachedResponse
@@ -473,7 +507,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 
 	c.JSON(http.StatusOK, downloadUrls)
 
-	if performanceMode && rdb != nil {
+	if useCache {
 		cacheResponse(ctx, rdb, cacheKey, downloadUrls, http.StatusOK, "", false)
 	}
 }

@@ -277,11 +277,11 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	create.InvalidateAppCaches(ctx, db, rdb, performanceMode, owner, appName, channels, env)
 
 	if hasVelopackLink(links) {
-		info.MaterializeVelopackForApp(c.Request.Context(), db, env, owner, appName)
+		info.MaterializeVelopackForApp(c.Request.Context(), db, env, owner, appName, checkAppVisibility)
 	}
 
 	if hasSparkleLink(links) {
-		info.MaterializeSparkleForApp(c.Request.Context(), db, env, owner, appName)
+		info.MaterializeSparkleForApp(c.Request.Context(), db, env, owner, appName, checkAppVisibility)
 	}
 
 	response := gin.H{"deleteSpecificAppResult.DeletedCount": result}
@@ -351,11 +351,11 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	deleteTuples := info.TupleFromContext(ctxQueryMap)
 
 	if hasVelopackLink(links) {
-		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string), deleteTuples)
+		info.MaterializeVelopackForTuplesOrFull(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string), deleteTuples, checkAppVisibility)
 	}
 
 	if hasSparkleLink(links) {
-		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string), deleteTuples)
+		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, env, owner, ctxQueryMap["app_name"].(string), deleteTuples, checkAppVisibility)
 	}
 
 	if result && len(links) > 0 && viper.GetBool("SLACK_ENABLE") && rdb != nil {

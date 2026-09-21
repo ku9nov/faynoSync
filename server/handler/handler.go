@@ -65,6 +65,8 @@ type AppHandler interface {
 	DeleteToken(*gin.Context)
 	ListReportKeys(*gin.Context)
 	RegenerateReportKey(*gin.Context)
+	ListDownloadTokens(*gin.Context)
+	RegenerateDownloadToken(*gin.Context)
 	IngestReport(*gin.Context)
 	ListReportGroups(*gin.Context)
 	ListReportGroupBlobs(*gin.Context)
@@ -235,7 +237,7 @@ func (ch *appHandler) DeleteSpecificArtifactOfApp(c *gin.Context) {
 
 func (ch *appHandler) DownloadArtifact(c *gin.Context) {
 	// Call the DownloadArtifact function from the download package
-	download.DownloadArtifact(c)
+	download.DownloadArtifact(c, ch.repository)
 }
 
 func (ch *appHandler) CreateTeamUser(c *gin.Context) {
@@ -314,6 +316,14 @@ func (ch *appHandler) ListReportKeys(c *gin.Context) {
 
 func (ch *appHandler) RegenerateReportKey(c *gin.Context) {
 	report.RegenerateReportKey(c, ch.repository)
+}
+
+func (ch *appHandler) ListDownloadTokens(c *gin.Context) {
+	download.ListDownloadTokens(c, ch.repository)
+}
+
+func (ch *appHandler) RegenerateDownloadToken(c *gin.Context) {
+	download.RegenerateDownloadToken(c, ch.repository)
 }
 
 func (ch *appHandler) IngestReport(c *gin.Context) {

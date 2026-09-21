@@ -25,19 +25,22 @@ type sparkleFeedKey struct {
 
 // MaterializeSparkleForApp regenerates and writes all sparkle appcasts for an app.
 // It self-gates: apps without sparkle artifacts produce no work and no writes.
-func MaterializeSparkleForApp(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string) {
+func MaterializeSparkleForApp(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, private bool) {
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		logrus.Errorf("Failed to create storage client for sparkle appcast materialization: %v", err)
 		return
 	}
-	if err := MaterializeSparkleFeeds(ctx, database, storageClient, env, owner, appName); err != nil {
+	if err := MaterializeSparkleFeeds(ctx, database, storageClient, env, owner, appName, private); err != nil {
 		logrus.Errorf("Failed to materialize sparkle appcasts for %s/%s: %v", owner, appName, err)
 	}
 }
 
-func MaterializeSparkleFeeds(ctx context.Context, database *mongo.Database, storageClient utils.StorageClient, env *viper.Viper, owner, appName string) error {
+func MaterializeSparkleFeeds(ctx context.Context, database *mongo.Database, storageClient utils.StorageClient, env *viper.Viper, owner, appName string, private bool) error {
+	if skipPrivateMaterialization("sparkle appcast", owner, appName, private) {
+		return nil
+	}
 	tuples, err := discoverSparkleTuples(ctx, database, owner, appName)
 	if err != nil {
 		return err
@@ -49,27 +52,30 @@ func MaterializeSparkleFeeds(ctx context.Context, database *mongo.Database, stor
 	return materializeSparkleKeys(ctx, database, storageClient, env, owner, appName, tuples)
 }
 
-func MaterializeSparkleForTuples(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, tuples []FeedTuple) {
+func MaterializeSparkleForTuples(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, tuples []FeedTuple, private bool) {
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
 	if err != nil {
 		logrus.Errorf("Failed to create storage client for sparkle appcast materialization: %v", err)
 		return
 	}
-	if err := MaterializeSparkleFeedsForTuples(ctx, database, storageClient, env, owner, appName, tuples); err != nil {
+	if err := MaterializeSparkleFeedsForTuples(ctx, database, storageClient, env, owner, appName, tuples, private); err != nil {
 		logrus.Errorf("Failed to materialize sparkle appcasts for %s/%s: %v", owner, appName, err)
 	}
 }
 
-func MaterializeSparkleForTuplesOrFull(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, tuples []FeedTuple) {
+func MaterializeSparkleForTuplesOrFull(ctx context.Context, database *mongo.Database, env *viper.Viper, owner, appName string, tuples []FeedTuple, private bool) {
 	if len(tuples) == 0 {
-		MaterializeSparkleForApp(ctx, database, env, owner, appName)
+		MaterializeSparkleForApp(ctx, database, env, owner, appName, private)
 		return
 	}
-	MaterializeSparkleForTuples(ctx, database, env, owner, appName, tuples)
+	MaterializeSparkleForTuples(ctx, database, env, owner, appName, tuples, private)
 }
 
-func MaterializeSparkleFeedsForTuples(ctx context.Context, database *mongo.Database, storageClient utils.StorageClient, env *viper.Viper, owner, appName string, tuples []FeedTuple) error {
+func MaterializeSparkleFeedsForTuples(ctx context.Context, database *mongo.Database, storageClient utils.StorageClient, env *viper.Viper, owner, appName string, tuples []FeedTuple, private bool) error {
+	if skipPrivateMaterialization("sparkle appcast", owner, appName, private) {
+		return nil
+	}
 	keys := sparkleKeysFromTuples(tuples)
 	if len(keys) == 0 {
 		return nil

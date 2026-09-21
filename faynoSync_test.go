@@ -750,13 +750,13 @@ func TestFailedRegenerateReportKeyWithSecondaryUser(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 	var response map[string]interface{}
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "app not found", response["error"].(string))
+	assert.Equal(t, "app_name not found in apps_meta collection", response["error"].(string))
 }
 func TestListReportKeysWithSecondaryUser(t *testing.T) {
 	router := gin.Default()
@@ -5240,6 +5240,7 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			req.Header.Set(utils.DownloadTokenHeader, testappDownloadToken(t, scenario.ChannelName))
 
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
@@ -5397,6 +5398,7 @@ func TestCheckVersion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			req.Header.Set(utils.DownloadTokenHeader, testappDownloadToken(t, scenario.ChannelName))
 
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
@@ -5413,23 +5415,28 @@ func TestCheckVersion(t *testing.T) {
 			// Compare the response with the expected values.
 			assert.Equal(t, scenario.ExpectedJSON, actual)
 
-			sdkResp, err := sdkClient.CheckForUpdates(
-				context.Background(),
-				faynosync.CheckOptions{
-					Owner:    decodeScenarioValue(scenario.Owner),
-					AppName:  decodeScenarioValue(scenario.AppName),
-					Version:  decodeScenarioValue(scenario.Version),
-					Channel:  decodeScenarioValue(scenario.ChannelName),
-					Platform: decodeScenarioValue(scenario.Platform),
-					Arch:     decodeScenarioValue(scenario.Arch),
-				},
-			)
-			require.NoError(t, err)
-			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
+			checkOpts := faynosync.CheckOptions{
+				Owner:    decodeScenarioValue(scenario.Owner),
+				AppName:  decodeScenarioValue(scenario.AppName),
+				Version:  decodeScenarioValue(scenario.Version),
+				Channel:  decodeScenarioValue(scenario.ChannelName),
+				Platform: decodeScenarioValue(scenario.Platform),
+				Arch:     decodeScenarioValue(scenario.Arch),
+				DownloadToken: scenarioDownloadToken(t, decodeScenarioValue(scenario.AppName),
+					decodeScenarioValue(scenario.ChannelName)),
+			}
 			expectedSource := faynosync.SourceAPI
 			if scenario.AppName == "public%20testapp" && scenario.Version == "0.0.1.137" && scenario.ChannelName == "nightly" {
 				expectedSource = faynosync.SourceEdge
+				// The API publishes the CDN copy in the background, so the edge serves it shortly after the response.
+				require.Eventually(t, func() bool {
+					resp, err := sdkClient.CheckForUpdates(context.Background(), checkOpts)
+					return err == nil && resp.Source == faynosync.SourceEdge
+				}, 5*time.Second, 50*time.Millisecond)
 			}
+			sdkResp, err := sdkClient.CheckForUpdates(context.Background(), checkOpts)
+			require.NoError(t, err)
+			assertSDKMatchesScenario(t, scenario.ExpectedJSON, sdkResp)
 			require.Equal(t, expectedSource, sdkResp.Source)
 		})
 	}
@@ -5950,6 +5957,7 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
+			req.Header.Set(utils.DownloadTokenHeader, testappDownloadToken(t, scenario.ChannelName))
 			req.Header.Set("X-Device-ID", scenario.DeviceID)
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
@@ -5975,6 +5983,8 @@ func TestCheckVersionWithSameExtensionArtifactsAndDiffPlatformsArchs(t *testing.
 					Platform: decodeScenarioValue(scenario.Platform),
 					Arch:     decodeScenarioValue(scenario.Arch),
 					DeviceID: decodeScenarioValue(scenario.DeviceID),
+					DownloadToken: scenarioDownloadToken(t, decodeScenarioValue(scenario.AppName),
+						decodeScenarioValue(scenario.ChannelName)),
 				},
 			)
 			require.NoError(t, err)
@@ -6755,7 +6765,7 @@ func TestUpdateAppWithSecondUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := `{"error":"app not found"}`
+	expected := `{"error":"app_name not found in apps_meta collection"}`
 	assert.Equal(t, expected, w.Body.String())
 }
 
@@ -9259,6 +9269,16 @@ func TestUpdateTeamUser(t *testing.T) {
 
 func uploadVersionAsAdmin(t *testing.T, appName, version string) string {
 	t.Helper()
+	return uploadVersionToChannelAsAdmin(t, appName, version, "stable")
+}
+
+func uploadVersionToChannelAsAdmin(t *testing.T, appName, version, channel string) string {
+	t.Helper()
+	return uploadVersionToChannelAsAdminPublished(t, appName, version, channel, false)
+}
+
+func uploadVersionToChannelAsAdminPublished(t *testing.T, appName, version, channel string, publish bool) string {
+	t.Helper()
 
 	router := gin.Default()
 	router.Use(utils.AuthMiddleware())
@@ -9289,7 +9309,7 @@ func uploadVersionAsAdmin(t *testing.T, appName, version string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "stable", "publish": false, "critical": false, "platform": "universalPlatform", "arch": "universalArch"}`, appName, version)
+	payload := fmt.Sprintf(`{"app_name": "%s", "version": "%s", "channel": "%s", "publish": %t, "critical": false, "platform": "universalPlatform", "arch": "universalArch"}`, appName, version, channel, publish)
 	_, err = dataPart.Write([]byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -9375,6 +9395,517 @@ func TestFailedDeleteVersionUsingTeamUserOfNotAllowedApp(t *testing.T) {
 
 	expected = `{"deleteSpecificAppResult.DeletedCount":1}`
 	assert.Equal(t, expected, w.Body.String())
+}
+
+// Private download access. At this point testapp is private with the default strict mode,
+// and the team user may download testapp in the stable channel but not in nightly.
+
+func privateDownloadRouter() *gin.Engine {
+	router := gin.Default()
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/download", func(c *gin.Context) { h.DownloadArtifact(c) })
+	authorized := router.Group("/", utils.AuthMiddleware(mongoDatabase))
+	authorized.POST("/app/create", utils.CheckPermission(utils.PermissionCreate, utils.ResourceApps, mongoDatabase), func(c *gin.Context) { h.CreateApp(c) })
+	authorized.POST("/app/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) { h.UpdateApp(c) })
+	authorized.GET("/download-tokens/list", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) { h.ListDownloadTokens(c) })
+	authorized.POST("/download-tokens/regenerate", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), func(c *gin.Context) { h.RegenerateDownloadToken(c) })
+	return router
+}
+
+func serveDownload(t *testing.T, key string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	req, err := http.NewRequest("GET", "/download?key="+url.QueryEscape(key), nil)
+	require.NoError(t, err)
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	w := httptest.NewRecorder()
+	privateDownloadRouter().ServeHTTP(w, req)
+	return w
+}
+
+func serveAppForm(t *testing.T, token, path, payload string) *httptest.ResponseRecorder {
+	t.Helper()
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	dataPart, err := writer.CreateFormField("data")
+	require.NoError(t, err)
+	_, err = dataPart.Write([]byte(payload))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	req, err := http.NewRequest("POST", path, body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	privateDownloadRouter().ServeHTTP(w, req)
+	return w
+}
+
+func serveRegenerateDownloadToken(t *testing.T, token, appID, channelID string) *httptest.ResponseRecorder {
+	t.Helper()
+	payload := fmt.Sprintf(`{"app_id": "%s", "channel_id": "%s"}`, appID, channelID)
+	req, err := http.NewRequest("POST", "/download-tokens/regenerate", bytes.NewBufferString(payload))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	privateDownloadRouter().ServeHTTP(w, req)
+	return w
+}
+
+func regenerateDownloadToken(t *testing.T, appID, channelID string) string {
+	t.Helper()
+	w := serveRegenerateDownloadToken(t, authToken, appID, channelID)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var response map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	return response["token"]
+}
+
+func appDownloadMode(t *testing.T, appID string) (string, bool) {
+	t.Helper()
+	oid, err := primitive.ObjectIDFromHex(appID)
+	require.NoError(t, err)
+	var app bson.M
+	require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(context.Background(), bson.M{"_id": oid}).Decode(&app))
+	mode, ok := app["download_mode"].(string)
+	return mode, ok
+}
+
+func setTestappDownloadMode(t *testing.T, mode string) {
+	t.Helper()
+	oid, err := primitive.ObjectIDFromHex(idTestappApp)
+	require.NoError(t, err)
+	var app model.App
+	require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(context.Background(), bson.M{"_id": oid}).Decode(&app))
+	// /app/update resets tuf when it is omitted, so the current value is sent back.
+	payload := fmt.Sprintf(`{"id": "%s", "app": "%s", "tuf": "%t", "download_mode": "%s"}`, idTestappApp, app.AppName, app.Tuf, mode)
+	w := serveAppForm(t, authToken, "/app/update", payload)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+// uploadPrivateVersion uploads a testapp version and returns the private-bucket key of its artifact.
+func uploadPrivateVersion(t *testing.T, version, channel string) string {
+	t.Helper()
+	versionID := uploadVersionToChannelAsAdmin(t, "testapp", version, channel)
+	t.Cleanup(func() {
+		if w := serveDeleteVersion(t, authToken, versionID); w.Code != http.StatusOK {
+			t.Errorf("cleanup of version %s: %s", versionID, w.Body.String())
+		}
+	})
+	oid, err := primitive.ObjectIDFromHex(versionID)
+	require.NoError(t, err)
+	var doc model.SpecificApp
+	require.NoError(t, mongoDatabase.Collection("apps").FindOne(context.Background(), bson.M{"_id": oid}).Decode(&doc))
+	require.Len(t, doc.Artifacts, 1)
+	require.NotEmpty(t, doc.Artifacts[0].S3Key, "upload must record the private-bucket key")
+	require.Equal(t, doc.Artifacts[0].S3Key, utils.PrivateObjectKey(doc.Artifacts[0].Link))
+	return doc.Artifacts[0].S3Key
+}
+
+// scenarioDownloadToken returns the token a scenario needs: testapp is private and strict, and it is renamed
+// to newApp partway through the suite. Public apps are checked without a token.
+func scenarioDownloadToken(t *testing.T, appName, channel string) string {
+	t.Helper()
+	if appName != "testapp" && appName != "newApp" {
+		return ""
+	}
+	if channel == "" {
+		return ""
+	}
+	return testappDownloadToken(t, channel)
+}
+
+// testappDownloadToken returns a download token for testapp in the given channel. testapp is private with the
+// default strict mode, so version checks without the header are answered as if the app did not exist.
+func testappDownloadToken(t *testing.T, channel string) string {
+	t.Helper()
+	channelIDs := map[string]string{"nightly": idNightlyChannel, "stable": idStableChannel}
+	channelID, ok := channelIDs[channel]
+	require.True(t, ok, "no channel id for %q", channel)
+	// Regenerated per request: other tests drop the app's tokens, and a cached value would then be dead.
+	return regenerateDownloadToken(t, idTestappApp, channelID)
+}
+
+func cleanupDownloadTokens(t *testing.T) {
+	t.Cleanup(func() {
+		oid, err := primitive.ObjectIDFromHex(idTestappApp)
+		if err != nil {
+			return
+		}
+		mongoDatabase.Collection("download_tokens").DeleteMany(context.Background(), bson.M{"app_id": oid})
+	})
+}
+
+func TestPrivateAppDefaultDownloadMode(t *testing.T) {
+	mode, ok := appDownloadMode(t, idTestappApp)
+	require.True(t, ok)
+	assert.Equal(t, utils.DefaultDownloadMode(viper.GetViper()), mode)
+
+	_, ok = appDownloadMode(t, idPublicTestappApp)
+	assert.False(t, ok, "public apps must not get a download mode")
+}
+
+func TestCreatePrivateAppDownloadMode(t *testing.T) {
+	w := serveAppForm(t, authToken, "/app/create", `{"app": "privatedownloadinvalid", "private": "true", "download_mode": "public"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, `{"error":"download_mode must be \"unlisted\" or \"strict\""}`, w.Body.String())
+	count, err := mongoDatabase.Collection("apps_meta").CountDocuments(context.Background(), bson.M{"app_name": "privatedownloadinvalid"})
+	require.NoError(t, err)
+	assert.Zero(t, count)
+
+	w = serveAppForm(t, authToken, "/app/create", `{"app": "privatedownloadunlisted", "private": "true", "download_mode": "unlisted"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var response map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	appID := response["createAppResult.Created"]
+	t.Cleanup(func() {
+		oid, _ := primitive.ObjectIDFromHex(appID)
+		mongoDatabase.Collection("apps_meta").DeleteOne(context.Background(), bson.M{"_id": oid})
+	})
+
+	mode, ok := appDownloadMode(t, appID)
+	require.True(t, ok)
+	assert.Equal(t, utils.DownloadModeUnlisted, mode)
+}
+
+func TestPrivateAppRejectsCdnEdge(t *testing.T) {
+	w := serveAppForm(t, authToken, "/app/create", `{"app": "privatecdn", "private": "true", "cdn": "true"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, `{"error":"cdn cannot be enabled for private apps"}`, w.Body.String())
+	count, err := mongoDatabase.Collection("apps_meta").CountDocuments(context.Background(), bson.M{"app_name": "privatecdn"})
+	require.NoError(t, err)
+	assert.Zero(t, count)
+
+	w = serveAppForm(t, authToken, "/app/update", fmt.Sprintf(`{"id": "%s", "app": "testapp", "cdn": "true"}`, idTestappApp))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, `{"error":"cdn cannot be enabled for private apps"}`, w.Body.String())
+
+	oid, err := primitive.ObjectIDFromHex(idTestappApp)
+	require.NoError(t, err)
+	var app model.App
+	require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(context.Background(), bson.M{"_id": oid}).Decode(&app))
+	assert.False(t, app.CdnEdge)
+}
+
+func TestUpdateAppDownloadModeValidation(t *testing.T) {
+	w := serveAppForm(t, authToken, "/app/update", fmt.Sprintf(`{"id": "%s", "app": "public testapp", "download_mode": "strict"}`, idPublicTestappApp))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, `{"error":"download_mode is only supported for private apps"}`, w.Body.String())
+
+	w = serveAppForm(t, authToken, "/app/update", fmt.Sprintf(`{"id": "%s", "app": "testapp", "download_mode": "open"}`, idTestappApp))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, `{"error":"download_mode must be \"unlisted\" or \"strict\""}`, w.Body.String())
+
+	mode, _ := appDownloadMode(t, idTestappApp)
+	assert.Equal(t, utils.DownloadModeStrict, mode)
+}
+
+func TestRegenerateDownloadToken(t *testing.T) {
+	cleanupDownloadTokens(t)
+
+	first := regenerateDownloadToken(t, idTestappApp, idStableChannel)
+	assert.True(t, strings.HasPrefix(first, utils.DownloadTokenPrefix))
+	assert.Len(t, first, len(utils.DownloadTokenPrefix)+64)
+
+	second := regenerateDownloadToken(t, idTestappApp, idStableChannel)
+	assert.NotEqual(t, first, second)
+
+	count, err := mongoDatabase.Collection("download_tokens").CountDocuments(context.Background(), bson.M{"token_hash": utils.HashAPIToken(second)})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	count, err = mongoDatabase.Collection("download_tokens").CountDocuments(context.Background(), bson.M{"token_hash": utils.HashAPIToken(first)})
+	require.NoError(t, err)
+	assert.Zero(t, count, "regeneration must invalidate the previous token")
+
+	cases := map[string]struct {
+		token     string
+		appID     string
+		channelID string
+		wantCode  int
+		wantBody  string
+	}{
+		"public app":         {authToken, idPublicTestappApp, idStableChannel, http.StatusBadRequest, `{"error":"download tokens are only available for private apps"}`},
+		"unknown channel":    {authToken, idTestappApp, primitive.NewObjectID().Hex(), http.StatusNotFound, `{"error":"channel not found"}`},
+		"other owner":        {authTokenSecondUser, idTestappApp, idStableChannel, http.StatusNotFound, `{"error":"app_name not found in apps_meta collection"}`},
+		"team user channel":  {teamUserToken, idTestappApp, idNightlyChannel, http.StatusForbidden, `{"error":"you don't have access to this channel"}`},
+		"invalid channel id": {authToken, idTestappApp, "nope", http.StatusBadRequest, `{"error":"Invalid channel ID format"}`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			w := serveRegenerateDownloadToken(t, tc.token, tc.appID, tc.channelID)
+			assert.Equal(t, tc.wantCode, w.Code)
+			assert.Equal(t, tc.wantBody, w.Body.String())
+		})
+	}
+
+	w := serveRegenerateDownloadToken(t, teamUserToken, idTestappApp, idStableChannel)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestListDownloadTokens(t *testing.T) {
+	cleanupDownloadTokens(t)
+	regenerateDownloadToken(t, idTestappApp, idStableChannel)
+
+	for name, token := range map[string]string{"admin": authToken, "team user": teamUserToken} {
+		t.Run(name, func(t *testing.T) {
+			req, err := http.NewRequest("GET", "/download-tokens/list", nil)
+			require.NoError(t, err)
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			privateDownloadRouter().ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+			assert.NotContains(t, w.Body.String(), `"token"`)
+			assert.NotContains(t, w.Body.String(), "token_hash")
+
+			var response struct {
+				DownloadTokens []model.DownloadTokenListItem `json:"download_tokens"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			require.Len(t, response.DownloadTokens, 1)
+			item := response.DownloadTokens[0]
+			assert.Equal(t, idTestappApp, item.AppID.Hex())
+			assert.Equal(t, "testapp", item.AppName)
+			assert.Equal(t, idStableChannel, item.ChannelID.Hex())
+			assert.Equal(t, "stable", item.ChannelName)
+			assert.True(t, strings.HasPrefix(item.TokenPrefix, utils.DownloadTokenPrefix))
+		})
+	}
+
+	req, err := http.NewRequest("GET", "/download-tokens/list", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
+	w := httptest.NewRecorder()
+	privateDownloadRouter().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, `{"download_tokens":[]}`, w.Body.String())
+}
+
+func TestPrivateDownloadAccess(t *testing.T) {
+	cleanupDownloadTokens(t)
+	stableKey := uploadPrivateVersion(t, "9.0.0.1", "stable")
+	nightlyKey := uploadPrivateVersion(t, "9.0.0.2", "nightly")
+	stableToken := regenerateDownloadToken(t, idTestappApp, idStableChannel)
+	nightlyToken := regenerateDownloadToken(t, idTestappApp, idNightlyChannel)
+
+	notFound := serveDownload(t, "testapp-admin/stable/missing.dmg", nil)
+	require.Equal(t, http.StatusNotFound, notFound.Code)
+
+	denied := map[string]struct {
+		key     string
+		headers map[string]string
+	}{
+		"anonymous":                 {stableKey, nil},
+		"token of another channel":  {stableKey, map[string]string{utils.DownloadTokenHeader: nightlyToken}},
+		"unknown token":             {stableKey, map[string]string{utils.DownloadTokenHeader: utils.DownloadTokenPrefix + "deadbeef"}},
+		"download token as bearer":  {stableKey, map[string]string{"Authorization": "Bearer " + stableToken}},
+		"api token":                 {stableKey, map[string]string{"Authorization": "Bearer " + utils.APITokenPrefix + "deadbeef"}},
+		"jwt of another owner":      {stableKey, map[string]string{"Authorization": "Bearer " + authTokenSecondUser}},
+		"team user, channel denied": {nightlyKey, map[string]string{"Authorization": "Bearer " + teamUserToken}},
+	}
+	for name, tc := range denied {
+		t.Run("denied "+name, func(t *testing.T) {
+			w := serveDownload(t, tc.key, tc.headers)
+			assert.Equal(t, notFound.Code, w.Code)
+			assert.Equal(t, notFound.Body.String(), w.Body.String())
+		})
+	}
+
+	redirected := map[string]struct {
+		key     string
+		headers map[string]string
+	}{
+		"stable token":  {stableKey, map[string]string{utils.DownloadTokenHeader: stableToken}},
+		"nightly token": {nightlyKey, map[string]string{utils.DownloadTokenHeader: nightlyToken}},
+	}
+	for name, tc := range redirected {
+		t.Run("redirect "+name, func(t *testing.T) {
+			w := serveDownload(t, tc.key, tc.headers)
+			assert.Equal(t, http.StatusFound, w.Code, w.Body.String())
+			assert.NotEmpty(t, w.Header().Get("Location"))
+		})
+	}
+
+	jsonResponses := map[string]struct {
+		key   string
+		token string
+	}{
+		"admin":             {stableKey, authToken},
+		"admin, nightly":    {nightlyKey, authToken},
+		"team user, stable": {stableKey, teamUserToken},
+	}
+	for name, tc := range jsonResponses {
+		t.Run("json "+name, func(t *testing.T) {
+			w := serveDownload(t, tc.key, map[string]string{"Authorization": "Bearer " + tc.token})
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			var response map[string]string
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			assert.NotEmpty(t, response["download_url"])
+		})
+	}
+
+	setTestappDownloadMode(t, utils.DownloadModeUnlisted)
+	t.Cleanup(func() { setTestappDownloadMode(t, utils.DownloadModeStrict) })
+
+	w := serveDownload(t, stableKey, nil)
+	assert.Equal(t, http.StatusFound, w.Code, w.Body.String())
+	w = serveDownload(t, stableKey, map[string]string{"Authorization": "Bearer " + authToken})
+	assert.Equal(t, http.StatusOK, w.Code, "a JWT with access keeps getting JSON in unlisted mode")
+	w = serveDownload(t, "testapp-admin/stable/missing.dmg", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code, "unlisted mode must not open keys that belong to no artifact")
+}
+
+func serveVersionCheck(t *testing.T, path string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	router := gin.Default()
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router.GET("/checkVersion", func(c *gin.Context) { h.FindLatestVersion(c) })
+	router.GET("/apps/latest", func(c *gin.Context) { h.FetchLatestVersionOfApp(c) })
+
+	req, err := http.NewRequest("GET", path, nil)
+	require.NoError(t, err)
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func checkVersionPath(appName, channel string) string {
+	return fmt.Sprintf("/checkVersion?app_name=%s&version=0.0.1.137&channel=%s&platform=universalPlatform&arch=universalArch&owner=admin", appName, channel)
+}
+
+// TestPrivateVersionCheckAccess covers the read paths that tell a client what to download: for a strict app they
+// must answer exactly as they do for an app that does not exist, and the response cache must not leak past that.
+func TestPrivateVersionCheckAccess(t *testing.T) {
+	cleanupDownloadTokens(t)
+	versionID := uploadVersionToChannelAsAdminPublished(t, "testapp", "9.5.0.1", "stable", true)
+	t.Cleanup(func() {
+		if w := serveDeleteVersion(t, authToken, versionID); w.Code != http.StatusOK {
+			t.Errorf("cleanup of version %s: %s", versionID, w.Body.String())
+		}
+	})
+	token := regenerateDownloadToken(t, idTestappApp, idStableChannel)
+	tokenHeader := map[string]string{utils.DownloadTokenHeader: token}
+
+	unknownApp := serveVersionCheck(t, checkVersionPath("nosuchapp", "stable"), nil)
+	unknownLatest := serveVersionCheck(t, "/apps/latest?app_name=nosuchapp&channel=stable&owner=admin", nil)
+
+	assertLooksUnknown := func(t *testing.T, w, unknown *httptest.ResponseRecorder, what string) {
+		t.Helper()
+		assert.Equal(t, unknown.Code, w.Code, what)
+		assert.Equal(t, unknown.Body.String(), w.Body.String(), what)
+	}
+
+	t.Run("anonymous is answered as an unknown app", func(t *testing.T) {
+		assertLooksUnknown(t, serveVersionCheck(t, checkVersionPath("testapp", "stable"), nil), unknownApp, "checkVersion")
+		assertLooksUnknown(t, serveVersionCheck(t, "/apps/latest?app_name=testapp&channel=stable&owner=admin", nil), unknownLatest, "apps/latest")
+	})
+
+	t.Run("wrong credentials are answered as an unknown app", func(t *testing.T) {
+		nightlyToken := regenerateDownloadToken(t, idTestappApp, idNightlyChannel)
+		cases := map[string]struct {
+			channel string
+			headers map[string]string
+		}{
+			"token of another channel":   {"stable", map[string]string{utils.DownloadTokenHeader: nightlyToken}},
+			"unknown token":              {"stable", map[string]string{utils.DownloadTokenHeader: "fnd_nope"}},
+			"jwt of another owner":       {"stable", map[string]string{"Authorization": "Bearer " + authTokenSecondUser}},
+			"team user, channel denied":  {"nightly", map[string]string{"Authorization": "Bearer " + teamUserToken}},
+			"no credential on a channel": {"nightly", nil},
+		}
+		for name, tc := range cases {
+			t.Run(name, func(t *testing.T) {
+				assertLooksUnknown(t, serveVersionCheck(t, checkVersionPath("testapp", tc.channel), tc.headers), unknownApp, name)
+			})
+		}
+	})
+
+	t.Run("token of the channel is served", func(t *testing.T) {
+		w := serveVersionCheck(t, checkVersionPath("testapp", "stable"), tokenHeader)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var response map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		assert.Contains(t, response, "update_available")
+	})
+
+	t.Run("a private app is never cached", func(t *testing.T) {
+		if !viper.GetBool("PERFORMANCE_MODE") || redisClient == nil {
+			t.Skip("this needs PERFORMANCE_MODE and Redis")
+		}
+		require.Equal(t, http.StatusOK, serveVersionCheck(t, checkVersionPath("testapp", "stable"), tokenHeader).Code)
+
+		// A cached response would be served to whoever asks for the same key next, credential or not.
+		keys, err := redisClient.Keys(context.Background(), "owner=admin&app_name=testapp&*").Result()
+		require.NoError(t, err)
+		assert.Empty(t, keys, "a private app must not reach the response cache")
+
+		assertLooksUnknown(t, serveVersionCheck(t, checkVersionPath("testapp", "stable"), nil), unknownApp, "after a token request")
+	})
+
+	t.Run("a denied request is not counted as a client", func(t *testing.T) {
+		if redisClient == nil {
+			t.Skip("telemetry needs Redis")
+		}
+		deviceID := "denied-device-" + primitive.NewObjectID().Hex()
+		headers := map[string]string{"X-Device-ID": deviceID}
+		require.Equal(t, unknownApp.Code, serveVersionCheck(t, checkVersionPath("testapp", "stable"), headers).Code)
+
+		clientsKey := fmt.Sprintf("stats:admin:testapp:unique_clients:%s", time.Now().UTC().Format("2006-01-02"))
+		member, err := redisClient.SIsMember(context.Background(), clientsKey, deviceID).Result()
+		require.NoError(t, err)
+		assert.False(t, member, "a denied request must not reach telemetry")
+	})
+
+	t.Run("changing the mode takes effect without waiting for the cache to expire", func(t *testing.T) {
+		setTestappDownloadMode(t, utils.DownloadModeUnlisted)
+		w := serveVersionCheck(t, checkVersionPath("testapp", "stable"), nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+		setTestappDownloadMode(t, utils.DownloadModeStrict)
+		assertLooksUnknown(t, serveVersionCheck(t, checkVersionPath("testapp", "stable"), nil), unknownApp, "after switching back to strict")
+	})
+}
+
+func TestPrivateDownloadBackfill(t *testing.T) {
+	key := uploadPrivateVersion(t, "9.0.0.3", "stable")
+	ctx := context.Background()
+	appOID, err := primitive.ObjectIDFromHex(idTestappApp)
+	require.NoError(t, err)
+	mode, _ := appDownloadMode(t, idTestappApp)
+	t.Cleanup(func() {
+		mongoDatabase.Collection("apps_meta").UpdateOne(context.Background(), bson.M{"_id": appOID}, bson.M{"$set": bson.M{"download_mode": mode}})
+	})
+
+	_, err = mongoDatabase.Collection("apps").UpdateOne(ctx, bson.M{"artifacts.s3_key": key}, bson.M{"$unset": bson.M{"artifacts.$.s3_key": ""}})
+	require.NoError(t, err)
+	_, err = mongoDatabase.Collection("apps_meta").UpdateOne(ctx, bson.M{"_id": appOID}, bson.M{"$unset": bson.M{"download_mode": ""}, "$set": bson.M{"cdn_edge": true}})
+	require.NoError(t, err)
+
+	w := serveDownload(t, key, map[string]string{"Authorization": "Bearer " + authToken})
+	assert.Equal(t, http.StatusNotFound, w.Code, "an artifact without s3_key is not resolvable before the migration")
+
+	for run := 1; run <= 2; run++ {
+		require.NoError(t, mongod.RunMigrationsUp(client, configDB.Database), "run %d", run)
+
+		count, err := mongoDatabase.Collection("apps").CountDocuments(ctx, bson.M{"artifacts.s3_key": key})
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), count, "run %d", run)
+
+		backfilledMode, ok := appDownloadMode(t, idTestappApp)
+		assert.True(t, ok, "run %d", run)
+		assert.Equal(t, utils.DefaultDownloadMode(viper.GetViper()), backfilledMode, "run %d", run)
+
+		var app model.App
+		require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.M{"_id": appOID}).Decode(&app))
+		assert.False(t, app.CdnEdge, "run %d: private apps must not keep cdn_edge", run)
+	}
+
+	w = serveDownload(t, key, map[string]string{"Authorization": "Bearer " + authToken})
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func serveListReportGroups(token, rawQuery string) *httptest.ResponseRecorder {
@@ -10757,6 +11288,7 @@ func TestCheckVersionWithIntermediate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			req.Header.Set(utils.DownloadTokenHeader, testappDownloadToken(t, scenario.ChannelName))
 
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
@@ -10781,6 +11313,8 @@ func TestCheckVersionWithIntermediate(t *testing.T) {
 					Channel:  decodeScenarioValue(scenario.ChannelName),
 					Platform: decodeScenarioValue(scenario.Platform),
 					Arch:     decodeScenarioValue(scenario.Arch),
+					DownloadToken: scenarioDownloadToken(t, decodeScenarioValue(scenario.AppName),
+						decodeScenarioValue(scenario.ChannelName)),
 				},
 			)
 			require.NoError(t, err)
