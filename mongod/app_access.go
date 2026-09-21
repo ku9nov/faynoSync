@@ -19,7 +19,7 @@ func (c *appRepository) ResolveAppAccess(ctx context.Context, owner, appName, ch
 	var access model.AppAccess
 	err := metaCollection.FindOne(ctx,
 		bson.M{"app_name": appName, "owner": owner},
-		options.FindOne().SetProjection(bson.M{"private": 1, "download_mode": 1}),
+		options.FindOne().SetProjection(bson.M{"private": 1, "download_mode": 1, "cdn_edge": 1}),
 	).Decode(&access)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {

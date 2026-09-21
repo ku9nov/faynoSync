@@ -13,7 +13,7 @@
 
 ### Features
 
-- Download tokens (`fnd_…`), scoped to an app and channel, sent in the `X-Download-Token` header. `POST /download-tokens/regenerate` (`{"app_id", "channel_id"}`) creates or rotates one and returns the value once; only its hash is stored. `GET /download-tokens/list` lists them without values.
+- Download tokens (`fnd_…`), scoped to an app and channel, sent in the `X-Download-Token` header. `POST /download-tokens/regenerate` (`{"app_id", "channel_id"}`) creates or rotates one and returns the value once; only its hash is stored. `GET /download-tokens/list` lists them without values. `channel_id` may only be omitted while no channel exists: once one does, uploads require a channel, so every artifact carries one and an app-scoped token would authorize nothing (`400`).
 
 ### Fixes
 
@@ -22,7 +22,8 @@
 - `POST /upload` now returns `404` instead of `500` when the app does not exist, matching `POST /apps/update`.
 - Deleting an app or a channel now deletes its download tokens as well; deleting an app also deletes its report key.
 - Responses of a private app are no longer cached under `PERFORMANCE_MODE`: the cache is read before any credential is known, so a cached response would be served to whoever asked next. Public apps are unaffected.
-- `POST /report-keys/regenerate` and `POST /download-tokens/regenerate` now answer `403` when the requester lacks access to the app or channel, instead of `500`. `POST /report-keys/regenerate` answers `404` for an unknown app, matching `/download-tokens/regenerate`.
+- The `404` of `POST /apps/update` now carries the same `app_name not found in apps_meta collection` message as every other unknown-app answer. The two separate `ErrAppNotFound` values behind it were merged into one, so a handler can no longer compare against the wrong one and report `500` for a missing app.
+- `POST /report-keys/regenerate` and `POST /download-tokens/regenerate` no longer answer `500` when the app or channel cannot be used. They answer `404` when the app — or, for `/download-tokens/regenerate`, the channel — does not exist or belongs to another owner, and `403` when a team user is refused by their permissions: no `edit` permission on apps, or the app or channel missing from their allowed list.
 
 ## v2.2.0
 

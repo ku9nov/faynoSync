@@ -164,12 +164,16 @@ func IsCdnEdgeEnabled(ctx context.Context, database *mongo.Database, owner, appN
 	return appMeta.CdnEdge, nil
 }
 
-func InvalidateCDNResponseCache(ctx context.Context, owner, appName string, env *viper.Viper) error {
+func InvalidateCDNResponseCache(ctx context.Context, owner, appName string, rdb *redis.Client, env *viper.Viper) error {
 	bucketName := env.GetString("S3_BUCKET_NAME_CDN")
 	if bucketName == "" {
 		logrus.Debug("S3_BUCKET_NAME_CDN is not configured, skipping CDN response invalidation")
 		return nil
 	}
+
+	// Bumped before the sweep, so a publish that is already in flight or that races the list/delete below is
+	// dropped instead of recreating an object this sweep removes.
+	info.BumpCDNEpoch(ctx, rdb, owner, appName)
 
 	factory := utils.NewStorageFactory(env)
 	storageClient, err := factory.CreateStorageClient()
@@ -247,7 +251,7 @@ func InvalidateAppCaches(
 		return
 	}
 	if isCdnEdgeEnabled {
-		if err := InvalidateCDNResponseCache(ctx, owner, appName, env); err != nil {
+		if err := InvalidateCDNResponseCache(ctx, owner, appName, rdb, env); err != nil {
 			logrus.Error("Error invalidating CDN response cache:", err)
 		}
 	}

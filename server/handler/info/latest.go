@@ -265,6 +265,12 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		}
 	}
 
+	// Captured before the response is read, so an upload that invalidates the CDN afterwards wins over this publish.
+	cdnEpoch := ""
+	if access.CdnEdge {
+		cdnEpoch = ReadCDNEpoch(ctx, rdb, validatedParams["owner"].(string), validatedParams["app_name"].(string))
+	}
+
 	// Request on repository
 	checkResult, err := repository.CheckLatestVersion(validatedParams["app_name"].(string), validatedParams["version"].(string), validatedParams["channel"].(string), validatedParams["platform"].(string), validatedParams["arch"].(string), ctx, validatedParams["owner"].(string))
 	if err != nil {
@@ -301,7 +307,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			if checkResult.CdnEdge {
 				logrus.Debugf("Publishing response to CDN when not found: %v", response)
-				publishResponseToCDN(ctx, validatedParams, response)
+				publishResponseToCDN(ctx, rdb, cdnEpoch, validatedParams, response)
 			}
 			if useCache {
 				if isSquirrelFeed {
@@ -353,7 +359,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	}
 	if checkResult.CdnEdge {
 		logrus.Debugf("Publishing response to CDN when found: %v", response)
-		publishResponseToCDN(ctx, validatedParams, response)
+		publishResponseToCDN(ctx, rdb, cdnEpoch, validatedParams, response)
 	}
 	if useCache {
 		if isSquirrelFeed {

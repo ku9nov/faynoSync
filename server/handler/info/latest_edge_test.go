@@ -9,7 +9,9 @@ import (
 
 	"faynoSync/server/utils"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/spf13/viper"
 )
 
@@ -62,7 +64,7 @@ func TestPublishResponseToCDNDoesNotWaitForStorage(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		publishResponseToCDN(ctx, cdnTestParams(), gin.H{"update_available": true})
+		publishResponseToCDN(ctx, nil, "", cdnTestParams(), gin.H{"update_available": true})
 		close(done)
 	}()
 
@@ -89,7 +91,7 @@ func TestPublishResponseToCDNDoesNotWaitForStorage(t *testing.T) {
 	}
 }
 
-func TestPublishResponseToCDNPublishesSynchronouslyWhenSlotsAreBusy(t *testing.T) {
+func TestPublishResponseToCDNSkipsWhenSlotsAreBusy(t *testing.T) {
 	client := &blockingCDNClient{release: make(chan struct{}), uploads: make(chan cdnUpload, 1)}
 	close(client.release)
 	withCDNClient(t, client)
@@ -103,14 +105,64 @@ func TestPublishResponseToCDNPublishesSynchronouslyWhenSlotsAreBusy(t *testing.T
 		}
 	})
 
-	publishResponseToCDN(context.Background(), cdnTestParams(), gin.H{"update_available": false})
+	publishResponseToCDN(context.Background(), nil, "", cdnTestParams(), gin.H{"update_available": false})
 
 	select {
 	case upload := <-client.uploads:
-		if upload.body != `{"update_available":false}` {
-			t.Fatalf("unexpected body %q", upload.body)
+		t.Fatalf("publish was not skipped while slots are busy: %q", upload.key)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func cdnTestRedis(t *testing.T) *redis.Client {
+	t.Helper()
+	server := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { rdb.Close() })
+	return rdb
+}
+
+func TestPublishResponseToCDNSkipsWhenEpochChanged(t *testing.T) {
+	client := &blockingCDNClient{release: make(chan struct{}), uploads: make(chan cdnUpload, 1)}
+	close(client.release)
+	withCDNClient(t, client)
+
+	rdb := cdnTestRedis(t)
+	ctx := context.Background()
+	epoch := ReadCDNEpoch(ctx, rdb, "admin", "app")
+	// The upload that invalidates the CDN lands after the response was read but before it is published.
+	BumpCDNEpoch(ctx, rdb, "admin", "app")
+
+	publishResponseToCDN(ctx, rdb, epoch, cdnTestParams(), gin.H{"update_available": false})
+
+	select {
+	case upload := <-client.uploads:
+		t.Fatalf("stale response was published to CDN: %q", upload.key)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestPublishResponseToCDNPublishesWhenEpochUnchanged(t *testing.T) {
+	client := &blockingCDNClient{release: make(chan struct{}), uploads: make(chan cdnUpload, 1)}
+	close(client.release)
+	withCDNClient(t, client)
+
+	rdb := cdnTestRedis(t)
+	ctx := context.Background()
+	BumpCDNEpoch(ctx, rdb, "admin", "app")
+	epoch := ReadCDNEpoch(ctx, rdb, "admin", "app")
+	if epoch == "" {
+		t.Fatal("epoch was not stored")
+	}
+
+	publishResponseToCDN(ctx, rdb, epoch, cdnTestParams(), gin.H{"update_available": true})
+
+	select {
+	case upload := <-client.uploads:
+		if upload.key != "responses/admin/app/stable/darwin/arm64/manual/1.0.0.json" {
+			t.Fatalf("unexpected key %q", upload.key)
 		}
-	default:
-		t.Fatal("publish did not complete before returning")
+	case <-time.After(2 * time.Second):
+		t.Fatal("response was never published to CDN")
 	}
 }

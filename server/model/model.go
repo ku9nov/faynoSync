@@ -221,6 +221,7 @@ type AppAccess struct {
 	ChannelID    primitive.ObjectID `bson:"-"`
 	Owner        string             `bson:"-"`
 	Private      bool               `bson:"private"`
+	CdnEdge      bool               `bson:"cdn_edge"`
 	DownloadMode string             `bson:"download_mode"`
 }
 
