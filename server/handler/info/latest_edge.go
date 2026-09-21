@@ -116,8 +116,8 @@ func publishResponseToCDN(ctx context.Context, rdb *redis.Client, epoch string, 
 		go func() {
 			defer func() { <-cdnPublishSlots }()
 			defer cancel()
-			uploadResponseToCDN(publishCtx, bucketName, objectKey, responseData, func() bool {
-				return ReadCDNEpoch(publishCtx, rdb, owner, appName) == epoch
+			uploadResponseToCDN(publishCtx, bucketName, objectKey, responseData, func(freshCtx context.Context) bool {
+				return ReadCDNEpoch(freshCtx, rdb, owner, appName) == epoch
 			})
 		}()
 	default:
@@ -127,7 +127,7 @@ func publishResponseToCDN(ctx context.Context, rdb *redis.Client, epoch string, 
 	}
 }
 
-func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, responseData []byte, stillFresh func() bool) {
+func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, responseData []byte, stillFresh func(context.Context) bool) {
 	storageClient, err := cdnStorageClient()
 	if err != nil {
 		logrus.Errorf("Failed to create storage client for CDN response publish: %v", err)
@@ -152,7 +152,7 @@ func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, resp
 	}
 
 	// Re-checked as late as possible: everything above is a round trip during which an upload can invalidate the app.
-	if stillFresh != nil && !stillFresh() {
+	if stillFresh != nil && !stillFresh(ctx) {
 		logrus.Debugf("Skipping CDN response publish because the app was invalidated meanwhile: %s/%s", bucketName, objectKey)
 		return
 	}
@@ -166,6 +166,22 @@ func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, resp
 	} else if _, err := storageClient.UploadPublicObject(ctx, bucketName, objectKey, fileReader, "application/json"); err != nil {
 		logrus.Errorf("Failed to publish latest response to CDN bucket: %v", err)
 		return
+	}
+
+	// The write is not atomic with the check above, so an invalidation sweep can delete this key while the
+	// upload is in flight. The sweep bumps the epoch before it deletes, so re-reading the epoch afterwards
+	// catches every such loss. The context gets its own deadline because the one above may be spent by now.
+	if stillFresh != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cdnPublishTimeout)
+		defer cancel()
+		if !stillFresh(cleanupCtx) {
+			if err := storageClient.DeleteObject(cleanupCtx, bucketName, objectKey); err != nil {
+				logrus.Errorf("Failed to remove CDN response object written after invalidation: %v", err)
+				return
+			}
+			logrus.Debugf("Removed CDN response object written after invalidation: %s/%s", bucketName, objectKey)
+			return
+		}
 	}
 
 	logrus.Debugf("Published latest response to CDN bucket: %s/%s", bucketName, objectKey)

@@ -22,6 +22,6 @@ func Respond(c *gin.Context, err error) {
 	case errors.Is(err, db.ErrDownloadTokenPublicApp), errors.Is(err, db.ErrDownloadTokenChannelRequired):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}
 }

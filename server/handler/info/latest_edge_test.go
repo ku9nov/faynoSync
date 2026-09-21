@@ -166,3 +166,54 @@ func TestPublishResponseToCDNPublishesWhenEpochUnchanged(t *testing.T) {
 		t.Fatal("response was never published to CDN")
 	}
 }
+
+type invalidatingCDNClient struct {
+	utils.StorageClient
+	rdb     *redis.Client
+	uploads chan cdnUpload
+	deletes chan string
+}
+
+func (c *invalidatingCDNClient) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
+	return "", false, nil
+}
+
+func (c *invalidatingCDNClient) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
+	body, _ := io.ReadAll(fileReader)
+	// The invalidation sweep lands while this object is being written.
+	BumpCDNEpoch(context.Background(), c.rdb, "admin", "app")
+	c.uploads <- cdnUpload{key: objectKey, body: string(body)}
+	return "", nil
+}
+
+func (c *invalidatingCDNClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	c.deletes <- objectKey
+	return nil
+}
+
+func TestPublishResponseToCDNRemovesObjectWrittenAfterInvalidation(t *testing.T) {
+	rdb := cdnTestRedis(t)
+	client := &invalidatingCDNClient{rdb: rdb, uploads: make(chan cdnUpload, 1), deletes: make(chan string, 1)}
+	withCDNClient(t, client)
+
+	ctx := context.Background()
+	BumpCDNEpoch(ctx, rdb, "admin", "app")
+	epoch := ReadCDNEpoch(ctx, rdb, "admin", "app")
+
+	publishResponseToCDN(ctx, rdb, epoch, cdnTestParams(), gin.H{"update_available": true})
+
+	select {
+	case <-client.uploads:
+	case <-time.After(2 * time.Second):
+		t.Fatal("response was never published to CDN")
+	}
+
+	select {
+	case key := <-client.deletes:
+		if key != "responses/admin/app/stable/darwin/arm64/manual/1.0.0.json" {
+			t.Fatalf("unexpected deleted key %q", key)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stale object written after invalidation was not removed")
+	}
+}
