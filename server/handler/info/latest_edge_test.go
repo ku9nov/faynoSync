@@ -217,3 +217,51 @@ func TestPublishResponseToCDNRemovesObjectWrittenAfterInvalidation(t *testing.T)
 		t.Fatal("stale object written after invalidation was not removed")
 	}
 }
+
+type redisLosingCDNClient struct {
+	utils.StorageClient
+	rdb     *redis.Client
+	uploads chan cdnUpload
+	deletes chan string
+}
+
+func (c *redisLosingCDNClient) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
+	return "", false, nil
+}
+
+func (c *redisLosingCDNClient) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
+	body, _ := io.ReadAll(fileReader)
+	// Redis goes away between the freshness check and the post-write re-check.
+	c.rdb.Close()
+	c.uploads <- cdnUpload{key: objectKey, body: string(body)}
+	return "", nil
+}
+
+func (c *redisLosingCDNClient) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
+	c.deletes <- objectKey
+	return nil
+}
+
+func TestPublishResponseToCDNKeepsObjectWhenEpochIsUnreadable(t *testing.T) {
+	rdb := cdnTestRedis(t)
+	client := &redisLosingCDNClient{rdb: rdb, uploads: make(chan cdnUpload, 1), deletes: make(chan string, 1)}
+	withCDNClient(t, client)
+
+	ctx := context.Background()
+	BumpCDNEpoch(ctx, rdb, "admin", "app")
+	epoch := ReadCDNEpoch(ctx, rdb, "admin", "app")
+
+	publishResponseToCDN(ctx, rdb, epoch, cdnTestParams(), gin.H{"update_available": true})
+
+	select {
+	case <-client.uploads:
+	case <-time.After(2 * time.Second):
+		t.Fatal("response was never published to CDN")
+	}
+
+	select {
+	case key := <-client.deletes:
+		t.Fatalf("fresh object was deleted because the epoch could not be read: %q", key)
+	case <-time.After(300 * time.Millisecond):
+	}
+}

@@ -51,19 +51,27 @@ func cdnEpochKey(owner, appName string) string {
 	return cdnEpochKeyPrefix + owner + ":" + appName
 }
 
-// ReadCDNEpoch must be called before the response data is read, so a publish that loses the race against an
-// upload can be dropped instead of recreating an object the upload already deleted.
-func ReadCDNEpoch(ctx context.Context, rdb *redis.Client, owner, appName string) string {
+// readCDNEpoch reports whether the epoch could be read at all, so callers can tell "the app was invalidated"
+// apart from "Redis did not answer" instead of treating an unreadable epoch as a changed one.
+func readCDNEpoch(ctx context.Context, rdb *redis.Client, owner, appName string) (string, bool) {
 	if rdb == nil {
-		return ""
+		return "", true
 	}
 	epoch, err := rdb.Get(ctx, cdnEpochKey(owner, appName)).Result()
 	if err != nil {
-		if !errors.Is(err, redis.Nil) {
-			logrus.Errorf("Failed to read CDN epoch for %s/%s: %v", owner, appName, err)
+		if errors.Is(err, redis.Nil) {
+			return "", true
 		}
-		return ""
+		logrus.Errorf("Failed to read CDN epoch for %s/%s: %v", owner, appName, err)
+		return "", false
 	}
+	return epoch, true
+}
+
+// ReadCDNEpoch must be called before the response data is read, so a publish that loses the race against an
+// upload can be dropped instead of recreating an object the upload already deleted.
+func ReadCDNEpoch(ctx context.Context, rdb *redis.Client, owner, appName string) string {
+	epoch, _ := readCDNEpoch(ctx, rdb, owner, appName)
 	return epoch
 }
 
@@ -116,8 +124,9 @@ func publishResponseToCDN(ctx context.Context, rdb *redis.Client, epoch string, 
 		go func() {
 			defer func() { <-cdnPublishSlots }()
 			defer cancel()
-			uploadResponseToCDN(publishCtx, bucketName, objectKey, responseData, func(freshCtx context.Context) bool {
-				return ReadCDNEpoch(freshCtx, rdb, owner, appName) == epoch
+			uploadResponseToCDN(publishCtx, bucketName, objectKey, responseData, func(freshCtx context.Context) (fresh, known bool) {
+				current, known := readCDNEpoch(freshCtx, rdb, owner, appName)
+				return current == epoch, known
 			})
 		}()
 	default:
@@ -127,7 +136,7 @@ func publishResponseToCDN(ctx context.Context, rdb *redis.Client, epoch string, 
 	}
 }
 
-func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, responseData []byte, stillFresh func(context.Context) bool) {
+func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, responseData []byte, stillFresh func(context.Context) (fresh, known bool)) {
 	storageClient, err := cdnStorageClient()
 	if err != nil {
 		logrus.Errorf("Failed to create storage client for CDN response publish: %v", err)
@@ -152,7 +161,7 @@ func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, resp
 	}
 
 	// Re-checked as late as possible: everything above is a round trip during which an upload can invalidate the app.
-	if stillFresh != nil && !stillFresh(ctx) {
+	if fresh, _ := stillFresh(ctx); !fresh {
 		logrus.Debugf("Skipping CDN response publish because the app was invalidated meanwhile: %s/%s", bucketName, objectKey)
 		return
 	}
@@ -171,17 +180,16 @@ func uploadResponseToCDN(ctx context.Context, bucketName, objectKey string, resp
 	// The write is not atomic with the check above, so an invalidation sweep can delete this key while the
 	// upload is in flight. The sweep bumps the epoch before it deletes, so re-reading the epoch afterwards
 	// catches every such loss. The context gets its own deadline because the one above may be spent by now.
-	if stillFresh != nil {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cdnPublishTimeout)
-		defer cancel()
-		if !stillFresh(cleanupCtx) {
-			if err := storageClient.DeleteObject(cleanupCtx, bucketName, objectKey); err != nil {
-				logrus.Errorf("Failed to remove CDN response object written after invalidation: %v", err)
-				return
-			}
-			logrus.Debugf("Removed CDN response object written after invalidation: %s/%s", bucketName, objectKey)
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cdnPublishTimeout)
+	defer cancel()
+	// Only a read that succeeded may delete: an unreadable epoch here would destroy a perfectly fresh object.
+	if fresh, known := stillFresh(cleanupCtx); known && !fresh {
+		if err := storageClient.DeleteObject(cleanupCtx, bucketName, objectKey); err != nil {
+			logrus.Errorf("Failed to remove CDN response object written after invalidation: %v", err)
 			return
 		}
+		logrus.Debugf("Removed CDN response object written after invalidation: %s/%s", bucketName, objectKey)
+		return
 	}
 
 	logrus.Debugf("Published latest response to CDN bucket: %s/%s", bucketName, objectKey)
