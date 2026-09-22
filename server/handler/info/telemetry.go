@@ -3,7 +3,6 @@ package info
 import (
 	_ "embed"
 	"encoding/json"
-	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"net/http"
 	"strconv"
@@ -13,7 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -94,19 +92,14 @@ func GetTelemetry(c *gin.Context, rdb *redis.Client, db *mongo.Database) {
 		return
 	}
 
-	// Check if the user is a team user
-	teamUsersCollection := db.Collection("team_users")
-	var teamUser model.TeamUser
-	err = teamUsersCollection.FindOne(c.Request.Context(), bson.M{"username": username}).Decode(&teamUser)
-
-	// If user is a team user, use their admin's username for statistics
-	admin := username
-	if err == nil {
-		logrus.Debugf("User %s is a team user with owner: %s", username, teamUser.Owner)
-		admin = teamUser.Owner
-	} else {
-		logrus.Debugf("User %s is not a team user", username)
+	// A team user reads their admin's statistics, not their own
+	admin, err := utils.ResolveRequestOwner(c.Request.Context(), username, db)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve owner"})
+		return
 	}
+	logrus.Debugf("Serving telemetry of %s for user %s", admin, username)
 
 	// Get date range parameters
 	dateStr := c.Query("date")

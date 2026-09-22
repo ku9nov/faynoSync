@@ -2,7 +2,6 @@ package create
 
 import (
 	"errors"
-	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
 	"fmt"
@@ -33,16 +32,12 @@ func ResolveUploadRequest(c *gin.Context, database *mongo.Database) (UploadReque
 		return UploadRequest{}, false
 	}
 
-	// Check if the user is a team user
-	teamUsersCollection := database.Collection("team_users")
-	var teamUser model.TeamUser
-	err = teamUsersCollection.FindOne(c.Request.Context(), bson.M{"username": username}).Decode(&teamUser)
-
-	// Determine the actual owner to use for operations
-	owner := username
-	if err == nil {
-		// User is a team user, use their admin as the owner
-		owner = teamUser.Owner
+	// Resolve the actual owner (admin) for S3 paths; team users must store under their admin
+	owner, err := utils.ResolveRequestOwner(c.Request.Context(), username, database)
+	if err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve owner"})
+		return UploadRequest{}, false
 	}
 
 	ctxQueryMap, err := utils.ValidateParams(c, database)
