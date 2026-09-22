@@ -1,16 +1,11 @@
 package updaters
 
 import (
-	"mime/multipart"
 	"testing"
 )
 
-func headers(names ...string) []*multipart.FileHeader {
-	out := make([]*multipart.FileHeader, 0, len(names))
-	for _, n := range names {
-		out = append(out, &multipart.FileHeader{Filename: n})
-	}
-	return out
+func headers(names ...string) []string {
+	return names
 }
 
 // Every file validator decides on the file name alone. Pinned here because the
@@ -19,7 +14,7 @@ func TestValidateFilesDispatch(t *testing.T) {
 	cases := []struct {
 		name        string
 		updaterType string
-		files       []*multipart.FileHeader
+		files       []string
 		wantErr     bool
 	}{
 		{"empty updater skips validation", "", nil, false},

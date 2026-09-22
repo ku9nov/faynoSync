@@ -2,7 +2,6 @@ package velopack
 
 import (
 	"encoding/json"
-	"mime/multipart"
 	"os"
 	"path/filepath"
 	"testing"
@@ -129,12 +128,8 @@ func TestParseFeedEmptyOrInvalid(t *testing.T) {
 	}
 }
 
-func fileHeaders(names ...string) []*multipart.FileHeader {
-	headers := make([]*multipart.FileHeader, 0, len(names))
-	for _, n := range names {
-		headers = append(headers, &multipart.FileHeader{Filename: n})
-	}
-	return headers
+func fileHeaders(names ...string) []string {
+	return names
 }
 
 func TestValidatorMissingFull(t *testing.T) {

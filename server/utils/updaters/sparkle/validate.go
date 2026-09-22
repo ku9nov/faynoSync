@@ -2,7 +2,6 @@ package sparkle
 
 import (
 	"fmt"
-	"mime/multipart"
 	"strings"
 )
 
@@ -14,12 +13,12 @@ func NewFileValidator(updaterType string) *FileValidator {
 	return &FileValidator{updaterType: updaterType}
 }
 
-func (v *FileValidator) Validate(files []*multipart.FileHeader) error {
+func (v *FileValidator) Validate(fileNames []string) error {
 	appcastCount := 0
 	hasFull := false
 
-	for _, file := range files {
-		name := strings.ToLower(file.Filename)
+	for _, fileName := range fileNames {
+		name := strings.ToLower(fileName)
 		if IsAppcastFile(name) {
 			appcastCount++
 			continue
@@ -54,15 +53,15 @@ func IsAppcastFile(fileName string) bool {
 // <enclosure> in the parsed appcast. Without this an archive whose version is
 // absent from the appcast (e.g. a stale appcast) would be stored silently
 // without Sparkle metadata and never appear in the materialized feed.
-func ValidateArchivesInAppcast(files []*multipart.FileHeader, metas map[string]SparkleMeta) error {
+func ValidateArchivesInAppcast(fileNames []string, metas map[string]SparkleMeta) error {
 	var missing []string
-	for _, file := range files {
-		name := strings.ToLower(file.Filename)
+	for _, fileName := range fileNames {
+		name := strings.ToLower(fileName)
 		if !isFullArchive(name) && !strings.HasSuffix(name, ".delta") {
 			continue
 		}
-		if _, ok := metas[file.Filename]; !ok {
-			missing = append(missing, file.Filename)
+		if _, ok := metas[fileName]; !ok {
+			missing = append(missing, fileName)
 		}
 	}
 	if len(missing) > 0 {

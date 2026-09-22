@@ -6,12 +6,11 @@ import (
 	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
-	"mime/multipart"
 	"strings"
 )
 
 type FileValidator interface {
-	Validate(files []*multipart.FileHeader) error
+	Validate(fileNames []string) error
 	GetUpdaterType() string
 }
 
@@ -132,7 +131,7 @@ func CreateParamValidator(updaterType string) (ParamValidator, error) {
 	}
 }
 
-func ValidateFiles(files []*multipart.FileHeader, updaterType string) error {
+func ValidateFiles(fileNames []string, updaterType string) error {
 	if updaterType == "" {
 		return nil
 	}
@@ -142,7 +141,7 @@ func ValidateFiles(files []*multipart.FileHeader, updaterType string) error {
 		return err
 	}
 
-	return validator.Validate(files)
+	return validator.Validate(fileNames)
 }
 
 func ValidateParams(params map[string]interface{}, updaterType string) error {
@@ -162,7 +161,7 @@ type NoOpFileValidator struct {
 	updaterType string
 }
 
-func (v *NoOpFileValidator) Validate(files []*multipart.FileHeader) error {
+func (v *NoOpFileValidator) Validate(fileNames []string) error {
 	return nil
 }
 

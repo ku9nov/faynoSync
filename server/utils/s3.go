@@ -52,21 +52,24 @@ func UploadLogo(appName string, owner string, file *multipart.FileHeader, c *gin
 	return logoLink, err
 }
 
-func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper, checkAppVisibility bool) (string, string, error) {
+type ObjectPlacement struct {
+	Key         string
+	Extension   string
+	Bucket      string
+	Public      bool
+	ContentType string
+	// DownloadLink is the API_URL/download?key= link. It is the artifact link for
+	// objects in the private bucket; a public object is served under the URL the
+	// storage client returns after the upload instead.
+	DownloadLink string
+}
 
-	storageClient, err := getStorageClient(env)
-	if err != nil {
-		logrus.Errorf("failed to create storage client: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
-		return "", "", err
-	}
-
+func BuildObjectPlacement(ctxQuery map[string]interface{}, owner string, fileName string, env *viper.Viper, checkAppVisibility bool) ObjectPlacement {
 	var extension string
 	// Extract base filename and extension
-	baseFileName := file.Filename
-	lastDotIndex := strings.LastIndex(baseFileName, ".")
+	lastDotIndex := strings.LastIndex(fileName, ".")
 	if lastDotIndex > -1 {
-		extension = baseFileName[lastDotIndex:]
+		extension = fileName[lastDotIndex:]
 	}
 	// Generate new file name
 	var newFileName string
@@ -75,9 +78,6 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	} else {
 		newFileName = fmt.Sprintf("%s-%s%s", ctxQuery["app_name"].(string), ctxQuery["version"].(string), extension)
 	}
-
-	var link string
-	var s3Key string
 
 	// Add API_URL to ctxQuery for BuildS3Key function
 	ctxQuery["api_url"] = env.GetString("API_URL")
@@ -89,7 +89,36 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	}
 
 	// Build S3 key using updaters package
-	link, s3Key = updaters.BuildS3Key(ctxQuery, owner, newFileName, file.Filename, updaterType)
+	link, s3Key := updaters.BuildS3Key(ctxQuery, owner, newFileName, fileName, updaterType)
+
+	placement := ObjectPlacement{
+		Key:          s3Key,
+		Extension:    extension,
+		Public:       ctxQuery["type"] == "logo" || checkAppVisibility == false,
+		ContentType:  getContentType(fileName),
+		DownloadLink: link,
+	}
+	if placement.Public {
+		placement.Bucket = env.GetString("S3_BUCKET_NAME")
+	} else {
+		// Use private bucket for regular uploads
+		placement.Bucket = env.GetString("S3_BUCKET_NAME_PRIVATE")
+	}
+
+	return placement
+}
+
+func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.FileHeader, c *gin.Context, env *viper.Viper, checkAppVisibility bool) (string, string, error) {
+
+	storageClient, err := getStorageClient(env)
+	if err != nil {
+		logrus.Errorf("failed to create storage client: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create storage client"})
+		return "", "", err
+	}
+
+	placement := BuildObjectPlacement(ctxQuery, owner, file.Filename, env, checkAppVisibility)
+	link := placement.DownloadLink
 
 	// Open the file for reading
 	fileReader, err := file.Open()
@@ -101,17 +130,13 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 	defer fileReader.Close()
 
 	logrus.Debugf("Uploading file: key=%s, type=%s",
-		s3Key, ctxQuery["type"])
+		placement.Key, ctxQuery["type"])
 
-	// Determine ContentType based on file name
-	contentType := getContentType(file.Filename)
-	logrus.Debugf("Determined ContentType: %s for file: %s", contentType, file.Filename)
+	logrus.Debugf("Determined ContentType: %s for file: %s", placement.ContentType, file.Filename)
 
-	var bucketName string
-	if ctxQuery["type"] == "logo" || checkAppVisibility == false {
-		bucketName = env.GetString("S3_BUCKET_NAME")
-		logrus.Debugf("Uploading file to public bucket: %s", bucketName)
-		publicLink, err := storageClient.UploadPublicObject(c.Request.Context(), bucketName, s3Key, fileReader, contentType)
+	if placement.Public {
+		logrus.Debugf("Uploading file to public bucket: %s", placement.Bucket)
+		publicLink, err := storageClient.UploadPublicObject(c.Request.Context(), placement.Bucket, placement.Key, fileReader, placement.ContentType)
 		if err != nil {
 			logrus.Errorf("Failed to upload file to storage: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to storage"})
@@ -120,10 +145,8 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 		logrus.Debugf("File uploaded successfully, public link: %s", publicLink)
 		link = publicLink
 	} else {
-		// Use private bucket for regular uploads
-		bucketName = env.GetString("S3_BUCKET_NAME_PRIVATE")
-		logrus.Debugf("Uploading to private bucket: %s", bucketName)
-		err = storageClient.UploadObject(c.Request.Context(), bucketName, s3Key, fileReader, contentType)
+		logrus.Debugf("Uploading to private bucket: %s", placement.Bucket)
+		err = storageClient.UploadObject(c.Request.Context(), placement.Bucket, placement.Key, fileReader, placement.ContentType)
 		if err != nil {
 			logrus.Errorf("Failed to upload to private storage: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload file to storage"})
@@ -132,7 +155,7 @@ func UploadToS3(ctxQuery map[string]interface{}, owner string, file *multipart.F
 		logrus.Debugf("File uploaded successfully to private bucket")
 	}
 
-	return link, extension, nil
+	return link, placement.Extension, nil
 }
 
 func DeleteFromS3(objectKey string, env *viper.Viper, private bool) error {

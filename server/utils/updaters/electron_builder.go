@@ -2,7 +2,6 @@ package updaters
 
 import (
 	"fmt"
-	"mime/multipart"
 	"strings"
 )
 
@@ -15,12 +14,12 @@ type ElectronBuilderFileValidator struct {
 	updaterType string
 }
 
-func (v *ElectronBuilderFileValidator) Validate(files []*multipart.FileHeader) error {
+func (v *ElectronBuilderFileValidator) Validate(fileNames []string) error {
 	hasYML := false
 	hasYAML := false
 
-	for _, file := range files {
-		filename := strings.ToLower(file.Filename)
+	for _, fileName := range fileNames {
+		filename := strings.ToLower(fileName)
 		if strings.HasSuffix(filename, ".yml") {
 			hasYML = true
 		}
@@ -64,7 +63,7 @@ func GetElectronBuilderUpdaterConfig(updaterType string) (*ElectronBuilderUpdate
 	}, nil
 }
 
-func ValidateElectronBuilderFiles(files []*multipart.FileHeader) error {
+func ValidateElectronBuilderFiles(fileNames []string) error {
 	validator := &ElectronBuilderFileValidator{updaterType: "electron-builder"}
-	return validator.Validate(files)
+	return validator.Validate(fileNames)
 }

@@ -149,3 +149,17 @@ func TestParseSparkleAppcastSelection(t *testing.T) {
 		})
 	}
 }
+
+func TestFileNames(t *testing.T) {
+	names := FileNames(uploadedFiles(t,
+		uploadedFile{"MyApp-1.0.0-full.nupkg", "binary"},
+		uploadedFile{"releases.nightly.json", velopackFeedJSON},
+	))
+	if len(names) != 2 || names[0] != "MyApp-1.0.0-full.nupkg" || names[1] != "releases.nightly.json" {
+		t.Errorf("FileNames = %v, want the uploaded names in order", names)
+	}
+
+	if got := FileNames(nil); len(got) != 0 {
+		t.Errorf("FileNames(nil) = %v, want empty", got)
+	}
+}

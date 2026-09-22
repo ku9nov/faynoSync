@@ -2,7 +2,6 @@ package velopack
 
 import (
 	"fmt"
-	"mime/multipart"
 	"strings"
 )
 
@@ -14,12 +13,12 @@ func NewFileValidator(updaterType string) *FileValidator {
 	return &FileValidator{updaterType: updaterType}
 }
 
-func (v *FileValidator) Validate(files []*multipart.FileHeader) error {
+func (v *FileValidator) Validate(fileNames []string) error {
 	hasFull := false
 	releasesCount := 0
 
-	for _, file := range files {
-		filename := strings.ToLower(file.Filename)
+	for _, fileName := range fileNames {
+		filename := strings.ToLower(fileName)
 		if strings.HasSuffix(filename, "-full.nupkg") {
 			hasFull = true
 		}

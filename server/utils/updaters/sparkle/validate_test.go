@@ -1,16 +1,11 @@
 package sparkle
 
 import (
-	"mime/multipart"
 	"testing"
 )
 
-func files(names ...string) []*multipart.FileHeader {
-	out := make([]*multipart.FileHeader, 0, len(names))
-	for _, n := range names {
-		out = append(out, &multipart.FileHeader{Filename: n})
-	}
-	return out
+func files(names ...string) []string {
+	return names
 }
 
 func TestValidateArchivesInAppcast(t *testing.T) {
@@ -20,7 +15,7 @@ func TestValidateArchivesInAppcast(t *testing.T) {
 	}
 	cases := []struct {
 		name    string
-		files   []*multipart.FileHeader
+		files   []string
 		wantErr bool
 	}{
 		{"archive present", files("appcast.nightly.xml", "MyApp-0.0.1.zip"), false},
@@ -43,7 +38,7 @@ func TestValidate(t *testing.T) {
 	v := NewFileValidator(UpdaterType)
 	cases := []struct {
 		name    string
-		files   []*multipart.FileHeader
+		files   []string
 		wantErr bool
 	}{
 		{"full+appcast", files("appcast.nightly.xml", "MyApp-0.0.2.zip"), false},
