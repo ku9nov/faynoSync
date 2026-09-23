@@ -2,6 +2,10 @@ package storage
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -163,6 +167,8 @@ func (b *BaseS3Client) CopyObject(ctx context.Context, bucketName, srcKey, dstKe
 		Bucket:     aws.String(bucketName),
 		Key:        aws.String(dstKey),
 		CopySource: aws.String(bucketName + "/" + encodeObjectKeyForPublicURL(srcKey)),
+		// Providers that support it compute the SHA-256 of the copied bytes, read back by StatObject.
+		ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
 	}
 	if public && !b.env.GetBool("S3_DISABLE_OBJECT_ACL") {
 		input.ACL = types.ObjectCannedACLPublicRead
@@ -320,4 +326,103 @@ func (b *BaseS3Client) GetObjectETag(ctx context.Context, bucketName, objectKey 
 	}
 
 	return strings.Trim(aws.ToString(output.ETag), "\""), true, nil
+}
+
+func (b *BaseS3Client) PresignPutObject(ctx context.Context, bucketName, objectKey string, contentMD5 []byte, length int64, contentType string, ttl time.Duration) (PresignedRequest, error) {
+	if len(contentMD5) != md5.Size {
+		return PresignedRequest{}, &StorageError{Message: "content MD5 must be 16 bytes"}
+	}
+	if length <= 0 {
+		return PresignedRequest{}, &StorageError{Message: "content length must be positive"}
+	}
+
+	input := &s3.PutObjectInput{
+		Bucket:        aws.String(bucketName),
+		Key:           aws.String(objectKey),
+		ContentMD5:    aws.String(base64.StdEncoding.EncodeToString(contentMD5)),
+		ContentLength: aws.Int64(length),
+	}
+	if contentType != "" {
+		input.ContentType = aws.String(contentType)
+	}
+
+	request, err := b.presignClientFor(bucketName).PresignPutObject(ctx, input,
+		s3.WithPresignExpires(ttl),
+		func(opts *s3.PresignOptions) {
+			// Otherwise the SDK signs its own CRC32 of an empty body and every real PUT fails.
+			opts.ClientOptions = append(opts.ClientOptions, func(o *s3.Options) {
+				o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			})
+		},
+	)
+	if err != nil {
+		return PresignedRequest{}, &StorageError{Message: fmt.Sprintf("failed to presign upload for %s", b.providerName), Err: err}
+	}
+
+	headers := request.SignedHeader.Clone()
+	headers.Del("Host")
+	return PresignedRequest{URL: request.URL, Headers: headers}, nil
+}
+
+func (b *BaseS3Client) StatObject(ctx context.Context, bucketName, objectKey string) (ObjectStat, error) {
+	output, err := b.clientFor(bucketName).HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket:       aws.String(bucketName),
+		Key:          aws.String(objectKey),
+		ChecksumMode: types.ChecksumModeEnabled,
+	})
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "NotFound", "NoSuchKey":
+				return ObjectStat{}, ErrObjectNotFound
+			}
+		}
+		return ObjectStat{}, &StorageError{Message: fmt.Sprintf("failed to stat object in %s", b.providerName), Err: err}
+	}
+
+	stat := ObjectStat{
+		Size: aws.ToInt64(output.ContentLength),
+		MD5:  md5FromETag(aws.ToString(output.ETag)),
+	}
+	// A composite checksum is a hash of part hashes, not of the object bytes.
+	if output.ChecksumType != types.ChecksumTypeComposite {
+		stat.SHA256 = sha256FromChecksum(aws.ToString(output.ChecksumSHA256))
+	}
+	return stat, nil
+}
+
+func (b *BaseS3Client) OpenObject(ctx context.Context, bucketName, objectKey string) (io.ReadCloser, error) {
+	output, err := b.clientFor(bucketName).GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchKey" {
+			return nil, ErrObjectNotFound
+		}
+		return nil, &StorageError{Message: fmt.Sprintf("failed to open object in %s", b.providerName), Err: err}
+	}
+	return output.Body, nil
+}
+
+// md5FromETag returns "" for multipart ETags ("<hash>-<parts>"), which are not the MD5 of the object.
+func md5FromETag(etag string) string {
+	etag = strings.ToLower(strings.Trim(etag, `"`))
+	if len(etag) != hex.EncodedLen(md5.Size) {
+		return ""
+	}
+	if _, err := hex.DecodeString(etag); err != nil {
+		return ""
+	}
+	return etag
+}
+
+func sha256FromChecksum(checksum string) string {
+	raw, err := base64.StdEncoding.DecodeString(checksum)
+	if err != nil || len(raw) != sha256.Size {
+		return ""
+	}
+	return hex.EncodeToString(raw)
 }

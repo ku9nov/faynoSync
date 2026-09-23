@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"io"
 	"mime/multipart"
+	"net/http"
 	"time"
 )
 
@@ -16,6 +18,29 @@ type StorageClient interface {
 	GeneratePresignedURL(ctx context.Context, bucketName, objectKey string, expiration time.Duration) (string, error)
 	DownloadObject(ctx context.Context, bucketName, objectKey string, filePath string) error
 	ListObjects(ctx context.Context, bucketName, prefix string) ([]string, error)
+}
+
+// PresignedUploader is implemented by drivers that support direct client uploads.
+// Drivers without it cannot serve presigned uploads.
+type PresignedUploader interface {
+	PresignPutObject(ctx context.Context, bucketName, objectKey string, contentMD5 []byte, length int64, contentType string, ttl time.Duration) (PresignedRequest, error)
+	StatObject(ctx context.Context, bucketName, objectKey string) (ObjectStat, error)
+	OpenObject(ctx context.Context, bucketName, objectKey string) (io.ReadCloser, error)
+	PublicObjectURL(bucketName, objectKey string) string
+}
+
+// PresignedRequest is a signed PUT; the client must send Headers verbatim or the storage rejects it.
+type PresignedRequest struct {
+	URL     string
+	Headers http.Header
+}
+
+// ObjectStat digests are hex and computed by the storage, never taken from the client.
+// SHA256 is empty when the provider did not compute one; MD5 is empty for multipart objects.
+type ObjectStat struct {
+	Size   int64
+	MD5    string
+	SHA256 string
 }
 
 type StorageError struct {
@@ -40,4 +65,5 @@ var (
 	ErrUploadFailed         = &StorageError{Message: "failed to upload file"}
 	ErrDeleteFailed         = &StorageError{Message: "failed to delete file"}
 	ErrPresignedURLFailed   = &StorageError{Message: "failed to generate presigned URL"}
+	ErrObjectNotFound       = &StorageError{Message: "object not found"}
 )
