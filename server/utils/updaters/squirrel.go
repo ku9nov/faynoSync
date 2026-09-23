@@ -30,6 +30,10 @@ func (v *SquirrelWindowsFileValidator) Validate(fileNames []string) error {
 	return nil
 }
 
+func (v *SquirrelWindowsFileValidator) IsFeedFile(fileName string) bool {
+	return strings.ToLower(fileName) == "releases"
+}
+
 func (v *SquirrelWindowsFileValidator) GetUpdaterType() string {
 	return v.updaterType
 }
@@ -53,6 +57,11 @@ func (v *SquirrelDarwinFileValidator) Validate(fileNames []string) error {
 	}
 
 	return nil
+}
+
+// squirrel_darwin has no feed: checkVersion points straight at the .zip.
+func (v *SquirrelDarwinFileValidator) IsFeedFile(fileName string) bool {
+	return false
 }
 
 func (v *SquirrelDarwinFileValidator) GetUpdaterType() string {

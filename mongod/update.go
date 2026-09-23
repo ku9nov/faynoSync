@@ -434,6 +434,7 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 					Arch:      archMeta.ID,
 					Package:   extension,
 					Signature: ctxQuery["signature"].(string),
+					IsFeed:    lookupIsFeed(ctxQuery),
 				}
 				if hashes != nil {
 					newArtifact.Hashes = hashes

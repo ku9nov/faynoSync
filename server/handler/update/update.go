@@ -290,9 +290,11 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	var isSparkle bool
 	var files []*multipart.FileHeader
 	var fileNames []string
+	var updaterType string
 	if form != nil {
 		files = form.File["file"] // Assuming the field name is "file" not "files"
 		fileNames = create.FileNames(files)
+		updaterType, _ = ctxQueryMap["updater"].(string)
 		// Validate updater requirements
 		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
 			updaterStr := updater.(string)
@@ -359,6 +361,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			fileCtxQuery["hashes"] = fileHashes[i]
 			fileCtxQuery["length"] = fileLengths[i]
+			fileCtxQuery["is_feed"] = updaters.IsFeedFile(files[i].Filename, updaterType)
 			if _, ok := ctxQueryMap["velopack_meta"]; ok {
 				fileCtxQuery["file_name"] = files[i].Filename
 			}

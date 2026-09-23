@@ -295,6 +295,11 @@ var duplicateCheckIgnoredPackages = map[string]bool{
 	"delta": true,
 }
 
+func lookupIsFeed(ctxQuery map[string]interface{}) bool {
+	isFeed, _ := ctxQuery["is_feed"].(bool)
+	return isFeed
+}
+
 func lookupVelopackMeta(ctxQuery map[string]interface{}) *velopack.VelopackMeta {
 	metaVal, ok := ctxQuery["velopack_meta"]
 	if !ok {
@@ -491,6 +496,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			Arch:      archMeta.ID,
 			Package:   extension,
 			Signature: ctxQuery["signature"].(string),
+			IsFeed:    lookupIsFeed(ctxQuery),
 		}
 		if hashes != nil {
 			newArtifact.Hashes = hashes
@@ -564,6 +570,7 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			Arch:      archMeta.ID,
 			Package:   extension,
 			Signature: ctxQuery["signature"].(string),
+			IsFeed:    lookupIsFeed(ctxQuery),
 		}
 		if hashes != nil {
 			artifact.Hashes = hashes

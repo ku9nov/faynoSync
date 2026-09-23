@@ -35,6 +35,11 @@ func (v *ElectronBuilderFileValidator) Validate(fileNames []string) error {
 	return nil
 }
 
+func (v *ElectronBuilderFileValidator) IsFeedFile(fileName string) bool {
+	name := strings.ToLower(fileName)
+	return strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")
+}
+
 func (v *ElectronBuilderFileValidator) GetUpdaterType() string {
 	return v.updaterType
 }

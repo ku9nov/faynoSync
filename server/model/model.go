@@ -20,6 +20,7 @@ type Artifact struct {
 	Length    int64                  `bson:"length,omitempty"`
 	TufSigned bool                   `bson:"tuf_signed,omitempty"`
 	TufTaskID *string                `bson:"tuf_task_id,omitempty"`
+	IsFeed    bool                   `bson:"is_feed,omitempty"`
 	Velopack  *velopack.VelopackMeta `bson:"velopack,omitempty"`
 	Sparkle   *sparkle.SparkleMeta   `bson:"sparkle,omitempty"`
 }
@@ -63,6 +64,7 @@ type SpecificArtifactsWithoutIDs struct {
 	Package   string  `bson:"package" json:"package"`
 	TufTaskID *string `bson:"tuf_task_id,omitempty"`
 	TufSigned bool    `bson:"tuf_signed,omitempty"`
+	IsFeed    bool    `bson:"is_feed,omitempty"`
 }
 
 type SpecificAppWithoutIDs struct {

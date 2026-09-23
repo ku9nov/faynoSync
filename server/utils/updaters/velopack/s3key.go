@@ -22,7 +22,7 @@ func IsInstallerFile(fileName string) bool {
 	if strings.HasSuffix(name, ".nupkg") {
 		return false
 	}
-	if strings.HasPrefix(name, "releases.") && strings.HasSuffix(name, ".json") {
+	if IsFeedFile(name) {
 		return false
 	}
 	return true

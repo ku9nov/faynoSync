@@ -44,7 +44,11 @@ func RunMigrationsUp(client *mongo.Client, dbName string) error {
 	} else {
 		logrus.Infoln("Migrations completed")
 	}
-	return backfillPrivateDownloads(context.Background(), client.Database(dbName), utils.DefaultDownloadMode(viper.GetViper()))
+	database := client.Database(dbName)
+	if err := backfillPrivateDownloads(context.Background(), database, utils.DefaultDownloadMode(viper.GetViper())); err != nil {
+		return err
+	}
+	return backfillFeedArtifacts(context.Background(), database, viper.GetViper())
 }
 
 func RunMigrationsDown(client *mongo.Client, dbName string) error {

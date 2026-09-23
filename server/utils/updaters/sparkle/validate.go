@@ -39,6 +39,10 @@ func (v *FileValidator) Validate(fileNames []string) error {
 	return nil
 }
 
+func (v *FileValidator) IsFeedFile(fileName string) bool {
+	return IsAppcastFile(fileName)
+}
+
 func (v *FileValidator) GetUpdaterType() string {
 	return v.updaterType
 }

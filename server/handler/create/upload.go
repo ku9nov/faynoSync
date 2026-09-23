@@ -290,24 +290,24 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	files := form.File["file"] // Assuming the field name is "file" not "files"
 	fileNames := FileNames(files)
 
-	// Validate updater requirements
-	if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
-		updaterStr := updater.(string)
+	updaterType, _ := ctxQueryMap["updater"].(string)
 
+	// Validate updater requirements
+	if updaterType != "" {
 		// Validate files for updaters that require specific file types
-		if err := updaters.ValidateFiles(fileNames, updaterStr); err != nil {
+		if err := updaters.ValidateFiles(fileNames, updaterType); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
 		// Validate parameters for updaters that require specific parameters
-		if err := updaters.ValidateParams(ctxQueryMap, updaterStr); err != nil {
+		if err := updaters.ValidateParams(ctxQueryMap, updaterType); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
 		// Ingest velopack metadata from the releases.*.json feed (verbatim hashes)
-		if updaterStr == velopack.UpdaterType {
+		if updaterType == velopack.UpdaterType {
 			velopackMeta, err := ParseVelopackFeed(files)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -317,7 +317,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		}
 
 		// Ingest sparkle metadata from the appcast.*.xml feed (verbatim edSignature)
-		if updaterStr == sparkle.UpdaterType {
+		if updaterType == sparkle.UpdaterType {
 			sparkleMeta, err := ParseSparkleAppcast(files)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -367,6 +367,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 		}
 		fileCtxQuery["hashes"] = fileHashes[i]
 		fileCtxQuery["length"] = fileLengths[i]
+		fileCtxQuery["is_feed"] = updaters.IsFeedFile(files[i].Filename, updaterType)
 		if _, ok := ctxQueryMap["velopack_meta"]; ok {
 			fileCtxQuery["file_name"] = files[i].Filename
 		}
