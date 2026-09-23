@@ -428,13 +428,14 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 			}
 			if !duplicateFound {
 				newArtifact := model.Artifact{
-					Link:      appLink,
-					S3Key:     utils.PrivateObjectKey(appLink),
-					Platform:  platformMeta.ID,
-					Arch:      archMeta.ID,
-					Package:   extension,
-					Signature: ctxQuery["signature"].(string),
-					IsFeed:    lookupIsFeed(ctxQuery),
+					Link:           appLink,
+					S3Key:          utils.PrivateObjectKey(appLink),
+					Platform:       platformMeta.ID,
+					Arch:           archMeta.ID,
+					Package:        extension,
+					Signature:      ctxQuery["signature"].(string),
+					IsFeed:         lookupIsFeed(ctxQuery),
+					HashesVerified: lookupHashesVerified(ctxQuery),
 				}
 				if hashes != nil {
 					newArtifact.Hashes = hashes

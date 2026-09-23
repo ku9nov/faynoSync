@@ -1,0 +1,10 @@
+[{
+    "update": "apps",
+    "updates": [
+        {
+            "q": { "artifacts.hashes_verified": { "$exists": true } },
+            "u": { "$unset": { "artifacts.$[].hashes_verified": "" } },
+            "multi": true
+        }
+    ]
+}]

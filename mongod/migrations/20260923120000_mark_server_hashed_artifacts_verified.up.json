@@ -1,0 +1,11 @@
+[{
+    "update": "apps",
+    "updates": [
+        {
+            "q": { "artifacts": { "$elemMatch": { "hashes": { "$exists": true }, "hashes_verified": { "$exists": false } } } },
+            "u": { "$set": { "artifacts.$[a].hashes_verified": true } },
+            "arrayFilters": [{ "a.hashes": { "$exists": true }, "a.hashes_verified": { "$exists": false } }],
+            "multi": true
+        }
+    ]
+}]

@@ -295,6 +295,11 @@ var duplicateCheckIgnoredPackages = map[string]bool{
 	"delta": true,
 }
 
+func lookupHashesVerified(ctxQuery map[string]interface{}) bool {
+	verified, _ := ctxQuery["hashes_verified"].(bool)
+	return verified
+}
+
 func lookupIsFeed(ctxQuery map[string]interface{}) bool {
 	isFeed, _ := ctxQuery["is_feed"].(bool)
 	return isFeed
@@ -490,13 +495,14 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 
 		newArtifact := model.Artifact{
-			Link:      appLink,
-			S3Key:     utils.PrivateObjectKey(appLink),
-			Platform:  platformMeta.ID,
-			Arch:      archMeta.ID,
-			Package:   extension,
-			Signature: ctxQuery["signature"].(string),
-			IsFeed:    lookupIsFeed(ctxQuery),
+			Link:           appLink,
+			S3Key:          utils.PrivateObjectKey(appLink),
+			Platform:       platformMeta.ID,
+			Arch:           archMeta.ID,
+			Package:        extension,
+			Signature:      ctxQuery["signature"].(string),
+			IsFeed:         lookupIsFeed(ctxQuery),
+			HashesVerified: lookupHashesVerified(ctxQuery),
 		}
 		if hashes != nil {
 			newArtifact.Hashes = hashes
@@ -564,13 +570,14 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		}
 
 		artifact := model.Artifact{
-			Link:      appLink,
-			S3Key:     utils.PrivateObjectKey(appLink),
-			Platform:  platformMeta.ID,
-			Arch:      archMeta.ID,
-			Package:   extension,
-			Signature: ctxQuery["signature"].(string),
-			IsFeed:    lookupIsFeed(ctxQuery),
+			Link:           appLink,
+			S3Key:          utils.PrivateObjectKey(appLink),
+			Platform:       platformMeta.ID,
+			Arch:           archMeta.ID,
+			Package:        extension,
+			Signature:      ctxQuery["signature"].(string),
+			IsFeed:         lookupIsFeed(ctxQuery),
+			HashesVerified: lookupHashesVerified(ctxQuery),
 		}
 		if hashes != nil {
 			artifact.Hashes = hashes

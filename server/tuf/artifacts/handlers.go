@@ -177,16 +177,24 @@ func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDataba
 
 	go func() {
 		ctx := context.Background()
-		if err := AddArtifacts(
-			ctx,
-			redisClient,
-			mongoDatabase,
-			owner,
-			appMeta.AppName,
-			tufArtifacts,
-			true,
-			taskID,
-		); err != nil {
+		if err := func() error {
+			// Streaming large objects can take long, so this runs here and not in the request.
+			verified, err := verifyUnverifiedArtifacts(ctx, env, successfullyConvertedArtifacts)
+			if err != nil {
+				return err
+			}
+			markArtifactsHashesVerified(ctx, mongoDatabase, appID, payload.Version, owner, verified)
+			return AddArtifacts(
+				ctx,
+				redisClient,
+				mongoDatabase,
+				owner,
+				appMeta.AppName,
+				tufArtifacts,
+				true,
+				taskID,
+			)
+		}(); err != nil {
 			logrus.Errorf("Failed to add artifacts to TUF: %v", err)
 			errorMsg := err.Error()
 			taskName := tasks.TaskNameAddArtifacts

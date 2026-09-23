@@ -361,6 +361,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			fileCtxQuery["hashes"] = fileHashes[i]
 			fileCtxQuery["length"] = fileLengths[i]
+			fileCtxQuery["hashes_verified"] = true
 			fileCtxQuery["is_feed"] = updaters.IsFeedFile(files[i].Filename, updaterType)
 			if _, ok := ctxQueryMap["velopack_meta"]; ok {
 				fileCtxQuery["file_name"] = files[i].Filename
