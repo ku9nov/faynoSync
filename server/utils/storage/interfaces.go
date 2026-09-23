@@ -21,7 +21,8 @@ type StorageClient interface {
 }
 
 // PresignedUploader is implemented by drivers that support direct client uploads.
-// Drivers without it cannot serve presigned uploads.
+// Drivers without it cannot serve presigned uploads. A zero length leaves the size
+// unsigned; the signed MD5 binds the content either way.
 type PresignedUploader interface {
 	PresignPutObject(ctx context.Context, bucketName, objectKey string, contentMD5 []byte, length int64, contentType string, ttl time.Duration) (PresignedRequest, error)
 	StatObject(ctx context.Context, bucketName, objectKey string) (ObjectStat, error)

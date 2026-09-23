@@ -312,8 +312,8 @@ func (g *GoogleCloudStorageClient) PresignPutObject(ctx context.Context, bucketN
 	if len(contentMD5) != md5.Size {
 		return PresignedRequest{}, &StorageError{Message: "content MD5 must be 16 bytes"}
 	}
-	if length <= 0 {
-		return PresignedRequest{}, &StorageError{Message: "content length must be positive"}
+	if length < 0 {
+		return PresignedRequest{}, &StorageError{Message: "content length must not be negative"}
 	}
 
 	credsFile := g.env.GetString("GCS_CREDENTIALS_FILE")

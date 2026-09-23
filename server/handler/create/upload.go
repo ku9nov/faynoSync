@@ -24,10 +24,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+func isVelopackFeedName(fileName string) bool {
+	name := strings.ToLower(fileName)
+	return strings.HasPrefix(name, "releases.") && strings.HasSuffix(name, ".json")
+}
+
+func isSparkleAppcastName(fileName string) bool {
+	name := strings.ToLower(fileName)
+	return strings.HasPrefix(name, "appcast") && strings.HasSuffix(name, ".xml")
+}
+
 func ParseVelopackFeed(files []*multipart.FileHeader) (map[string]velopack.VelopackMeta, error) {
 	for _, file := range files {
-		name := strings.ToLower(file.Filename)
-		if strings.HasPrefix(name, "releases.") && strings.HasSuffix(name, ".json") {
+		if isVelopackFeedName(file.Filename) {
 			f, err := file.Open()
 			if err != nil {
 				return nil, err
@@ -45,8 +54,7 @@ func ParseVelopackFeed(files []*multipart.FileHeader) (map[string]velopack.Velop
 
 func ParseSparkleAppcast(files []*multipart.FileHeader) (map[string]sparkle.SparkleMeta, error) {
 	for _, file := range files {
-		name := strings.ToLower(file.Filename)
-		if strings.HasPrefix(name, "appcast") && strings.HasSuffix(name, ".xml") {
+		if isSparkleAppcastName(file.Filename) {
 			f, err := file.Open()
 			if err != nil {
 				return nil, err
@@ -60,6 +68,45 @@ func ParseSparkleAppcast(files []*multipart.FileHeader) (map[string]sparkle.Spar
 		}
 	}
 	return nil, fmt.Errorf("sparkle updater requires an appcast.*.xml feed file")
+}
+
+func ValidateUpdaterUpload(ctxQueryMap map[string]interface{}, updaterType string, fileNames []string, feedFiles []*multipart.FileHeader) error {
+	if updaterType == "" {
+		return nil
+	}
+
+	// Validate files for updaters that require specific file types
+	if err := updaters.ValidateFiles(fileNames, updaterType); err != nil {
+		return err
+	}
+
+	// Validate parameters for updaters that require specific parameters
+	if err := updaters.ValidateParams(ctxQueryMap, updaterType); err != nil {
+		return err
+	}
+
+	// Ingest velopack metadata from the releases.*.json feed (verbatim hashes)
+	if updaterType == velopack.UpdaterType {
+		velopackMeta, err := ParseVelopackFeed(feedFiles)
+		if err != nil {
+			return err
+		}
+		ctxQueryMap["velopack_meta"] = velopackMeta
+	}
+
+	// Ingest sparkle metadata from the appcast.*.xml feed (verbatim edSignature)
+	if updaterType == sparkle.UpdaterType {
+		sparkleMeta, err := ParseSparkleAppcast(feedFiles)
+		if err != nil {
+			return err
+		}
+		if err := sparkle.ValidateArchivesInAppcast(fileNames, sparkleMeta); err != nil {
+			return err
+		}
+		ctxQueryMap["sparkle_meta"] = sparkleMeta
+	}
+
+	return nil
 }
 
 // FileNames reduces an upload to the names the placement and validation steps need,
@@ -292,43 +339,9 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 
 	updaterType, _ := ctxQueryMap["updater"].(string)
 
-	// Validate updater requirements
-	if updaterType != "" {
-		// Validate files for updaters that require specific file types
-		if err := updaters.ValidateFiles(fileNames, updaterType); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		// Validate parameters for updaters that require specific parameters
-		if err := updaters.ValidateParams(ctxQueryMap, updaterType); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		// Ingest velopack metadata from the releases.*.json feed (verbatim hashes)
-		if updaterType == velopack.UpdaterType {
-			velopackMeta, err := ParseVelopackFeed(files)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			ctxQueryMap["velopack_meta"] = velopackMeta
-		}
-
-		// Ingest sparkle metadata from the appcast.*.xml feed (verbatim edSignature)
-		if updaterType == sparkle.UpdaterType {
-			sparkleMeta, err := ParseSparkleAppcast(files)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			if err := sparkle.ValidateArchivesInAppcast(fileNames, sparkleMeta); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			ctxQueryMap["sparkle_meta"] = sparkleMeta
-		}
+	if err := ValidateUpdaterUpload(ctxQueryMap, updaterType, fileNames, files); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	checkAppVisibility, ok := ResolveAppVisibility(c, db, appName, owner, ctxQueryMap)
 	if !ok {

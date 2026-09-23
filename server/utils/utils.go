@@ -56,10 +56,22 @@ func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {
 		return nil, errors.New("no JSON data provided")
 	}
 	logrus.Debug("JSON data: ", jsonData)
+	result, err := ParseUploadData(jsonData)
+	if errors.Is(err, errInvalidUploadJSON) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
+	}
+	return result, err
+}
+
+var errInvalidUploadJSON = errors.New("invalid JSON data")
+
+// ParseUploadData turns the "data" field of an upload into request parameters. It is
+// shared by the multipart upload and the presigned complete, which replays the data
+// captured at init.
+func ParseUploadData(jsonData string) (map[string]interface{}, error) {
 	var upReq model.UpRequest
 	if err := json.Unmarshal([]byte(jsonData), &upReq); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON data"})
-		return nil, errors.New("invalid JSON data")
+		return nil, errInvalidUploadJSON
 	}
 
 	upReq.Version = strings.ReplaceAll(upReq.Version, "-", ".")

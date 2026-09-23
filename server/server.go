@@ -75,6 +75,8 @@ func StartServer(config *viper.Viper) {
 	// router.GET("/", handler.GetAllApps)
 	router.GET("/whoami", handler.Whoami)
 	router.POST("/upload", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase), handler.UploadApp)
+	router.POST("/upload/init", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase), handler.InitPresignedUpload)
+	router.POST("/upload/complete", utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase), handler.CompletePresignedUpload)
 	router.POST("/apps/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.UpdateSpecificApp)
 	router.POST("/app/update", utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, mongoDatabase), handler.UpdateApp)
 	router.DELETE("/apps/delete", utils.CheckPermission(utils.PermissionDelete, utils.ResourceApps, mongoDatabase), handler.DeleteSpecificVersionOfApp)

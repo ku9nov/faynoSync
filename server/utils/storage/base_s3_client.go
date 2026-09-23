@@ -332,15 +332,18 @@ func (b *BaseS3Client) PresignPutObject(ctx context.Context, bucketName, objectK
 	if len(contentMD5) != md5.Size {
 		return PresignedRequest{}, &StorageError{Message: "content MD5 must be 16 bytes"}
 	}
-	if length <= 0 {
-		return PresignedRequest{}, &StorageError{Message: "content length must be positive"}
+	if length < 0 {
+		return PresignedRequest{}, &StorageError{Message: "content length must not be negative"}
 	}
 
 	input := &s3.PutObjectInput{
-		Bucket:        aws.String(bucketName),
-		Key:           aws.String(objectKey),
-		ContentMD5:    aws.String(base64.StdEncoding.EncodeToString(contentMD5)),
-		ContentLength: aws.Int64(length),
+		Bucket:     aws.String(bucketName),
+		Key:        aws.String(objectKey),
+		ContentMD5: aws.String(base64.StdEncoding.EncodeToString(contentMD5)),
+	}
+	// Zero means the uploader did not declare a length; the signed MD5 still pins the bytes.
+	if length > 0 {
+		input.ContentLength = aws.Int64(length)
 	}
 	if contentType != "" {
 		input.ContentType = aws.String(contentType)

@@ -92,8 +92,25 @@ func TestPresignPutObjectRejectsInvalidInput(t *testing.T) {
 	if _, err := client.PresignPutObject(context.Background(), "bucket", "k", digest[:8], 7, "", time.Minute); err == nil {
 		t.Error("short MD5 accepted")
 	}
-	if _, err := client.PresignPutObject(context.Background(), "bucket", "k", digest[:], 0, "", time.Minute); err == nil {
-		t.Error("zero length accepted")
+	if _, err := client.PresignPutObject(context.Background(), "bucket", "k", digest[:], -1, "", time.Minute); err == nil {
+		t.Error("negative length accepted")
+	}
+}
+
+// An undeclared length is left out of the signature; the signed MD5 still pins the bytes.
+func TestPresignPutObjectWithoutLength(t *testing.T) {
+	client := newTestAWSClient(t)
+	digest := md5.Sum([]byte("payload"))
+
+	req, err := client.PresignPutObject(context.Background(), "bucket", "k", digest[:], 0, "", time.Minute)
+	if err != nil {
+		t.Fatalf("PresignPutObject: %v", err)
+	}
+	if req.Headers.Get("Content-Length") != "" {
+		t.Errorf("Content-Length signed without a declared length: %v", req.Headers)
+	}
+	if req.Headers.Get("Content-Md5") == "" {
+		t.Error("Content-MD5 must always be signed")
 	}
 }
 

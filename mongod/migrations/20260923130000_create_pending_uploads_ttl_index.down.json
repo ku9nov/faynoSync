@@ -1,0 +1,6 @@
+[
+  {
+    "dropIndexes": "pending_uploads",
+    "index": "pending_uploads_expires_at_ttl"
+  }
+]

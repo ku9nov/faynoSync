@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -28,6 +30,7 @@ import (
 	"faynoSync/server/handler/info"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/storage"
 
 	faynosync "github.com/ku9nov/faynosync-sdk-go"
 
@@ -2775,6 +2778,8 @@ func updaterFlowRouter() *gin.Engine {
 	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
 	router.POST("/app/create", func(c *gin.Context) { h.CreateApp(c) })
 	router.POST("/upload", func(c *gin.Context) { h.UploadApp(c) })
+	router.POST("/upload/init", func(c *gin.Context) { h.InitPresignedUpload(c) })
+	router.POST("/upload/complete", func(c *gin.Context) { h.CompletePresignedUpload(c) })
 	router.POST("/apps/update", func(c *gin.Context) { h.UpdateSpecificApp(c) })
 	router.DELETE("/apps/delete", func(c *gin.Context) { h.DeleteSpecificVersionOfApp(c) })
 	router.DELETE("/app/delete", func(c *gin.Context) { h.DeleteApp(c) })
@@ -3091,6 +3096,316 @@ func TestVelopackUpdaterFlow(t *testing.T) {
 		toggle("1.0.2", "nightly", "windows", true)
 		assets := parseVelopackFeed(t, checkFileContent(t, nightlyWinURL))
 		require.Contains(t, assets, "1.0.2", "newly published 1.0.2 must appear in feed")
+	})
+}
+
+// ============================================================================
+// Presigned upload flow (self-contained block).
+// init -> direct PUT to storage -> complete, against the real configured storage.
+// Pins the contract TUF publish relies on: client-declared hashes are stored
+// with hashes_verified=false, feed files hashed by faynoSync with true.
+// Reuses channels (nightly), platforms (windows/universalPlatform) and arch
+// (universalArch) created earlier in the ordered suite.
+// ============================================================================
+
+type presignedInitResponse struct {
+	UploadID string `json:"upload_id"`
+	Files    []struct {
+		Name    string            `json:"name"`
+		Method  string            `json:"method"`
+		URL     string            `json:"url"`
+		Headers map[string]string `json:"headers"`
+	} `json:"files"`
+}
+
+func presignedManifest(files []updaterFeedFile) string {
+	entries := make([]map[string]interface{}, 0, len(files))
+	for _, f := range files {
+		md := md5.Sum(f.content)
+		s256 := sha256.Sum256(f.content)
+		s512 := sha512.Sum512(f.content)
+		entries = append(entries, map[string]interface{}{
+			"name":   f.name,
+			"md5":    hex.EncodeToString(md[:]),
+			"sha256": hex.EncodeToString(s256[:]),
+			"sha512": hex.EncodeToString(s512[:]),
+			"length": len(f.content),
+		})
+	}
+	raw, _ := json.Marshal(entries)
+	return string(raw)
+}
+
+func doPresignedInit(t *testing.T, router *gin.Engine, token, payload, manifest string, inline []updaterFeedFile) *httptest.ResponseRecorder {
+	t.Helper()
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for _, f := range inline {
+		part, err := writer.CreateFormFile("file", f.name)
+		require.NoError(t, err)
+		_, err = part.Write(f.content)
+		require.NoError(t, err)
+	}
+	require.NoError(t, writer.WriteField("data", payload))
+	if manifest != "" {
+		require.NoError(t, writer.WriteField("files", manifest))
+	}
+	require.NoError(t, writer.Close())
+	req, err := http.NewRequest("POST", "/upload/init", body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func doPresignedComplete(t *testing.T, router *gin.Engine, token, uploadID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req, err := http.NewRequest("POST", "/upload/complete", strings.NewReader(fmt.Sprintf(`{"upload_id":"%s"}`, uploadID)))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// presignedMD5OnlyManifest declares only what init requires: sha256/sha512 are needed
+// solely for TUF, and the length is taken from storage.
+func presignedMD5OnlyManifest(files []updaterFeedFile) string {
+	entries := make([]map[string]interface{}, 0, len(files))
+	for _, f := range files {
+		md := md5.Sum(f.content)
+		entries = append(entries, map[string]interface{}{"name": f.name, "md5": hex.EncodeToString(md[:])})
+	}
+	raw, _ := json.Marshal(entries)
+	return string(raw)
+}
+
+func presignedInitOK(t *testing.T, router *gin.Engine, payload string, presigned, inline []updaterFeedFile) presignedInitResponse {
+	t.Helper()
+	return presignedInitWithManifest(t, router, payload, presignedManifest(presigned), len(presigned), inline)
+}
+
+func presignedInitWithManifest(t *testing.T, router *gin.Engine, payload, manifest string, files int, inline []updaterFeedFile) presignedInitResponse {
+	t.Helper()
+	w := doPresignedInit(t, router, authToken, payload, manifest, inline)
+	require.Equal(t, http.StatusOK, w.Code, "init: %s", w.Body.String())
+	var resp presignedInitResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.UploadID, 32)
+	require.Len(t, resp.Files, files)
+	return resp
+}
+
+// putPresigned sends the bytes straight to storage, the way the CLI or curl would.
+func putPresigned(t *testing.T, upload presignedInitResponse, name string, content []byte) (int, string) {
+	t.Helper()
+	for _, f := range upload.Files {
+		if f.Name != name {
+			continue
+		}
+		require.Equal(t, http.MethodPut, f.Method)
+		req, err := http.NewRequest(http.MethodPut, f.URL, bytes.NewReader(content))
+		require.NoError(t, err)
+		for k, v := range f.Headers {
+			req.Header.Set(k, v)
+		}
+		req.ContentLength = int64(len(content))
+		resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		respBody, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(respBody)
+	}
+	t.Fatalf("file %s is not in the init response", name)
+	return 0, ""
+}
+
+func pendingUploadKeys(t *testing.T, uploadID string) []string {
+	t.Helper()
+	var doc struct {
+		Files []struct {
+			PendingKey string `bson:"pending_key"`
+		} `bson:"files"`
+	}
+	require.NoError(t, mongoDatabase.Collection("pending_uploads").FindOne(context.Background(), bson.M{"_id": uploadID}).Decode(&doc))
+	keys := make([]string, 0, len(doc.Files))
+	for _, f := range doc.Files {
+		keys = append(keys, f.PendingKey)
+	}
+	return keys
+}
+
+func uploadedVersion(t *testing.T, w *httptest.ResponseRecorder) model.SpecificApp {
+	t.Helper()
+	require.Equal(t, http.StatusOK, w.Code, "complete: %s", w.Body.String())
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	id, _ := resp["uploadResult.Uploaded"].(string)
+	objectID, err := primitive.ObjectIDFromHex(id)
+	require.NoError(t, err, "no upload id in %s", w.Body.String())
+	var doc model.SpecificApp
+	require.NoError(t, mongoDatabase.Collection("apps").FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&doc))
+	return doc
+}
+
+func artifactByLinkSuffix(t *testing.T, doc model.SpecificApp, suffix string) model.Artifact {
+	t.Helper()
+	for _, a := range doc.Artifacts {
+		if strings.HasSuffix(a.Link, suffix) {
+			return a
+		}
+	}
+	t.Fatalf("no artifact with link suffix %s in %+v", suffix, doc.Artifacts)
+	return model.Artifact{}
+}
+
+func TestPresignedUploadFlow(t *testing.T) {
+	storageClient, err := utils.NewStorageFactory(viper.GetViper()).CreateStorageClient()
+	require.NoError(t, err)
+	uploader, ok := storageClient.(storage.PresignedUploader)
+	if !ok {
+		t.Skipf("storage driver %q does not support presigned uploads", viper.GetString("STORAGE_DRIVER"))
+	}
+
+	cleanupUpdaterApp(t, "presignedapp")
+	cleanupUpdaterApp(t, "presignedprivate")
+	defer cleanupUpdaterApp(t, "presignedapp")
+	defer cleanupUpdaterApp(t, "presignedprivate")
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, "presignedapp")
+
+	nupkgName := "presignedapp-2.0.0-full.nupkg"
+	nupkg := updaterFeedFile{name: nupkgName, content: []byte(strings.Repeat("presigned nupkg payload ", 64))}
+	s256 := sha256.Sum256(nupkg.content)
+	s1 := fmt.Sprintf("%x", s256[:20])
+	feed := updaterFeedFile{
+		name:    "releases.nightly.json",
+		content: []byte(fmt.Sprintf(`{"Assets":[{"Type":"Full","FileName":"%s","SHA1":"%s","SHA256":"%x","Size":%d}]}`, nupkgName, s1, s256, len(nupkg.content))),
+	}
+	payload := `{"app_name":"presignedapp","version":"2.0.0","channel":"nightly","publish":true,"critical":false,"platform":"windows","arch":"universalArch","updater":"velopack","changelog":"presigned release"}`
+
+	t.Run("init_rejects_before_any_transfer", func(t *testing.T) {
+		cases := []struct {
+			name     string
+			manifest string
+			inline   []updaterFeedFile
+			want     int
+		}{
+			{"missing_manifest", "", []updaterFeedFile{feed}, http.StatusBadRequest},
+			{"feed_must_be_inline", presignedManifest([]updaterFeedFile{nupkg, feed}), nil, http.StatusBadRequest},
+			{"package_must_not_be_inline", presignedManifest([]updaterFeedFile{nupkg}), []updaterFeedFile{feed, {name: "extra.exe", content: []byte("x")}}, http.StatusBadRequest},
+			{"updater_rules_apply", presignedManifest([]updaterFeedFile{{name: "presignedapp-2.0.0.exe", content: []byte("x")}}), []updaterFeedFile{feed}, http.StatusBadRequest},
+			{"path_in_name", presignedManifest([]updaterFeedFile{{name: "../" + nupkgName, content: nupkg.content}}), []updaterFeedFile{feed}, http.StatusBadRequest},
+		}
+		for _, tc := range cases {
+			w := doPresignedInit(t, router, authToken, payload, tc.manifest, tc.inline)
+			assert.Equal(t, tc.want, w.Code, "%s: %s", tc.name, w.Body.String())
+		}
+	})
+
+	upload := presignedInitOK(t, router, payload, []updaterFeedFile{nupkg}, []updaterFeedFile{feed})
+	pendingKeys := pendingUploadKeys(t, upload.UploadID)
+	require.Len(t, pendingKeys, 2)
+
+	t.Run("complete_before_put_is_rejected", func(t *testing.T) {
+		w := doPresignedComplete(t, router, authToken, upload.UploadID)
+		require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
+		assert.Contains(t, w.Body.String(), "not uploaded")
+	})
+
+	t.Run("storage_rejects_tampered_bytes", func(t *testing.T) {
+		tampered := append([]byte{}, nupkg.content...)
+		tampered[0] ^= 0xff
+		status, body := putPresigned(t, upload, nupkgName, tampered)
+		require.GreaterOrEqual(t, status, 400, "tampered payload accepted: %s", body)
+	})
+
+	t.Run("other_user_cannot_complete", func(t *testing.T) {
+		w := doPresignedComplete(t, router, authTokenSecondUser, upload.UploadID)
+		require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	})
+
+	status, body := putPresigned(t, upload, nupkgName, nupkg.content)
+	require.Less(t, status, 300, "PUT: %s", body)
+
+	doc := uploadedVersion(t, doPresignedComplete(t, router, authToken, upload.UploadID))
+
+	t.Run("artifacts_carry_hash_provenance", func(t *testing.T) {
+		pkg := artifactByLinkSuffix(t, doc, "/"+nupkgName)
+		s512 := sha512.Sum512(nupkg.content)
+		assert.False(t, pkg.HashesVerified, "client-declared hashes must wait for TUF publish verification")
+		assert.Equal(t, hex.EncodeToString(s256[:]), pkg.Hashes["sha256"])
+		assert.Equal(t, hex.EncodeToString(s512[:]), pkg.Hashes["sha512"])
+		assert.Equal(t, int64(len(nupkg.content)), pkg.Length)
+		assert.False(t, pkg.IsFeed)
+
+		feedArtifact := artifactByLinkSuffix(t, doc, "/releases.nightly.json")
+		assert.True(t, feedArtifact.IsFeed)
+		assert.True(t, feedArtifact.HashesVerified, "inline feed is hashed by faynoSync itself")
+	})
+
+	t.Run("objects_moved_out_of_staging", func(t *testing.T) {
+		ctx := context.Background()
+		bucket := viper.GetString("S3_BUCKET_NAME")
+		key := fmt.Sprintf("velopack/admin/presignedapp/windows/universalArch/%s", nupkgName)
+		stat, err := uploader.StatObject(ctx, bucket, key)
+		require.NoError(t, err)
+		md := md5.Sum(nupkg.content)
+		assert.Equal(t, int64(len(nupkg.content)), stat.Size)
+		assert.Equal(t, hex.EncodeToString(md[:]), stat.MD5)
+		for _, pendingKey := range pendingKeys {
+			_, err := uploader.StatObject(ctx, bucket, pendingKey)
+			assert.ErrorIs(t, err, storage.ErrObjectNotFound, "staged object %s must be deleted", pendingKey)
+		}
+		count, err := mongoDatabase.Collection("pending_uploads").CountDocuments(ctx, bson.M{"_id": upload.UploadID})
+		require.NoError(t, err)
+		assert.Zero(t, count)
+	})
+
+	t.Run("feed_materialized", func(t *testing.T) {
+		assets := parseVelopackFeed(t, checkFileContent(t, fmt.Sprintf("%s/velopack/admin/presignedapp/windows/universalArch/releases.nightly.json", s3Endpoint)))
+		require.Contains(t, assets, "2.0.0", "published presigned version must be in the feed")
+	})
+
+	t.Run("complete_is_single_use", func(t *testing.T) {
+		w := doPresignedComplete(t, router, authToken, upload.UploadID)
+		require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	})
+
+	t.Run("init_detects_existing_artifact", func(t *testing.T) {
+		w := doPresignedInit(t, router, authToken, payload, presignedManifest([]updaterFeedFile{nupkg}), []updaterFeedFile{feed})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+	})
+
+	t.Run("private_app_md5_only_manifest", func(t *testing.T) {
+		w := doUpdaterRequest(t, router, "/app/create", `{"app": "presignedprivate", "private": "true"}`, nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+		file := updaterFeedFile{name: "presignedprivate.zip", content: []byte("private presigned payload")}
+		privateInit := presignedInitWithManifest(t, router,
+			`{"app_name":"presignedprivate","version":"0.0.1","channel":"nightly","publish":true,"critical":false,"platform":"universalPlatform","arch":"universalArch"}`,
+			presignedMD5OnlyManifest([]updaterFeedFile{file}), 1, nil)
+		_, lengthSigned := privateInit.Files[0].Headers["Content-Length"]
+		assert.False(t, lengthSigned, "an undeclared length must not be signed")
+		status, body := putPresigned(t, privateInit, file.name, file.content)
+		require.Less(t, status, 300, "PUT: %s", body)
+
+		privateDoc := uploadedVersion(t, doPresignedComplete(t, router, authToken, privateInit.UploadID))
+		require.Len(t, privateDoc.Artifacts, 1)
+		link := privateDoc.Artifacts[0].Link
+		require.True(t, strings.HasPrefix(link, apiUrl+"/download?key="), "private artifact must be served through the API: %s", link)
+		assert.False(t, privateDoc.Artifacts[0].HashesVerified)
+		assert.Empty(t, privateDoc.Artifacts[0].Hashes, "undeclared hashes stay empty; such an artifact is not signable by TUF")
+		assert.Equal(t, int64(len(file.content)), privateDoc.Artifacts[0].Length, "length must come from storage when not declared")
+
+		key, err := url.QueryUnescape(strings.TrimPrefix(link, apiUrl+"/download?key="))
+		require.NoError(t, err)
+		stat, err := uploader.StatObject(context.Background(), viper.GetString("S3_BUCKET_NAME_PRIVATE"), key)
+		require.NoError(t, err, "object must be in the private bucket")
+		assert.Equal(t, int64(len(file.content)), stat.Size)
 	})
 }
 

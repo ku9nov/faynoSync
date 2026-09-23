@@ -295,6 +295,12 @@ var duplicateCheckIgnoredPackages = map[string]bool{
 	"delta": true,
 }
 
+// IsDuplicateCheckIgnored reports whether several artifacts of this extension may share
+// one (version, platform, arch).
+func IsDuplicateCheckIgnored(extension string) bool {
+	return duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")]
+}
+
 func lookupHashesVerified(ctxQuery map[string]interface{}) bool {
 	verified, _ := ctxQuery["hashes_verified"].(bool)
 	return verified
