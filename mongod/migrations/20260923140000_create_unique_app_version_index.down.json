@@ -1,0 +1,6 @@
+[
+  {
+    "dropIndexes": "apps",
+    "index": "unique_app_version_owner"
+  }
+]

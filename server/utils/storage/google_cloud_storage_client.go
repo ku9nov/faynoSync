@@ -2,17 +2,21 @@ package storage
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
@@ -136,7 +140,7 @@ func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucke
 		return "", &StorageError{Message: "failed to finalize upload to GCS", Err: err}
 	}
 
-	publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucketName, objectKey)
+	publicURL := g.PublicObjectURL(bucketName, objectKey)
 	logrus.Debugf("GCS: Upload completed successfully, public URL: %s\n", publicURL)
 	return publicURL, nil
 }
@@ -178,8 +182,7 @@ func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx contex
 		return "", &StorageError{Message: "failed to finalize upload to GCS", Err: err}
 	}
 
-	publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucketName, objectKey)
-	return publicURL, nil
+	return g.PublicObjectURL(bucketName, objectKey), nil
 }
 
 func (g *GoogleCloudStorageClient) CopyObject(ctx context.Context, bucketName, srcKey, dstKey string, public bool) error {
@@ -272,7 +275,7 @@ func (g *GoogleCloudStorageClient) ListObjects(ctx context.Context, bucketName, 
 	it := bucket.Objects(ctx, query)
 	for {
 		attrs, err := it.Next()
-		if err == storage.ErrObjectNotExist || err == io.EOF {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -288,7 +291,7 @@ func (g *GoogleCloudStorageClient) ListObjects(ctx context.Context, bucketName, 
 func (g *GoogleCloudStorageClient) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
 	attrs, err := g.client.Bucket(bucketName).Object(objectKey).Attrs(ctx)
 	if err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return "", false, nil
 		}
 		return "", false, &StorageError{Message: "failed to stat object in GCS", Err: err}
@@ -299,4 +302,72 @@ func (g *GoogleCloudStorageClient) GetObjectETag(ctx context.Context, bucketName
 	}
 
 	return hex.EncodeToString(attrs.MD5), true, nil
+}
+
+func (g *GoogleCloudStorageClient) PublicObjectURL(bucketName, objectKey string) string {
+	return fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucketName, encodeObjectKeyForPublicURL(objectKey))
+}
+
+// PresignPutObject binds the body through the signed MD5; GCS has no signed length, the MD5 pins it.
+func (g *GoogleCloudStorageClient) PresignPutObject(ctx context.Context, bucketName, objectKey string, contentMD5 []byte, length int64, contentType string, ttl time.Duration) (PresignedRequest, error) {
+	if len(contentMD5) != md5.Size {
+		return PresignedRequest{}, &StorageError{Message: "content MD5 must be 16 bytes"}
+	}
+	if length < 0 {
+		return PresignedRequest{}, &StorageError{Message: "content length must not be negative"}
+	}
+
+	credsFile := g.env.GetString("GCS_CREDENTIALS_FILE")
+	serviceAccount := g.env.GetString("GCS_SERVICE_ACCOUNT_EMAIL")
+	if credsFile == "" || serviceAccount == "" {
+		return PresignedRequest{}, &StorageError{Message: "GCS_CREDENTIALS_FILE and GCS_SERVICE_ACCOUNT_EMAIL are required for presigned URLs"}
+	}
+
+	encodedMD5 := base64.StdEncoding.EncodeToString(contentMD5)
+	headers := http.Header{}
+	headers.Set("Content-MD5", encodedMD5)
+	if contentType != "" {
+		headers.Set("Content-Type", contentType)
+	}
+
+	signedURL, err := storage.SignedURL(bucketName, objectKey, &storage.SignedURLOptions{
+		GoogleAccessID: serviceAccount,
+		PrivateKey:     []byte(g.env.GetString("GCS_PRIVATE_KEY")),
+		Method:         http.MethodPut,
+		MD5:            encodedMD5,
+		ContentType:    contentType,
+		Expires:        time.Now().Add(ttl),
+	})
+	if err != nil {
+		return PresignedRequest{}, &StorageError{Message: "failed to presign upload for GCS", Err: err}
+	}
+	return PresignedRequest{URL: signedURL, Headers: headers}, nil
+}
+
+// StatObject never returns SHA256: GCS does not compute one.
+func (g *GoogleCloudStorageClient) StatObject(ctx context.Context, bucketName, objectKey string) (ObjectStat, error) {
+	attrs, err := g.client.Bucket(bucketName).Object(objectKey).Attrs(ctx)
+	if err != nil {
+		if errors.Is(err, storage.ErrObjectNotExist) {
+			return ObjectStat{}, ErrObjectNotFound
+		}
+		return ObjectStat{}, &StorageError{Message: "failed to stat object in GCS", Err: err}
+	}
+
+	stat := ObjectStat{Size: attrs.Size}
+	if len(attrs.MD5) == md5.Size {
+		stat.MD5 = hex.EncodeToString(attrs.MD5)
+	}
+	return stat, nil
+}
+
+func (g *GoogleCloudStorageClient) OpenObject(ctx context.Context, bucketName, objectKey string) (io.ReadCloser, error) {
+	reader, err := g.client.Bucket(bucketName).Object(objectKey).NewReader(ctx)
+	if err != nil {
+		if errors.Is(err, storage.ErrObjectNotExist) {
+			return nil, ErrObjectNotFound
+		}
+		return nil, &StorageError{Message: "failed to open object in GCS", Err: err}
+	}
+	return reader, nil
 }

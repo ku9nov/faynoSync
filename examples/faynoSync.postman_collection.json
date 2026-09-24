@@ -485,6 +485,110 @@
       "response": []
     },
     {
+      "name": "Upload init (presigned)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.upload_id) {",
+              "    pm.collectionVariables.set(\"upload_id\", body.upload_id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "data",
+              "value": "{\"app_name\":\"{{app_name}}\",\"version\":\"{{version}}\",\"channel\":\"{{channel}}\",\"publish\":false,\"critical\":false,\"platform\":\"{{platform}}\",\"arch\":\"{{arch}}\",\"changelog\":\"\"}",
+              "type": "text"
+            },
+            {
+              "key": "files",
+              "value": "[{\"name\":\"app.dmg\",\"md5\":\"<hex md5>\",\"sha256\":\"<hex sha256>\",\"sha512\":\"<hex sha512>\",\"length\":123456}]",
+              "type": "text",
+              "description": "Files the client PUTs directly to storage. Compute all digests in one pass over the file."
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": "/Users/ku9n/Downloads/releases.nightly.json",
+              "description": "Updater feed files only (velopack releases.*.json, sparkle appcast*.xml, ...) are sent inline.",
+              "disabled": true
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{URL}}/upload/init",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "upload",
+            "init"
+          ]
+        },
+        "description": "Starts a presigned upload. Response has upload_id and, per file, a PUT url with headers that must be sent verbatim. Then: curl -X PUT -H <headers> --upload-file <file> <url>, and call Upload complete. Returns 501 when the storage driver does not support presigned uploads."
+      },
+      "response": []
+    },
+    {
+      "name": "Upload complete (presigned)",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{faynoSyncToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"upload_id\": \"{{upload_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{URL}}/upload/complete",
+          "host": [
+            "{{URL}}"
+          ],
+          "path": [
+            "upload",
+            "complete"
+          ]
+        },
+        "description": "Verifies the uploaded objects against the init manifest and creates the version, same response as Upload."
+      },
+      "response": []
+    },
+    {
       "name": "Update Specific App",
       "request": {
         "auth": {
@@ -2634,6 +2738,10 @@
     },
     {
       "key": "downloadToken",
+      "value": ""
+    },
+    {
+      "key": "upload_id",
       "value": ""
     }
   ]

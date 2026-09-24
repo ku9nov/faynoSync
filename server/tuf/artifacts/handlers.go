@@ -26,6 +26,22 @@ type PublishArtifactsPayload struct {
 	Version string `json:"version" binding:"required"`
 }
 
+// selectSignableArtifacts returns the artifacts a publish should add to TUF
+// targets. Feeds are excluded
+func selectSignableArtifacts(artifacts []model.Artifact) []model.Artifact {
+	signable := make([]model.Artifact, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		if artifact.IsFeed {
+			logrus.Debugf("Skipping feed artifact (not a TUF target): %s", artifact.Link)
+			continue
+		}
+		if !artifact.TufSigned {
+			signable = append(signable, artifact)
+		}
+	}
+	return signable
+}
+
 func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
 	owner, err := utils.GetOwnerFromContext(c)
 	if err != nil {
@@ -95,18 +111,12 @@ func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDataba
 		return
 	}
 
-	// Filter artifacts that don't have tuf_signed: true
-	unsignedArtifacts := make([]model.Artifact, 0)
-	for _, artifact := range appDoc.Artifacts {
-		if !artifact.TufSigned {
-			unsignedArtifacts = append(unsignedArtifacts, artifact)
-		}
-	}
+	unsignedArtifacts := selectSignableArtifacts(appDoc.Artifacts)
 
 	if len(unsignedArtifacts) == 0 {
-		logrus.Debugf("No unsigned artifacts found for app_id=%s, version=%s", payload.AppID, payload.Version)
+		logrus.Debugf("Nothing to sign for app_id=%s, version=%s", payload.AppID, payload.Version)
 		c.JSON(http.StatusOK, gin.H{
-			"message": "All artifacts are already signed",
+			"message": "Nothing to sign: all signable artifacts are already signed",
 			"data": gin.H{
 				"app_id":    payload.AppID,
 				"version":   payload.Version,
@@ -167,16 +177,24 @@ func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDataba
 
 	go func() {
 		ctx := context.Background()
-		if err := AddArtifacts(
-			ctx,
-			redisClient,
-			mongoDatabase,
-			owner,
-			appMeta.AppName,
-			tufArtifacts,
-			true,
-			taskID,
-		); err != nil {
+		if err := func() error {
+			// Streaming large objects can take long, so this runs here and not in the request.
+			verified, err := verifyUnverifiedArtifacts(ctx, env, successfullyConvertedArtifacts)
+			if err != nil {
+				return err
+			}
+			markArtifactsHashesVerified(ctx, mongoDatabase, appID, payload.Version, owner, verified)
+			return AddArtifacts(
+				ctx,
+				redisClient,
+				mongoDatabase,
+				owner,
+				appMeta.AppName,
+				tufArtifacts,
+				true,
+				taskID,
+			)
+		}(); err != nil {
 			logrus.Errorf("Failed to add artifacts to TUF: %v", err)
 			errorMsg := err.Error()
 			taskName := tasks.TaskNameAddArtifacts

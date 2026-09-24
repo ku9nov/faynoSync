@@ -69,8 +69,7 @@ func (a *AWSS3Client) UploadPublicObject(ctx context.Context, bucketName, object
 		return "", &StorageError{Message: "failed to upload public object to AWS S3", Err: err}
 	}
 
-	publicURL := fmt.Sprintf("%s/%s", strings.TrimRight(a.env.GetString("S3_ENDPOINT"), "/"), encodeObjectKeyForPublicURL(objectKey))
-	return publicURL, nil
+	return a.PublicObjectURL(bucketName, objectKey), nil
 }
 
 func (a *AWSS3Client) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
@@ -91,8 +90,11 @@ func (a *AWSS3Client) UploadPublicObjectWithCacheControl(ctx context.Context, bu
 		return "", &StorageError{Message: "failed to upload public object to AWS S3", Err: err}
 	}
 
-	publicURL := fmt.Sprintf("%s/%s", strings.TrimRight(a.env.GetString("S3_ENDPOINT"), "/"), encodeObjectKeyForPublicURL(objectKey))
-	return publicURL, nil
+	return a.PublicObjectURL(bucketName, objectKey), nil
+}
+
+func (a *AWSS3Client) PublicObjectURL(bucketName, objectKey string) string {
+	return fmt.Sprintf("%s/%s", strings.TrimRight(a.env.GetString("S3_ENDPOINT"), "/"), encodeObjectKeyForPublicURL(objectKey))
 }
 
 func isAWSManagedS3Endpoint(endpoint string) bool {

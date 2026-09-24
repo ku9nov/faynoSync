@@ -2,7 +2,6 @@ package velopack
 
 import (
 	"fmt"
-	"mime/multipart"
 	"strings"
 )
 
@@ -14,16 +13,16 @@ func NewFileValidator(updaterType string) *FileValidator {
 	return &FileValidator{updaterType: updaterType}
 }
 
-func (v *FileValidator) Validate(files []*multipart.FileHeader) error {
+func (v *FileValidator) Validate(fileNames []string) error {
 	hasFull := false
 	releasesCount := 0
 
-	for _, file := range files {
-		filename := strings.ToLower(file.Filename)
+	for _, fileName := range fileNames {
+		filename := strings.ToLower(fileName)
 		if strings.HasSuffix(filename, "-full.nupkg") {
 			hasFull = true
 		}
-		if strings.HasPrefix(filename, "releases.") && strings.HasSuffix(filename, ".json") {
+		if IsFeedFile(filename) {
 			releasesCount++
 		}
 	}
@@ -36,6 +35,16 @@ func (v *FileValidator) Validate(files []*multipart.FileHeader) error {
 	}
 
 	return nil
+}
+
+func (v *FileValidator) IsFeedFile(fileName string) bool {
+	return IsFeedFile(fileName)
+}
+
+// IsFeedFile reports whether an uploaded file is the velopack releases feed.
+func IsFeedFile(fileName string) bool {
+	name := strings.ToLower(fileName)
+	return strings.HasPrefix(name, "releases.") && strings.HasSuffix(name, ".json")
 }
 
 func (v *FileValidator) GetUpdaterType() string {

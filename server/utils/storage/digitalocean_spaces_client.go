@@ -70,9 +70,7 @@ func (d *DigitalOceanSpacesClient) UploadPublicObject(ctx context.Context, bucke
 		return "", &StorageError{Message: "failed to upload public object to DigitalOcean Spaces", Err: err}
 	}
 
-	spacesEndpoint := d.env.GetString("S3_ENDPOINT")
-	publicURL := fmt.Sprintf("https://%s.%s/%s", bucketName, spacesEndpoint, encodeObjectKeyForPublicURL(objectKey))
-	return publicURL, nil
+	return d.PublicObjectURL(bucketName, objectKey), nil
 }
 
 func (d *DigitalOceanSpacesClient) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
@@ -91,9 +89,11 @@ func (d *DigitalOceanSpacesClient) UploadPublicObjectWithCacheControl(ctx contex
 		return "", &StorageError{Message: "failed to upload public object to DigitalOcean Spaces", Err: err}
 	}
 
-	spacesEndpoint := d.env.GetString("S3_ENDPOINT")
-	publicURL := fmt.Sprintf("https://%s.%s/%s", bucketName, spacesEndpoint, encodeObjectKeyForPublicURL(objectKey))
-	return publicURL, nil
+	return d.PublicObjectURL(bucketName, objectKey), nil
+}
+
+func (d *DigitalOceanSpacesClient) PublicObjectURL(bucketName, objectKey string) string {
+	return fmt.Sprintf("https://%s.%s/%s", bucketName, d.env.GetString("S3_ENDPOINT"), encodeObjectKeyForPublicURL(objectKey))
 }
 
 // DeleteObject deletes a file from DigitalOcean Spaces

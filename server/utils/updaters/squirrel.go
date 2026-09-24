@@ -2,7 +2,6 @@ package updaters
 
 import (
 	"fmt"
-	"mime/multipart"
 	"strings"
 )
 
@@ -14,11 +13,11 @@ type SquirrelWindowsFileValidator struct {
 	updaterType string
 }
 
-func (v *SquirrelWindowsFileValidator) Validate(files []*multipart.FileHeader) error {
+func (v *SquirrelWindowsFileValidator) Validate(fileNames []string) error {
 	hasRelease := false
 
-	for _, file := range files {
-		filename := strings.ToLower(file.Filename)
+	for _, fileName := range fileNames {
+		filename := strings.ToLower(fileName)
 		if filename == "releases" {
 			hasRelease = true
 		}
@@ -31,6 +30,10 @@ func (v *SquirrelWindowsFileValidator) Validate(files []*multipart.FileHeader) e
 	return nil
 }
 
+func (v *SquirrelWindowsFileValidator) IsFeedFile(fileName string) bool {
+	return strings.ToLower(fileName) == "releases"
+}
+
 func (v *SquirrelWindowsFileValidator) GetUpdaterType() string {
 	return v.updaterType
 }
@@ -39,11 +42,11 @@ type SquirrelDarwinFileValidator struct {
 	updaterType string
 }
 
-func (v *SquirrelDarwinFileValidator) Validate(files []*multipart.FileHeader) error {
+func (v *SquirrelDarwinFileValidator) Validate(fileNames []string) error {
 	hasZip := false
 
-	for _, file := range files {
-		filename := strings.ToLower(file.Filename)
+	for _, fileName := range fileNames {
+		filename := strings.ToLower(fileName)
 		if strings.HasSuffix(filename, ".zip") {
 			hasZip = true
 		}
@@ -54,6 +57,11 @@ func (v *SquirrelDarwinFileValidator) Validate(files []*multipart.FileHeader) er
 	}
 
 	return nil
+}
+
+// squirrel_darwin has no feed: checkVersion points straight at the .zip.
+func (v *SquirrelDarwinFileValidator) IsFeedFile(fileName string) bool {
+	return false
 }
 
 func (v *SquirrelDarwinFileValidator) GetUpdaterType() string {
@@ -104,12 +112,12 @@ func GetSquirrelUpdaterConfig(updaterType string) (*SquirrelUpdater, error) {
 	}, nil
 }
 
-func ValidateSquirrelWindowsFiles(files []*multipart.FileHeader) error {
+func ValidateSquirrelWindowsFiles(fileNames []string) error {
 	validator := &SquirrelWindowsFileValidator{updaterType: "squirrel_windows"}
-	return validator.Validate(files)
+	return validator.Validate(fileNames)
 }
 
-func ValidateSquirrelDarwinFiles(files []*multipart.FileHeader) error {
+func ValidateSquirrelDarwinFiles(fileNames []string) error {
 	validator := &SquirrelDarwinFileValidator{updaterType: "squirrel_darwin"}
-	return validator.Validate(files)
+	return validator.Validate(fileNames)
 }

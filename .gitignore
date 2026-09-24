@@ -41,6 +41,7 @@ docs/
 server/handler/info/index_bench_test.go
 server/handler/info/materialize_bench_test.go
 server/handler/info/checkversion_bench_test.go
+server/utils/storage/presigned_live_test.go
 
 ROADMAP.md
 PRIVATE_FEATURE.md

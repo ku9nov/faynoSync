@@ -10,18 +10,22 @@ import (
 )
 
 type Artifact struct {
-	Link      string                 `bson:"link"`
-	S3Key     string                 `bson:"s3_key,omitempty"`
-	Platform  primitive.ObjectID     `bson:"platform"`
-	Arch      primitive.ObjectID     `bson:"arch"`
-	Package   string                 `bson:"package"`
-	Signature string                 `bson:"signature"`
-	Hashes    map[string]string      `bson:"hashes,omitempty"`
-	Length    int64                  `bson:"length,omitempty"`
-	TufSigned bool                   `bson:"tuf_signed,omitempty"`
-	TufTaskID *string                `bson:"tuf_task_id,omitempty"`
-	Velopack  *velopack.VelopackMeta `bson:"velopack,omitempty"`
-	Sparkle   *sparkle.SparkleMeta   `bson:"sparkle,omitempty"`
+	Link      string             `bson:"link"`
+	S3Key     string             `bson:"s3_key,omitempty"`
+	Platform  primitive.ObjectID `bson:"platform"`
+	Arch      primitive.ObjectID `bson:"arch"`
+	Package   string             `bson:"package"`
+	Signature string             `bson:"signature"`
+	Hashes    map[string]string  `bson:"hashes,omitempty"`
+	Length    int64              `bson:"length,omitempty"`
+	TufSigned bool               `bson:"tuf_signed,omitempty"`
+	TufTaskID *string            `bson:"tuf_task_id,omitempty"`
+	IsFeed    bool               `bson:"is_feed,omitempty"`
+	// HashesVerified is true only when faynoSync itself hashed the stored bytes; TUF
+	// publish re-verifies every artifact without it before signing.
+	HashesVerified bool                   `bson:"hashes_verified,omitempty"`
+	Velopack       *velopack.VelopackMeta `bson:"velopack,omitempty"`
+	Sparkle        *sparkle.SparkleMeta   `bson:"sparkle,omitempty"`
 }
 
 type App struct {
@@ -63,6 +67,7 @@ type SpecificArtifactsWithoutIDs struct {
 	Package   string  `bson:"package" json:"package"`
 	TufTaskID *string `bson:"tuf_task_id,omitempty"`
 	TufSigned bool    `bson:"tuf_signed,omitempty"`
+	IsFeed    bool    `bson:"is_feed,omitempty"`
 }
 
 type SpecificAppWithoutIDs struct {

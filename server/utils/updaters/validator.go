@@ -6,12 +6,12 @@ import (
 	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
-	"mime/multipart"
 	"strings"
 )
 
 type FileValidator interface {
-	Validate(files []*multipart.FileHeader) error
+	Validate(fileNames []string) error
+	IsFeedFile(fileName string) bool
 	GetUpdaterType() string
 }
 
@@ -132,7 +132,7 @@ func CreateParamValidator(updaterType string) (ParamValidator, error) {
 	}
 }
 
-func ValidateFiles(files []*multipart.FileHeader, updaterType string) error {
+func ValidateFiles(fileNames []string, updaterType string) error {
 	if updaterType == "" {
 		return nil
 	}
@@ -142,7 +142,22 @@ func ValidateFiles(files []*multipart.FileHeader, updaterType string) error {
 		return err
 	}
 
-	return validator.Validate(files)
+	return validator.Validate(fileNames)
+}
+
+// IsFeedFile reports whether fileName is the updater's feed file. Unknown or
+// empty updaters answer false, so an unrecognised file stays TUF-signable.
+func IsFeedFile(fileName string, updaterType string) bool {
+	if updaterType == "" {
+		return false
+	}
+
+	validator, err := CreateFileValidator(updaterType)
+	if err != nil {
+		return false
+	}
+
+	return validator.IsFeedFile(fileName)
 }
 
 func ValidateParams(params map[string]interface{}, updaterType string) error {
@@ -162,8 +177,12 @@ type NoOpFileValidator struct {
 	updaterType string
 }
 
-func (v *NoOpFileValidator) Validate(files []*multipart.FileHeader) error {
+func (v *NoOpFileValidator) Validate(fileNames []string) error {
 	return nil
+}
+
+func (v *NoOpFileValidator) IsFeedFile(fileName string) bool {
+	return false
 }
 
 func (v *NoOpFileValidator) GetUpdaterType() string {

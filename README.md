@@ -137,6 +137,7 @@ S3_ENDPOINT (The public bucket URL used for public artifact links. Artifacts wil
 S3_API_ENDPOINT (Optional custom S3 API endpoint for S3-compatible providers such as local Garage. Leave empty for managed AWS S3.)
 S3_FORCE_PATH_STYLE (Optional. Set to `true` for providers that require path-style requests, such as local Garage.)
 S3_DISABLE_OBJECT_ACL (Optional. Set to `true` for providers that do not support `public-read` object ACLs, such as local Garage.)
+PRESIGNED_UPLOAD_URL_TTL (Optional. Lifetime of presigned upload URLs, for example `2h`. Default: `30m`, max: `168h`.)
 
 # Server Configuration
 ALLOWED_CORS (urls to allow CORS configuration)
@@ -290,6 +291,7 @@ go build -o faynoSync faynoSync.go
 ### 📤 Upload Your Application
 
 3. Upload your application to S3 and set the version number in [faynoSync-dashboard](https://github.com/ku9nov/faynoSync-dashboard) or using API.
+   For large builds, skip the reverse proxy and upload straight to storage with presigned URLs: `POST /upload/init` → `PUT` → `POST /upload/complete`, see [Presigned Uploads](https://faynosync.com/docs/presigned-uploads).
 
 ### 🔍 Check for Updates
 

@@ -30,6 +30,8 @@ type AppHandler interface {
 	DeletePlatform(*gin.Context)
 	DeleteArch(*gin.Context)
 	UploadApp(*gin.Context)
+	InitPresignedUpload(*gin.Context)
+	CompletePresignedUpload(*gin.Context)
 	UpdateSpecificApp(*gin.Context)
 	HealthCheck(*gin.Context)
 	FindLatestVersion(*gin.Context)
@@ -157,6 +159,15 @@ func (ch *appHandler) CreateApp(c *gin.Context) {
 func (ch *appHandler) UploadApp(c *gin.Context) {
 	// Call the UploadApp function from the create package
 	create.UploadApp(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
+	ch.reloadTelemetryAllowListAfterSuccess(c, "uploading app version")
+}
+
+func (ch *appHandler) InitPresignedUpload(c *gin.Context) {
+	create.InitPresignedUpload(c, ch.database)
+}
+
+func (ch *appHandler) CompletePresignedUpload(c *gin.Context) {
+	create.CompletePresignedUpload(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
 	ch.reloadTelemetryAllowListAfterSuccess(c, "uploading app version")
 }
 

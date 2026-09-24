@@ -295,6 +295,31 @@ var duplicateCheckIgnoredPackages = map[string]bool{
 	"delta": true,
 }
 
+const versionIndexName = "unique_app_version_owner"
+
+func isVersionIndexDuplicate(err error) bool {
+	return mongo.IsDuplicateKeyError(err) && strings.Contains(err.Error(), versionIndexName)
+}
+
+// ErrVersionChannelMismatch rejects adding artifacts to an existing version from another channel.
+var ErrVersionChannelMismatch = errors.New("this version already exists in another channel; the channel of a version cannot be changed")
+
+// IsDuplicateCheckIgnored reports whether several artifacts of this extension may share
+// one (version, platform, arch).
+func IsDuplicateCheckIgnored(extension string) bool {
+	return duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")]
+}
+
+func lookupHashesVerified(ctxQuery map[string]interface{}) bool {
+	verified, _ := ctxQuery["hashes_verified"].(bool)
+	return verified
+}
+
+func lookupIsFeed(ctxQuery map[string]interface{}) bool {
+	isFeed, _ := ctxQuery["is_feed"].(bool)
+	return isFeed
+}
+
 func lookupVelopackMeta(ctxQuery map[string]interface{}) *velopack.VelopackMeta {
 	metaVal, ok := ctxQuery["velopack_meta"]
 	if !ok {
@@ -336,6 +361,8 @@ func lookupSparkleMeta(ctxQuery map[string]interface{}) *sparkle.SparkleMeta {
 }
 
 func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extension string, owner string, ctx context.Context, redisClient *redis.Client, env *viper.Viper, checkAppVisibility bool) (interface{}, error) {
+	var appMeta appMetaDoc
+	var channelMeta, platformMeta, archMeta metaIDDoc
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	var uploadResult interface{}
@@ -447,185 +474,220 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 	logrus.Debugf("Checking if document exists with app_id: %s, version: %s, owner: %s",
 		appMeta.ID.Hex(), ctxQuery["version"].(string), owner)
 
-	existingDoc := collection.FindOne(ctx, bson.D{
-		{Key: "app_id", Value: appMeta.ID},
-		{Key: "version", Value: ctxQuery["version"].(string)},
-		{Key: "owner", Value: owner},
-	})
-
-	if existingDoc.Err() == nil {
-		logrus.Debugf("Document exists, updating it")
-		var appData model.SpecificApp
-		if err := existingDoc.Decode(&appData); err != nil {
-			logrus.Debugf("Error decoding existing document: %v", err)
-			return nil, err
-		}
-
-		if !duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")] {
-			for _, artifact := range appData.Artifacts {
-				if artifact.Package == extension && artifact.Arch == archMeta.ID && artifact.Platform == platformMeta.ID {
-					msg := "app with this name, version, platform, architecture and extension already exists"
-					logrus.Debugf("Upload function in mongod/create.go: %s", msg)
-					return msg, errors.New(msg)
-				}
-			}
-		}
-
-		var hashes map[string]string
-		var length int64
-		if hashesVal, exists := ctxQuery["hashes"]; exists {
-			if hashesMap, ok := hashesVal.(map[string]string); ok {
-				hashes = hashesMap
-			}
-		}
-		if lengthVal, exists := ctxQuery["length"]; exists {
-			if lengthInt, ok := lengthVal.(int64); ok {
-				length = lengthInt
-			}
-		}
-
-		newArtifact := model.Artifact{
-			Link:      appLink,
-			S3Key:     utils.PrivateObjectKey(appLink),
-			Platform:  platformMeta.ID,
-			Arch:      archMeta.ID,
-			Package:   extension,
-			Signature: ctxQuery["signature"].(string),
-		}
-		if hashes != nil {
-			newArtifact.Hashes = hashes
-		}
-		if length > 0 {
-			newArtifact.Length = length
-		}
-		if velopackMeta := lookupVelopackMeta(ctxQuery); velopackMeta != nil {
-			newArtifact.Velopack = velopackMeta
-		}
-		if sparkleMeta := lookupSparkleMeta(ctxQuery); sparkleMeta != nil {
-			newArtifact.Sparkle = sparkleMeta
-		}
-
-		appData.Artifacts = append(appData.Artifacts, newArtifact)
-		logrus.Debugf("Adding new artifact to existing document")
-		_, err = collection.UpdateOne(
-			ctx,
-			bson.D{{Key: "app_id", Value: appMeta.ID}, {Key: "version", Value: ctxQuery["version"].(string)}, {Key: "owner", Value: owner}},
-			bson.D{{Key: "$set", Value: bson.D{{Key: "artifacts", Value: appData.Artifacts}, {Key: "updated_at", Value: time.Now()}}}},
-		)
-		if err != nil {
-			logrus.Debugf("Error updating document: %v", err)
-			return nil, err
-		}
-
-		uploadResult = appData.ID
-		logrus.Debugf("Document updated successfully, returning ID: %s", appData.ID.Hex())
-	} else {
-		// Handle the case when no document exists
-		logrus.Debugf("Document does not exist, creating new one")
-		publishParam, publishExists := ctxQuery["publish"]
-		criticalParam, criticalExists := ctxQuery["critical"]
-		intermediateParam, intermediateExists := ctxQuery["intermediate"]
-
-		publish := false
-		if publishExists {
-			publish = utils.GetBoolParam(publishParam)
-			logrus.Debugf("Setting published to: %t", publish)
-		}
-
-		critical := false
-		if criticalExists {
-			critical = utils.GetBoolParam(criticalParam)
-			logrus.Debugf("Setting critical to: %t", critical)
-		}
-
-		requiredIntermediate := false
-		if intermediateExists {
-			requiredIntermediate = utils.GetBoolParam(intermediateParam)
-			logrus.Debugf("Setting required_intermediate to: %t", requiredIntermediate)
-		}
-
-		var hashes map[string]string
-		var length int64
-		if hashesVal, exists := ctxQuery["hashes"]; exists {
-			if hashesMap, ok := hashesVal.(map[string]string); ok {
-				hashes = hashesMap
-			}
-		}
-		if lengthVal, exists := ctxQuery["length"]; exists {
-			if lengthInt, ok := lengthVal.(int64); ok {
-				length = lengthInt
-			}
-		}
-
-		artifact := model.Artifact{
-			Link:      appLink,
-			S3Key:     utils.PrivateObjectKey(appLink),
-			Platform:  platformMeta.ID,
-			Arch:      archMeta.ID,
-			Package:   extension,
-			Signature: ctxQuery["signature"].(string),
-		}
-		if hashes != nil {
-			artifact.Hashes = hashes
-		}
-		if length > 0 {
-			artifact.Length = length
-		}
-		if velopackMeta := lookupVelopackMeta(ctxQuery); velopackMeta != nil {
-			artifact.Velopack = velopackMeta
-		}
-		if sparkleMeta := lookupSparkleMeta(ctxQuery); sparkleMeta != nil {
-			artifact.Sparkle = sparkleMeta
-		}
-
-		rolloutPercent := 100
-		if v, ok := ctxQuery["rollout"].(int); ok {
-			rolloutPercent = v
-		}
-		rolloutSeed, err := generateRolloutSeed()
-		if err != nil {
-			logrus.Errorf("Error generating rollout seed: %v", err)
-			return nil, err
-		}
-		logrus.Debugf("Setting rollout_percent to: %d", rolloutPercent)
-
-		changelog := model.Changelog{
-			Version: ctxQuery["version"].(string),
-			Changes: ctxQuery["changelog"].(string),
-			Date:    time.Now().Format("2006-01-02"),
-		}
-		filter := bson.D{
+	for attempt := 0; ; attempt++ {
+		existingDoc := collection.FindOne(ctx, bson.D{
 			{Key: "app_id", Value: appMeta.ID},
 			{Key: "version", Value: ctxQuery["version"].(string)},
-			{Key: "channel_id", Value: channelMeta.ID},
-			{Key: "published", Value: publish},
-			{Key: "critical", Value: critical},
-			{Key: "required_intermediate", Value: requiredIntermediate},
-			{Key: "artifacts", Value: []model.Artifact{artifact}},
-			{Key: "changelog", Value: []model.Changelog{changelog}},
-			{Key: "rollout_percent", Value: rolloutPercent},
-			{Key: "rollout_seed", Value: rolloutSeed},
-			{Key: "updated_at", Value: time.Now()},
 			{Key: "owner", Value: owner},
-		}
-		logrus.Debugf("Channel Meta: %v", channelMeta)
-		logrus.Debugf("Platform Meta: %v", platformMeta)
-		logrus.Debugf("Arch Meta: %v", archMeta)
-		uploadResult, err = collection.InsertOne(ctx, filter)
-		if err != nil {
-			logrus.Errorf("Error inserting document: %v", err)
-			return nil, err
-		}
+		})
 
-		mongoErr, ok := err.(mongo.WriteException)
-		if ok {
-			for _, writeErr := range mongoErr.WriteErrors {
-				if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "unique_link_to_app_with_specific_version") {
-					return "app with this link already exists", errors.New("app with this link already exists")
+		if existingDoc.Err() == nil {
+			logrus.Debugf("Document exists, updating it")
+			var appData model.SpecificApp
+			if err := existingDoc.Decode(&appData); err != nil {
+				logrus.Debugf("Error decoding existing document: %v", err)
+				return nil, err
+			}
+
+			// Artifacts are appended to the existing version; its channel is immutable.
+			if channelMeta.ID != appData.ChannelID {
+				logrus.Debugf("Upload function in mongod/create.go: %s", ErrVersionChannelMismatch)
+				return ErrVersionChannelMismatch.Error(), ErrVersionChannelMismatch
+			}
+
+			if !duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")] {
+				for _, artifact := range appData.Artifacts {
+					if artifact.Package == extension && artifact.Arch == archMeta.ID && artifact.Platform == platformMeta.ID {
+						msg := "app with this name, version, platform, architecture and extension already exists"
+						logrus.Debugf("Upload function in mongod/create.go: %s", msg)
+						return msg, errors.New(msg)
+					}
 				}
 			}
+
+			var hashes map[string]string
+			var length int64
+			if hashesVal, exists := ctxQuery["hashes"]; exists {
+				if hashesMap, ok := hashesVal.(map[string]string); ok {
+					hashes = hashesMap
+				}
+			}
+			if lengthVal, exists := ctxQuery["length"]; exists {
+				if lengthInt, ok := lengthVal.(int64); ok {
+					length = lengthInt
+				}
+			}
+
+			newArtifact := model.Artifact{
+				Link:           appLink,
+				S3Key:          utils.PrivateObjectKey(appLink),
+				Platform:       platformMeta.ID,
+				Arch:           archMeta.ID,
+				Package:        extension,
+				Signature:      ctxQuery["signature"].(string),
+				IsFeed:         lookupIsFeed(ctxQuery),
+				HashesVerified: lookupHashesVerified(ctxQuery),
+			}
+			if hashes != nil {
+				newArtifact.Hashes = hashes
+			}
+			if length > 0 {
+				newArtifact.Length = length
+			}
+			if velopackMeta := lookupVelopackMeta(ctxQuery); velopackMeta != nil {
+				newArtifact.Velopack = velopackMeta
+			}
+			if sparkleMeta := lookupSparkleMeta(ctxQuery); sparkleMeta != nil {
+				newArtifact.Sparkle = sparkleMeta
+			}
+
+			logrus.Debugf("Adding new artifact to existing document")
+			// $push with the duplicate check in the filter: concurrent appends can neither
+			// overwrite each other's artifacts nor add the same artifact twice.
+			appendFilter := bson.D{{Key: "app_id", Value: appMeta.ID}, {Key: "version", Value: ctxQuery["version"].(string)}, {Key: "owner", Value: owner}}
+			if !duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")] {
+				appendFilter = append(appendFilter, bson.E{Key: "artifacts", Value: bson.M{"$not": bson.M{"$elemMatch": bson.M{
+					"package":  extension,
+					"platform": platformMeta.ID,
+					"arch":     archMeta.ID,
+				}}}})
+			}
+			var appendResult *mongo.UpdateResult
+			appendResult, err = collection.UpdateOne(
+				ctx,
+				appendFilter,
+				bson.D{
+					{Key: "$push", Value: bson.D{{Key: "artifacts", Value: newArtifact}}},
+					{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}}},
+				},
+			)
+			if err != nil {
+				logrus.Debugf("Error updating document: %v", err)
+				return nil, err
+			}
+			if appendResult.MatchedCount == 0 {
+				msg := "app with this name, version, platform, architecture and extension already exists"
+				logrus.Debugf("Upload function in mongod/create.go: %s (concurrent upload)", msg)
+				return msg, errors.New(msg)
+			}
+
+			uploadResult = appData.ID
+			logrus.Debugf("Document updated successfully, returning ID: %s", appData.ID.Hex())
+		} else {
+			// Handle the case when no document exists
+			logrus.Debugf("Document does not exist, creating new one")
+			publishParam, publishExists := ctxQuery["publish"]
+			criticalParam, criticalExists := ctxQuery["critical"]
+			intermediateParam, intermediateExists := ctxQuery["intermediate"]
+
+			publish := false
+			if publishExists {
+				publish = utils.GetBoolParam(publishParam)
+				logrus.Debugf("Setting published to: %t", publish)
+			}
+
+			critical := false
+			if criticalExists {
+				critical = utils.GetBoolParam(criticalParam)
+				logrus.Debugf("Setting critical to: %t", critical)
+			}
+
+			requiredIntermediate := false
+			if intermediateExists {
+				requiredIntermediate = utils.GetBoolParam(intermediateParam)
+				logrus.Debugf("Setting required_intermediate to: %t", requiredIntermediate)
+			}
+
+			var hashes map[string]string
+			var length int64
+			if hashesVal, exists := ctxQuery["hashes"]; exists {
+				if hashesMap, ok := hashesVal.(map[string]string); ok {
+					hashes = hashesMap
+				}
+			}
+			if lengthVal, exists := ctxQuery["length"]; exists {
+				if lengthInt, ok := lengthVal.(int64); ok {
+					length = lengthInt
+				}
+			}
+
+			artifact := model.Artifact{
+				Link:           appLink,
+				S3Key:          utils.PrivateObjectKey(appLink),
+				Platform:       platformMeta.ID,
+				Arch:           archMeta.ID,
+				Package:        extension,
+				Signature:      ctxQuery["signature"].(string),
+				IsFeed:         lookupIsFeed(ctxQuery),
+				HashesVerified: lookupHashesVerified(ctxQuery),
+			}
+			if hashes != nil {
+				artifact.Hashes = hashes
+			}
+			if length > 0 {
+				artifact.Length = length
+			}
+			if velopackMeta := lookupVelopackMeta(ctxQuery); velopackMeta != nil {
+				artifact.Velopack = velopackMeta
+			}
+			if sparkleMeta := lookupSparkleMeta(ctxQuery); sparkleMeta != nil {
+				artifact.Sparkle = sparkleMeta
+			}
+
+			rolloutPercent := 100
+			if v, ok := ctxQuery["rollout"].(int); ok {
+				rolloutPercent = v
+			}
+			rolloutSeed, err := generateRolloutSeed()
+			if err != nil {
+				logrus.Errorf("Error generating rollout seed: %v", err)
+				return nil, err
+			}
+			logrus.Debugf("Setting rollout_percent to: %d", rolloutPercent)
+
+			changelog := model.Changelog{
+				Version: ctxQuery["version"].(string),
+				Changes: ctxQuery["changelog"].(string),
+				Date:    time.Now().Format("2006-01-02"),
+			}
+			filter := bson.D{
+				{Key: "app_id", Value: appMeta.ID},
+				{Key: "version", Value: ctxQuery["version"].(string)},
+				{Key: "channel_id", Value: channelMeta.ID},
+				{Key: "published", Value: publish},
+				{Key: "critical", Value: critical},
+				{Key: "required_intermediate", Value: requiredIntermediate},
+				{Key: "artifacts", Value: []model.Artifact{artifact}},
+				{Key: "changelog", Value: []model.Changelog{changelog}},
+				{Key: "rollout_percent", Value: rolloutPercent},
+				{Key: "rollout_seed", Value: rolloutSeed},
+				{Key: "updated_at", Value: time.Now()},
+				{Key: "owner", Value: owner},
+			}
+			logrus.Debugf("Channel Meta: %v", channelMeta)
+			logrus.Debugf("Platform Meta: %v", platformMeta)
+			logrus.Debugf("Arch Meta: %v", archMeta)
+			uploadResult, err = collection.InsertOne(ctx, filter)
+			if err != nil {
+				if attempt == 0 && isVersionIndexDuplicate(err) {
+					logrus.Debugf("Version %s was created concurrently, appending instead", ctxQuery["version"].(string))
+					continue
+				}
+				logrus.Errorf("Error inserting document: %v", err)
+				return nil, err
+			}
+
+			mongoErr, ok := err.(mongo.WriteException)
+			if ok {
+				for _, writeErr := range mongoErr.WriteErrors {
+					if writeErr.Code == 11000 && strings.Contains(writeErr.Message, "unique_link_to_app_with_specific_version") {
+						return "app with this link already exists", errors.New("app with this link already exists")
+					}
+				}
+			}
+			logrus.Debugf("Document created successfully")
 		}
-		logrus.Debugf("Document created successfully")
+		break
 	}
 
 	switch v := uploadResult.(type) {

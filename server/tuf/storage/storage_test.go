@@ -35,10 +35,11 @@ type listCall struct {
 }
 
 type uploadCall struct {
-	Bucket      string
-	ObjectKey   string
-	ContentType string
-	Body        []byte
+	Bucket       string
+	ObjectKey    string
+	ContentType  string
+	CacheControl string
+	Body         []byte
 }
 
 type downloadCall struct {
@@ -70,6 +71,12 @@ func (m *mockStorageClient) UploadPublicObject(ctx context.Context, bucketName, 
 		return "", m.uploadErr
 	}
 	return "https://example.com/" + bucketName + "/" + objectKey, nil
+}
+
+func (m *mockStorageClient) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
+	link, err := m.UploadPublicObject(ctx, bucketName, objectKey, fileReader, contentType)
+	m.uploadCalls[len(m.uploadCalls)-1].CacheControl = cacheControl
+	return link, err
 }
 
 func (m *mockStorageClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
@@ -138,7 +145,7 @@ func Test_uploadWithClient_Success(t *testing.T) {
 	ctx := context.Background()
 	bucket, s3Key, contentType := "my-bucket", "tuf_metadata/admin/app/root.json", "application/json"
 
-	err := uploadWithClient(ctx, mock, bucket, s3Key, filePath, contentType)
+	err := uploadWithClient(ctx, mock, bucket, s3Key, filePath, contentType, "")
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -158,7 +165,7 @@ func Test_uploadWithClient_OpenFileFails(t *testing.T) {
 	ctx := context.Background()
 	nonexistentPath := "/nonexistent/path/file.json"
 
-	err := uploadWithClient(ctx, mock, "bucket", "key", nonexistentPath, "application/json")
+	err := uploadWithClient(ctx, mock, "bucket", "key", nonexistentPath, "application/json", "")
 
 	require.Error(t, err, "Expected error when file does not exist")
 	assert.Contains(t, err.Error(), "failed to open file", "Error message should mention failed to open file (expected %q, got %q)", "failed to open file", err.Error())
@@ -202,6 +209,38 @@ func Test_UploadMetadataToS3_Success(t *testing.T) {
 	assert.Equal(t, expectedKey, call.ObjectKey, "ObjectKey should be tuf_metadata/admin/app/filename (expected %q, got %q)", expectedKey, call.ObjectKey)
 	assert.Equal(t, "application/json", call.ContentType, "ContentType should be application/json")
 	assert.Equal(t, content, call.Body, "Uploaded body should match file content")
+}
+
+// timestamp.json is overwritten under a fixed name, so only it gets a short cache; versioned files are immutable.
+func Test_UploadMetadataToS3_TimestampCacheControl(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "metadata.json")
+	require.NoError(t, os.WriteFile(filePath, []byte(`{"signed":{},"signatures":[]}`), 0644))
+	mockClient := &mockStorageClient{}
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+
+	savedGetViper := GetViperForUpload
+	savedFactory := StorageFactoryForUpload
+	GetViperForUpload = func() *viper.Viper { return mockViper }
+	StorageFactoryForUpload = func(*viper.Viper) StorageFactory {
+		return &mockStorageFactory{client: mockClient}
+	}
+	defer func() {
+		GetViperForUpload = savedGetViper
+		StorageFactoryForUpload = savedFactory
+	}()
+
+	ctx := context.Background()
+	for _, filename := range []string{"timestamp.json", "2.snapshot.json", "2.targets.json", "1.root.json"} {
+		require.NoError(t, UploadMetadataToS3(ctx, "admin1", "app1", filename, filePath))
+	}
+
+	require.Len(t, mockClient.uploadCalls, 4)
+	assert.Equal(t, "public, max-age=60, must-revalidate", mockClient.uploadCalls[0].CacheControl)
+	for _, call := range mockClient.uploadCalls[1:] {
+		assert.Empty(t, call.CacheControl, "%s must keep the storage default cache", call.ObjectKey)
+	}
 }
 
 // To verify: In UploadMetadataToS3 remove the bucketName empty check or return nil when S3_BUCKET_NAME is empty; test will fail (no error returned).

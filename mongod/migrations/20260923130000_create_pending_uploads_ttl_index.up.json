@@ -1,0 +1,15 @@
+[
+  {
+    "createIndexes": "pending_uploads",
+    "indexes": [
+      {
+        "key": {
+          "expires_at": 1
+        },
+        "name": "pending_uploads_expires_at_ttl",
+        "expireAfterSeconds": 0,
+        "background": true
+      }
+    ]
+  }
+]

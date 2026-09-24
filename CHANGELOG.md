@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.4.0
+
+### Breaking changes
+
+- Team users' allowed lists for apps, channels, platforms and architectures are now enforced on `POST /upload` (they were ignored since v1.4.1). An upload outside them returns `403` before anything is written to storage.
+
+### Features
+
+- Presigned uploads: `POST /upload/init` returns presigned PUT URLs, files go straight to storage, `POST /upload/complete` creates the version. No reverse proxy in the data path. Not supported on MinIO (`501`).
+- `PRESIGNED_UPLOAD_URL_TTL` sets the presigned URL lifetime (default `30m`, max `168h`).
+
+### Fixes
+
+- TUF `timestamp.json` is written with `Cache-Control: public, max-age=60, must-revalidate`, so clients see a new publish within a minute instead of after the storage default cache time.
+
 ## v2.3.0
 
 ### Breaking changes

@@ -14,7 +14,6 @@ import (
 	"faynoSync/server/utils/updaters/velopack"
 	"mime/multipart"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -290,8 +289,12 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	var isVelopack bool
 	var isSparkle bool
 	var files []*multipart.FileHeader
+	var fileNames []string
+	var updaterType string
 	if form != nil {
 		files = form.File["file"] // Assuming the field name is "file" not "files"
+		fileNames = create.FileNames(files)
+		updaterType, _ = ctxQueryMap["updater"].(string)
 		// Validate updater requirements
 		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
 			updaterStr := updater.(string)
@@ -299,7 +302,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			if err := updaters.ValidateFiles(files, updaterStr); err != nil {
+			if err := updaters.ValidateFiles(fileNames, updaterStr); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
@@ -321,7 +324,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
-				if err := sparkle.ValidateArchivesInAppcast(files, sparkleMeta); err != nil {
+				if err := sparkle.ValidateArchivesInAppcast(fileNames, sparkleMeta); err != nil {
 					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
@@ -358,6 +361,8 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			}
 			fileCtxQuery["hashes"] = fileHashes[i]
 			fileCtxQuery["length"] = fileLengths[i]
+			fileCtxQuery["hashes_verified"] = true
+			fileCtxQuery["is_feed"] = updaters.IsFeedFile(files[i].Filename, updaterType)
 			if _, ok := ctxQueryMap["velopack_meta"]; ok {
 				fileCtxQuery["file_name"] = files[i].Filename
 			}
@@ -396,7 +401,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		"Updating app",
 	)
 
-	create.CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, s3Owner, files, checkAppVisibility, viper.GetViper())
+	create.CopyVelopackInstallersToDefault(c.Request.Context(), ctxQueryMap, s3Owner, fileNames, checkAppVisibility, viper.GetViper())
 
 	// A version-level change (publish/critical/changelog) or an added artifact can
 	// affect every feed the version has artifacts in — regenerate exactly those
@@ -417,55 +422,8 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		info.MaterializeSparkleForTuplesOrFull(c.Request.Context(), db, viper.GetViper(), s3Owner, appName, tuples, checkAppVisibility)
 	}
 
-	if len(links) > 0 && viper.GetBool("SLACK_ENABLE") {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-
-			humanReadableData, err := repository.FetchAppByID(objID, ctx)
-			if err != nil {
-				logrus.Error("Error fetching human-readable data for Slack notification: ", err)
-				return
-			}
-			if len(humanReadableData) == 0 {
-				logrus.Warn("No app data found for Slack notification, app ID: ", objID.Hex())
-				return
-			}
-
-			slackData := humanReadableData[0]
-
-			var platforms, arches, artifacts, pkgs []string
-			for _, artifact := range slackData.Artifacts {
-				platforms = append(platforms, artifact.Platform)
-				arches = append(arches, artifact.Arch)
-				artifacts = append(artifacts, artifact.Link)
-				pkgs = append(pkgs, artifact.Package)
-			}
-
-			var changelog []string
-			for _, change := range slackData.Changelog {
-				if strings.TrimSpace(change.Changes) == "" {
-					continue
-				}
-				changelog = append(changelog, change.Changes)
-			}
-
-			utils.SendSlackNotification(
-				owner,
-				slackData.AppName,
-				slackData.Channel,
-				slackData.Version,
-				platforms,
-				arches,
-				artifacts,
-				changelog,
-				pkgs,
-				viper.GetViper(),
-				rdb,
-				slackData.Published,
-				slackData.Critical,
-			)
-		}()
+	if len(links) > 0 {
+		create.NotifySlackForApp(repository, objID, owner, rdb, viper.GetViper())
 	}
 
 	c.JSON(http.StatusOK, gin.H{"updatedResult.Updated": result})
