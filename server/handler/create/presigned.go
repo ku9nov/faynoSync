@@ -168,7 +168,7 @@ func parsePresignedManifest(raw string) ([]presignedFileManifest, error) {
 			return nil, fmt.Errorf("file %q: sha512 must be a hex digest", file.Name)
 		}
 		if file.Length < 0 || file.Length > maxPresignedFileSize {
-			return nil, fmt.Errorf("file %q: length must be between 1 and %d bytes", file.Name, int64(maxPresignedFileSize))
+			return nil, fmt.Errorf("file %q: length must be between 0 (not declared) and %d bytes", file.Name, int64(maxPresignedFileSize))
 		}
 	}
 	return manifest, nil
