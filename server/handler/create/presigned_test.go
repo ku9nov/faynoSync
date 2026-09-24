@@ -10,6 +10,7 @@ import (
 
 	"faynoSync/server/utils/storage"
 
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -156,5 +157,27 @@ func TestPendingUploadBSONRoundTrip(t *testing.T) {
 	}
 	if !out.Files[0].Inline || out.Files[1].Inline || out.Files[1].MD5 != testMD5 || out.Files[1].Hashes["sha512"] != testSHA512 {
 		t.Errorf("round trip lost data: %+v", out.Files)
+	}
+}
+
+func TestPresignedPutTTL(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want time.Duration
+	}{
+		{"", defaultPresignedPutTTL},
+		{"2h", 2 * time.Hour},
+		{"168h", maxPresignedPutTTL},
+		{"169h", defaultPresignedPutTTL},
+		{"0s", defaultPresignedPutTTL},
+		{"-5m", defaultPresignedPutTTL},
+		{"not-a-duration", defaultPresignedPutTTL},
+	}
+	for _, tc := range cases {
+		env := viper.New()
+		env.Set("PRESIGNED_UPLOAD_URL_TTL", tc.raw)
+		if got := presignedPutTTL(env); got != tc.want {
+			t.Errorf("PRESIGNED_UPLOAD_URL_TTL=%q: got %s, want %s", tc.raw, got, tc.want)
+		}
 	}
 }

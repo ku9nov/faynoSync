@@ -33,9 +33,11 @@ import (
 
 const (
 	pendingUploadsCollection = "pending_uploads"
-	presignedPutTTL          = 30 * time.Minute
-	// Outlives the PUT URLs so a transfer that started just before they expire can still complete.
-	pendingUploadTTL      = 2 * time.Hour
+	defaultPresignedPutTTL   = 30 * time.Minute
+	// The SigV4 limit for S3-compatible storage, applied to every driver so the setting means the same everywhere.
+	maxPresignedPutTTL = 7 * 24 * time.Hour
+	// The pending record outlives the PUT URLs so a transfer that started just before they expire can still complete.
+	pendingUploadGrace    = 90 * time.Minute
 	maxPresignedFileSize  = 5 << 30
 	maxInlineFeedFileSize = 10 << 20
 
@@ -261,8 +263,24 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 // InitPresignedUpload validates an upload up front and returns presigned PUT URLs into a
 // staging prefix. Feed files are small and their content is needed for validation, so
 // they are sent inline and stored by faynoSync itself.
+func presignedPutTTL(env *viper.Viper) time.Duration {
+	rawTTL := strings.TrimSpace(env.GetString("PRESIGNED_UPLOAD_URL_TTL"))
+	if rawTTL == "" {
+		return defaultPresignedPutTTL
+	}
+
+	ttl, err := time.ParseDuration(rawTTL)
+	if err != nil || ttl <= 0 || ttl > maxPresignedPutTTL {
+		logrus.Warnf("Invalid PRESIGNED_UPLOAD_URL_TTL value %q (must be a duration up to %s), falling back to %s", rawTTL, maxPresignedPutTTL, defaultPresignedPutTTL)
+		return defaultPresignedPutTTL
+	}
+
+	return ttl
+}
+
 func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 	env := viper.GetViper()
+	putTTL := presignedPutTTL(env)
 	storageClient, uploader, ok := presignedStorage(c, env)
 	if !ok {
 		return
@@ -377,7 +395,7 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 		Public:       placements[0].Public,
 		State:        pendingStatePending,
 		CreatedAt:    time.Now(),
-		ExpiresAt:    time.Now().Add(pendingUploadTTL),
+		ExpiresAt:    time.Now().Add(putTTL + pendingUploadGrace),
 	}
 
 	for i, file := range inlineFiles {
@@ -421,7 +439,7 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 		placement := placements[index]
 		pendingKey := fmt.Sprintf("pending/%s/%d", uploadID, index)
 		contentMD5, _ := hex.DecodeString(file.MD5)
-		signed, err := uploader.PresignPutObject(c.Request.Context(), bucket, pendingKey, contentMD5, file.Length, placement.ContentType, presignedPutTTL)
+		signed, err := uploader.PresignPutObject(c.Request.Context(), bucket, pendingKey, contentMD5, file.Length, placement.ContentType, putTTL)
 		if err != nil {
 			logrus.Errorf("failed to presign upload for %s: %v", file.Name, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to presign upload"})
@@ -455,7 +473,7 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 	logrus.Debugf("Presigned upload %s started: owner=%s app=%s files=%d", uploadID, owner, appName, len(pending.Files))
 	c.JSON(http.StatusOK, gin.H{
 		"upload_id":  uploadID,
-		"expires_at": time.Now().Add(presignedPutTTL),
+		"expires_at": time.Now().Add(putTTL),
 		"files":      response,
 	})
 }
