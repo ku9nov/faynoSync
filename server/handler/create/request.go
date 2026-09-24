@@ -17,9 +17,10 @@ import (
 // UploadRequest is the part of an upload that does not depend on how the files reach
 // storage: who uploads, for which app, and with which parameters.
 type UploadRequest struct {
-	Owner   string
-	AppName string
-	Params  map[string]interface{}
+	Username string
+	Owner    string
+	AppName  string
+	Params   map[string]interface{}
 }
 
 // ResolveUploadRequest authenticates the caller, resolves the owner the artifacts are
@@ -60,14 +61,14 @@ func ResolveUploadRequest(c *gin.Context, database *mongo.Database) (UploadReque
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return UploadRequest{}, false
 	}
-	// Checked before any object is written, so a team user cannot store files under an app outside their allowed list.
-	if err := utils.EnsureTeamUserAppAccess(c.Request.Context(), username, appName, database); err != nil {
+	// Checked before any object is written, so a team user cannot store files outside their allowed apps, channels, platforms and archs.
+	if err := utils.EnsureTeamUserUploadAccess(c.Request.Context(), username, ctxQueryMap, database); err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return UploadRequest{}, false
 	}
 
-	return UploadRequest{Owner: owner, AppName: appName, Params: ctxQueryMap}, true
+	return UploadRequest{Username: username, Owner: owner, AppName: appName, Params: ctxQueryMap}, true
 }
 
 // ResolveAppVisibility reports whether the app is private and rejects the updaters that

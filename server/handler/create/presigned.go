@@ -607,7 +607,7 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
-	if err := utils.EnsureTeamUserAppAccess(ctx, username, pending.AppName, database); err != nil {
+	if err := utils.EnsureTeamUserUploadAccess(ctx, username, ctxQueryMap, database); err != nil {
 		logrus.Error(err)
 		release()
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})

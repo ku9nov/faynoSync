@@ -3,7 +3,9 @@ package utils
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
 
 	"faynoSync/server/model"
 
@@ -83,6 +85,49 @@ func EnsureTeamUserAppAccess(ctx context.Context, username, appName string, data
 	}
 
 	return errors.New("you don't have access to this app")
+}
+
+// EnsureTeamUserUploadAccess applies the app, channel, platform and arch allowed lists that
+// repository.Upload enforces, so a denied upload is rejected before anything reaches storage.
+func EnsureTeamUserUploadAccess(ctx context.Context, username string, params map[string]interface{}, database *mongo.Database) error {
+	var teamUser model.TeamUser
+	err := database.Collection("team_users").FindOne(ctx, bson.M{"username": username}).Decode(&teamUser)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	checks := []struct {
+		field, param, entity string
+		allowed              []string
+	}{
+		{"app_name", "app_name", "app", teamUser.Permissions.Apps.Allowed},
+		{"channel_name", "channel", "channel", teamUser.Permissions.Channels.Allowed},
+		{"platform_name", "platform", "platform", teamUser.Permissions.Platforms.Allowed},
+		{"arch_id", "arch", "architecture", teamUser.Permissions.Archs.Allowed},
+	}
+	for _, check := range checks {
+		value, _ := params[check.param].(string)
+		if value == "" && check.param == "channel" {
+			continue
+		}
+		var meta struct {
+			ID primitive.ObjectID `bson:"_id"`
+		}
+		err := database.Collection("apps_meta").FindOne(ctx, bson.M{check.field: value, "owner": teamUser.Owner}).Decode(&meta)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return fmt.Errorf("you don't have access to this %s", check.entity)
+		}
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(check.allowed, meta.ID.Hex()) {
+			return fmt.Errorf("you don't have access to this %s", check.entity)
+		}
+	}
+	return nil
 }
 
 func GetOwnerFromContext(c *gin.Context) (string, error) {

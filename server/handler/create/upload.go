@@ -389,7 +389,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 			fileCtxQuery["file_name"] = files[i].Filename
 		}
 
-		result, err := repository.Upload(fileCtxQuery, link, extensions[i], owner, c.Request.Context(), rdb, viper.GetViper(), checkAppVisibility)
+		result, err := repository.Upload(fileCtxQuery, link, extensions[i], uploadRequest.Username, c.Request.Context(), rdb, viper.GetViper(), checkAppVisibility)
 		if err != nil {
 			logrus.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

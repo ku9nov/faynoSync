@@ -2,6 +2,10 @@
 
 ## v2.4.0
 
+### Breaking changes
+
+- Team users' allowed lists for apps, channels, platforms and architectures are now enforced on `POST /upload` (they were ignored since v1.4.1). An upload outside them returns `403` before anything is written to storage.
+
 ### Features
 
 - Presigned uploads: `POST /upload/init` returns presigned PUT URLs, files go straight to storage, `POST /upload/complete` creates the version. No reverse proxy in the data path. Not supported on MinIO (`501`).

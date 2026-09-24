@@ -3481,6 +3481,67 @@ func TestPresignedUploadFlow(t *testing.T) {
 		}
 	})
 
+	// Final object keys are deterministic, so an artifact recorded after init must stop
+	// complete before its object is overwritten with different bytes.
+	t.Run("complete_rechecks_conflict", func(t *testing.T) {
+		first, firstReleases := velopackRelease("2.2.0", "first")
+		second, secondReleases := velopackRelease("2.2.0", "second")
+		require.Equal(t, first.name, second.name)
+		firstUpload := presignedInitOK(t, router, velopackPayload("2.2.0", "nightly", "windows"), []updaterFeedFile{first}, []updaterFeedFile{firstReleases})
+		secondUpload := presignedInitOK(t, router, velopackPayload("2.2.0", "nightly", "windows"), []updaterFeedFile{second}, []updaterFeedFile{secondReleases})
+		status, body := putPresigned(t, firstUpload, first.name, first.content)
+		require.Less(t, status, 300, "PUT first: %s", body)
+		status, body = putPresigned(t, secondUpload, second.name, second.content)
+		require.Less(t, status, 300, "PUT second: %s", body)
+
+		uploadedVersion(t, doPresignedComplete(t, router, authToken, firstUpload.UploadID))
+		w := doPresignedComplete(t, router, authToken, secondUpload.UploadID)
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+
+		stat, err := uploader.StatObject(context.Background(), viper.GetString("S3_BUCKET_NAME"), "velopack/admin/presignedapp/windows/universalArch/"+first.name)
+		require.NoError(t, err)
+		md := md5.Sum(first.content)
+		assert.Equal(t, hex.EncodeToString(md[:]), stat.MD5, "the recorded artifact must keep its bytes")
+	})
+
+	// A complete that fails before any artifact is recorded must stay retryable.
+	t.Run("complete_releases_when_nothing_recorded", func(t *testing.T) {
+		pkg, releases := velopackRelease("2.3.0", "retry")
+		retryUpload := presignedInitOK(t, router, velopackPayload("2.3.0", "nightly", "windows"), []updaterFeedFile{pkg}, []updaterFeedFile{releases})
+		status, body := putPresigned(t, retryUpload, pkg.name, pkg.content)
+		require.Less(t, status, 300, "PUT: %s", body)
+
+		ctx := context.Background()
+		metaCollection := mongoDatabase.Collection("apps_meta")
+		var arch bson.M
+		require.NoError(t, metaCollection.FindOne(ctx, bson.M{"arch_id": "universalArch", "owner": "admin"}).Decode(&arch))
+		_, err := metaCollection.DeleteOne(ctx, bson.M{"_id": arch["_id"]})
+		require.NoError(t, err)
+		restored := false
+		restore := func() {
+			if !restored {
+				_, err := metaCollection.InsertOne(ctx, arch)
+				require.NoError(t, err)
+				restored = true
+			}
+		}
+		defer restore()
+
+		for attempt := 0; attempt < 2; attempt++ {
+			w := doPresignedComplete(t, router, authToken, retryUpload.UploadID)
+			require.Equal(t, http.StatusInternalServerError, w.Code, "attempt %d: %s", attempt, w.Body.String())
+			assert.Contains(t, w.Body.String(), "arch not found")
+		}
+		var pending struct {
+			State string `bson:"state"`
+		}
+		require.NoError(t, mongoDatabase.Collection("pending_uploads").FindOne(ctx, bson.M{"_id": retryUpload.UploadID}).Decode(&pending))
+		assert.Equal(t, "pending", pending.State)
+
+		restore()
+		uploadedVersion(t, doPresignedComplete(t, router, authToken, retryUpload.UploadID))
+	})
+
 	t.Run("private_app_md5_only_manifest", func(t *testing.T) {
 		w := doUpdaterRequest(t, router, "/app/create", `{"app": "presignedprivate", "private": "true"}`, nil)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -3507,6 +3568,276 @@ func TestPresignedUploadFlow(t *testing.T) {
 		stat, err := uploader.StatObject(context.Background(), viper.GetString("S3_BUCKET_NAME_PRIVATE"), key)
 		require.NoError(t, err, "object must be in the private bucket")
 		assert.Equal(t, int64(len(file.content)), stat.Size)
+	})
+}
+
+// TestPresignedUploadTeamUserScope checks that a team user's allowed lists are enforced by
+// multipart and presigned uploads before anything reaches storage. Self-contained: it
+// creates its own apps and team user and removes them afterwards.
+func TestPresignedUploadTeamUserScope(t *testing.T) {
+	storageClient, err := utils.NewStorageFactory(viper.GetViper()).CreateStorageClient()
+	require.NoError(t, err)
+	uploader, ok := storageClient.(storage.PresignedUploader)
+	if !ok {
+		t.Skipf("storage driver %q does not support presigned uploads", viper.GetString("STORAGE_DRIVER"))
+	}
+
+	ctx := context.Background()
+	const (
+		teamUser     = "teamscopeuser"
+		allowedApp   = "teamscopeapp"
+		forbiddenApp = "teamscopeother"
+		apiTokenName = "teamscope-token"
+	)
+	teamUsers := mongoDatabase.Collection("team_users")
+	pendingUploads := mongoDatabase.Collection("pending_uploads")
+	bucket := viper.GetString("S3_BUCKET_NAME")
+	var writtenKeys []string
+	cleanup := func() {
+		_, _ = teamUsers.DeleteOne(ctx, bson.M{"username": teamUser})
+		_, _ = mongoDatabase.Collection("api_tokens").DeleteMany(ctx, bson.M{"name": apiTokenName, "owner": "admin"})
+		_, _ = pendingUploads.DeleteMany(ctx, bson.M{"username": teamUser})
+		if len(writtenKeys) > 0 {
+			_ = storageClient.DeleteObjects(ctx, bucket, writtenKeys)
+		}
+		cleanupUpdaterApp(t, allowedApp)
+		cleanupUpdaterApp(t, forbiddenApp)
+	}
+	cleanup()
+	defer cleanup()
+
+	adminRouter := updaterFlowRouter()
+	createUpdaterApp(t, adminRouter, allowedApp)
+	createUpdaterApp(t, adminRouter, forbiddenApp)
+
+	metaID := func(field, value string) string {
+		var meta struct {
+			ID primitive.ObjectID `bson:"_id"`
+		}
+		require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.M{field: value, "owner": "admin"}).Decode(&meta))
+		return meta.ID.Hex()
+	}
+	appID := metaID("app_name", allowedApp)
+	channelID := metaID("channel_name", "nightly")
+	platformID := metaID("platform_name", "universalPlatform")
+	archID := metaID("arch_id", "universalArch")
+
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router := gin.Default()
+	router.POST("/login", func(c *gin.Context) { h.Login(c) })
+	router.POST("/user/create", utils.AuthMiddleware(), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) { h.CreateTeamUser(c) })
+	router.POST("/token/create", utils.AuthMiddleware(mongoDatabase), utils.AdminOnlyMiddleware(mongoDatabase), func(c *gin.Context) { h.CreateToken(c) })
+	uploadPermission := utils.CheckPermission(utils.PermissionUpload, utils.ResourceApps, mongoDatabase)
+	router.POST("/upload", utils.AuthMiddleware(mongoDatabase), uploadPermission, func(c *gin.Context) { h.UploadApp(c) })
+	router.POST("/upload/init", utils.AuthMiddleware(mongoDatabase), uploadPermission, func(c *gin.Context) { h.InitPresignedUpload(c) })
+	router.POST("/upload/complete", utils.AuthMiddleware(mongoDatabase), uploadPermission, func(c *gin.Context) { h.CompletePresignedUpload(c) })
+
+	createBody, err := json.Marshal(map[string]interface{}{
+		"username": teamUser,
+		"password": "password123",
+		"permissions": map[string]interface{}{
+			"apps":      map[string]interface{}{"upload": true, "allowed": []string{appID}},
+			"channels":  map[string]interface{}{"allowed": []string{channelID}},
+			"platforms": map[string]interface{}{"allowed": []string{platformID}},
+			"archs":     map[string]interface{}{"allowed": []string{archID}},
+		},
+	})
+	require.NoError(t, err)
+	req, err := http.NewRequest("POST", "/user/create", bytes.NewReader(createBody))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "create team user: %s", w.Body.String())
+
+	var stored model.TeamUser
+	require.NoError(t, teamUsers.FindOne(ctx, bson.M{"username": teamUser}).Decode(&stored))
+	require.Equal(t, []string{appID}, stored.Permissions.Apps.Allowed)
+	require.Equal(t, []string{channelID}, stored.Permissions.Channels.Allowed)
+
+	req, err = http.NewRequest("POST", "/login", strings.NewReader(fmt.Sprintf(`{"username":"%s","password":"password123"}`, teamUser)))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "login: %s", w.Body.String())
+	var login map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &login))
+	token, _ := login["token"].(string)
+	require.NotEmpty(t, token)
+
+	revoke := func(t *testing.T, field, id string) func() {
+		t.Helper()
+		_, err := teamUsers.UpdateOne(ctx, bson.M{"username": teamUser}, bson.M{"$pull": bson.M{field: id}})
+		require.NoError(t, err)
+		return func() {
+			_, err := teamUsers.UpdateOne(ctx, bson.M{"username": teamUser}, bson.M{"$addToSet": bson.M{field: id}})
+			require.NoError(t, err)
+		}
+	}
+	payload := func(app, version, channel string) string {
+		return fmt.Sprintf(`{"app_name":"%s","version":"%s","channel":"%s","publish":true,"critical":false,"platform":"universalPlatform","arch":"universalArch"}`, app, version, channel)
+	}
+	artifact := func(app, version string) updaterFeedFile {
+		return updaterFeedFile{name: app + ".zip", content: []byte("team scope payload " + app + " " + version)}
+	}
+	// objectKey is where an upload with these parameters lands, so the test can prove nothing was written there.
+	objectKey := func(app, version, channel, name string) string {
+		key := utils.BuildObjectPlacement(map[string]interface{}{
+			"app_name": app, "version": version, "channel": channel, "platform": "universalPlatform", "arch": "universalArch",
+		}, "admin", name, viper.GetViper(), false).Key
+		writtenKeys = append(writtenKeys, key)
+		return key
+	}
+	assertNotStored := func(t *testing.T, key string) {
+		t.Helper()
+		_, err := uploader.StatObject(ctx, bucket, key)
+		assert.ErrorIs(t, err, storage.ErrObjectNotFound, "a rejected upload must not write %s", key)
+	}
+	multipartUploadAs := func(t *testing.T, bearer, data string, file updaterFeedFile) *httptest.ResponseRecorder {
+		t.Helper()
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("file", file.name)
+		require.NoError(t, err)
+		_, err = part.Write(file.content)
+		require.NoError(t, err)
+		require.NoError(t, writer.WriteField("data", data))
+		require.NoError(t, writer.Close())
+		req, err := http.NewRequest("POST", "/upload", body)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+	multipartUpload := func(t *testing.T, data string, file updaterFeedFile) *httptest.ResponseRecorder {
+		t.Helper()
+		return multipartUploadAs(t, token, data, file)
+	}
+	// assertStoredUnderAdmin checks that a successful upload is recorded and stored under the admin, whoever sent it.
+	assertStoredUnderAdmin := func(t *testing.T, w *httptest.ResponseRecorder, app, version, channel string, file updaterFeedFile) {
+		t.Helper()
+		doc := uploadedVersion(t, w)
+		assert.Equal(t, "admin", doc.Owner)
+		key := objectKey(app, version, channel, file.name)
+		require.Len(t, doc.Artifacts, 1)
+		assert.True(t, strings.HasSuffix(doc.Artifacts[0].Link, "/"+key), "link %s must point at %s", doc.Artifacts[0].Link, key)
+		stat, err := uploader.StatObject(ctx, bucket, key)
+		require.NoError(t, err, "object must be stored under the admin")
+		md := md5.Sum(file.content)
+		assert.Equal(t, hex.EncodeToString(md[:]), stat.MD5)
+	}
+	initOK := func(t *testing.T, data string, file updaterFeedFile) presignedInitResponse {
+		t.Helper()
+		w := doPresignedInit(t, router, token, data, presignedManifest([]updaterFeedFile{file}), nil)
+		require.Equal(t, http.StatusOK, w.Code, "init: %s", w.Body.String())
+		var resp presignedInitResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		status, body := putPresigned(t, resp, file.name, file.content)
+		require.Less(t, status, 300, "PUT: %s", body)
+		return resp
+	}
+
+	t.Run("multipart_rejects_app_outside_allowed_list", func(t *testing.T) {
+		file := artifact(forbiddenApp, "1.0.0")
+		w := multipartUpload(t, payload(forbiddenApp, "1.0.0", "nightly"), file)
+		assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+		assert.Contains(t, w.Body.String(), "access to this app")
+		assertNotStored(t, objectKey(forbiddenApp, "1.0.0", "nightly", file.name))
+	})
+
+	t.Run("multipart_upload_within_allowed_lists", func(t *testing.T) {
+		file := artifact(allowedApp, "0.9.0")
+		w := multipartUpload(t, payload(allowedApp, "0.9.0", "nightly"), file)
+		assertStoredUnderAdmin(t, w, allowedApp, "0.9.0", "nightly", file)
+	})
+
+	t.Run("api_token_multipart_upload", func(t *testing.T) {
+		req, err := http.NewRequest("POST", "/token/create", strings.NewReader(fmt.Sprintf(`{"name":"%s","allowed_apps":["%s"]}`, apiTokenName, appID)))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+authToken)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusCreated, w.Code, "create token: %s", w.Body.String())
+		var created map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &created))
+		apiToken, _ := created["token"].(string)
+		require.NotEmpty(t, apiToken)
+
+		file := artifact(allowedApp, "0.9.1")
+		w = multipartUploadAs(t, apiToken, payload(allowedApp, "0.9.1", "stable"), file)
+		assertStoredUnderAdmin(t, w, allowedApp, "0.9.1", "stable", file)
+	})
+
+	t.Run("init_rejects_app_outside_allowed_list", func(t *testing.T) {
+		file := artifact(forbiddenApp, "1.0.0")
+		w := doPresignedInit(t, router, token, payload(forbiddenApp, "1.0.0", "nightly"), presignedManifest([]updaterFeedFile{file}), nil)
+		assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+		count, err := pendingUploads.CountDocuments(ctx, bson.M{"username": teamUser})
+		require.NoError(t, err)
+		assert.Zero(t, count, "a rejected init must not create a pending upload")
+	})
+
+	t.Run("complete_rechecks_app_access_and_releases", func(t *testing.T) {
+		file := artifact(allowedApp, "1.0.0")
+		upload := initOK(t, payload(allowedApp, "1.0.0", "nightly"), file)
+
+		restore := revoke(t, "permissions.apps.allowed", appID)
+		w := doPresignedComplete(t, router, token, upload.UploadID)
+		restore()
+		require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+		var pending struct {
+			State string `bson:"state"`
+		}
+		require.NoError(t, pendingUploads.FindOne(ctx, bson.M{"_id": upload.UploadID}).Decode(&pending))
+		assert.Equal(t, "pending", pending.State, "a denied complete must stay retryable")
+
+		doc := uploadedVersion(t, doPresignedComplete(t, router, token, upload.UploadID))
+		assert.Equal(t, "admin", doc.Owner, "a team user's upload is stored under their admin")
+	})
+
+	t.Run("init_rejects_entities_outside_allowed_lists", func(t *testing.T) {
+		cases := []struct {
+			field, id, message string
+		}{
+			{"permissions.channels.allowed", channelID, "access to this channel"},
+			{"permissions.platforms.allowed", platformID, "access to this platform"},
+			{"permissions.archs.allowed", archID, "access to this architecture"},
+		}
+		for _, tc := range cases {
+			file := artifact(allowedApp, "1.1.0")
+			restore := revoke(t, tc.field, tc.id)
+			w := doPresignedInit(t, router, token, payload(allowedApp, "1.1.0", "nightly"), presignedManifest([]updaterFeedFile{file}), nil)
+			restore()
+			assert.Equal(t, http.StatusForbidden, w.Code, "%s: %s", tc.field, w.Body.String())
+			assert.Contains(t, w.Body.String(), tc.message, tc.field)
+		}
+	})
+
+	t.Run("complete_rechecks_channel_access_before_storage", func(t *testing.T) {
+		file := artifact(allowedApp, "1.2.0")
+		upload := initOK(t, payload(allowedApp, "1.2.0", "nightly"), file)
+
+		restore := revoke(t, "permissions.channels.allowed", channelID)
+		w := doPresignedComplete(t, router, token, upload.UploadID)
+		restore()
+		assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+		assert.Contains(t, w.Body.String(), "access to this channel")
+		assertNotStored(t, objectKey(allowedApp, "1.2.0", "nightly", file.name))
+	})
+
+	t.Run("multipart_rejects_channel_outside_allowed_list_before_storage", func(t *testing.T) {
+		file := artifact(allowedApp, "1.3.0")
+		restore := revoke(t, "permissions.channels.allowed", channelID)
+		w := multipartUpload(t, payload(allowedApp, "1.3.0", "nightly"), file)
+		restore()
+		assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+		assert.Contains(t, w.Body.String(), "access to this channel")
+		assertNotStored(t, objectKey(allowedApp, "1.3.0", "nightly", file.name))
 	})
 }
 
