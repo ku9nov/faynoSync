@@ -60,6 +60,12 @@ func ResolveUploadRequest(c *gin.Context, database *mongo.Database) (UploadReque
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return UploadRequest{}, false
 	}
+	// Checked before any object is written, so a team user cannot store files under an app outside their allowed list.
+	if err := utils.EnsureTeamUserAppAccess(c.Request.Context(), username, appName, database); err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return UploadRequest{}, false
+	}
 
 	return UploadRequest{Owner: owner, AppName: appName, Params: ctxQueryMap}, true
 }

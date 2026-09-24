@@ -45,6 +45,7 @@ func linkIsFeed(link string, env *viper.Viper) bool {
 	return updaters.IsFeedFile(path.Base(objectKey), updaterFromObjectKey(objectKey))
 }
 
+// REMOVE-IN v3.0.0: one-time backfill for v2.4.0 data; upgrades from < v2.4.0 must go through the last v2.x.
 // backfillFeedArtifacts marks pre-existing feed artifacts so publish stops adding them
 // to TUF targets. It only ever sets is_feed: true — tuf_signed is left alone, because
 // feeds signed before the split really are in targets, and removing a stale target is a

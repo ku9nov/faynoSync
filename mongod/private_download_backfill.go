@@ -12,6 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// REMOVE-IN v3.0.0: one-time backfill for v2.3.0 data; upgrades from < v2.3.0 must go through the last v2.x.
 // backfillPrivateDownloads is idempotent: file migrations cannot URL-decode links or read ENABLE_PRIVATE_APP_DOWNLOADING.
 func backfillPrivateDownloads(ctx context.Context, database *mongo.Database, defaultDownloadMode string) error {
 	if err := backfillArtifactS3Keys(ctx, database); err != nil {

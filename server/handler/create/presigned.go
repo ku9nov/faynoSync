@@ -607,6 +607,12 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
+	if err := utils.EnsureTeamUserAppAccess(ctx, username, pending.AppName, database); err != nil {
+		logrus.Error(err)
+		release()
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
 	checkAppVisibility, ok := ResolveAppVisibility(c, database, pending.AppName, pending.Owner, ctxQueryMap)
 	if !ok {
 		release()
@@ -646,6 +652,24 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 		return
 	}
 
+	// Final keys are deterministic, so a version uploaded since init must be caught before its objects are overwritten.
+	extensionList := make([]string, 0, len(pending.Files))
+	for _, file := range pending.Files {
+		extensionList = append(extensionList, file.Extension)
+	}
+	conflict, err := findArtifactConflict(ctx, database, pending.Owner, ctxQueryMap, extensionList)
+	if err != nil {
+		logrus.Errorf("Presigned upload %s: failed to check artifact conflicts: %v", pending.ID, err)
+		release()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing artifacts"})
+		return
+	}
+	if conflict != "" {
+		release()
+		c.JSON(http.StatusConflict, gin.H{"error": conflict})
+		return
+	}
+
 	for _, file := range pending.Files {
 		if err := storageClient.CopyObject(ctx, pending.Bucket, file.PendingKey, file.Key, pending.Public); err != nil {
 			logrus.Errorf("Presigned upload %s: failed to move %s to %s: %v", pending.ID, file.PendingKey, file.Key, err)
@@ -680,9 +704,12 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 			fileCtxQuery["file_name"] = file.Name
 		}
 
-		result, err := repository.Upload(fileCtxQuery, link, file.Extension, pending.Owner, ctx, rdb, env, checkAppVisibility)
+		result, err := repository.Upload(fileCtxQuery, link, file.Extension, username, ctx, rdb, env, checkAppVisibility)
 		if err != nil {
 			logrus.Error(err)
+			if len(results) == 0 {
+				release()
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
