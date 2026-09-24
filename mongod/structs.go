@@ -71,12 +71,15 @@ type appRepository struct {
 	config *connstring.ConnString
 }
 
-var appMeta struct {
+// Meta lookups are decoded into per-call variables of these types; package-level
+// variables would be shared by concurrent requests.
+type appMetaDoc struct {
 	ID      primitive.ObjectID `bson:"_id"`
 	AppName string             `bson:"app_name"`
 	Tuf     bool               `bson:"tuf,omitempty"`
 }
-var channelMeta, platformMeta, archMeta struct {
+
+type metaIDDoc struct {
 	ID primitive.ObjectID `bson:"_id"`
 }
 

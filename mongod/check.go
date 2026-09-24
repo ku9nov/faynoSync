@@ -45,6 +45,7 @@ func rolloutPercentOf(percent *int) int {
 }
 
 func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, limit int64, owner string, filters map[string]interface{}) (*model.PaginatedResponse, error) {
+	var appMeta appMetaDoc
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	metaFilter := bson.D{
 		{Key: "app_name", Value: appName},
@@ -439,6 +440,7 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 }
 
 func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx context.Context, owner string) ([]*model.SpecificAppWithoutIDs, error) {
+	var appMeta appMetaDoc
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	metaFilter := bson.D{{Key: "app_name", Value: appName}, {Key: "owner", Value: owner}}
 	err := metaCollection.FindOne(ctx, metaFilter).Decode(&appMeta)

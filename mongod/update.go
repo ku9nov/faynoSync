@@ -222,6 +222,8 @@ func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo st
 }
 
 func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, bool, bool, error) {
+	var appMeta appMetaDoc
+	var channelMeta, platformMeta, archMeta metaIDDoc
 	collection := c.client.Database(c.config.Database).Collection("apps")
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	var err error
@@ -367,7 +369,8 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 			}
 		}
 
-		if channelMeta.ID != appData.ChannelID {
+		// channel is optional here; an omitted channel keeps the version's own, a different one is rejected.
+		if channelName, _ := ctxQuery["channel"].(string); channelName != "" && channelMeta.ID != appData.ChannelID {
 			logrus.Debugf("Channel ID mismatch: %s != %s", channelMeta.ID.Hex(), appData.ChannelID.Hex())
 			return false, false, false, errors.New("updating the channel is not allowed")
 		}

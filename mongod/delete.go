@@ -87,6 +87,7 @@ func (c *appRepository) DeleteVersionsByIDs(ids []primitive.ObjectID, owner stri
 }
 
 func (c *appRepository) DeleteSpecificArtifactOfApp(id primitive.ObjectID, ctxQuery map[string]interface{}, ctx context.Context, owner string) ([]string, bool, error) {
+	var appMeta appMetaDoc
 	var err error
 	var links []string
 	collection := c.client.Database(c.config.Database).Collection("apps")

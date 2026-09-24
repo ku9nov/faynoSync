@@ -3380,6 +3380,100 @@ func TestPresignedUploadFlow(t *testing.T) {
 		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
 	})
 
+	velopackRelease := func(version, suffix string) (updaterFeedFile, updaterFeedFile) {
+		pkg := updaterFeedFile{
+			name:    fmt.Sprintf("presignedapp-%s-full.nupkg", version),
+			content: []byte(strings.Repeat("presigned "+version+" "+suffix+" payload ", 32)),
+		}
+		sum := sha256.Sum256(pkg.content)
+		releases := updaterFeedFile{
+			name:    "releases.nightly.json",
+			content: []byte(fmt.Sprintf(`{"Assets":[{"Type":"Full","FileName":"%s","SHA1":"%x","SHA256":"%x","Size":%d}]}`, pkg.name, sum[:20], sum, len(pkg.content))),
+		}
+		return pkg, releases
+	}
+	velopackPayload := func(version, channel, platform string) string {
+		return fmt.Sprintf(`{"app_name":"presignedapp","version":"%s","channel":"%s","publish":true,"critical":false,"platform":"%s","arch":"universalArch","updater":"velopack"}`, version, channel, platform)
+	}
+	platformID := func(name string) primitive.ObjectID {
+		var meta struct {
+			ID primitive.ObjectID `bson:"_id"`
+		}
+		require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(context.Background(), bson.M{"platform_name": name, "owner": "admin"}).Decode(&meta))
+		return meta.ID
+	}
+
+	t.Run("another_platform_appends_to_the_same_version", func(t *testing.T) {
+		pkg, releases := velopackRelease("2.0.0", "macos")
+		macUpload := presignedInitOK(t, router, velopackPayload("2.0.0", "nightly", "macos"), []updaterFeedFile{pkg}, []updaterFeedFile{releases})
+		status, body := putPresigned(t, macUpload, pkg.name, pkg.content)
+		require.Less(t, status, 300, "PUT: %s", body)
+		appended := uploadedVersion(t, doPresignedComplete(t, router, authToken, macUpload.UploadID))
+		assert.Equal(t, doc.ID, appended.ID, "a second platform must land in the existing version")
+		assert.Equal(t, platformID("macos"), artifactByLinkSuffix(t, appended, "/macos/universalArch/"+pkg.name).Platform)
+		assert.Equal(t, platformID("windows"), artifactByLinkSuffix(t, appended, "/windows/universalArch/"+nupkgName).Platform)
+	})
+
+	t.Run("channel_of_a_version_is_immutable", func(t *testing.T) {
+		pkg, releases := velopackRelease("2.0.0", "stable")
+		releases.name = "releases.stable.json"
+		w := doPresignedInit(t, router, authToken, velopackPayload("2.0.0", "stable", "macosSquirrel"), presignedManifest([]updaterFeedFile{pkg}), []updaterFeedFile{releases})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		assert.Contains(t, w.Body.String(), "cannot be changed")
+
+		w = doUpdaterRequest(t, router, "/upload", velopackPayload("2.0.0", "stable", "macosSquirrel"), []updaterFeedFile{releases, pkg})
+		require.NotEqual(t, http.StatusOK, w.Code, "multipart upload must not append to a version of another channel: %s", w.Body.String())
+		assert.Contains(t, w.Body.String(), "cannot be changed")
+	})
+
+	// Two platforms of a new version completed at the same time, the way parallel CI jobs
+	// do: both must end up in one version document, each artifact with its own platform.
+	t.Run("parallel_completes_build_one_version", func(t *testing.T) {
+		platforms := []string{"windows", "macos"}
+		uploads := make([]presignedInitResponse, len(platforms))
+		pkgs := make([]updaterFeedFile, len(platforms))
+		for i, platform := range platforms {
+			pkg, releases := velopackRelease("2.1.0", platform)
+			pkgs[i] = pkg
+			uploads[i] = presignedInitOK(t, router, velopackPayload("2.1.0", "nightly", platform), []updaterFeedFile{pkg}, []updaterFeedFile{releases})
+			status, body := putPresigned(t, uploads[i], pkg.name, pkg.content)
+			require.Less(t, status, 300, "PUT %s: %s", platform, body)
+		}
+
+		codes := make([]int, len(platforms))
+		bodies := make([]string, len(platforms))
+		done := make(chan struct{})
+		for i := range platforms {
+			go func(i int) {
+				defer func() { done <- struct{}{} }()
+				req, _ := http.NewRequest("POST", "/upload/complete", strings.NewReader(fmt.Sprintf(`{"upload_id":"%s"}`, uploads[i].UploadID)))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", "Bearer "+authToken)
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+				codes[i], bodies[i] = w.Code, w.Body.String()
+			}(i)
+		}
+		for range platforms {
+			<-done
+		}
+		for i, platform := range platforms {
+			require.Equal(t, http.StatusOK, codes[i], "complete %s: %s", platform, bodies[i])
+		}
+
+		count, err := mongoDatabase.Collection("apps").CountDocuments(context.Background(), bson.M{"app_id": doc.AppID, "version": "2.1.0"})
+		require.NoError(t, err)
+		require.EqualValues(t, 1, count, "concurrent uploads must not create the version twice")
+
+		var version model.SpecificApp
+		require.NoError(t, mongoDatabase.Collection("apps").FindOne(context.Background(), bson.M{"app_id": doc.AppID, "version": "2.1.0"}).Decode(&version))
+		require.Len(t, version.Artifacts, 2*len(platforms), "every platform contributes a package and a feed; none may be lost")
+		for i, platform := range platforms {
+			pkg := artifactByLinkSuffix(t, version, "/"+platform+"/universalArch/"+pkgs[i].name)
+			assert.Equal(t, platformID(platform), pkg.Platform, "artifact stored under %s must carry its own platform", platform)
+		}
+	})
+
 	t.Run("private_app_md5_only_manifest", func(t *testing.T) {
 		w := doUpdaterRequest(t, router, "/app/create", `{"app": "presignedprivate", "private": "true"}`, nil)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())

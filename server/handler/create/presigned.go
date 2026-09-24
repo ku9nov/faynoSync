@@ -191,11 +191,14 @@ func newUploadID() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
-// findArtifactConflict mirrors the duplicate check of repository.Upload, so a conflict is
-// reported before the client transfers anything.
-func findArtifactConflict(ctx context.Context, database *mongo.Database, owner string, params map[string]interface{}, extensions []string) (bool, error) {
+const artifactExistsMessage = "app with this name, version, platform, architecture and extension already exists"
+
+// findArtifactConflict mirrors the checks repository.Upload applies to an existing
+// version (immutable channel, duplicate artifact), so a conflict is reported before the
+// client transfers anything. It returns the conflict message, or "" when there is none.
+func findArtifactConflict(ctx context.Context, database *mongo.Database, owner string, params map[string]interface{}, extensions []string) (string, error) {
 	metaCollection := database.Collection("apps_meta")
-	var appMeta, platformMeta, archMeta struct {
+	var appMeta, platformMeta, archMeta, channelMeta struct {
 		ID primitive.ObjectID `bson:"_id"`
 	}
 	lookups := []struct {
@@ -208,12 +211,20 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		{bson.D{{Key: "platform_name", Value: params["platform"]}, {Key: "owner", Value: owner}}, &platformMeta},
 		{bson.D{{Key: "arch_id", Value: params["arch"]}, {Key: "owner", Value: owner}}, &archMeta},
 	}
+	if channel, _ := params["channel"].(string); channel != "" {
+		lookups = append(lookups, struct {
+			filter bson.D
+			target *struct {
+				ID primitive.ObjectID `bson:"_id"`
+			}
+		}{bson.D{{Key: "channel_name", Value: channel}, {Key: "owner", Value: owner}}, &channelMeta})
+	}
 	for _, lookup := range lookups {
 		if err := metaCollection.FindOne(ctx, lookup.filter).Decode(lookup.target); err != nil {
 			if errors.Is(err, mongo.ErrNoDocuments) {
-				return false, nil
+				return "", nil
 			}
-			return false, err
+			return "", err
 		}
 	}
 
@@ -224,10 +235,14 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		{Key: "owner", Value: owner},
 	}).Decode(&existing)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return false, nil
+		return "", nil
 	}
 	if err != nil {
-		return false, err
+		return "", err
+	}
+
+	if channelMeta.ID != existing.ChannelID {
+		return db.ErrVersionChannelMismatch.Error(), nil
 	}
 
 	for _, extension := range extensions {
@@ -236,11 +251,11 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		}
 		for _, artifact := range existing.Artifacts {
 			if artifact.Package == extension && artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID {
-				return true, nil
+				return artifactExistsMessage, nil
 			}
 		}
 	}
-	return false, nil
+	return "", nil
 }
 
 // InitPresignedUpload validates an upload up front and returns presigned PUT URLs into a
@@ -344,8 +359,8 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing artifacts"})
 		return
 	}
-	if conflict {
-		c.JSON(http.StatusConflict, gin.H{"error": "app with this name, version, platform, architecture and extension already exists"})
+	if conflict != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": conflict})
 		return
 	}
 
