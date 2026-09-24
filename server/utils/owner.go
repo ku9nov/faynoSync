@@ -110,7 +110,8 @@ func EnsureTeamUserUploadAccess(ctx context.Context, username string, params map
 	}
 	for _, check := range checks {
 		value, _ := params[check.param].(string)
-		if value == "" && check.param == "channel" {
+		// Channel, platform and arch are optional, and repository.Upload skips them when empty.
+		if value == "" && check.param != "app_name" {
 			continue
 		}
 		var meta struct {
