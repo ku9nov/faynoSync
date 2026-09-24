@@ -159,7 +159,7 @@ func TestPublicObjectURLKeepsProviderFormat(t *testing.T) {
 	}
 
 	gcs := &GoogleCloudStorageClient{env: viper.New()}
-	if got := gcs.PublicObjectURL("bucket", "app/MyApp.exe"); got != "https://storage.googleapis.com/bucket/app/MyApp.exe" {
+	if got := gcs.PublicObjectURL("bucket", "app/My App.exe"); got != "https://storage.googleapis.com/bucket/app/My%20App.exe" {
 		t.Errorf("GCS = %q", got)
 	}
 }

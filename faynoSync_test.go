@@ -72,6 +72,10 @@ func checkFileContent(t *testing.T, url string) string {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
+	// GCS serves public objects from Google's edge cache for max-age, so an overwritten feed reads stale without a unique query.
+	if viper.GetString("STORAGE_DRIVER") == "gcp" {
+		url = fmt.Sprintf("%s?nocache=%d", url, time.Now().UnixNano())
+	}
 	resp, err := client.Get(url)
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +175,9 @@ func setup() {
 	s3Endpoint = viper.GetString("S3_ENDPOINT")
 	if viper.GetString("STORAGE_DRIVER") == "digitalocean" {
 		s3Endpoint = fmt.Sprintf("https://%s.%s", s3Bucket, s3Endpoint)
+	}
+	if viper.GetString("STORAGE_DRIVER") == "gcp" {
+		s3Endpoint = fmt.Sprintf("https://storage.googleapis.com/%s", s3Bucket)
 	}
 	apiUrl = viper.GetString("API_URL")
 	client, configDB = mongod.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"))

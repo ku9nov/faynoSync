@@ -16,6 +16,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
@@ -274,7 +275,7 @@ func (g *GoogleCloudStorageClient) ListObjects(ctx context.Context, bucketName, 
 	it := bucket.Objects(ctx, query)
 	for {
 		attrs, err := it.Next()
-		if err == storage.ErrObjectNotExist || err == io.EOF {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -290,7 +291,7 @@ func (g *GoogleCloudStorageClient) ListObjects(ctx context.Context, bucketName, 
 func (g *GoogleCloudStorageClient) GetObjectETag(ctx context.Context, bucketName, objectKey string) (string, bool, error) {
 	attrs, err := g.client.Bucket(bucketName).Object(objectKey).Attrs(ctx)
 	if err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return "", false, nil
 		}
 		return "", false, &StorageError{Message: "failed to stat object in GCS", Err: err}
@@ -304,7 +305,7 @@ func (g *GoogleCloudStorageClient) GetObjectETag(ctx context.Context, bucketName
 }
 
 func (g *GoogleCloudStorageClient) PublicObjectURL(bucketName, objectKey string) string {
-	return fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucketName, objectKey)
+	return fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucketName, encodeObjectKeyForPublicURL(objectKey))
 }
 
 // PresignPutObject binds the body through the signed MD5; GCS has no signed length, the MD5 pins it.

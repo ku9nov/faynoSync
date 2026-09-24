@@ -4,6 +4,7 @@ import (
 	"context"
 	"faynoSync/server/utils"
 	"fmt"
+	"mime/multipart"
 	"os"
 	"strconv"
 	"strings"
@@ -11,6 +12,14 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
+
+// timestamp.json is the only metadata overwritten under a fixed name; left to the storage default
+// (GCS: max-age=3600) clients would not see a new publish for up to an hour.
+const timestampCacheControl = "public, max-age=60, must-revalidate"
+
+type publicUploaderWithCacheControl interface {
+	UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error)
+}
 
 // StorageFactory is minimal interface for creating storage client (injectable for tests from other packages).
 type StorageFactory interface {
@@ -49,7 +58,12 @@ func UploadMetadataToS3(ctx context.Context, adminName string, appName string, f
 		return fmt.Errorf("S3_BUCKET_NAME is not configured")
 	}
 
-	if err := uploadWithClient(ctx, storageClient, bucketName, s3Key, filePath, "application/json"); err != nil {
+	cacheControl := ""
+	if filename == "timestamp.json" {
+		cacheControl = timestampCacheControl
+	}
+
+	if err := uploadWithClient(ctx, storageClient, bucketName, s3Key, filePath, "application/json", cacheControl); err != nil {
 		return fmt.Errorf("failed to upload %s to S3: %w", filename, err)
 	}
 
@@ -57,14 +71,18 @@ func UploadMetadataToS3(ctx context.Context, adminName string, appName string, f
 	return nil
 }
 
-func uploadWithClient(ctx context.Context, client utils.StorageClient, bucketName, s3Key, filePath, contentType string) error {
+func uploadWithClient(ctx context.Context, client utils.StorageClient, bucketName, s3Key, filePath, contentType, cacheControl string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
 	defer file.Close()
 	fileWrapper := &fileWrapper{file: file}
-	_, err = client.UploadPublicObject(ctx, bucketName, s3Key, fileWrapper, contentType)
+	if uploader, ok := client.(publicUploaderWithCacheControl); ok && cacheControl != "" {
+		_, err = uploader.UploadPublicObjectWithCacheControl(ctx, bucketName, s3Key, fileWrapper, contentType, cacheControl)
+	} else {
+		_, err = client.UploadPublicObject(ctx, bucketName, s3Key, fileWrapper, contentType)
+	}
 	if err != nil {
 		return err
 	}
