@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -24,6 +25,20 @@ import (
 type GoogleCloudStorageClient struct {
 	client *storage.Client
 	env    *viper.Viper
+	// bucket name -> uniform bucket-level access; saves a bucket.Attrs round trip per upload
+	uniformAccess sync.Map
+}
+
+func (g *GoogleCloudStorageClient) bucketUniformAccess(ctx context.Context, bucketName string) (bool, error) {
+	if uniform, ok := g.uniformAccess.Load(bucketName); ok {
+		return uniform.(bool), nil
+	}
+	attrs, err := g.client.Bucket(bucketName).Attrs(ctx)
+	if err != nil {
+		return false, err
+	}
+	g.uniformAccess.Store(bucketName, attrs.UniformBucketLevelAccess.Enabled)
+	return attrs.UniformBucketLevelAccess.Enabled, nil
 }
 
 // NewGoogleCloudStorageClient creates a new GCS client
@@ -55,7 +70,7 @@ func (g *GoogleCloudStorageClient) UploadObject(ctx context.Context, bucketName,
 
 	// Check if bucket exists
 	bucket := g.client.Bucket(bucketName)
-	_, err := bucket.Attrs(ctx)
+	_, err := g.bucketUniformAccess(ctx, bucketName)
 	if err != nil {
 		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v\n", bucketName, err)
 		return &StorageError{Message: fmt.Sprintf("bucket %s does not exist or is not accessible", bucketName), Err: err}
@@ -101,14 +116,14 @@ func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucke
 	logrus.Debugf("GCS: Uploading public object to bucket: %s, key: %s\n", bucketName, objectKey)
 
 	bucket := g.client.Bucket(bucketName)
-	attrs, err := bucket.Attrs(ctx)
+	uniform, err := g.bucketUniformAccess(ctx, bucketName)
 	if err != nil {
 		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v\n", bucketName, err)
 		return "", &StorageError{Message: fmt.Sprintf("bucket %s does not exist or is not accessible", bucketName), Err: err}
 	}
 
 	logrus.Debugf("GCS: Bucket %s exists and is accessible\n", bucketName)
-	logrus.Debugf("GCS: Bucket uniform access enabled: %v\n", attrs.UniformBucketLevelAccess.Enabled)
+	logrus.Debugf("GCS: Bucket uniform access enabled: %v\n", uniform)
 
 	w := bucket.Object(objectKey).NewWriter(ctx)
 
@@ -119,7 +134,7 @@ func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucke
 	}
 
 	// Don't set PredefinedACL if uniform bucket-level access is enabled
-	if !attrs.UniformBucketLevelAccess.Enabled {
+	if !uniform {
 		w.PredefinedACL = "publicRead"
 		logrus.Debugf("GCS: Using legacy ACL (uniform access disabled)\n")
 	} else {
@@ -149,7 +164,7 @@ func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx contex
 	logrus.Debugf("GCS: Uploading public object with cache control to bucket: %s, key: %s\n", bucketName, objectKey)
 
 	bucket := g.client.Bucket(bucketName)
-	attrs, err := bucket.Attrs(ctx)
+	uniform, err := g.bucketUniformAccess(ctx, bucketName)
 	if err != nil {
 		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v\n", bucketName, err)
 		return "", &StorageError{Message: fmt.Sprintf("bucket %s does not exist or is not accessible", bucketName), Err: err}
@@ -163,7 +178,7 @@ func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx contex
 		w.CacheControl = cacheControl
 	}
 
-	if !attrs.UniformBucketLevelAccess.Enabled {
+	if !uniform {
 		w.PredefinedACL = "publicRead"
 	}
 
@@ -189,7 +204,7 @@ func (g *GoogleCloudStorageClient) CopyObject(ctx context.Context, bucketName, s
 	bucket := g.client.Bucket(bucketName)
 	copier := bucket.Object(dstKey).CopierFrom(bucket.Object(srcKey))
 	if public {
-		if attrs, err := bucket.Attrs(ctx); err == nil && !attrs.UniformBucketLevelAccess.Enabled {
+		if uniform, err := g.bucketUniformAccess(ctx, bucketName); err == nil && !uniform {
 			copier.PredefinedACL = "publicRead"
 		}
 	}
