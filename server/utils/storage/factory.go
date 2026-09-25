@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"sync"
+
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -13,7 +15,35 @@ func NewStorageFactory(env *viper.Viper) *StorageFactory {
 	return &StorageFactory{env: env}
 }
 
+type clientCacheKey struct {
+	env    *viper.Viper
+	driver string
+}
+
+// SDK clients pool connections and refresh credentials themselves, so one per process is enough.
+var (
+	clientCacheMu sync.Mutex
+	clientCache   = map[clientCacheKey]StorageClient{}
+)
+
 func (f *StorageFactory) CreateStorageClient() (StorageClient, error) {
+	key := clientCacheKey{env: f.env, driver: f.env.GetString("STORAGE_DRIVER")}
+
+	clientCacheMu.Lock()
+	defer clientCacheMu.Unlock()
+	if client, ok := clientCache[key]; ok {
+		return client, nil
+	}
+
+	client, err := f.newStorageClient()
+	if err != nil {
+		return nil, err
+	}
+	clientCache[key] = client
+	return client, nil
+}
+
+func (f *StorageFactory) newStorageClient() (StorageClient, error) {
 	storageDriver := f.env.GetString("STORAGE_DRIVER")
 	logrus.Debugf("Creating storage client for driver: %s", storageDriver)
 
