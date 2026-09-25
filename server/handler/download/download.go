@@ -7,6 +7,7 @@ import (
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -47,7 +48,8 @@ func DownloadArtifact(c *gin.Context, repository db.AppRepository) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate pre-signed URL"})
 		return
 	}
-	logrus.Debugln("Generated download URL: ", urlStr)
+	urlWithoutQuery, _, _ := strings.Cut(urlStr, "?")
+	logrus.Debugln("Generated download URL: ", urlWithoutQuery)
 	if respondWithJSON {
 		c.JSON(http.StatusOK, gin.H{"download_url": urlStr})
 	} else {

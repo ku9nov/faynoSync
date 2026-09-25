@@ -209,7 +209,7 @@ func writeVelopackFeed(ctx context.Context, storageClient utils.StorageClient, b
 		return fmt.Errorf("failed to write velopack feed %s/%s: %w", bucketName, objectKey, err)
 	}
 
-	logrus.Debugf("Materialized velopack feed: %s/%s", bucketName, objectKey)
+	logrus.Infof("Materialized velopack feed: %s/%s", bucketName, objectKey)
 	return nil
 }
 

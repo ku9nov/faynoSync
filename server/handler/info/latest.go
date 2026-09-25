@@ -289,7 +289,7 @@ func FindLatestVersion(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		if len(checkResult.Artifacts) == 0 {
 			c.JSON(http.StatusOK, gin.H{"update_available": false, "error": "Not found"})
 		} else {
-			logrus.Infoln("checkResult in FindLatestVersion: ", checkResult)
+			logrus.Debugln("checkResult in FindLatestVersion: ", checkResult)
 			response := gin.H{"update_available": false, "critical": checkResult.Critical, "possible_rollback": checkResult.PossibleRollback}
 			// Add artifact URLs to response
 			artifactUrls := BuildArtifactUrls(checkResult.Artifacts, validatedParams["platform"].(string), validatedParams["arch"].(string))

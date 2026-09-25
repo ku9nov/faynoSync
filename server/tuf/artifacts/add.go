@@ -455,7 +455,7 @@ func updateDelegatedRoleWithArtifacts(
 		return false, fmt.Errorf("failed to upload %s metadata to S3: %w", roleName, err)
 	}
 
-	logrus.Debugf("Successfully updated role %s with %d artifacts", roleName, len(artifacts))
+	logrus.Infof("Successfully updated role %s with %d artifacts", roleName, len(artifacts))
 	return false, nil
 }
 

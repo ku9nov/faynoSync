@@ -182,7 +182,7 @@ func GetBootstrapStatus(c *gin.Context, redisClient *redis.Client) {
 			preLocks = keys
 			logrus.Debugf("Found %d pre-locks in Redis", len(preLocks))
 		} else {
-			logrus.Debugf("Error searching for pre-locks: %v", err)
+			logrus.Warnf("Error searching for pre-locks: %v", err)
 		}
 	}
 
@@ -216,7 +216,7 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
-	logrus.Debugf("Starting bootstrap process for admin: %s", adminName)
+	logrus.Infof("Starting bootstrap process for admin: %s", adminName)
 
 	// Parse payload first to get appName
 	var payload models.BootstrapPayload
@@ -570,7 +570,7 @@ func bootstrapWithContext(
 			Status:  &successStatus,
 			Message: &message,
 		})
-		logrus.Debugf("Bootstrap function completed successfully for admin: %s, task_id: %s", adminName, taskID)
+		logrus.Infof("Bootstrap function completed successfully for admin: %s, task_id: %s", adminName, taskID)
 	} else {
 		// Update task state to FAILURE
 		taskName := tasks.TaskNameBootstrap

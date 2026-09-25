@@ -30,7 +30,7 @@ func backfillPrivateDownloads(ctx context.Context, database *mongo.Database, def
 	if err != nil {
 		return fmt.Errorf("backfill download modes: %w", err)
 	}
-	logrus.Debugf("Set download_mode=%s on %d private apps", defaultDownloadMode, result.ModifiedCount)
+	logrus.Infof("Set download_mode=%s on %d private apps", defaultDownloadMode, result.ModifiedCount)
 
 	result, err = database.Collection("apps_meta").UpdateMany(ctx,
 		bson.M{
@@ -43,7 +43,7 @@ func backfillPrivateDownloads(ctx context.Context, database *mongo.Database, def
 	if err != nil {
 		return fmt.Errorf("disable cdn_edge on private apps: %w", err)
 	}
-	logrus.Debugf("Disabled cdn_edge on %d private apps", result.ModifiedCount)
+	logrus.Infof("Disabled cdn_edge on %d private apps", result.ModifiedCount)
 	return nil
 }
 
@@ -90,6 +90,6 @@ func backfillArtifactS3Keys(ctx context.Context, database *mongo.Database) error
 	if err := cursor.Err(); err != nil {
 		return err
 	}
-	logrus.Debugf("Backfilled s3_key on %d private artifacts", updated)
+	logrus.Infof("Backfilled s3_key on %d private artifacts", updated)
 	return nil
 }

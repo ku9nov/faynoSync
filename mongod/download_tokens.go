@@ -249,6 +249,6 @@ func (c *appRepository) deleteDownloadTokens(ctx context.Context, keyType string
 	if err != nil {
 		return err
 	}
-	logrus.Debugf("Deleted %d download tokens of %s %s", result.DeletedCount, keyType, id.Hex())
+	logrus.Infof("Deleted %d download tokens of %s %s", result.DeletedCount, keyType, id.Hex())
 	return nil
 }

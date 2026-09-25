@@ -39,7 +39,7 @@ func updaterFromObjectKey(objectKey string) string {
 func linkIsFeed(link string, env *viper.Viper) bool {
 	objectKey, err := utils.ExtractS3Key(link, strings.Contains(link, "/download?key="), env)
 	if err != nil {
-		logrus.Debugf("Feed backfill: cannot extract object key from %s: %v", link, err)
+		logrus.Warnf("Feed backfill: cannot extract object key from %s: %v", link, err)
 		return false
 	}
 	return updaters.IsFeedFile(path.Base(objectKey), updaterFromObjectKey(objectKey))
@@ -92,6 +92,6 @@ func backfillFeedArtifacts(ctx context.Context, database *mongo.Database, env *v
 	if err := cursor.Err(); err != nil {
 		return err
 	}
-	logrus.Debugf("Marked %d artifacts as updater feeds", updated)
+	logrus.Infof("Marked %d artifacts as updater feeds", updated)
 	return nil
 }

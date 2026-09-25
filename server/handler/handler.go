@@ -374,5 +374,5 @@ func (ch *appHandler) reloadTelemetryAllowList(parent context.Context, reason st
 		logrus.WithError(err).Errorf("Failed to reload telemetry allow-list after %s", reason)
 		return
 	}
-	logrus.Debugf("Telemetry allow-list reloaded after %s", reason)
+	logrus.Infof("Telemetry allow-list reloaded after %s", reason)
 }

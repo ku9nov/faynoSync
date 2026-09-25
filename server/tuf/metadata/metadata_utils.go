@@ -1126,7 +1126,7 @@ func finalizeTargetsMetadataUpdate(
 			return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
 		}
 
-		logrus.Debugf("Successfully updated and signed timestamp referencing snapshot version %d", repo.Snapshot().Signed.Version)
+		logrus.Infof("Successfully updated and signed timestamp referencing snapshot version %d", repo.Snapshot().Signed.Version)
 
 		return nil
 	}); err != nil {

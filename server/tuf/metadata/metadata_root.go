@@ -69,7 +69,7 @@ func getTrustedMetadata(
 	if err == nil && trustedMetadata != nil {
 		logrus.Debugf("Added %s to response", responseKey)
 	} else {
-		logrus.Debugf("Could not load %s: %v", responseKey, err)
+		logrus.Warnf("Could not load %s: %v", responseKey, err)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{

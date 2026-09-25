@@ -118,6 +118,6 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	logrus.Debugf("Team user with id %s updated successfully: %s", req.ID, req.Username)
+	logrus.Infof("Team user with id %s updated successfully: %s", req.ID, req.Username)
 	c.JSON(http.StatusOK, gin.H{"message": "Team user updated successfully"})
 }

@@ -45,7 +45,7 @@ func Login(c *gin.Context, database *mongo.Database) {
 			return
 		}
 
-		logrus.Debugf("Admin user %s successfully authenticated", credentials.Username)
+		logrus.Infof("Admin user %s successfully authenticated", credentials.Username)
 		// Create JWT token
 		token, err := utils.GenerateJWT(credentials.Username)
 		if err != nil {
@@ -81,7 +81,7 @@ func Login(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	logrus.Debugf("Team user %s successfully authenticated", credentials.Username)
+	logrus.Infof("Team user %s successfully authenticated", credentials.Username)
 
 	// Create JWT token
 	token, err := utils.GenerateJWT(credentials.Username)
