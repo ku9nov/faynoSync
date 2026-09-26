@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- Redis is always required: the API connects on startup and exits if Redis is unreachable.
+
+### Performance
+
+- Storage clients are created once per process and reused. Credentials and `STORAGE_DRIVER` are read once — rotating a key needs a restart.
+- GCS: uniform bucket-level access is cached per bucket, removing a `bucket.Attrs` call from every upload and copy.
+
+### Improvements
+
+- Log levels: operator-relevant events (logins, team users, TUF, report groups, feed materialization, deletions) at `info`; TUF metadata load failures and Redis read errors at `warn`; `/checkVersion` `checkResult` at `debug`.
+
+### Security
+
+- `POST /login` and `POST /signup` are rate limited in Redis. Login: 10/min per IP, 5/min per username. Signup: 5/h per IP, 20/h total. Returns `429` with `Retry-After`; `503` if Redis fails.
+- New `TRUSTED_PROXIES` (IPs/CIDRs) controls which proxies may set the client IP via `X-Forwarded-For` / `X-Real-IP`. Unset trusts all, which allows IP spoofing — set it to your proxy/LB or `127.0.0.1`.
+- `/signup` is disabled when `API_KEY` is empty (previously anyone could create an admin). The key is compared in constant time.
+- `POST /login` no longer leaks username existence via response time.
+- `/download` debug log no longer includes presigned URL signatures.
+
+### Fixes
+
+- Edge (CDN) responses for platforms without a `manual` updater are stored under `manual`, so SDK checks hit the edge.
+- `/checkVersion` no longer records telemetry when `ENABLE_TELEMETRY=false`.
+
 ## v2.4.0
 
 ### Breaking changes

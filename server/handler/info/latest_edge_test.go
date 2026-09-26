@@ -167,6 +167,25 @@ func TestPublishResponseToCDNPublishesWhenEpochUnchanged(t *testing.T) {
 	}
 }
 
+func TestPublishResponseToCDNStoresUnsupportedUpdaterUnderManual(t *testing.T) {
+	client := &blockingCDNClient{release: make(chan struct{}), uploads: make(chan cdnUpload, 1)}
+	close(client.release)
+	withCDNClient(t, client)
+
+	params := cdnTestParams()
+	params["updater"] = utils.UpdaterNotSupported
+	publishResponseToCDN(context.Background(), nil, "", params, gin.H{"update_available": true})
+
+	select {
+	case upload := <-client.uploads:
+		if upload.key != "responses/admin/app/stable/darwin/arm64/manual/1.0.0.json" {
+			t.Fatalf("unexpected key %q", upload.key)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("response was never published to CDN")
+	}
+}
+
 type invalidatingCDNClient struct {
 	utils.StorageClient
 	rdb     *redis.Client

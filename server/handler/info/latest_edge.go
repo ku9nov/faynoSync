@@ -104,6 +104,10 @@ func publishResponseToCDN(ctx context.Context, rdb *redis.Client, epoch string, 
 
 	for _, key := range []string{"channel", "platform", "arch", "updater"} {
 		if value, ok := params[key].(string); ok && value != "" {
+			// An unsupported updater gets the same native body as manual, and manual is the path the SDKs read.
+			if key == "updater" && value == utils.UpdaterNotSupported {
+				value = "manual"
+			}
 			objectKeyParts = append(objectKeyParts, value)
 		}
 	}

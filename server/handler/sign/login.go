@@ -4,16 +4,32 @@ import (
 	"context"
 	"faynoSync/server/utils"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
 )
 
-func Login(c *gin.Context, database *mongo.Database) {
+// Compared against when the user does not exist, so response time does not reveal which usernames exist.
+var dummyPasswordHash = sync.OnceValue(func() []byte {
+	hash, err := bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.DefaultCost)
+	if err != nil {
+		logrus.Errorf("Failed to generate dummy password hash: %v", err)
+	}
+	return hash
+})
+
+func Login(c *gin.Context, database *mongo.Database, rdb *redis.Client) {
+	now := timeNow()
+	if !enforceRateLimits(c, rdb, []rateLimit{loginIPLimit(c)}, now) {
+		return
+	}
+
 	var credentials struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -22,6 +38,11 @@ func Login(c *gin.Context, database *mongo.Database) {
 	if err := c.BindJSON(&credentials); err != nil {
 		logrus.Errorf("Failed to bind JSON: %v", err)
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	usernameLimit := loginUsernameLimit(credentials.Username)
+	if !enforceRateLimits(c, rdb, []rateLimit{usernameLimit}, now) {
 		return
 	}
 
@@ -46,6 +67,7 @@ func Login(c *gin.Context, database *mongo.Database) {
 		}
 
 		logrus.Infof("Admin user %s successfully authenticated", credentials.Username)
+		resetRateLimit(ctx, rdb, usernameLimit, now)
 		// Create JWT token
 		token, err := utils.GenerateJWT(credentials.Username)
 		if err != nil {
@@ -67,6 +89,7 @@ func Login(c *gin.Context, database *mongo.Database) {
 
 	if err != nil {
 		logrus.Errorf("User %s not found in team_users collection: %v", credentials.Username, err)
+		bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(credentials.Password))
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
@@ -82,6 +105,7 @@ func Login(c *gin.Context, database *mongo.Database) {
 	}
 
 	logrus.Infof("Team user %s successfully authenticated", credentials.Username)
+	resetRateLimit(ctx, rdb, usernameLimit, now)
 
 	// Create JWT token
 	token, err := utils.GenerateJWT(credentials.Username)

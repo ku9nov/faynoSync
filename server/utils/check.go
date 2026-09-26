@@ -14,6 +14,9 @@ import (
 // ErrAppNotFound reports that the requested app does not belong to the caller.
 var ErrAppNotFound = errors.New("app_name not found in apps_meta collection")
 
+// UpdaterNotSupported is the updater CheckPlatformsLatest resolves when the platform does not offer the requested one.
+const UpdaterNotSupported = "updater not supported"
+
 func DumpRequest(c *gin.Context) {
 	requestDump, err := httputil.DumpRequest(c.Request, true)
 	if err != nil {
@@ -254,7 +257,7 @@ func CheckPlatformsLatest(input string, updater string, db *mongo.Database, ctx 
 					return input, foundUpdater, nil
 				} else {
 					logrus.Debugf("Updater '%s' not supported for platform '%s'", updater, input)
-					return input, "updater not supported", nil
+					return input, UpdaterNotSupported, nil
 				}
 			}
 		}

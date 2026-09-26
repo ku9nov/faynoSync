@@ -633,5 +633,8 @@ func trackClientTelemetryWithLatest(ctx context.Context, rdb *redis.Client, para
 }
 
 func logStatsToRedis(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, deviceID string) {
+	if !viper.GetBool("ENABLE_TELEMETRY") {
+		return
+	}
 	trackClientTelemetry(ctx, rdb, params, hasUpdate, deviceID)
 }
