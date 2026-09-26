@@ -256,6 +256,6 @@ func (c *appRepository) deleteReportKeys(ctx context.Context, keyType string, id
 	if err != nil {
 		return err
 	}
-	logrus.Debugf("Deleted %d report keys of app %s", result.DeletedCount, id.Hex())
+	logrus.Infof("Deleted %d report keys of app %s", result.DeletedCount, id.Hex())
 	return nil
 }

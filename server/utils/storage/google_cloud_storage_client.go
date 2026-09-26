@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -24,6 +25,20 @@ import (
 type GoogleCloudStorageClient struct {
 	client *storage.Client
 	env    *viper.Viper
+	// bucket name -> uniform bucket-level access; saves a bucket.Attrs round trip per upload
+	uniformAccess sync.Map
+}
+
+func (g *GoogleCloudStorageClient) bucketUniformAccess(ctx context.Context, bucketName string) (bool, error) {
+	if uniform, ok := g.uniformAccess.Load(bucketName); ok {
+		return uniform.(bool), nil
+	}
+	attrs, err := g.client.Bucket(bucketName).Attrs(ctx)
+	if err != nil {
+		return false, err
+	}
+	g.uniformAccess.Store(bucketName, attrs.UniformBucketLevelAccess.Enabled)
+	return attrs.UniformBucketLevelAccess.Enabled, nil
 }
 
 // NewGoogleCloudStorageClient creates a new GCS client
@@ -31,127 +46,127 @@ func NewGoogleCloudStorageClient(env *viper.Viper) (*GoogleCloudStorageClient, e
 	ctx := context.Background()
 	credsFile := env.GetString("GCS_CREDENTIALS_FILE")
 
-	logrus.Debugf("GCS: Creating client with credentials file: %s\n", credsFile)
+	logrus.Debugf("GCS: Creating client with credentials file: %s", credsFile)
 
 	var client *storage.Client
 	var err error
 	if credsFile != "" {
 		client, err = storage.NewClient(ctx, option.WithCredentialsFile(credsFile))
 	} else {
-		logrus.Debugf("GCS: No credentials file provided, using default credentials\n")
+		logrus.Debugf("GCS: No credentials file provided, using default credentials")
 		client, err = storage.NewClient(ctx)
 	}
 	if err != nil {
-		logrus.Debugf("GCS: Failed to create client: %v\n", err)
+		logrus.Debugf("GCS: Failed to create client: %v", err)
 		return nil, &StorageError{Message: "failed to create GCS client", Err: err}
 	}
 
-	logrus.Debugf("GCS: Client created successfully\n")
+	logrus.Debugf("GCS: Client created successfully")
 	return &GoogleCloudStorageClient{client: client, env: env}, nil
 }
 
 func (g *GoogleCloudStorageClient) UploadObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) error {
-	logrus.Debugf("GCS: Uploading object to bucket: %s, key: %s\n", bucketName, objectKey)
+	logrus.Debugf("GCS: Uploading object to bucket: %s, key: %s", bucketName, objectKey)
 
 	// Check if bucket exists
 	bucket := g.client.Bucket(bucketName)
-	_, err := bucket.Attrs(ctx)
+	_, err := g.bucketUniformAccess(ctx, bucketName)
 	if err != nil {
-		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v\n", bucketName, err)
+		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v", bucketName, err)
 		return &StorageError{Message: fmt.Sprintf("bucket %s does not exist or is not accessible", bucketName), Err: err}
 	}
 
-	logrus.Debugf("GCS: Bucket %s exists and is accessible\n", bucketName)
+	logrus.Debugf("GCS: Bucket %s exists and is accessible", bucketName)
 
 	w := bucket.Object(objectKey).NewWriter(ctx)
 
 	// Set ContentType if provided
 	if contentType != "" {
 		w.ContentType = contentType
-		logrus.Debugf("GCS: Setting ContentType to: %s\n", contentType)
+		logrus.Debugf("GCS: Setting ContentType to: %s", contentType)
 	}
 
 	bytesWritten, err := io.Copy(w, fileReader)
 	if err != nil {
 		closeErr := w.Close()
 		if closeErr != nil {
-			logrus.Debugf("GCS: Failed io.Copy to writer w: %v; additionally failed to close writer w: %v\n", err, closeErr)
+			logrus.Debugf("GCS: Failed io.Copy to writer w: %v; additionally failed to close writer w: %v", err, closeErr)
 			return &StorageError{
 				Message: "failed to upload object to GCS during io.Copy to writer w and writer finalization",
 				Err:     errors.Join(err, closeErr),
 			}
 		}
-		logrus.Debugf("GCS: Failed io.Copy to writer w: %v\n", err)
+		logrus.Debugf("GCS: Failed io.Copy to writer w: %v", err)
 		return &StorageError{Message: "failed to upload object to GCS during io.Copy to writer w", Err: err}
 	}
 
-	logrus.Debugf("GCS: Copied %d bytes to writer\n", bytesWritten)
+	logrus.Debugf("GCS: Copied %d bytes to writer", bytesWritten)
 
 	if err := w.Close(); err != nil {
-		logrus.Debugf("GCS: Failed to close writer: %v\n", err)
+		logrus.Debugf("GCS: Failed to close writer: %v", err)
 		return &StorageError{Message: "failed to finalize upload to GCS", Err: err}
 	}
 
-	logrus.Debugf("GCS: Upload completed successfully\n")
+	logrus.Debugf("GCS: Upload completed successfully")
 	return nil
 }
 
 func (g *GoogleCloudStorageClient) UploadPublicObject(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType string) (string, error) {
 
-	logrus.Debugf("GCS: Uploading public object to bucket: %s, key: %s\n", bucketName, objectKey)
+	logrus.Debugf("GCS: Uploading public object to bucket: %s, key: %s", bucketName, objectKey)
 
 	bucket := g.client.Bucket(bucketName)
-	attrs, err := bucket.Attrs(ctx)
+	uniform, err := g.bucketUniformAccess(ctx, bucketName)
 	if err != nil {
-		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v\n", bucketName, err)
+		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v", bucketName, err)
 		return "", &StorageError{Message: fmt.Sprintf("bucket %s does not exist or is not accessible", bucketName), Err: err}
 	}
 
-	logrus.Debugf("GCS: Bucket %s exists and is accessible\n", bucketName)
-	logrus.Debugf("GCS: Bucket uniform access enabled: %v\n", attrs.UniformBucketLevelAccess.Enabled)
+	logrus.Debugf("GCS: Bucket %s exists and is accessible", bucketName)
+	logrus.Debugf("GCS: Bucket uniform access enabled: %v", uniform)
 
 	w := bucket.Object(objectKey).NewWriter(ctx)
 
 	// Set ContentType if provided
 	if contentType != "" {
 		w.ContentType = contentType
-		logrus.Debugf("GCS: Setting ContentType to: %s\n", contentType)
+		logrus.Debugf("GCS: Setting ContentType to: %s", contentType)
 	}
 
 	// Don't set PredefinedACL if uniform bucket-level access is enabled
-	if !attrs.UniformBucketLevelAccess.Enabled {
+	if !uniform {
 		w.PredefinedACL = "publicRead"
-		logrus.Debugf("GCS: Using legacy ACL (uniform access disabled)\n")
+		logrus.Debugf("GCS: Using legacy ACL (uniform access disabled)")
 	} else {
-		logrus.Debugf("GCS: Uniform bucket-level access enabled, skipping ACL\n")
+		logrus.Debugf("GCS: Uniform bucket-level access enabled, skipping ACL")
 	}
 
 	bytesWritten, err := io.Copy(w, fileReader)
 	if err != nil {
 		w.Close()
-		logrus.Debugf("GCS: Failed to copy file content: %v\n", err)
+		logrus.Debugf("GCS: Failed to copy file content: %v", err)
 		return "", &StorageError{Message: "failed to upload public object to GCS", Err: err}
 	}
 
-	logrus.Debugf("GCS: Copied %d bytes to writer\n", bytesWritten)
+	logrus.Debugf("GCS: Copied %d bytes to writer", bytesWritten)
 
 	if err := w.Close(); err != nil {
-		logrus.Debugf("GCS: Failed to close writer: %v\n", err)
+		logrus.Debugf("GCS: Failed to close writer: %v", err)
 		return "", &StorageError{Message: "failed to finalize upload to GCS", Err: err}
 	}
 
 	publicURL := g.PublicObjectURL(bucketName, objectKey)
-	logrus.Debugf("GCS: Upload completed successfully, public URL: %s\n", publicURL)
+	logrus.Debugf("GCS: Upload completed successfully, public URL: %s", publicURL)
 	return publicURL, nil
 }
 
 func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx context.Context, bucketName, objectKey string, fileReader multipart.File, contentType, cacheControl string) (string, error) {
-	logrus.Debugf("GCS: Uploading public object with cache control to bucket: %s, key: %s\n", bucketName, objectKey)
+	logrus.Debugf("GCS: Uploading public object with cache control to bucket: %s, key: %s", bucketName, objectKey)
 
 	bucket := g.client.Bucket(bucketName)
-	attrs, err := bucket.Attrs(ctx)
+	uniform, err := g.bucketUniformAccess(ctx, bucketName)
 	if err != nil {
-		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v\n", bucketName, err)
+		logrus.Debugf("GCS: Bucket %s does not exist or is not accessible: %v", bucketName, err)
 		return "", &StorageError{Message: fmt.Sprintf("bucket %s does not exist or is not accessible", bucketName), Err: err}
 	}
 
@@ -163,7 +178,7 @@ func (g *GoogleCloudStorageClient) UploadPublicObjectWithCacheControl(ctx contex
 		w.CacheControl = cacheControl
 	}
 
-	if !attrs.UniformBucketLevelAccess.Enabled {
+	if !uniform {
 		w.PredefinedACL = "publicRead"
 	}
 
@@ -189,7 +204,7 @@ func (g *GoogleCloudStorageClient) CopyObject(ctx context.Context, bucketName, s
 	bucket := g.client.Bucket(bucketName)
 	copier := bucket.Object(dstKey).CopierFrom(bucket.Object(srcKey))
 	if public {
-		if attrs, err := bucket.Attrs(ctx); err == nil && !attrs.UniformBucketLevelAccess.Enabled {
+		if uniform, err := g.bucketUniformAccess(ctx, bucketName); err == nil && !uniform {
 			copier.PredefinedACL = "publicRead"
 		}
 	}

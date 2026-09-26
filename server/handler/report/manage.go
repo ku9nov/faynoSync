@@ -90,7 +90,7 @@ func UpdateReportGroup(c *gin.Context, repository db.AppRepository) {
 		return
 	}
 
-	logrus.Debugf("Report group updated: requester=%s group=%s status=%v tags=%v note=%v", requester, groupHash, req.Status, req.Tags, req.Note != nil)
+	logrus.Infof("Report group updated: requester=%s group=%s status=%v tags=%v note=%v", requester, groupHash, req.Status, req.Tags, req.Note != nil)
 	c.JSON(http.StatusOK, gin.H{"group_hash": groupHash, "updated": true})
 }
 
@@ -131,6 +131,6 @@ func DeleteReportGroup(c *gin.Context, repository db.AppRepository) {
 		}
 	}
 
-	logrus.Debugf("Report group deleted: requester=%s group=%s blobs=%d", requester, groupHash, len(keys))
+	logrus.Infof("Report group deleted: requester=%s group=%s blobs=%d", requester, groupHash, len(keys))
 	c.JSON(http.StatusOK, gin.H{"group_hash": groupHash, "deleted": true})
 }

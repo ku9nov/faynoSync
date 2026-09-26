@@ -208,6 +208,6 @@ func writeSparkleFeed(ctx context.Context, storageClient utils.StorageClient, bu
 		return fmt.Errorf("failed to write sparkle appcast %s/%s: %w", bucketName, objectKey, err)
 	}
 
-	logrus.Debugf("Materialized sparkle appcast: %s/%s", bucketName, objectKey)
+	logrus.Infof("Materialized sparkle appcast: %s/%s", bucketName, objectKey)
 	return nil
 }

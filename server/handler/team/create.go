@@ -84,6 +84,6 @@ func CreateTeamUser(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	logrus.Debugf("Team user created successfully with ID: %s", teamUser.ID.Hex())
+	logrus.Infof("Team user created successfully with ID: %s", teamUser.ID.Hex())
 	c.JSON(http.StatusOK, gin.H{"message": "Team user created successfully"})
 }

@@ -368,6 +368,6 @@ func removeArtifactsFromDelegatedRole(
 		return false, fmt.Errorf("failed to upload %s metadata to S3: %w", roleName, err)
 	}
 
-	logrus.Debugf("Successfully removed %d artifacts from role %s", removedCount, roleName)
+	logrus.Infof("Successfully removed %d artifacts from role %s", removedCount, roleName)
 	return true, nil
 }

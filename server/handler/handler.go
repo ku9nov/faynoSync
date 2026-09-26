@@ -179,12 +179,12 @@ func (ch *appHandler) UpdateSpecificApp(c *gin.Context) {
 
 func (ch *appHandler) Login(c *gin.Context) {
 	// Call the Login function from the sign package
-	sign.Login(c, ch.database)
+	sign.Login(c, ch.database, ch.redisClient)
 }
 
 func (ch *appHandler) SignUp(c *gin.Context) {
 	// Call the SignUp function from the sign package
-	sign.SignUp(c, ch.database, ch.client)
+	sign.SignUp(c, ch.database, ch.client, ch.redisClient)
 }
 
 func (ch *appHandler) DeleteApp(c *gin.Context) {
@@ -374,5 +374,5 @@ func (ch *appHandler) reloadTelemetryAllowList(parent context.Context, reason st
 		logrus.WithError(err).Errorf("Failed to reload telemetry allow-list after %s", reason)
 		return
 	}
-	logrus.Debugf("Telemetry allow-list reloaded after %s", reason)
+	logrus.Infof("Telemetry allow-list reloaded after %s", reason)
 }

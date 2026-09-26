@@ -46,3 +46,4 @@ server/utils/storage/presigned_live_test.go
 ROADMAP.md
 PRIVATE_FEATURE.md
 PRESIGNED_UPLOADS.md
+faynosync-upload.sh

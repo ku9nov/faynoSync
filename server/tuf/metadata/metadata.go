@@ -890,7 +890,7 @@ func GetMetadataSign(c *gin.Context, redisClient *redis.Client) {
 			metadataResponse["trusted_root"] = trustedRoot
 			logrus.Debug("Added trusted_root to response")
 		} else {
-			logrus.Debugf("Could not load trusted_root: %v", err)
+			logrus.Warnf("Could not load trusted_root: %v", err)
 		}
 		if hasTargetsType {
 			for _, meta := range metadataResponse {
@@ -902,7 +902,7 @@ func GetMetadataSign(c *gin.Context, redisClient *redis.Client) {
 								metadataResponse["trusted_targets"] = trustedTargets
 								logrus.Debug("Added trusted_targets to response")
 							} else {
-								logrus.Debugf("Could not load trusted_targets: %v", err)
+								logrus.Warnf("Could not load trusted_targets: %v", err)
 							}
 							break
 						}

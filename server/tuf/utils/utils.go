@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"faynoSync/server/utils"
 	"fmt"
 	"os"
@@ -90,7 +91,11 @@ func GetExpirationFromRedis(redisClient *redis.Client, ctx context.Context, key 
 
 	value, err := redisClient.Get(ctx, key).Int()
 	if err != nil {
-		logrus.Debugf("Failed to get %s from Redis, using default %d: %v", key, defaultValue, err)
+		if errors.Is(err, redis.Nil) {
+			logrus.Debugf("Failed to get %s from Redis, using default %d: %v", key, defaultValue, err)
+		} else {
+			logrus.Warnf("Failed to get %s from Redis, using default %d: %v", key, defaultValue, err)
+		}
 		return defaultValue
 	}
 

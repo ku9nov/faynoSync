@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -19,6 +18,15 @@ func StartServer(config *viper.Viper) {
 	mongoUrl := config.GetString("MONGODB_URL")
 
 	router := gin.Default()
+	if trustedProxies := config.GetString("TRUSTED_PROXIES"); trustedProxies != "" {
+		proxies := strings.Split(trustedProxies, ",")
+		for i := range proxies {
+			proxies[i] = strings.TrimSpace(proxies[i])
+		}
+		if err := router.SetTrustedProxies(proxies); err != nil {
+			logrus.Fatalf("Invalid TRUSTED_PROXIES: %v", err)
+		}
+	}
 
 	client, configDB := db.ConnectToDatabase(mongoUrl)
 
@@ -26,18 +34,13 @@ func StartServer(config *viper.Viper) {
 
 	mongoDatabase := client.Database(configDB.Database)
 
-	// Initialize Redis client
-	var redisClient *redis.Client
-
-	if config.GetBool("PERFORMANCE_MODE") || config.GetBool("ENABLE_TELEMETRY") || config.GetBool("TUF_ENABLED") || config.GetBool("REPORTS_ENABLED") {
-		logrus.Infoln("Redis connection is required. Connecting to Redis.")
-		redisConfig := redisdb.RedisConfig{
-			Addr:     config.GetString("REDIS_HOST") + ":" + config.GetString("REDIS_PORT"),
-			Password: config.GetString("REDIS_PASSWORD"),
-			DB:       config.GetInt("REDIS_DB"),
-		}
-		redisClient = redisdb.ConnectToRedis(redisConfig)
+	logrus.Infoln("Redis connection is required. Connecting to Redis.")
+	redisConfig := redisdb.RedisConfig{
+		Addr:     config.GetString("REDIS_HOST") + ":" + config.GetString("REDIS_PORT"),
+		Password: config.GetString("REDIS_PASSWORD"),
+		DB:       config.GetInt("REDIS_DB"),
 	}
+	redisClient := redisdb.ConnectToRedis(redisConfig)
 
 	handler := handler.NewAppHandler(client, db, mongoDatabase, redisClient, config.GetBool("PERFORMANCE_MODE"))
 	os.Setenv("API_KEY", config.GetString("API_KEY"))
@@ -60,7 +63,11 @@ func StartServer(config *viper.Viper) {
 	router.GET("/checkVersion", handler.FindLatestVersion)
 	router.GET("/apps/latest", handler.FetchLatestVersionOfApp)
 	router.GET("/telemetry/beacon", telemetryMiddleware(config), handler.TelemetryBeacon)
-	router.POST("/signup", handler.SignUp)
+	if config.GetString("API_KEY") != "" {
+		router.POST("/signup", handler.SignUp)
+	} else {
+		logrus.Warnln("API_KEY is not set, /signup is disabled")
+	}
 	router.POST("/login", handler.Login)
 
 	if config.GetBool("REPORTS_ENABLED") {

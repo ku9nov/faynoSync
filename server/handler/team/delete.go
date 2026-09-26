@@ -78,6 +78,6 @@ func DeleteTeamUser(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	logrus.Debugf("Team user deleted successfully with ID: %s", req.UserID)
+	logrus.Infof("Team user deleted successfully with ID: %s", req.UserID)
 	c.JSON(http.StatusOK, gin.H{"message": "Team user deleted successfully"})
 }

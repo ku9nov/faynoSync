@@ -186,14 +186,12 @@ func setup() {
 	}
 	appDB = mongod.NewAppRepository(&configDB, client)
 	mongoDatabase = client.Database(configDB.Database)
-	if viper.GetBool("ENABLE_TELEMETRY") {
-		redisConfig := redisdb.RedisConfig{
-			Addr:     viper.GetString("REDIS_HOST") + ":" + viper.GetString("REDIS_PORT"),
-			Password: viper.GetString("REDIS_PASSWORD"),
-			DB:       viper.GetInt("REDIS_DB"),
-		}
-		redisClient = redisdb.ConnectToRedis(redisConfig)
+	redisConfig := redisdb.RedisConfig{
+		Addr:     viper.GetString("REDIS_HOST") + ":" + viper.GetString("REDIS_PORT"),
+		Password: viper.GetString("REDIS_PASSWORD"),
+		DB:       viper.GetInt("REDIS_DB"),
 	}
+	redisClient = redisdb.ConnectToRedis(redisConfig)
 	os.Setenv("API_KEY", viper.GetString("API_KEY"))
 	apiKey = viper.GetString("API_KEY")
 	copyFile("LICENSE", "testapp.dmg")
@@ -269,6 +267,119 @@ func TestHealthCheck(t *testing.T) {
 	// Check the response body.
 	expected := `{"status":"healthy"}`
 	assert.Equal(t, expected, w.Body.String())
+}
+
+func TestAuthRateLimits(t *testing.T) {
+	require.NotNil(t, redisClient)
+	ctx := context.Background()
+
+	// Fixed windows reset on the minute; start early in one so no subtest straddles a boundary.
+	if s := time.Now().Second(); s > 40 {
+		time.Sleep(time.Duration(61-s) * time.Second)
+	}
+
+	const rlUser = "ratelimit-admin"
+	const rlPassword = "ratelimit-password"
+
+	resetLimits := func() {
+		keys, err := redisClient.Keys(ctx, "auth:rl:*").Result()
+		require.NoError(t, err)
+		if len(keys) > 0 {
+			require.NoError(t, redisClient.Del(ctx, keys...).Err())
+		}
+	}
+	cleanup := func() {
+		resetLimits()
+		_, err := mongoDatabase.Collection("admins").DeleteOne(ctx, bson.M{"username": rlUser})
+		require.NoError(t, err)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	router := gin.Default()
+	router.POST("/signup", h.SignUp)
+	router.POST("/login", h.Login)
+
+	send := func(path, ip, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = ip + ":1234"
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+	login := func(ip, username, password string) *httptest.ResponseRecorder {
+		return send("/login", ip, fmt.Sprintf(`{"username":%q,"password":%q}`, username, password))
+	}
+	signup := func(ip, username, key string) *httptest.ResponseRecorder {
+		return send("/signup", ip, fmt.Sprintf(`{"username":%q,"password":%q,"api_key":%q}`, username, rlPassword, key))
+	}
+	assertLimited := func(t *testing.T, w *httptest.ResponseRecorder, maxRetryAfter int) {
+		t.Helper()
+		require.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
+		var retryAfter int
+		_, err := fmt.Sscan(w.Header().Get("Retry-After"), &retryAfter)
+		require.NoError(t, err)
+		require.True(t, retryAfter > 0 && retryAfter <= maxRetryAfter, "Retry-After %d", retryAfter)
+		assert.JSONEq(t, `{"error":"too many attempts, try again later"}`, w.Body.String())
+	}
+
+	t.Run("signup and login succeed under the limits", func(t *testing.T) {
+		resetLimits()
+		require.Equal(t, http.StatusOK, signup("10.1.0.1", rlUser, apiKey).Code)
+		w := login("10.1.0.1", rlUser, rlPassword)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		assert.Contains(t, w.Body.String(), "token")
+	})
+
+	t.Run("successful login resets the per-username counter", func(t *testing.T) {
+		resetLimits()
+		for i := 0; i < 4; i++ {
+			require.Equal(t, http.StatusUnauthorized, login(fmt.Sprintf("10.2.0.%d", i), rlUser, "wrong").Code)
+		}
+		require.Equal(t, http.StatusOK, login("10.2.1.1", rlUser, rlPassword).Code)
+		for i := 0; i < 5; i++ {
+			require.Equal(t, http.StatusUnauthorized, login(fmt.Sprintf("10.2.2.%d", i), rlUser, "wrong").Code)
+		}
+		assertLimited(t, login("10.2.3.1", rlUser, "wrong"), 60)
+		assertLimited(t, login("10.2.3.2", rlUser, rlPassword), 60)
+		require.Equal(t, http.StatusUnauthorized, login("10.2.3.3", "another-user", "wrong").Code)
+	})
+
+	t.Run("unknown username is limited like an existing one", func(t *testing.T) {
+		resetLimits()
+		for i := 0; i < 5; i++ {
+			require.Equal(t, http.StatusUnauthorized, login(fmt.Sprintf("10.3.0.%d", i), "no-such-user", "wrong").Code)
+		}
+		assertLimited(t, login("10.3.1.1", "no-such-user", "wrong"), 60)
+	})
+
+	t.Run("per-IP login limit", func(t *testing.T) {
+		resetLimits()
+		for i := 0; i < 10; i++ {
+			require.Equal(t, http.StatusUnauthorized, login("10.4.0.1", fmt.Sprintf("user-%d", i), "wrong").Code)
+		}
+		assertLimited(t, login("10.4.0.1", rlUser, rlPassword), 60)
+		require.Equal(t, http.StatusOK, login("10.4.0.2", rlUser, rlPassword).Code)
+	})
+
+	t.Run("per-IP signup limit", func(t *testing.T) {
+		resetLimits()
+		for i := 0; i < 5; i++ {
+			require.Equal(t, http.StatusUnauthorized, signup("10.5.0.1", rlUser, "wrong").Code)
+		}
+		assertLimited(t, signup("10.5.0.1", rlUser, apiKey), 3600)
+		require.Equal(t, http.StatusUnauthorized, signup("10.5.0.2", rlUser, "wrong").Code)
+	})
+
+	t.Run("global signup limit", func(t *testing.T) {
+		resetLimits()
+		for i := 0; i < 20; i++ {
+			require.Equal(t, http.StatusUnauthorized, signup(fmt.Sprintf("10.6.0.%d", i), rlUser, "wrong").Code)
+		}
+		assertLimited(t, signup("10.6.1.1", rlUser, "wrong"), 3600)
+	})
 }
 
 func TestFailedSignUp(t *testing.T) {
@@ -449,7 +560,9 @@ func TestLogin(t *testing.T) {
 	token, tokenExists := response["token"]
 	assert.True(t, tokenExists)
 
-	authToken = token.(string)
+	var ok bool
+	authToken, ok = token.(string)
+	require.True(t, ok, w.Body.String())
 
 	// Check that the authToken variable has been set (assuming authToken is a global variable).
 	assert.NotEmpty(t, authToken)
@@ -493,7 +606,9 @@ func TestLoginSecondUser(t *testing.T) {
 	token, tokenExists := response["token"]
 	assert.True(t, tokenExists)
 
-	authTokenSecondUser = token.(string)
+	var ok bool
+	authTokenSecondUser, ok = token.(string)
+	require.True(t, ok, w.Body.String())
 
 	// Check that the authTokenSecondUser variable has been set (assuming authTokenSecondUser is a global variable).
 	assert.NotEmpty(t, authTokenSecondUser)
@@ -4020,7 +4135,9 @@ func TestTokenFlow01Create(t *testing.T) {
 
 	tokenValue, tokenExists := adminResponse["token"]
 	assert.True(t, tokenExists)
-	cicdToken = tokenValue.(string)
+	var ok bool
+	cicdToken, ok = tokenValue.(string)
+	require.True(t, ok, adminW.Body.String())
 	assert.NotEmpty(t, cicdToken)
 
 	tokenIDValue, tokenIDExists := adminResponse["id"]
@@ -4047,7 +4164,8 @@ func TestTokenFlow01Create(t *testing.T) {
 
 	secondTokenValue, secondTokenExists := secondResponse["token"]
 	assert.True(t, secondTokenExists)
-	secondToken := secondTokenValue.(string)
+	secondToken, ok := secondTokenValue.(string)
+	require.True(t, ok, secondW.Body.String())
 	assert.NotEmpty(t, secondToken)
 	assert.NoError(t, os.Setenv("cicdTokenSecondUser", secondToken))
 
@@ -7972,7 +8090,9 @@ func TestTeamUserLogin(t *testing.T) {
 	assert.True(t, tokenExists)
 
 	// Store the team user token for later tests
-	teamUserToken = token.(string)
+	var ok bool
+	teamUserToken, ok = token.(string)
+	require.True(t, ok, w.Body.String())
 
 	// Check that the teamUserToken variable has been set
 	assert.NotEmpty(t, teamUserToken)
@@ -13187,7 +13307,9 @@ func TestSuccessfulLoginWithNewPassword(t *testing.T) {
 	token, tokenExists := response["token"]
 	assert.True(t, tokenExists)
 
-	authToken = token.(string)
+	var ok bool
+	authToken, ok = token.(string)
+	require.True(t, ok, w.Body.String())
 
 	// Check that the authToken variable has been set (assuming authToken is a global variable).
 	assert.NotEmpty(t, authToken)
