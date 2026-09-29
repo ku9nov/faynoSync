@@ -210,16 +210,28 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		}
 	}{
 		{bson.D{{Key: "app_name", Value: params["app_name"]}, {Key: "owner", Value: owner}}, &appMeta},
-		{bson.D{{Key: "platform_name", Value: params["platform"]}, {Key: "owner", Value: owner}}, &platformMeta},
-		{bson.D{{Key: "arch_id", Value: params["arch"]}, {Key: "owner", Value: owner}}, &archMeta},
 	}
-	if channel, _ := params["channel"].(string); channel != "" {
+	// Like repository.Upload, an empty channel, platform or arch stays the nil id rather than a lookup.
+	optional := []struct {
+		key, value string
+		target     *struct {
+			ID primitive.ObjectID `bson:"_id"`
+		}
+	}{
+		{"channel_name", utils.GetStringValue(params, "channel"), &channelMeta},
+		{"platform_name", utils.GetStringValue(params, "platform"), &platformMeta},
+		{"arch_id", utils.GetStringValue(params, "arch"), &archMeta},
+	}
+	for _, o := range optional {
+		if o.value == "" {
+			continue
+		}
 		lookups = append(lookups, struct {
 			filter bson.D
 			target *struct {
 				ID primitive.ObjectID `bson:"_id"`
 			}
-		}{bson.D{{Key: "channel_name", Value: channel}, {Key: "owner", Value: owner}}, &channelMeta})
+		}{bson.D{{Key: o.key, Value: o.value}, {Key: "owner", Value: owner}}, o.target})
 	}
 	for _, lookup := range lookups {
 		if err := metaCollection.FindOne(ctx, lookup.filter).Decode(lookup.target); err != nil {
@@ -258,6 +270,39 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		}
 	}
 	return "", nil
+}
+
+// planUploadPlacements places every file of a request and reports, before anything is
+// written, whether two of its files would share a storage key or an extension
+// (requestConflict) or the stored version already holds one of them (storedConflict).
+func planUploadPlacements(ctx context.Context, database *mongo.Database, owner string, ctxQueryMap map[string]interface{}, fileNames []string, env *viper.Viper, checkAppVisibility bool) ([]utils.ObjectPlacement, string, string, error) {
+	placements := make([]utils.ObjectPlacement, 0, len(fileNames))
+	keys := make(map[string]string, len(fileNames))
+	extensions := make(map[string]string, len(fileNames))
+	for _, name := range fileNames {
+		placement := utils.BuildObjectPlacement(ctxQueryMap, owner, name, env, checkAppVisibility)
+		if other, dup := keys[placement.Key]; dup {
+			return nil, fmt.Sprintf("files %q and %q would be stored under the same key", other, name), "", nil
+		}
+		keys[placement.Key] = name
+		if !db.IsDuplicateCheckIgnored(placement.Extension) {
+			if other, dup := extensions[placement.Extension]; dup {
+				return nil, fmt.Sprintf("files %q and %q have the same extension", other, name), "", nil
+			}
+			extensions[placement.Extension] = name
+		}
+		placements = append(placements, placement)
+	}
+
+	extensionList := make([]string, 0, len(placements))
+	for _, placement := range placements {
+		extensionList = append(extensionList, placement.Extension)
+	}
+	conflict, err := findArtifactConflict(ctx, database, owner, ctxQueryMap, extensionList)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return placements, "", conflict, nil
 }
 
 // InitPresignedUpload validates an upload up front and returns presigned PUT URLs into a
@@ -347,38 +392,18 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	placements := make([]utils.ObjectPlacement, 0, len(fileNames))
-	keys := make(map[string]string, len(fileNames))
-	extensions := make(map[string]string, len(fileNames))
-	for _, name := range fileNames {
-		placement := utils.BuildObjectPlacement(ctxQueryMap, owner, name, env, checkAppVisibility)
-		if other, dup := keys[placement.Key]; dup {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("files %q and %q would be stored under the same key", other, name)})
-			return
-		}
-		keys[placement.Key] = name
-		if !db.IsDuplicateCheckIgnored(placement.Extension) {
-			if other, dup := extensions[placement.Extension]; dup {
-				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("files %q and %q have the same extension", other, name)})
-				return
-			}
-			extensions[placement.Extension] = name
-		}
-		placements = append(placements, placement)
-	}
-
-	extensionList := make([]string, 0, len(placements))
-	for _, placement := range placements {
-		extensionList = append(extensionList, placement.Extension)
-	}
-	conflict, err := findArtifactConflict(c.Request.Context(), database, owner, ctxQueryMap, extensionList)
+	placements, requestConflict, storedConflict, err := planUploadPlacements(c.Request.Context(), database, owner, ctxQueryMap, fileNames, env, checkAppVisibility)
 	if err != nil {
 		logrus.Errorf("failed to check artifact conflicts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing artifacts"})
 		return
 	}
-	if conflict != "" {
-		c.JSON(http.StatusConflict, gin.H{"error": conflict})
+	if requestConflict != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": requestConflict})
+		return
+	}
+	if storedConflict != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": storedConflict})
 		return
 	}
 

@@ -1245,8 +1245,8 @@ func TestUploadDuplicateApp(t *testing.T) {
 	// Serve the request using the Gin router.
 	router.ServeHTTP(w, req)
 
-	// Check the response status code (expecting 500).
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// Check the response status code (expecting 409).
+	assert.Equal(t, http.StatusConflict, w.Code)
 
 	// Check the response body for the desired error message.
 	expectedErrorMessage := `{"error":"app with this name, version, platform, architecture and extension already exists"}`
@@ -3391,6 +3391,93 @@ func TestTauriUpdateURLFlow(t *testing.T) {
 		requireLatestRedirect(t, app, "platform=macosTauri&arch=universalArch", app+"-1.0.1.dmg")
 		requireLatestNotFound(t, app, "platform=macosTauri&arch=universalArch&package=app.tar.gz")
 		requireLatestNotFound(t, app, "platform=macosTauri&arch=universalArch&package=sig")
+	})
+}
+
+func storageObjectStatus(t *testing.T, url string) int {
+	t.Helper()
+	if viper.GetString("STORAGE_DRIVER") == "gcp" {
+		url = fmt.Sprintf("%s?nocache=%d", url, time.Now().UnixNano())
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(url)
+	require.NoError(t, err)
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func storedVersionPackages(t *testing.T, appName, version string) []string {
+	t.Helper()
+	ctx := context.Background()
+	var meta struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+	require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.M{"app_name": appName, "owner": "admin"}).Decode(&meta))
+	var doc model.SpecificApp
+	err := mongoDatabase.Collection("apps").FindOne(ctx, bson.M{"app_id": meta.ID, "version": version}).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return nil
+	}
+	require.NoError(t, err)
+	packages := make([]string, 0, len(doc.Artifacts))
+	for _, artifact := range doc.Artifacts {
+		packages = append(packages, artifact.Package)
+	}
+	return packages
+}
+
+// Regression for the non-atomic multipart /upload: every file used to be written to
+// storage before the duplicate check, so a rejected request overwrote stored files and
+// left a partially recorded version (e.g. an electron-builder macOS build with two
+// .blockmap files lost its latest-mac.yml). Conflicts must now be caught before any write.
+func TestUploadRejectsBeforeWriting(t *testing.T) {
+	const app = "uploadatomicapp"
+	cleanupUpdaterApp(t, app)
+	defer cleanupUpdaterApp(t, app)
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, app)
+	defaultLayoutURL := func(version, ext string) string {
+		return fmt.Sprintf("%s/%s-admin/nightly/macos/universalArch/%s-%s%s", s3Endpoint, app, app, version, ext)
+	}
+
+	t.Run("electron_builder_macos_with_both_blockmaps", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.1", "macos", "electron-builder", "",
+			"latest-mac.yml", app+"-1.0.1-mac.zip", app+"-1.0.1-mac.zip.blockmap", app+"-1.0.1.dmg", app+"-1.0.1.dmg.blockmap")
+		require.ElementsMatch(t, []string{".yml", ".zip", ".blockmap", ".dmg", ".blockmap"}, storedVersionPackages(t, app, "1.0.1"))
+
+		w := serveVersionCheck(t, fmt.Sprintf("/checkVersion?app_name=%s&version=0.0.0.1&channel=nightly&platform=macos&arch=universalArch&owner=admin&updater=electron-builder", app), nil)
+		require.Equal(t, http.StatusFound, w.Code, w.Body.String())
+		require.True(t, strings.HasSuffix(w.Header().Get("Location"), "/latest-mac.yml"), "redirected to %q", w.Header().Get("Location"))
+	})
+
+	t.Run("colliding_files_in_one_request_write_nothing", func(t *testing.T) {
+		w := doUpdaterRequest(t, router, "/upload",
+			fmt.Sprintf(`{"app_name":"%s","version":"1.0.2","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","updater":"manual"}`, app),
+			[]updaterFeedFile{{name: "first.zip", content: []byte("first")}, {name: "second.dmg", content: []byte("dmg")}, {name: "third.zip", content: []byte("third")}})
+		require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+		var resp map[string]string
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		require.Contains(t, resp["error"], "first.zip")
+		require.Contains(t, resp["error"], "third.zip")
+
+		require.Nil(t, storedVersionPackages(t, app, "1.0.2"), "rejected request must not record a version")
+		require.NotEqual(t, http.StatusOK, storageObjectStatus(t, defaultLayoutURL("1.0.2", ".zip")), "rejected request must not write to storage")
+		require.NotEqual(t, http.StatusOK, storageObjectStatus(t, defaultLayoutURL("1.0.2", ".dmg")), "rejected request must not write to storage")
+	})
+
+	t.Run("stored_conflict_keeps_existing_file_and_version", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.3", "macos", "manual", "", app+"-1.0.3.dmg")
+		original := checkFileContent(t, defaultLayoutURL("1.0.3", ".dmg"))
+		require.Equal(t, app+"-1.0.3.dmg", original)
+
+		w := doUpdaterRequest(t, router, "/upload",
+			fmt.Sprintf(`{"app_name":"%s","version":"1.0.3","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","updater":"manual"}`, app),
+			[]updaterFeedFile{{name: "retry.zip", content: []byte("new zip")}, {name: "retry.dmg", content: []byte("replaced")}})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		require.JSONEq(t, `{"error":"app with this name, version, platform, architecture and extension already exists"}`, w.Body.String())
+
+		require.Equal(t, original, checkFileContent(t, defaultLayoutURL("1.0.3", ".dmg")), "stored file must not be overwritten")
+		require.Equal(t, []string{".dmg"}, storedVersionPackages(t, app, "1.0.3"), "no artifact of the rejected request may be recorded")
+		require.NotEqual(t, http.StatusOK, storageObjectStatus(t, defaultLayoutURL("1.0.3", ".zip")))
 	})
 }
 

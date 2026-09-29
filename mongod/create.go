@@ -288,11 +288,13 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 
 // duplicateCheckIgnoredPackages lists package extensions that legitimately repeat
 // within the same version/platform/arch (e.g. velopack full+delta .nupkg, or
-// several sparkle .delta files stepping from different prior versions) and must
+// several sparkle .delta files stepping from different prior versions, or the
+// electron-builder .zip.blockmap and .dmg.blockmap of one macOS build) and must
 // be skipped by the duplicate-artifact check on upload.
 var duplicateCheckIgnoredPackages = map[string]bool{
-	"nupkg": true,
-	"delta": true,
+	"nupkg":    true,
+	"delta":    true,
+	"blockmap": true,
 }
 
 const versionIndexName = "unique_app_version_owner"
