@@ -198,7 +198,8 @@ const artifactExistsMessage = "app with this name, version, platform, architectu
 // findArtifactConflict mirrors the checks repository.Upload applies to an existing
 // version (immutable channel, duplicate artifact), so a conflict is reported before the
 // client transfers anything. It returns the conflict message, or "" when there is none.
-func findArtifactConflict(ctx context.Context, database *mongo.Database, owner string, params map[string]interface{}, extensions []string) (string, error) {
+// forUpdate follows /apps/update, where an omitted channel keeps the version's own.
+func findArtifactConflict(ctx context.Context, database *mongo.Database, owner string, params map[string]interface{}, extensions []string, forUpdate bool) (string, error) {
 	metaCollection := database.Collection("apps_meta")
 	var appMeta, platformMeta, archMeta, channelMeta struct {
 		ID primitive.ObjectID `bson:"_id"`
@@ -255,7 +256,8 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		return "", err
 	}
 
-	if channelMeta.ID != existing.ChannelID {
+	channelOmitted := forUpdate && utils.GetStringValue(params, "channel") == ""
+	if !channelOmitted && channelMeta.ID != existing.ChannelID {
 		return db.ErrVersionChannelMismatch.Error(), nil
 	}
 
@@ -272,10 +274,12 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 	return "", nil
 }
 
-// planUploadPlacements places every file of a request and reports, before anything is
+// PlanUploadPlacements places every file of a request and reports, before anything is
 // written, whether two of its files would share a storage key or an extension
 // (requestConflict) or the stored version already holds one of them (storedConflict).
-func planUploadPlacements(ctx context.Context, database *mongo.Database, owner string, ctxQueryMap map[string]interface{}, fileNames []string, env *viper.Viper, checkAppVisibility bool) ([]utils.ObjectPlacement, string, string, error) {
+// With forUpdate, feed files may replace the stored ones: velopack and sparkle require
+// the feed on every update, and feeds are rematerialized and never TUF targets.
+func PlanUploadPlacements(ctx context.Context, database *mongo.Database, owner string, ctxQueryMap map[string]interface{}, fileNames []string, env *viper.Viper, checkAppVisibility bool, forUpdate bool) ([]utils.ObjectPlacement, string, string, error) {
 	placements := make([]utils.ObjectPlacement, 0, len(fileNames))
 	keys := make(map[string]string, len(fileNames))
 	extensions := make(map[string]string, len(fileNames))
@@ -294,11 +298,15 @@ func planUploadPlacements(ctx context.Context, database *mongo.Database, owner s
 		placements = append(placements, placement)
 	}
 
+	updaterType := utils.GetStringValue(ctxQueryMap, "updater")
 	extensionList := make([]string, 0, len(placements))
-	for _, placement := range placements {
+	for i, placement := range placements {
+		if forUpdate && updaters.IsFeedFile(fileNames[i], updaterType) {
+			continue
+		}
 		extensionList = append(extensionList, placement.Extension)
 	}
-	conflict, err := findArtifactConflict(ctx, database, owner, ctxQueryMap, extensionList)
+	conflict, err := findArtifactConflict(ctx, database, owner, ctxQueryMap, extensionList, forUpdate)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -392,7 +400,7 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	placements, requestConflict, storedConflict, err := planUploadPlacements(c.Request.Context(), database, owner, ctxQueryMap, fileNames, env, checkAppVisibility)
+	placements, requestConflict, storedConflict, err := PlanUploadPlacements(c.Request.Context(), database, owner, ctxQueryMap, fileNames, env, checkAppVisibility, false)
 	if err != nil {
 		logrus.Errorf("failed to check artifact conflicts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing artifacts"})
@@ -682,7 +690,7 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 	for _, file := range pending.Files {
 		extensionList = append(extensionList, file.Extension)
 	}
-	conflict, err := findArtifactConflict(ctx, database, pending.Owner, ctxQueryMap, extensionList)
+	conflict, err := findArtifactConflict(ctx, database, pending.Owner, ctxQueryMap, extensionList, false)
 	if err != nil {
 		logrus.Errorf("Presigned upload %s: failed to check artifact conflicts: %v", pending.ID, err)
 		release()

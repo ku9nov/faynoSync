@@ -3439,8 +3439,9 @@ func TestUploadRejectsBeforeWriting(t *testing.T) {
 		return fmt.Sprintf("%s/%s-admin/nightly/macos/universalArch/%s-%s%s", s3Endpoint, app, app, version, ext)
 	}
 
+	var electronVersionID string
 	t.Run("electron_builder_macos_with_both_blockmaps", func(t *testing.T) {
-		uploadLatestFlowVersion(t, router, app, "1.0.1", "macos", "electron-builder", "",
+		electronVersionID = uploadLatestFlowVersion(t, router, app, "1.0.1", "macos", "electron-builder", "",
 			"latest-mac.yml", app+"-1.0.1-mac.zip", app+"-1.0.1-mac.zip.blockmap", app+"-1.0.1.dmg", app+"-1.0.1.dmg.blockmap")
 		require.ElementsMatch(t, []string{".yml", ".zip", ".blockmap", ".dmg", ".blockmap"}, storedVersionPackages(t, app, "1.0.1"))
 
@@ -3478,6 +3479,34 @@ func TestUploadRejectsBeforeWriting(t *testing.T) {
 		require.Equal(t, original, checkFileContent(t, defaultLayoutURL("1.0.3", ".dmg")), "stored file must not be overwritten")
 		require.Equal(t, []string{".dmg"}, storedVersionPackages(t, app, "1.0.3"), "no artifact of the rejected request may be recorded")
 		require.NotEqual(t, http.StatusOK, storageObjectStatus(t, defaultLayoutURL("1.0.3", ".zip")))
+	})
+
+	// /apps/update used to overwrite the stored object and then skip the artifact as a
+	// duplicate, leaving hashes (and TUF targets) describing the old bytes.
+	t.Run("apps_update_rejects_stored_file", func(t *testing.T) {
+		require.NotEmpty(t, electronVersionID)
+		dmgURL := fmt.Sprintf("%s/electron-builder/%s-admin/1.0.1/nightly/macos/universalArch/%s-1.0.1.dmg", s3Endpoint, app, app)
+		original := checkFileContent(t, dmgURL)
+		update := func(extra string, files ...updaterFeedFile) *httptest.ResponseRecorder {
+			return doUpdaterRequest(t, router, "/apps/update",
+				fmt.Sprintf(`{"id":"%s","app_name":"%s","version":"1.0.1","publish":true,"platform":"macos","arch":"universalArch","updater":"electron-builder"%s}`, electronVersionID, app, extra),
+				files)
+		}
+
+		w := update(`,"channel":"nightly"`, updaterFeedFile{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, updaterFeedFile{name: app + "-1.0.1.dmg", content: []byte("replaced")})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		require.JSONEq(t, `{"error":"app with this name, version, platform, architecture and extension already exists"}`, w.Body.String())
+		require.Equal(t, original, checkFileContent(t, dmgURL), "stored file must not be overwritten")
+
+		w = update(`,"channel":"stable"`, updaterFeedFile{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, updaterFeedFile{name: app + "-1.0.1.pkg", content: []byte("pkg")})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), "cannot be changed")
+
+		// An omitted channel keeps the version's own, and the feed may be re-sent with a new file.
+		w = update("", updaterFeedFile{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, updaterFeedFile{name: app + "-1.0.1.pkg", content: []byte("pkg")})
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.Contains(t, storedVersionPackages(t, app, "1.0.1"), ".pkg")
+		require.Equal(t, original, checkFileContent(t, dmgURL))
 	})
 }
 
@@ -4876,14 +4905,8 @@ func TestUpdateSpecificApp(t *testing.T) {
 			// Reset the request body for each iteration.
 			body := &bytes.Buffer{}
 			writer := multipart.NewWriter(body)
-			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = io.Copy(part, file)
-			if err != nil {
-				t.Fatal(err)
-			}
+			// LICENSE is already stored for this version; re-sending it is rejected with 409
+			// (TestUploadRejectsBeforeWriting), so only the metadata is updated here.
 			// Create a POST request for the update endpoint with the current combination.
 			dataPart, err := writer.CreateFormField("data")
 			if err != nil {
@@ -6611,14 +6634,8 @@ func TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted(t *testing.T
 			// Reset the request body for each iteration.
 			body := &bytes.Buffer{}
 			writer := multipart.NewWriter(body)
-			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = io.Copy(part, file)
-			if err != nil {
-				t.Fatal(err)
-			}
+			// LICENSE is already stored for this version; re-sending it is rejected with 409
+			// (TestUploadRejectsBeforeWriting), so only the metadata is updated here.
 			// Create a POST request for the update endpoint with the current combination.
 			dataPart, err := writer.CreateFormField("data")
 			if err != nil {
@@ -12237,14 +12254,8 @@ func TestUpdateSpecificAppWithIntermediate(t *testing.T) {
 			// Reset the request body for each iteration.
 			body := &bytes.Buffer{}
 			writer := multipart.NewWriter(body)
-			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = io.Copy(part, file)
-			if err != nil {
-				t.Fatal(err)
-			}
+			// LICENSE is already stored for this version; re-sending it is rejected with 409
+			// (TestUploadRejectsBeforeWriting), so only the metadata is updated here.
 			// Create a POST request for the update endpoint with the current combination.
 			dataPart, err := writer.CreateFormField("data")
 			if err != nil {

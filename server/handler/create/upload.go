@@ -349,7 +349,7 @@ func UploadApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, 
 	}
 	// Checked before any object is written, so a rejected request neither overwrites a
 	// stored file nor leaves a partially recorded version behind.
-	_, requestConflict, storedConflict, err := planUploadPlacements(c.Request.Context(), db, owner, ctxQueryMap, fileNames, viper.GetViper(), checkAppVisibility)
+	_, requestConflict, storedConflict, err := PlanUploadPlacements(c.Request.Context(), db, owner, ctxQueryMap, fileNames, viper.GetViper(), checkAppVisibility, false)
 	if err != nil {
 		logrus.Errorf("failed to check artifact conflicts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing artifacts"})

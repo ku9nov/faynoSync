@@ -331,6 +331,22 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 				ctxQueryMap["sparkle_meta"] = sparkleMeta
 			}
 		}
+		// Checked before any object is written: a file already stored for this version is
+		// rejected instead of overwritten in storage while its recorded hashes stay stale.
+		_, requestConflict, storedConflict, err := create.PlanUploadPlacements(c.Request.Context(), db, s3Owner, ctxQueryMap, fileNames, viper.GetViper(), checkAppVisibility, true)
+		if err != nil {
+			logrus.Errorf("failed to check artifact conflicts: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing artifacts"})
+			return
+		}
+		if requestConflict != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": requestConflict})
+			return
+		}
+		if storedConflict != "" {
+			c.JSON(http.StatusConflict, gin.H{"error": storedConflict})
+			return
+		}
 		for _, file := range files {
 			// Calculate hashes and length before uploading to S3
 			hashes, length, err := utils.CalculateFileHashes(file)
