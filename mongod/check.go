@@ -5,8 +5,11 @@ import (
 	"errors"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
+	"faynoSync/server/utils/updaters"
 	"fmt"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/hashicorp/go-version"
 	"github.com/sirupsen/logrus"
@@ -439,7 +442,11 @@ func (c *appRepository) CheckLatestVersion(appName, currentVersion, channelName,
 	}
 }
 
-func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx context.Context, owner string) ([]*model.SpecificAppWithoutIDs, error) {
+// FetchLatestVersionOfApp returns, per (platform, arch), the newest fully rolled out
+// published version that still has matching installers. Filtering happens before the
+// version pick, so a release that skips a platform or a package type never hides the
+// previous one; packageType is the API form ("dmg", "no-extension"), empty for any.
+func (c *appRepository) FetchLatestVersionOfApp(appName, channel, platform, arch, packageType string, ctx context.Context, owner string) ([]model.LatestDownload, error) {
 	var appMeta appMetaDoc
 	metaCollection := c.client.Database(c.config.Database).Collection("apps_meta")
 	metaFilter := bson.D{{Key: "app_name", Value: appName}, {Key: "owner", Value: owner}}
@@ -458,18 +465,78 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 		}
 	}
 	collection := c.client.Database(c.config.Database).Collection("apps")
-	matchFilter := bson.M{"app_id": appMeta.ID, "published": true, "owner": owner}
+	matchFilter := bson.M{
+		"app_id":          appMeta.ID,
+		"published":       true,
+		"owner":           owner,
+		"rollout_percent": bson.M{"$not": bson.M{"$lt": 100}},
+	}
 
 	if channel != "" {
 		matchFilter["channel_id"] = channelMeta.ID
 	}
 
+	nonInstaller := make([]string, 0, len(updaters.NonInstallerPackages))
+	for _, pkg := range updaters.NonInstallerPackages {
+		nonInstaller = append(nonInstaller, regexp.QuoteMeta(pkg))
+	}
+	artifactFilter := bson.A{
+		bson.M{"artifacts.is_feed": bson.M{"$ne": true}},
+		bson.M{"artifacts.package": bson.M{"$not": primitive.Regex{Pattern: `^\.(` + strings.Join(nonInstaller, "|") + `)$`, Options: "i"}}},
+	}
+	if platform != "" {
+		var platformMeta metaIDDoc
+		if err := metaCollection.FindOne(ctx, bson.D{{Key: "platform_name", Value: platform}, {Key: "owner", Value: owner}}).Decode(&platformMeta); err != nil {
+			logrus.Debugf("Platform %s not found for /apps/latest: %v", platform, err)
+			return nil, nil
+		}
+		artifactFilter = append(artifactFilter, bson.M{"artifacts.platform": platformMeta.ID})
+	}
+	if arch != "" {
+		var archMeta metaIDDoc
+		if err := metaCollection.FindOne(ctx, bson.D{{Key: "arch_id", Value: arch}, {Key: "owner", Value: owner}}).Decode(&archMeta); err != nil {
+			logrus.Debugf("Arch %s not found for /apps/latest: %v", arch, err)
+			return nil, nil
+		}
+		artifactFilter = append(artifactFilter, bson.M{"artifacts.arch": archMeta.ID})
+	}
+	if packageType != "" {
+		storedPackage := "." + packageType
+		if packageType == "no-extension" {
+			storedPackage = ""
+		}
+		artifactFilter = append(artifactFilter, bson.M{"artifacts.package": storedPackage})
+	}
+
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: matchFilter}},
+		{{Key: "$unwind", Value: "$artifacts"}},
+		{{Key: "$match", Value: bson.M{"$and": artifactFilter}}},
+		{{Key: "$group", Value: bson.M{
+			"_id":       bson.M{"id": "$_id", "platform": "$artifacts.platform", "arch": "$artifacts.arch"},
+			"version":   bson.M{"$first": "$version"},
+			"artifacts": bson.M{"$push": "$artifacts"},
+		}}},
 	}
-	pipeline = append(pipeline, c.sortVersionPipeline()...)
-	basePipeline := c.getBasePipeline()
-	pipeline = append(pipeline, basePipeline...)
+	pipeline = append(pipeline, versionSortStages()...)
+	pipeline = append(pipeline,
+		bson.D{{Key: "$group", Value: bson.M{
+			"_id":       bson.M{"platform": "$_id.platform", "arch": "$_id.arch"},
+			"version":   bson.M{"$first": "$version"},
+			"artifacts": bson.M{"$first": "$artifacts"},
+		}}},
+		bson.D{{Key: "$lookup", Value: bson.M{"from": "apps_meta", "localField": "_id.platform", "foreignField": "_id", "as": "platform_meta"}}},
+		bson.D{{Key: "$lookup", Value: bson.M{"from": "apps_meta", "localField": "_id.arch", "foreignField": "_id", "as": "arch_meta"}}},
+		bson.D{{Key: "$unwind", Value: bson.M{"path": "$platform_meta", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{Key: "$unwind", Value: bson.M{"path": "$arch_meta", "preserveNullAndEmptyArrays": true}}},
+		bson.D{{Key: "$project", Value: bson.M{
+			"_id":       0,
+			"platform":  "$platform_meta.platform_name",
+			"arch":      "$arch_meta.arch_id",
+			"version":   1,
+			"artifacts": 1,
+		}}},
+	)
 
 	logrus.Debug("MongoDB Pipeline: ", pipeline)
 
@@ -479,7 +546,11 @@ func (c *appRepository) FetchLatestVersionOfApp(appName, channel string, ctx con
 	}
 	defer cur.Close(ctx)
 
-	return c.processApps(cur, ctx)
+	var downloads []model.LatestDownload
+	if err := cur.All(ctx, &downloads); err != nil {
+		return nil, err
+	}
+	return downloads, nil
 }
 
 func (c *appRepository) FetchAppByID(appID primitive.ObjectID, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error) {

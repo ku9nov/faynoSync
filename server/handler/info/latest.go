@@ -181,23 +181,8 @@ var ignoredArtifactPackages = map[string]bool{
 	"nupkg":    true,
 }
 
-// latestIgnoredPackages are updater-internal files that are never a download
-// target on /apps/latest, which serves installers only. Feeds are excluded via
-// is_feed instead of extension, since a manual app may ship e.g. a .json or an
-// extensionless binary.
-var latestIgnoredPackages = map[string]bool{
-	"nupkg":           true,
-	"delta":           true,
-	"blockmap":        true,
-	"sig":             true,
-	"app.tar.gz":      true,
-	"appimage.tar.gz": true,
-	"nsis.zip":        true,
-	"msi.zip":         true,
-}
-
 func isLatestDownloadArtifact(packageType string, isFeed bool) bool {
-	return !isFeed && !latestIgnoredPackages[strings.ToLower(packageType)]
+	return updaters.IsInstallerArtifact(packageType, isFeed)
 }
 
 // BuildArtifactUrls builds artifact URLs map from artifacts slice
@@ -451,7 +436,7 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 		}
 	}
 
-	checkResult, err := repository.FetchLatestVersionOfApp(params["app_name"].(string), params["channel"].(string), ctx, params["owner"].(string))
+	checkResult, err := repository.FetchLatestVersionOfApp(params["app_name"].(string), params["channel"].(string), params["platform"].(string), params["arch"].(string), params["package"].(string), ctx, params["owner"].(string))
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -466,21 +451,16 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 	}
 
 	downloadUrls := make(map[string]map[string]map[string]map[string]map[string]string)
+	channel := params["channel"].(string)
 
-	if len(checkResult) > 0 {
-		latestApp := checkResult[0]
-		for _, artifact := range latestApp.Artifacts {
-
-			if params["channel"] != "" && params["channel"] != latestApp.Channel {
-				continue
-			}
-			if params["platform"] != "" && params["platform"] != artifact.Platform {
-				continue
-			}
-			if params["arch"] != "" && params["arch"] != artifact.Arch {
-				continue
-			}
-
+	for _, latest := range checkResult {
+		if params["platform"] != "" && params["platform"] != latest.Platform {
+			continue
+		}
+		if params["arch"] != "" && params["arch"] != latest.Arch {
+			continue
+		}
+		for _, artifact := range latest.Artifacts {
 			packageType := strings.TrimPrefix(artifact.Package, ".")
 			if !isLatestDownloadArtifact(packageType, artifact.IsFeed) {
 				logrus.Debugf("Skipping updater-internal artifact on /apps/latest: %s", artifact.Link)
@@ -494,20 +474,21 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 				continue
 			}
 
-			if _, exists := downloadUrls[latestApp.Channel]; !exists {
-				downloadUrls[latestApp.Channel] = make(map[string]map[string]map[string]map[string]string)
+			if _, exists := downloadUrls[channel]; !exists {
+				downloadUrls[channel] = make(map[string]map[string]map[string]map[string]string)
 			}
 
-			if _, exists := downloadUrls[latestApp.Channel][artifact.Platform]; !exists {
-				downloadUrls[latestApp.Channel][artifact.Platform] = make(map[string]map[string]map[string]string)
+			if _, exists := downloadUrls[channel][latest.Platform]; !exists {
+				downloadUrls[channel][latest.Platform] = make(map[string]map[string]map[string]string)
 			}
 
-			if _, exists := downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch]; !exists {
-				downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch] = make(map[string]map[string]string)
+			if _, exists := downloadUrls[channel][latest.Platform][latest.Arch]; !exists {
+				downloadUrls[channel][latest.Platform][latest.Arch] = make(map[string]map[string]string)
 			}
 
-			downloadUrls[latestApp.Channel][artifact.Platform][artifact.Arch][packageType] = map[string]string{
-				"url": artifact.Link,
+			downloadUrls[channel][latest.Platform][latest.Arch][packageType] = map[string]string{
+				"url":     artifact.Link,
+				"version": latest.Version,
 			}
 		}
 	}

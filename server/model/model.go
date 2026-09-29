@@ -60,6 +60,15 @@ type SpecificApp struct {
 	RolloutSeed    string             `bson:"rollout_seed,omitempty"`
 }
 
+// LatestDownload is the newest published version that has matching installers
+// for one (platform, arch) pair.
+type LatestDownload struct {
+	Platform  string     `bson:"platform"`
+	Arch      string     `bson:"arch"`
+	Version   string     `bson:"version"`
+	Artifacts []Artifact `bson:"artifacts"`
+}
+
 type SpecificArtifactsWithoutIDs struct {
 	Link      string  `bson:"link" json:"link"`
 	Platform  string  `bson:"platform" json:"platform"`

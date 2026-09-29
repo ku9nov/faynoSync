@@ -3222,6 +3222,179 @@ func TestVelopackUpdaterFlow(t *testing.T) {
 }
 
 // ============================================================================
+// /apps/latest download links and the Tauri update URL (self-contained block).
+// Regression for: updater-internal files (feeds, .nupkg, .blockmap, .sig, Tauri
+// bundles) leaking into /apps/latest and overwriting each other by extension;
+// the newest version being picked per channel instead of per platform/arch;
+// staged rollouts reaching download pages; compound extensions stored as ".gz";
+// and the Tauri /checkVersion url picked in random map order. Reuses channel
+// nightly, platforms windows/macos/macosTauri and arch universalArch created
+// earlier in the ordered suite. Cleans up its own apps.
+// ============================================================================
+
+func uploadLatestFlowVersion(t *testing.T, router *gin.Engine, appName, version, platform, updater, extra string, names ...string) string {
+	t.Helper()
+	files := make([]updaterFeedFile, 0, len(names))
+	for _, name := range names {
+		content := []byte(name)
+		if name == "RELEASES" {
+			content = []byte(fmt.Sprintf("AAAA %s-%s-full.nupkg 10\nBBBB %s-%s-delta.nupkg 5", appName, version, appName, version))
+		}
+		files = append(files, updaterFeedFile{name: name, content: content})
+	}
+	payload := fmt.Sprintf(`{"app_name":"%s","version":"%s","channel":"nightly","publish":true,"platform":"%s","arch":"universalArch","updater":"%s"%s}`,
+		appName, version, platform, updater, extra)
+	w := doUpdaterRequest(t, router, "/upload", payload, files)
+	require.Equal(t, http.StatusOK, w.Code, "upload %s %s: %s", version, platform, w.Body.String())
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	id, _ := resp["uploadResult.Uploaded"].(string)
+	require.NotEmpty(t, id)
+	return id
+}
+
+func latestDownloadPath(appName, query string) string {
+	return fmt.Sprintf("/apps/latest?app_name=%s&channel=nightly&owner=admin&%s", appName, query)
+}
+
+func requireLatestRedirect(t *testing.T, appName, query, wantSuffix string) {
+	t.Helper()
+	w := serveVersionCheck(t, latestDownloadPath(appName, query), nil)
+	require.Equal(t, http.StatusFound, w.Code, "%s: %s", query, w.Body.String())
+	location := w.Header().Get("Location")
+	require.True(t, strings.HasSuffix(location, wantSuffix), "%s redirected to %q, want suffix %q", query, location, wantSuffix)
+}
+
+func requireLatestNotFound(t *testing.T, appName, query string) {
+	t.Helper()
+	w := serveVersionCheck(t, latestDownloadPath(appName, query), nil)
+	require.Equal(t, http.StatusNotFound, w.Code, "%s must not resolve: %s", query, w.Body.String())
+}
+
+// latestDownloadEntries returns package -> {url, version} per platform for arch universalArch.
+func latestDownloadEntries(t *testing.T, appName, query string) map[string]map[string]map[string]string {
+	t.Helper()
+	w := serveVersionCheck(t, latestDownloadPath(appName, query), nil)
+	require.Equal(t, http.StatusOK, w.Code, "%s: %s", query, w.Body.String())
+	var body map[string]map[string]map[string]map[string]map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body), w.Body.String())
+	out := map[string]map[string]map[string]string{}
+	for platform, archs := range body["nightly"] {
+		out[platform] = archs["universalArch"]
+	}
+	return out
+}
+
+func requireLatestPackages(t *testing.T, entries map[string]map[string]string, version string, packages ...string) {
+	t.Helper()
+	got := make([]string, 0, len(entries))
+	for pkg, entry := range entries {
+		got = append(got, pkg)
+		require.Equal(t, version, entry["version"], "package %s version", pkg)
+	}
+	require.ElementsMatch(t, packages, got, "entries: %v", entries)
+}
+
+func TestAppsLatestDownloadFlow(t *testing.T) {
+	const app = "latestdlapp"
+	cleanupUpdaterApp(t, app)
+	defer cleanupUpdaterApp(t, app)
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, app)
+
+	uploadLatestFlowVersion(t, router, app, "1.0.1", "windows", "squirrel_windows", "",
+		"RELEASES", app+"-1.0.1-full.nupkg", app+"-1.0.1-delta.nupkg", "Setup.exe")
+	uploadLatestFlowVersion(t, router, app, "1.0.1", "macos", "electron-builder", "",
+		"latest-mac.yml", app+"-1.0.1-mac.zip", app+"-1.0.1-mac.zip.blockmap", app+"-1.0.1.dmg")
+
+	t.Run("installers_only", func(t *testing.T) {
+		requireLatestRedirect(t, app, "platform=windows&arch=universalArch", "/Setup.exe")
+		requireLatestPackages(t, latestDownloadEntries(t, app, "platform=macos&arch=universalArch")["macos"], "1.0.1", "dmg", "zip")
+
+		requireLatestNotFound(t, app, "platform=windows&arch=universalArch&package=nupkg")
+		requireLatestNotFound(t, app, "platform=windows&arch=universalArch&package=no-extension")
+		requireLatestNotFound(t, app, "platform=macos&arch=universalArch&package=yml")
+		requireLatestNotFound(t, app, "platform=macos&arch=universalArch&package=blockmap")
+	})
+
+	t.Run("platform_missing_from_newest_release", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.2", "windows", "manual", "", app+"-1.0.2.exe")
+
+		requireLatestRedirect(t, app, "platform=windows&arch=universalArch", app+"-1.0.2.exe")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=dmg", app+"-1.0.1.dmg")
+
+		all := latestDownloadEntries(t, app, "")
+		requireLatestPackages(t, all["windows"], "1.0.2", "exe")
+		requireLatestPackages(t, all["macos"], "1.0.1", "dmg", "zip")
+	})
+
+	t.Run("compound_extension_and_package_fallback", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.3", "macos", "manual", "", app+"-1.0.3-arm64.tar.gz")
+
+		all := latestDownloadEntries(t, app, "")
+		requireLatestPackages(t, all["macos"], "1.0.3", "tar.gz")
+		require.True(t, strings.HasSuffix(all["macos"]["tar.gz"]["url"], app+"-1.0.3.tar.gz"), "stored as %s", all["macos"]["tar.gz"]["url"])
+		requireLatestPackages(t, all["windows"], "1.0.2", "exe")
+
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch", app+"-1.0.3.tar.gz")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=tar.gz", app+"-1.0.3.tar.gz")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=dmg", app+"-1.0.1.dmg")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=zip", app+"-1.0.1-mac.zip")
+		requireLatestNotFound(t, app, "platform=macos&arch=universalArch&package=gz")
+	})
+
+	t.Run("staged_rollout_skipped_until_full", func(t *testing.T) {
+		id := uploadLatestFlowVersion(t, router, app, "1.0.4", "macos", "manual", `,"rollout":10`, app+"-1.0.4.dmg")
+
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=dmg", app+"-1.0.1.dmg")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch", app+"-1.0.3.tar.gz")
+		requireLatestPackages(t, latestDownloadEntries(t, app, "")["macos"], "1.0.3", "tar.gz")
+
+		w := doUpdaterRequest(t, router, "/apps/update",
+			fmt.Sprintf(`{"id":"%s","app_name":"%s","version":"1.0.4","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","rollout":100}`, id, app), nil)
+		require.Equal(t, http.StatusOK, w.Code, "rollout to 100: %s", w.Body.String())
+
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=dmg", app+"-1.0.4.dmg")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch", app+"-1.0.4.dmg")
+		requireLatestPackages(t, latestDownloadEntries(t, app, "")["macos"], "1.0.4", "dmg")
+	})
+}
+
+func TestTauriUpdateURLFlow(t *testing.T) {
+	const app = "tauriurlapp"
+	const signature = "dGF1cmktYnVuZGxlLXNpZ25hdHVyZQ=="
+	cleanupUpdaterApp(t, app)
+	defer cleanupUpdaterApp(t, app)
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, app)
+
+	uploadLatestFlowVersion(t, router, app, "1.0.1", "macosTauri", "tauri", fmt.Sprintf(`,"signature":"%s"`, signature),
+		app+".app.tar.gz", app+".app.tar.gz.sig", app+"_1.0.1_aarch64.dmg")
+
+	// Every request uses another client version, so each one misses the response cache
+	// and exercises the url pick again instead of replaying the first answer.
+	t.Run("checkversion_returns_bundle_every_time", func(t *testing.T) {
+		for i := 0; i < 25; i++ {
+			path := fmt.Sprintf("/checkVersion?app_name=%s&version=0.0.0.%d&channel=nightly&platform=macosTauri&arch=universalArch&owner=admin&updater=tauri", app, i)
+			w := serveVersionCheck(t, path, nil)
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			var resp map[string]interface{}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			url, _ := resp["url"].(string)
+			require.True(t, strings.HasSuffix(url, app+"-1.0.1.app.tar.gz"), "request %d got url %q", i, url)
+			require.Equal(t, signature, resp["signature"])
+			require.Equal(t, "1.0.1", resp["version"])
+		}
+	})
+
+	t.Run("apps_latest_returns_installer", func(t *testing.T) {
+		requireLatestRedirect(t, app, "platform=macosTauri&arch=universalArch", app+"-1.0.1.dmg")
+		requireLatestNotFound(t, app, "platform=macosTauri&arch=universalArch&package=app.tar.gz")
+		requireLatestNotFound(t, app, "platform=macosTauri&arch=universalArch&package=sig")
+	})
+}
+
+// ============================================================================
 // Presigned upload flow (self-contained block).
 // init -> direct PUT to storage -> complete, against the real configured storage.
 // Pins the contract TUF publish relies on: client-declared hashes are stored
@@ -6050,13 +6223,16 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
+								"version": "0.0.2.137",
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
+								"version": "0.0.2.137",
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
+								"version": "0.0.2.137",
 							},
 						},
 					},
@@ -6076,13 +6252,16 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.dmg"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.dmg"),
+								"version": "0.0.4.137",
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.pkg"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.pkg"),
+								"version": "0.0.4.137",
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137"),
+								"version": "0.0.4.137",
 							},
 						},
 					},
