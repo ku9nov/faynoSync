@@ -81,6 +81,11 @@ func TestIsLatestDownloadArtifact(t *testing.T) {
 		{"sparkle delta", "delta", false, false},
 		{"blockmap", "blockmap", false, false},
 		{"tauri signature", "sig", false, false},
+		{"tarball compound", "tar.gz", false, true},
+		{"tauri macOS bundle", "app.tar.gz", false, false},
+		{"tauri v1 linux bundle", "AppImage.tar.gz", false, false},
+		{"tauri v1 nsis bundle", "nsis.zip", false, false},
+		{"tauri v1 msi bundle", "msi.zip", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

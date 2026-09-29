@@ -64,13 +64,33 @@ type ObjectPlacement struct {
 	DownloadLink string
 }
 
-func BuildObjectPlacement(ctxQuery map[string]interface{}, owner string, fileName string, env *viper.Viper, checkAppVisibility bool) ObjectPlacement {
-	var extension string
-	// Extract base filename and extension
-	lastDotIndex := strings.LastIndex(fileName, ".")
-	if lastDotIndex > -1 {
-		extension = fileName[lastDotIndex:]
+var compoundExtensions = []string{
+	".appimage.tar.gz",
+	".app.tar.gz",
+	".nsis.zip",
+	".msi.zip",
+	".tar.bz2",
+	".tar.zst",
+	".tar.gz",
+	".tar.xz",
+}
+
+// FileExtension returns the extension with its original case.
+func FileExtension(fileName string) string {
+	lower := strings.ToLower(fileName)
+	for _, ext := range compoundExtensions {
+		if strings.HasSuffix(lower, ext) && len(fileName) > len(ext) {
+			return fileName[len(fileName)-len(ext):]
+		}
 	}
+	if i := strings.LastIndex(fileName, "."); i > -1 {
+		return fileName[i:]
+	}
+	return ""
+}
+
+func BuildObjectPlacement(ctxQuery map[string]interface{}, owner string, fileName string, env *viper.Viper, checkAppVisibility bool) ObjectPlacement {
+	extension := FileExtension(fileName)
 	// Generate new file name
 	var newFileName string
 	if ctxQuery["type"] == "logo" {

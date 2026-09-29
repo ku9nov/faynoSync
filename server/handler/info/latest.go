@@ -186,14 +186,18 @@ var ignoredArtifactPackages = map[string]bool{
 // is_feed instead of extension, since a manual app may ship e.g. a .json or an
 // extensionless binary.
 var latestIgnoredPackages = map[string]bool{
-	"nupkg":    true,
-	"delta":    true,
-	"blockmap": true,
-	"sig":      true,
+	"nupkg":           true,
+	"delta":           true,
+	"blockmap":        true,
+	"sig":             true,
+	"app.tar.gz":      true,
+	"appimage.tar.gz": true,
+	"nsis.zip":        true,
+	"msi.zip":         true,
 }
 
 func isLatestDownloadArtifact(packageType string, isFeed bool) bool {
-	return !isFeed && !latestIgnoredPackages[packageType]
+	return !isFeed && !latestIgnoredPackages[strings.ToLower(packageType)]
 }
 
 // BuildArtifactUrls builds artifact URLs map from artifacts slice

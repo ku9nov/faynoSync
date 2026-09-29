@@ -91,11 +91,12 @@ func BuildResponse(response gin.H, found bool, possibleRollback bool, latestVers
 			switch {
 			case key == "changelog":
 				tauriResponse["notes"] = value
-			case strings.HasPrefix(key, "update_url"):
-				tauriResponse["url"] = value
 			case key == "signature":
 				tauriResponse["signature"] = value
 			}
+		}
+		if url, ok := tauriUpdateURL(response); ok {
+			tauriResponse["url"] = url
 		}
 
 		return tauriResponse, 200
