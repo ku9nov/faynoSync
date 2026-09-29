@@ -181,6 +181,21 @@ var ignoredArtifactPackages = map[string]bool{
 	"nupkg":    true,
 }
 
+// latestIgnoredPackages are updater-internal files that are never a download
+// target on /apps/latest, which serves installers only. Feeds are excluded via
+// is_feed instead of extension, since a manual app may ship e.g. a .json or an
+// extensionless binary.
+var latestIgnoredPackages = map[string]bool{
+	"nupkg":    true,
+	"delta":    true,
+	"blockmap": true,
+	"sig":      true,
+}
+
+func isLatestDownloadArtifact(packageType string, isFeed bool) bool {
+	return !isFeed && !latestIgnoredPackages[packageType]
+}
+
 // BuildArtifactUrls builds artifact URLs map from artifacts slice
 func BuildArtifactUrls(artifacts []db.Artifact, platform, arch string) map[string]string {
 	logrus.Debugf("Artifacts in BuildArtifactUrls: %v", artifacts)
@@ -463,6 +478,10 @@ func FetchLatestVersionOfApp(c *gin.Context, repository db.AppRepository, rdb *r
 			}
 
 			packageType := strings.TrimPrefix(artifact.Package, ".")
+			if !isLatestDownloadArtifact(packageType, artifact.IsFeed) {
+				logrus.Debugf("Skipping updater-internal artifact on /apps/latest: %s", artifact.Link)
+				continue
+			}
 			if packageType == "" {
 				packageType = "no-extension"
 			}

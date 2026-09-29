@@ -58,3 +58,35 @@ func TestResolveCachedHasUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLatestDownloadArtifact(t *testing.T) {
+	cases := []struct {
+		name        string
+		packageType string
+		isFeed      bool
+		want        bool
+	}{
+		{"velopack installer", "pkg", false, true},
+		{"squirrel setup", "exe", false, true},
+		{"sparkle dmg", "dmg", false, true},
+		{"archive", "zip", false, true},
+		{"tarball", "gz", false, true},
+		{"manual extensionless binary", "", false, true},
+		{"manual json", "json", false, true},
+		{"squirrel RELEASES feed", "", true, false},
+		{"velopack feed", "json", true, false},
+		{"electron-builder feed", "yml", true, false},
+		{"sparkle appcast", "xml", true, false},
+		{"nupkg", "nupkg", false, false},
+		{"sparkle delta", "delta", false, false},
+		{"blockmap", "blockmap", false, false},
+		{"tauri signature", "sig", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isLatestDownloadArtifact(tc.packageType, tc.isFeed); got != tc.want {
+				t.Fatalf("isLatestDownloadArtifact(%q, %v) = %v, want %v", tc.packageType, tc.isFeed, got, tc.want)
+			}
+		})
+	}
+}
