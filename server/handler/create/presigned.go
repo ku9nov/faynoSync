@@ -17,6 +17,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -199,7 +200,7 @@ const artifactExistsMessage = "app with this name, version, platform, architectu
 // version (immutable channel, duplicate artifact), so a conflict is reported before the
 // client transfers anything. It returns the conflict message, or "" when there is none.
 // forUpdate follows /apps/update, where an omitted channel keeps the version's own.
-func findArtifactConflict(ctx context.Context, database *mongo.Database, owner string, params map[string]interface{}, extensions []string, forUpdate bool) (string, error) {
+func findArtifactConflict(ctx context.Context, database *mongo.Database, owner string, params map[string]interface{}, files []conflictCandidate, forUpdate bool) (string, error) {
 	metaCollection := database.Collection("apps_meta")
 	var appMeta, platformMeta, archMeta, channelMeta struct {
 		ID primitive.ObjectID `bson:"_id"`
@@ -261,17 +262,37 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		return db.ErrVersionChannelMismatch.Error(), nil
 	}
 
-	for _, extension := range extensions {
-		if db.IsDuplicateCheckIgnored(extension) {
-			continue
-		}
+	for _, file := range files {
+		repeatable := db.IsDuplicateCheckIgnored(file.extension)
 		for _, artifact := range existing.Artifacts {
-			if artifact.Package == extension && artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID {
+			if artifact.Platform != platformMeta.ID || artifact.Arch != archMeta.ID {
+				continue
+			}
+			// Repeatable extensions may coexist, but never under the same storage key:
+			// that upload would overwrite the stored object the existing artifact describes.
+			if repeatable && artifactHasKey(artifact.Link, file.key) || !repeatable && artifact.Package == file.extension {
 				return artifactExistsMessage, nil
 			}
 		}
 	}
 	return "", nil
+}
+
+type conflictCandidate struct {
+	extension string
+	key       string
+}
+
+// artifactHasKey reports whether an artifact link points at the storage key: private
+// links carry the key, public ones end with it.
+func artifactHasKey(link, key string) bool {
+	if privateKey := utils.PrivateObjectKey(link); privateKey != "" {
+		return privateKey == key
+	}
+	if unescaped, err := url.PathUnescape(link); err == nil {
+		link = unescaped
+	}
+	return strings.HasSuffix(link, "/"+key)
 }
 
 // PlanUploadPlacements places every file of a request and reports, before anything is
@@ -299,14 +320,14 @@ func PlanUploadPlacements(ctx context.Context, database *mongo.Database, owner s
 	}
 
 	updaterType := utils.GetStringValue(ctxQueryMap, "updater")
-	extensionList := make([]string, 0, len(placements))
+	candidates := make([]conflictCandidate, 0, len(placements))
 	for i, placement := range placements {
 		if forUpdate && updaters.IsFeedFile(fileNames[i], updaterType) {
 			continue
 		}
-		extensionList = append(extensionList, placement.Extension)
+		candidates = append(candidates, conflictCandidate{extension: placement.Extension, key: placement.Key})
 	}
-	conflict, err := findArtifactConflict(ctx, database, owner, ctxQueryMap, extensionList, forUpdate)
+	conflict, err := findArtifactConflict(ctx, database, owner, ctxQueryMap, candidates, forUpdate)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -686,11 +707,11 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 	}
 
 	// Final keys are deterministic, so a version uploaded since init must be caught before its objects are overwritten.
-	extensionList := make([]string, 0, len(pending.Files))
+	candidates := make([]conflictCandidate, 0, len(pending.Files))
 	for _, file := range pending.Files {
-		extensionList = append(extensionList, file.Extension)
+		candidates = append(candidates, conflictCandidate{extension: file.Extension, key: file.Key})
 	}
-	conflict, err := findArtifactConflict(ctx, database, pending.Owner, ctxQueryMap, extensionList, false)
+	conflict, err := findArtifactConflict(ctx, database, pending.Owner, ctxQueryMap, candidates, false)
 	if err != nil {
 		logrus.Errorf("Presigned upload %s: failed to check artifact conflicts: %v", pending.ID, err)
 		release()

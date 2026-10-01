@@ -21,6 +21,8 @@
 - `POST /upload` and `POST /apps/update` check conflicts before writing: a rejected request no longer overwrites stored files or leaves a partially recorded version.
 - Conflict checks now cover uploads without channel, platform or arch (also presigned uploads).
 - electron-builder macOS builds with both `.zip.blockmap` and `.dmg.blockmap` are accepted.
+- A `.nupkg`, `.delta` or `.blockmap` sent again under a storage key the version already has returns `409`; it used to overwrite the stored file and record a second artifact with the same link.
+- `POST /apps/update` without `channel` stores files in the version's channel folder; they used to land in a path without the channel, apart from the rest of the version.
 
 ## v2.5.0
 

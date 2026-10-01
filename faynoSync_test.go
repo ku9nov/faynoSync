@@ -3508,6 +3508,69 @@ func TestUploadRejectsBeforeWriting(t *testing.T) {
 		require.Contains(t, storedVersionPackages(t, app, "1.0.1"), ".pkg")
 		require.Equal(t, original, checkFileContent(t, dmgURL))
 	})
+
+	// .nupkg, .delta and .blockmap may repeat within a platform/arch, but the default
+	// layout stores every one of them as {app}-{version}{ext}: a second file used to
+	// overwrite the first and add a second artifact with the same link.
+	t.Run("repeatable_extension_same_key_rejected", func(t *testing.T) {
+		upload := func(name, content string) *httptest.ResponseRecorder {
+			return doUpdaterRequest(t, router, "/upload",
+				fmt.Sprintf(`{"app_name":"%s","version":"1.0.4","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","updater":"manual"}`, app),
+				[]updaterFeedFile{{name: name, content: []byte(content)}})
+		}
+		w := upload("first.blockmap", "first")
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+		w = upload("second.blockmap", "second")
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		require.Equal(t, "first", checkFileContent(t, defaultLayoutURL("1.0.4", ".blockmap")), "stored file must not be overwritten")
+		require.Equal(t, []string{".blockmap"}, storedVersionPackages(t, app, "1.0.4"))
+	})
+
+	t.Run("apps_update_rejects_same_repeatable_file", func(t *testing.T) {
+		name := app + "-1.0.1-mac.zip.blockmap"
+		w := doUpdaterRequest(t, router, "/apps/update",
+			fmt.Sprintf(`{"id":"%s","app_name":"%s","version":"1.0.1","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","updater":"electron-builder"}`, electronVersionID, app),
+			[]updaterFeedFile{{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, {name: name, content: []byte("replaced")}})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		blockmapURL := fmt.Sprintf("%s/electron-builder/%s-admin/1.0.1/nightly/macos/universalArch/%s", s3Endpoint, app, name)
+		require.Equal(t, name, checkFileContent(t, blockmapURL), "stored file must not be overwritten")
+	})
+
+	// The channel is part of the storage key; an update that omits it must still place
+	// files in the version's channel folder, so a re-sent file meets its stored key.
+	t.Run("apps_update_without_channel_uses_version_channel", func(t *testing.T) {
+		name := app + "-1.0.1-mac.zip.blockmap"
+		w := doUpdaterRequest(t, router, "/apps/update",
+			fmt.Sprintf(`{"id":"%s","app_name":"%s","version":"1.0.1","publish":true,"platform":"macos","arch":"universalArch","updater":"electron-builder"}`, electronVersionID, app),
+			[]updaterFeedFile{{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, {name: name, content: []byte("replaced")}})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+
+		var doc model.SpecificApp
+		id, err := primitive.ObjectIDFromHex(electronVersionID)
+		require.NoError(t, err)
+		require.NoError(t, mongoDatabase.Collection("apps").FindOne(context.Background(), bson.M{"_id": id}).Decode(&doc))
+		for _, artifact := range doc.Artifacts {
+			require.Contains(t, artifact.Link, "/1.0.1/nightly/macos/", "artifact stored outside the version's channel folder")
+		}
+	})
+
+	// A concurrent request passes the pre-write check before either is recorded; the
+	// append itself must still refuse a second artifact with the same link.
+	t.Run("repository_refuses_same_link_twice", func(t *testing.T) {
+		ctxQuery := map[string]interface{}{
+			"app_name": app, "version": "1.0.4", "channel": "nightly", "platform": "macos", "arch": "universalArch",
+			"signature": "", "changelog": "", "publish": "true",
+		}
+		link := defaultLayoutURL("1.0.4", ".blockmap")
+		_, err := appDB.Upload(ctxQuery, link, ".blockmap", "admin", context.Background(), redisClient, viper.GetViper(), false)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "already exists")
+
+		_, err = appDB.Upload(ctxQuery, defaultLayoutURL("1.0.4", "-other.blockmap"), ".blockmap", "admin", context.Background(), redisClient, viper.GetViper(), false)
+		require.NoError(t, err, "a different link of a repeatable extension may still be added")
+		require.Equal(t, []string{".blockmap", ".blockmap"}, storedVersionPackages(t, app, "1.0.4"))
+	})
 }
 
 // ============================================================================
