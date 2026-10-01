@@ -95,9 +95,12 @@ func BuildResponse(response gin.H, found bool, possibleRollback bool, latestVers
 				tauriResponse["signature"] = value
 			}
 		}
-		if url, ok := tauriUpdateURL(response); ok {
-			tauriResponse["url"] = url
+		url, ok := tauriUpdateURL(response)
+		if !ok {
+			// Tauri rejects a 200 without url; 204 is its "no update" contract.
+			return gin.H{"status": "no_content"}, 204
 		}
+		tauriResponse["url"] = url
 
 		return tauriResponse, 200
 

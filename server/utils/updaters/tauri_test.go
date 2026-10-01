@@ -50,6 +50,11 @@ func TestTauriUpdateURL(t *testing.T) {
 			response: map[string]interface{}{"update_url_sig": "sig", "changelog": "notes"},
 			wantOK:   false,
 		},
+		{
+			name:     "only dmg",
+			response: map[string]interface{}{"update_url_dmg": "dmg", "update_url_sig": "sig"},
+			wantOK:   false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -76,6 +81,18 @@ func TestBuildResponseTauriDeterministic(t *testing.T) {
 		got, status := BuildResponse(response, true, false, "1.0.1", "tauri")
 		if status != 200 || got["url"] != "bundle" || got["signature"] != "c2ln" || got["notes"] != "notes" || got["version"] != "1.0.1" {
 			t.Fatalf("BuildResponse tauri = %v (%d)", got, status)
+		}
+	}
+}
+
+func TestBuildResponseTauriNoPayload(t *testing.T) {
+	for _, response := range []map[string]interface{}{
+		{"update_available": true, "update_url_sig": "sigfile", "signature": "c2ln", "changelog": "notes"},
+		{"update_available": true, "update_url_dmg": "dmg", "signature": "c2ln", "changelog": "notes"},
+	} {
+		got, status := BuildResponse(response, true, false, "1.0.1", "tauri")
+		if status != 204 || got["url"] != nil {
+			t.Fatalf("BuildResponse tauri without payload = %v (%d), want 204", got, status)
 		}
 	}
 }

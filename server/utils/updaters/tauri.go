@@ -76,7 +76,8 @@ var tauriPayloadPriority = []string{
 }
 
 // tauriUpdateURL picks the update_url_* the Tauri updater should download. Signature
-// files are never a payload; any other package is a deterministic last resort.
+// files and dmg are never a payload (the macOS updater only unpacks gzip tar); any
+// other package is a deterministic last resort.
 func tauriUpdateURL(response map[string]interface{}) (string, bool) {
 	candidates := map[string]string{}
 	for key, value := range response {
@@ -85,7 +86,7 @@ func tauriUpdateURL(response map[string]interface{}) (string, bool) {
 			continue
 		}
 		pkg := strings.ToLower(strings.TrimPrefix(strings.TrimPrefix(key, "update_url"), "_"))
-		if pkg == "sig" {
+		if pkg == "sig" || pkg == "dmg" {
 			continue
 		}
 		candidates[pkg] = url
