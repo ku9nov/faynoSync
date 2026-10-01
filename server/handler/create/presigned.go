@@ -17,6 +17,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -198,7 +199,8 @@ const artifactExistsMessage = "app with this name, version, platform, architectu
 // findArtifactConflict mirrors the checks repository.Upload applies to an existing
 // version (immutable channel, duplicate artifact), so a conflict is reported before the
 // client transfers anything. It returns the conflict message, or "" when there is none.
-func findArtifactConflict(ctx context.Context, database *mongo.Database, owner string, params map[string]interface{}, extensions []string) (string, error) {
+// forUpdate follows /apps/update, where an omitted channel keeps the version's own.
+func findArtifactConflict(ctx context.Context, database *mongo.Database, owner string, params map[string]interface{}, files []conflictCandidate, forUpdate bool) (string, error) {
 	metaCollection := database.Collection("apps_meta")
 	var appMeta, platformMeta, archMeta, channelMeta struct {
 		ID primitive.ObjectID `bson:"_id"`
@@ -210,16 +212,28 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		}
 	}{
 		{bson.D{{Key: "app_name", Value: params["app_name"]}, {Key: "owner", Value: owner}}, &appMeta},
-		{bson.D{{Key: "platform_name", Value: params["platform"]}, {Key: "owner", Value: owner}}, &platformMeta},
-		{bson.D{{Key: "arch_id", Value: params["arch"]}, {Key: "owner", Value: owner}}, &archMeta},
 	}
-	if channel, _ := params["channel"].(string); channel != "" {
+	// Like repository.Upload, an empty channel, platform or arch stays the nil id rather than a lookup.
+	optional := []struct {
+		key, value string
+		target     *struct {
+			ID primitive.ObjectID `bson:"_id"`
+		}
+	}{
+		{"channel_name", utils.GetStringValue(params, "channel"), &channelMeta},
+		{"platform_name", utils.GetStringValue(params, "platform"), &platformMeta},
+		{"arch_id", utils.GetStringValue(params, "arch"), &archMeta},
+	}
+	for _, o := range optional {
+		if o.value == "" {
+			continue
+		}
 		lookups = append(lookups, struct {
 			filter bson.D
 			target *struct {
 				ID primitive.ObjectID `bson:"_id"`
 			}
-		}{bson.D{{Key: "channel_name", Value: channel}, {Key: "owner", Value: owner}}, &channelMeta})
+		}{bson.D{{Key: o.key, Value: o.value}, {Key: "owner", Value: owner}}, o.target})
 	}
 	for _, lookup := range lookups {
 		if err := metaCollection.FindOne(ctx, lookup.filter).Decode(lookup.target); err != nil {
@@ -243,21 +257,81 @@ func findArtifactConflict(ctx context.Context, database *mongo.Database, owner s
 		return "", err
 	}
 
-	if channelMeta.ID != existing.ChannelID {
+	channelOmitted := forUpdate && utils.GetStringValue(params, "channel") == ""
+	if !channelOmitted && channelMeta.ID != existing.ChannelID {
 		return db.ErrVersionChannelMismatch.Error(), nil
 	}
 
-	for _, extension := range extensions {
-		if db.IsDuplicateCheckIgnored(extension) {
-			continue
-		}
+	for _, file := range files {
+		repeatable := db.IsDuplicateCheckIgnored(file.extension)
 		for _, artifact := range existing.Artifacts {
-			if artifact.Package == extension && artifact.Platform == platformMeta.ID && artifact.Arch == archMeta.ID {
+			if artifact.Platform != platformMeta.ID || artifact.Arch != archMeta.ID {
+				continue
+			}
+			// Repeatable extensions may coexist, but never under the same storage key:
+			// that upload would overwrite the stored object the existing artifact describes.
+			if repeatable && artifactHasKey(artifact.Link, file.key) || !repeatable && artifact.Package == file.extension {
 				return artifactExistsMessage, nil
 			}
 		}
 	}
 	return "", nil
+}
+
+type conflictCandidate struct {
+	extension string
+	key       string
+}
+
+// artifactHasKey reports whether an artifact link points at the storage key: private
+// links carry the key, public ones end with it.
+func artifactHasKey(link, key string) bool {
+	if privateKey := utils.PrivateObjectKey(link); privateKey != "" {
+		return privateKey == key
+	}
+	if unescaped, err := url.PathUnescape(link); err == nil {
+		link = unescaped
+	}
+	return strings.HasSuffix(link, "/"+key)
+}
+
+// PlanUploadPlacements places every file of a request and reports, before anything is
+// written, whether two of its files would share a storage key or an extension
+// (requestConflict) or the stored version already holds one of them (storedConflict).
+// With forUpdate, feed files may replace the stored ones: velopack and sparkle require
+// the feed on every update, and feeds are rematerialized and never TUF targets.
+func PlanUploadPlacements(ctx context.Context, database *mongo.Database, owner string, ctxQueryMap map[string]interface{}, fileNames []string, env *viper.Viper, checkAppVisibility bool, forUpdate bool) ([]utils.ObjectPlacement, string, string, error) {
+	placements := make([]utils.ObjectPlacement, 0, len(fileNames))
+	keys := make(map[string]string, len(fileNames))
+	extensions := make(map[string]string, len(fileNames))
+	for _, name := range fileNames {
+		placement := utils.BuildObjectPlacement(ctxQueryMap, owner, name, env, checkAppVisibility)
+		if other, dup := keys[placement.Key]; dup {
+			return nil, fmt.Sprintf("files %q and %q would be stored under the same key", other, name), "", nil
+		}
+		keys[placement.Key] = name
+		if !db.IsDuplicateCheckIgnored(placement.Extension) {
+			if other, dup := extensions[placement.Extension]; dup {
+				return nil, fmt.Sprintf("files %q and %q have the same extension", other, name), "", nil
+			}
+			extensions[placement.Extension] = name
+		}
+		placements = append(placements, placement)
+	}
+
+	updaterType := utils.GetStringValue(ctxQueryMap, "updater")
+	candidates := make([]conflictCandidate, 0, len(placements))
+	for i, placement := range placements {
+		if forUpdate && updaters.IsFeedFile(fileNames[i], updaterType) {
+			continue
+		}
+		candidates = append(candidates, conflictCandidate{extension: placement.Extension, key: placement.Key})
+	}
+	conflict, err := findArtifactConflict(ctx, database, owner, ctxQueryMap, candidates, forUpdate)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return placements, "", conflict, nil
 }
 
 // InitPresignedUpload validates an upload up front and returns presigned PUT URLs into a
@@ -347,38 +421,18 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
-	placements := make([]utils.ObjectPlacement, 0, len(fileNames))
-	keys := make(map[string]string, len(fileNames))
-	extensions := make(map[string]string, len(fileNames))
-	for _, name := range fileNames {
-		placement := utils.BuildObjectPlacement(ctxQueryMap, owner, name, env, checkAppVisibility)
-		if other, dup := keys[placement.Key]; dup {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("files %q and %q would be stored under the same key", other, name)})
-			return
-		}
-		keys[placement.Key] = name
-		if !db.IsDuplicateCheckIgnored(placement.Extension) {
-			if other, dup := extensions[placement.Extension]; dup {
-				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("files %q and %q have the same extension", other, name)})
-				return
-			}
-			extensions[placement.Extension] = name
-		}
-		placements = append(placements, placement)
-	}
-
-	extensionList := make([]string, 0, len(placements))
-	for _, placement := range placements {
-		extensionList = append(extensionList, placement.Extension)
-	}
-	conflict, err := findArtifactConflict(c.Request.Context(), database, owner, ctxQueryMap, extensionList)
+	placements, requestConflict, storedConflict, err := PlanUploadPlacements(c.Request.Context(), database, owner, ctxQueryMap, fileNames, env, checkAppVisibility, false)
 	if err != nil {
 		logrus.Errorf("failed to check artifact conflicts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing artifacts"})
 		return
 	}
-	if conflict != "" {
-		c.JSON(http.StatusConflict, gin.H{"error": conflict})
+	if requestConflict != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": requestConflict})
+		return
+	}
+	if storedConflict != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": storedConflict})
 		return
 	}
 
@@ -653,11 +707,11 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 	}
 
 	// Final keys are deterministic, so a version uploaded since init must be caught before its objects are overwritten.
-	extensionList := make([]string, 0, len(pending.Files))
+	candidates := make([]conflictCandidate, 0, len(pending.Files))
 	for _, file := range pending.Files {
-		extensionList = append(extensionList, file.Extension)
+		candidates = append(candidates, conflictCandidate{extension: file.Extension, key: file.Key})
 	}
-	conflict, err := findArtifactConflict(ctx, database, pending.Owner, ctxQueryMap, extensionList)
+	conflict, err := findArtifactConflict(ctx, database, pending.Owner, ctxQueryMap, candidates, false)
 	if err != nil {
 		logrus.Errorf("Presigned upload %s: failed to check artifact conflicts: %v", pending.ID, err)
 		release()

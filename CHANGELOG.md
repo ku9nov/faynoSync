@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.6.0
+
+### Breaking changes
+
+- `GET /apps/latest` returns installers only: update feeds, `.nupkg`, `.delta`, `.blockmap`, `.sig` and Tauri update bundles are excluded; `package=` for them returns `404`.
+- `GET /apps/latest` picks the newest published version per platform/arch (and per package with `package=`), not one version per channel. Versions with `rollout` below 100 are skipped.
+- `POST /upload`: an artifact that already exists, or a version in another channel, returns `409` (was `500`).
+- `POST /apps/update` rejects a file the version already has with `409` instead of overwriting it in storage while keeping the old hashes. Delete the artifact first to replace it.
+- Compound extensions are kept on upload: `.tar.gz`, `.tar.xz`, `.tar.bz2`, `.tar.zst`, `.app.tar.gz`, `.AppImage.tar.gz`, `.nsis.zip`, `.msi.zip` (were stored as `.gz`/`.zip`). For new uploads use `package=tar.gz` instead of `package=gz`.
+
+### Features
+
+- `GET /apps/latest` entries include `version`.
+
+### Fixes
+
+- `GET /apps/latest`: files with the same extension no longer overwrite each other (e.g. a delta `.nupkg` replacing the full one).
+- Tauri `/checkVersion` returns the update bundle deterministically; it could return the `.dmg` or `.sig` at random.
+- `POST /upload` and `POST /apps/update` check conflicts before writing: a rejected request no longer overwrites stored files or leaves a partially recorded version.
+- Conflict checks now cover uploads without channel, platform or arch (also presigned uploads).
+- electron-builder macOS builds with both `.zip.blockmap` and `.dmg.blockmap` are accepted.
+- A `.nupkg`, `.delta` or `.blockmap` sent again under a storage key the version already has returns `409`; it used to overwrite the stored file and record a second artifact with the same link.
+- `POST /apps/update` without `channel` stores files in the version's channel folder; they used to land in a path without the channel, apart from the rest of the version.
+- Channel, platform and arch names are looked up among the caller's own.
+
 ## v2.5.0
 
 ### Breaking changes

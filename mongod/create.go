@@ -288,11 +288,13 @@ func checkEntityAccess(teamUser model.TeamUser, entityID string, allowedIDs []st
 
 // duplicateCheckIgnoredPackages lists package extensions that legitimately repeat
 // within the same version/platform/arch (e.g. velopack full+delta .nupkg, or
-// several sparkle .delta files stepping from different prior versions) and must
+// several sparkle .delta files stepping from different prior versions, or the
+// electron-builder .zip.blockmap and .dmg.blockmap of one macOS build) and must
 // be skipped by the duplicate-artifact check on upload.
 var duplicateCheckIgnoredPackages = map[string]bool{
-	"nupkg": true,
-	"delta": true,
+	"nupkg":    true,
+	"delta":    true,
+	"blockmap": true,
 }
 
 const versionIndexName = "unique_app_version_owner"
@@ -495,13 +497,15 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 				return ErrVersionChannelMismatch.Error(), ErrVersionChannelMismatch
 			}
 
-			if !duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")] {
-				for _, artifact := range appData.Artifacts {
-					if artifact.Package == extension && artifact.Arch == archMeta.ID && artifact.Platform == platformMeta.ID {
-						msg := "app with this name, version, platform, architecture and extension already exists"
-						logrus.Debugf("Upload function in mongod/create.go: %s", msg)
-						return msg, errors.New(msg)
-					}
+			repeatable := duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")]
+			for _, artifact := range appData.Artifacts {
+				if artifact.Arch != archMeta.ID || artifact.Platform != platformMeta.ID {
+					continue
+				}
+				if repeatable && artifact.Link == appLink || !repeatable && artifact.Package == extension {
+					msg := "app with this name, version, platform, architecture and extension already exists"
+					logrus.Debugf("Upload function in mongod/create.go: %s", msg)
+					return msg, errors.New(msg)
 				}
 			}
 
@@ -545,13 +549,11 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 			// $push with the duplicate check in the filter: concurrent appends can neither
 			// overwrite each other's artifacts nor add the same artifact twice.
 			appendFilter := bson.D{{Key: "app_id", Value: appMeta.ID}, {Key: "version", Value: ctxQuery["version"].(string)}, {Key: "owner", Value: owner}}
-			if !duplicateCheckIgnoredPackages[strings.TrimPrefix(extension, ".")] {
-				appendFilter = append(appendFilter, bson.E{Key: "artifacts", Value: bson.M{"$not": bson.M{"$elemMatch": bson.M{
-					"package":  extension,
-					"platform": platformMeta.ID,
-					"arch":     archMeta.ID,
-				}}}})
+			duplicate := bson.M{"package": extension, "platform": platformMeta.ID, "arch": archMeta.ID}
+			if repeatable {
+				duplicate = bson.M{"link": appLink, "platform": platformMeta.ID, "arch": archMeta.ID}
 			}
+			appendFilter = append(appendFilter, bson.E{Key: "artifacts", Value: bson.M{"$not": bson.M{"$elemMatch": duplicate}}})
 			var appendResult *mongo.UpdateResult
 			appendResult, err = collection.UpdateOne(
 				ctx,

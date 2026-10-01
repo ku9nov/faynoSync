@@ -1245,8 +1245,8 @@ func TestUploadDuplicateApp(t *testing.T) {
 	// Serve the request using the Gin router.
 	router.ServeHTTP(w, req)
 
-	// Check the response status code (expecting 500).
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// Check the response status code (expecting 409).
+	assert.Equal(t, http.StatusConflict, w.Code)
 
 	// Check the response body for the desired error message.
 	expectedErrorMessage := `{"error":"app with this name, version, platform, architecture and extension already exists"}`
@@ -3222,6 +3222,436 @@ func TestVelopackUpdaterFlow(t *testing.T) {
 }
 
 // ============================================================================
+// /apps/latest download links and the Tauri update URL (self-contained block).
+// Regression for: updater-internal files (feeds, .nupkg, .blockmap, .sig, Tauri
+// bundles) leaking into /apps/latest and overwriting each other by extension;
+// the newest version being picked per channel instead of per platform/arch;
+// staged rollouts reaching download pages; compound extensions stored as ".gz";
+// and the Tauri /checkVersion url picked in random map order. Reuses channel
+// nightly, platforms windows/macos/macosTauri and arch universalArch created
+// earlier in the ordered suite. Cleans up its own apps.
+// ============================================================================
+
+func uploadLatestFlowVersion(t *testing.T, router *gin.Engine, appName, version, platform, updater, extra string, names ...string) string {
+	t.Helper()
+	files := make([]updaterFeedFile, 0, len(names))
+	for _, name := range names {
+		content := []byte(name)
+		if name == "RELEASES" {
+			content = []byte(fmt.Sprintf("AAAA %s-%s-full.nupkg 10\nBBBB %s-%s-delta.nupkg 5", appName, version, appName, version))
+		}
+		files = append(files, updaterFeedFile{name: name, content: content})
+	}
+	payload := fmt.Sprintf(`{"app_name":"%s","version":"%s","channel":"nightly","publish":true,"platform":"%s","arch":"universalArch","updater":"%s"%s}`,
+		appName, version, platform, updater, extra)
+	w := doUpdaterRequest(t, router, "/upload", payload, files)
+	require.Equal(t, http.StatusOK, w.Code, "upload %s %s: %s", version, platform, w.Body.String())
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	id, _ := resp["uploadResult.Uploaded"].(string)
+	require.NotEmpty(t, id)
+	return id
+}
+
+func latestDownloadPath(appName, query string) string {
+	return fmt.Sprintf("/apps/latest?app_name=%s&channel=nightly&owner=admin&%s", appName, query)
+}
+
+func requireLatestRedirect(t *testing.T, appName, query, wantSuffix string) {
+	t.Helper()
+	w := serveVersionCheck(t, latestDownloadPath(appName, query), nil)
+	require.Equal(t, http.StatusFound, w.Code, "%s: %s", query, w.Body.String())
+	location := w.Header().Get("Location")
+	require.True(t, strings.HasSuffix(location, wantSuffix), "%s redirected to %q, want suffix %q", query, location, wantSuffix)
+}
+
+func requireLatestNotFound(t *testing.T, appName, query string) {
+	t.Helper()
+	w := serveVersionCheck(t, latestDownloadPath(appName, query), nil)
+	require.Equal(t, http.StatusNotFound, w.Code, "%s must not resolve: %s", query, w.Body.String())
+}
+
+// latestDownloadEntries returns package -> {url, version} per platform for arch universalArch.
+func latestDownloadEntries(t *testing.T, appName, query string) map[string]map[string]map[string]string {
+	t.Helper()
+	w := serveVersionCheck(t, latestDownloadPath(appName, query), nil)
+	require.Equal(t, http.StatusOK, w.Code, "%s: %s", query, w.Body.String())
+	var body map[string]map[string]map[string]map[string]map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body), w.Body.String())
+	out := map[string]map[string]map[string]string{}
+	for platform, archs := range body["nightly"] {
+		out[platform] = archs["universalArch"]
+	}
+	return out
+}
+
+func requireLatestPackages(t *testing.T, entries map[string]map[string]string, version string, packages ...string) {
+	t.Helper()
+	got := make([]string, 0, len(entries))
+	for pkg, entry := range entries {
+		got = append(got, pkg)
+		require.Equal(t, version, entry["version"], "package %s version", pkg)
+	}
+	require.ElementsMatch(t, packages, got, "entries: %v", entries)
+}
+
+func TestAppsLatestDownloadFlow(t *testing.T) {
+	const app = "latestdlapp"
+	cleanupUpdaterApp(t, app)
+	defer cleanupUpdaterApp(t, app)
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, app)
+
+	uploadLatestFlowVersion(t, router, app, "1.0.1", "windows", "squirrel_windows", "",
+		"RELEASES", app+"-1.0.1-full.nupkg", app+"-1.0.1-delta.nupkg", "Setup.exe")
+	uploadLatestFlowVersion(t, router, app, "1.0.1", "macos", "electron-builder", "",
+		"latest-mac.yml", app+"-1.0.1-mac.zip", app+"-1.0.1-mac.zip.blockmap", app+"-1.0.1.dmg")
+
+	t.Run("installers_only", func(t *testing.T) {
+		requireLatestRedirect(t, app, "platform=windows&arch=universalArch", "/Setup.exe")
+		requireLatestPackages(t, latestDownloadEntries(t, app, "platform=macos&arch=universalArch")["macos"], "1.0.1", "dmg", "zip")
+
+		requireLatestNotFound(t, app, "platform=windows&arch=universalArch&package=nupkg")
+		requireLatestNotFound(t, app, "platform=windows&arch=universalArch&package=no-extension")
+		requireLatestNotFound(t, app, "platform=macos&arch=universalArch&package=yml")
+		requireLatestNotFound(t, app, "platform=macos&arch=universalArch&package=blockmap")
+	})
+
+	t.Run("platform_missing_from_newest_release", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.2", "windows", "manual", "", app+"-1.0.2.exe")
+
+		requireLatestRedirect(t, app, "platform=windows&arch=universalArch", app+"-1.0.2.exe")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=dmg", app+"-1.0.1.dmg")
+
+		all := latestDownloadEntries(t, app, "")
+		requireLatestPackages(t, all["windows"], "1.0.2", "exe")
+		requireLatestPackages(t, all["macos"], "1.0.1", "dmg", "zip")
+	})
+
+	t.Run("compound_extension_and_package_fallback", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.3", "macos", "manual", "", app+"-1.0.3-arm64.tar.gz")
+
+		all := latestDownloadEntries(t, app, "")
+		requireLatestPackages(t, all["macos"], "1.0.3", "tar.gz")
+		require.True(t, strings.HasSuffix(all["macos"]["tar.gz"]["url"], app+"-1.0.3.tar.gz"), "stored as %s", all["macos"]["tar.gz"]["url"])
+		requireLatestPackages(t, all["windows"], "1.0.2", "exe")
+
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch", app+"-1.0.3.tar.gz")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=tar.gz", app+"-1.0.3.tar.gz")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=dmg", app+"-1.0.1.dmg")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=zip", app+"-1.0.1-mac.zip")
+		requireLatestNotFound(t, app, "platform=macos&arch=universalArch&package=gz")
+	})
+
+	t.Run("staged_rollout_skipped_until_full", func(t *testing.T) {
+		id := uploadLatestFlowVersion(t, router, app, "1.0.4", "macos", "manual", `,"rollout":10`, app+"-1.0.4.dmg")
+
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=dmg", app+"-1.0.1.dmg")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch", app+"-1.0.3.tar.gz")
+		requireLatestPackages(t, latestDownloadEntries(t, app, "")["macos"], "1.0.3", "tar.gz")
+
+		w := doUpdaterRequest(t, router, "/apps/update",
+			fmt.Sprintf(`{"id":"%s","app_name":"%s","version":"1.0.4","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","rollout":100}`, id, app), nil)
+		require.Equal(t, http.StatusOK, w.Code, "rollout to 100: %s", w.Body.String())
+
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch&package=dmg", app+"-1.0.4.dmg")
+		requireLatestRedirect(t, app, "platform=macos&arch=universalArch", app+"-1.0.4.dmg")
+		requireLatestPackages(t, latestDownloadEntries(t, app, "")["macos"], "1.0.4", "dmg")
+	})
+}
+
+func TestTauriUpdateURLFlow(t *testing.T) {
+	const app = "tauriurlapp"
+	const signature = "dGF1cmktYnVuZGxlLXNpZ25hdHVyZQ=="
+	cleanupUpdaterApp(t, app)
+	defer cleanupUpdaterApp(t, app)
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, app)
+
+	uploadLatestFlowVersion(t, router, app, "1.0.1", "macosTauri", "tauri", fmt.Sprintf(`,"signature":"%s"`, signature),
+		app+".app.tar.gz", app+".app.tar.gz.sig", app+"_1.0.1_aarch64.dmg")
+
+	// Every request uses another client version, so each one misses the response cache
+	// and exercises the url pick again instead of replaying the first answer.
+	t.Run("checkversion_returns_bundle_every_time", func(t *testing.T) {
+		for i := 0; i < 25; i++ {
+			path := fmt.Sprintf("/checkVersion?app_name=%s&version=0.0.0.%d&channel=nightly&platform=macosTauri&arch=universalArch&owner=admin&updater=tauri", app, i)
+			w := serveVersionCheck(t, path, nil)
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			var resp map[string]interface{}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			url, _ := resp["url"].(string)
+			require.True(t, strings.HasSuffix(url, app+"-1.0.1.app.tar.gz"), "request %d got url %q", i, url)
+			require.Equal(t, signature, resp["signature"])
+			require.Equal(t, "1.0.1", resp["version"])
+		}
+	})
+
+	t.Run("apps_latest_returns_installer", func(t *testing.T) {
+		requireLatestRedirect(t, app, "platform=macosTauri&arch=universalArch", app+"-1.0.1.dmg")
+		requireLatestNotFound(t, app, "platform=macosTauri&arch=universalArch&package=app.tar.gz")
+		requireLatestNotFound(t, app, "platform=macosTauri&arch=universalArch&package=sig")
+	})
+}
+
+func storageObjectStatus(t *testing.T, url string) int {
+	t.Helper()
+	if viper.GetString("STORAGE_DRIVER") == "gcp" {
+		url = fmt.Sprintf("%s?nocache=%d", url, time.Now().UnixNano())
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(url)
+	require.NoError(t, err)
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func storedVersionPackages(t *testing.T, appName, version string) []string {
+	t.Helper()
+	ctx := context.Background()
+	var meta struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+	require.NoError(t, mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.M{"app_name": appName, "owner": "admin"}).Decode(&meta))
+	var doc model.SpecificApp
+	err := mongoDatabase.Collection("apps").FindOne(ctx, bson.M{"app_id": meta.ID, "version": version}).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return nil
+	}
+	require.NoError(t, err)
+	packages := make([]string, 0, len(doc.Artifacts))
+	for _, artifact := range doc.Artifacts {
+		packages = append(packages, artifact.Package)
+	}
+	return packages
+}
+
+// Regression for the non-atomic multipart /upload: every file used to be written to
+// storage before the duplicate check, so a rejected request overwrote stored files and
+// left a partially recorded version (e.g. an electron-builder macOS build with two
+// .blockmap files lost its latest-mac.yml). Conflicts must now be caught before any write.
+func TestUploadRejectsBeforeWriting(t *testing.T) {
+	const app = "uploadatomicapp"
+	cleanupUpdaterApp(t, app)
+	defer cleanupUpdaterApp(t, app)
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, app)
+	defaultLayoutURL := func(version, ext string) string {
+		return fmt.Sprintf("%s/%s-admin/nightly/macos/universalArch/%s-%s%s", s3Endpoint, app, app, version, ext)
+	}
+
+	var electronVersionID string
+	t.Run("electron_builder_macos_with_both_blockmaps", func(t *testing.T) {
+		electronVersionID = uploadLatestFlowVersion(t, router, app, "1.0.1", "macos", "electron-builder", "",
+			"latest-mac.yml", app+"-1.0.1-mac.zip", app+"-1.0.1-mac.zip.blockmap", app+"-1.0.1.dmg", app+"-1.0.1.dmg.blockmap")
+		require.ElementsMatch(t, []string{".yml", ".zip", ".blockmap", ".dmg", ".blockmap"}, storedVersionPackages(t, app, "1.0.1"))
+
+		w := serveVersionCheck(t, fmt.Sprintf("/checkVersion?app_name=%s&version=0.0.0.1&channel=nightly&platform=macos&arch=universalArch&owner=admin&updater=electron-builder", app), nil)
+		require.Equal(t, http.StatusFound, w.Code, w.Body.String())
+		require.True(t, strings.HasSuffix(w.Header().Get("Location"), "/latest-mac.yml"), "redirected to %q", w.Header().Get("Location"))
+	})
+
+	t.Run("colliding_files_in_one_request_write_nothing", func(t *testing.T) {
+		w := doUpdaterRequest(t, router, "/upload",
+			fmt.Sprintf(`{"app_name":"%s","version":"1.0.2","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","updater":"manual"}`, app),
+			[]updaterFeedFile{{name: "first.zip", content: []byte("first")}, {name: "second.dmg", content: []byte("dmg")}, {name: "third.zip", content: []byte("third")}})
+		require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+		var resp map[string]string
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		require.Contains(t, resp["error"], "first.zip")
+		require.Contains(t, resp["error"], "third.zip")
+
+		require.Nil(t, storedVersionPackages(t, app, "1.0.2"), "rejected request must not record a version")
+		require.NotEqual(t, http.StatusOK, storageObjectStatus(t, defaultLayoutURL("1.0.2", ".zip")), "rejected request must not write to storage")
+		require.NotEqual(t, http.StatusOK, storageObjectStatus(t, defaultLayoutURL("1.0.2", ".dmg")), "rejected request must not write to storage")
+	})
+
+	t.Run("stored_conflict_keeps_existing_file_and_version", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.3", "macos", "manual", "", app+"-1.0.3.dmg")
+		original := checkFileContent(t, defaultLayoutURL("1.0.3", ".dmg"))
+		require.Equal(t, app+"-1.0.3.dmg", original)
+
+		w := doUpdaterRequest(t, router, "/upload",
+			fmt.Sprintf(`{"app_name":"%s","version":"1.0.3","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","updater":"manual"}`, app),
+			[]updaterFeedFile{{name: "retry.zip", content: []byte("new zip")}, {name: "retry.dmg", content: []byte("replaced")}})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		require.JSONEq(t, `{"error":"app with this name, version, platform, architecture and extension already exists"}`, w.Body.String())
+
+		require.Equal(t, original, checkFileContent(t, defaultLayoutURL("1.0.3", ".dmg")), "stored file must not be overwritten")
+		require.Equal(t, []string{".dmg"}, storedVersionPackages(t, app, "1.0.3"), "no artifact of the rejected request may be recorded")
+		require.NotEqual(t, http.StatusOK, storageObjectStatus(t, defaultLayoutURL("1.0.3", ".zip")))
+	})
+
+	// /apps/update used to overwrite the stored object and then skip the artifact as a
+	// duplicate, leaving hashes (and TUF targets) describing the old bytes.
+	t.Run("apps_update_rejects_stored_file", func(t *testing.T) {
+		require.NotEmpty(t, electronVersionID)
+		dmgURL := fmt.Sprintf("%s/electron-builder/%s-admin/1.0.1/nightly/macos/universalArch/%s-1.0.1.dmg", s3Endpoint, app, app)
+		original := checkFileContent(t, dmgURL)
+		update := func(extra string, files ...updaterFeedFile) *httptest.ResponseRecorder {
+			return doUpdaterRequest(t, router, "/apps/update",
+				fmt.Sprintf(`{"id":"%s","app_name":"%s","version":"1.0.1","publish":true,"platform":"macos","arch":"universalArch","updater":"electron-builder"%s}`, electronVersionID, app, extra),
+				files)
+		}
+
+		w := update(`,"channel":"nightly"`, updaterFeedFile{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, updaterFeedFile{name: app + "-1.0.1.dmg", content: []byte("replaced")})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		require.JSONEq(t, `{"error":"app with this name, version, platform, architecture and extension already exists"}`, w.Body.String())
+		require.Equal(t, original, checkFileContent(t, dmgURL), "stored file must not be overwritten")
+
+		w = update(`,"channel":"stable"`, updaterFeedFile{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, updaterFeedFile{name: app + "-1.0.1.pkg", content: []byte("pkg")})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), "cannot be changed")
+
+		// An omitted channel keeps the version's own, and the feed may be re-sent with a new file.
+		w = update("", updaterFeedFile{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, updaterFeedFile{name: app + "-1.0.1.pkg", content: []byte("pkg")})
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.Contains(t, storedVersionPackages(t, app, "1.0.1"), ".pkg")
+		require.Equal(t, original, checkFileContent(t, dmgURL))
+	})
+
+	// .nupkg, .delta and .blockmap may repeat within a platform/arch, but the default
+	// layout stores every one of them as {app}-{version}{ext}: a second file used to
+	// overwrite the first and add a second artifact with the same link.
+	t.Run("repeatable_extension_same_key_rejected", func(t *testing.T) {
+		upload := func(name, content string) *httptest.ResponseRecorder {
+			return doUpdaterRequest(t, router, "/upload",
+				fmt.Sprintf(`{"app_name":"%s","version":"1.0.4","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","updater":"manual"}`, app),
+				[]updaterFeedFile{{name: name, content: []byte(content)}})
+		}
+		w := upload("first.blockmap", "first")
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+		w = upload("second.blockmap", "second")
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		require.Equal(t, "first", checkFileContent(t, defaultLayoutURL("1.0.4", ".blockmap")), "stored file must not be overwritten")
+		require.Equal(t, []string{".blockmap"}, storedVersionPackages(t, app, "1.0.4"))
+	})
+
+	t.Run("apps_update_rejects_same_repeatable_file", func(t *testing.T) {
+		name := app + "-1.0.1-mac.zip.blockmap"
+		w := doUpdaterRequest(t, router, "/apps/update",
+			fmt.Sprintf(`{"id":"%s","app_name":"%s","version":"1.0.1","channel":"nightly","publish":true,"platform":"macos","arch":"universalArch","updater":"electron-builder"}`, electronVersionID, app),
+			[]updaterFeedFile{{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, {name: name, content: []byte("replaced")}})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+		blockmapURL := fmt.Sprintf("%s/electron-builder/%s-admin/1.0.1/nightly/macos/universalArch/%s", s3Endpoint, app, name)
+		require.Equal(t, name, checkFileContent(t, blockmapURL), "stored file must not be overwritten")
+	})
+
+	// The channel is part of the storage key; an update that omits it must still place
+	// files in the version's channel folder, so a re-sent file meets its stored key.
+	t.Run("apps_update_without_channel_uses_version_channel", func(t *testing.T) {
+		name := app + "-1.0.1-mac.zip.blockmap"
+		w := doUpdaterRequest(t, router, "/apps/update",
+			fmt.Sprintf(`{"id":"%s","app_name":"%s","version":"1.0.1","publish":true,"platform":"macos","arch":"universalArch","updater":"electron-builder"}`, electronVersionID, app),
+			[]updaterFeedFile{{name: "latest-mac.yml", content: []byte("version: 1.0.1")}, {name: name, content: []byte("replaced")}})
+		require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+
+		var doc model.SpecificApp
+		id, err := primitive.ObjectIDFromHex(electronVersionID)
+		require.NoError(t, err)
+		require.NoError(t, mongoDatabase.Collection("apps").FindOne(context.Background(), bson.M{"_id": id}).Decode(&doc))
+		for _, artifact := range doc.Artifacts {
+			require.Contains(t, artifact.Link, "/1.0.1/nightly/macos/", "artifact stored outside the version's channel folder")
+		}
+	})
+
+	// A concurrent request passes the pre-write check before either is recorded; the
+	// append itself must still refuse a second artifact with the same link.
+	t.Run("repository_refuses_same_link_twice", func(t *testing.T) {
+		ctxQuery := map[string]interface{}{
+			"app_name": app, "version": "1.0.4", "channel": "nightly", "platform": "macos", "arch": "universalArch",
+			"signature": "", "changelog": "", "publish": "true",
+		}
+		link := defaultLayoutURL("1.0.4", ".blockmap")
+		_, err := appDB.Upload(ctxQuery, link, ".blockmap", "admin", context.Background(), redisClient, viper.GetViper(), false)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "already exists")
+
+		_, err = appDB.Upload(ctxQuery, defaultLayoutURL("1.0.4", "-other.blockmap"), ".blockmap", "admin", context.Background(), redisClient, viper.GetViper(), false)
+		require.NoError(t, err, "a different link of a repeatable extension may still be added")
+		require.Equal(t, []string{".blockmap", ".blockmap"}, storedVersionPackages(t, app, "1.0.4"))
+	})
+}
+
+// Channel, platform and arch names are unique only per owner. The "required" checks
+// stay instance-wide by design, but a name lookup must only see the caller's own
+// entities: another admin's channel used to pass validation (and the upload then wrote
+// to storage before failing), and /checkVersion resolved the updaters of whichever
+// admin's platform with that name came first.
+func TestEntityLookupsAreOwnerScoped(t *testing.T) {
+	const app = "ownerscopeapp"
+	const platform = "ownerscopedplatform"
+	ctx := context.Background()
+	cleanupMeta := func() {
+		_, err := mongoDatabase.Collection("apps_meta").DeleteMany(ctx, bson.M{"$or": bson.A{
+			bson.M{"channel_name": "secondonlychannel"},
+			bson.M{"platform_name": bson.M{"$in": bson.A{"secondonlyplatform", platform}}},
+			bson.M{"arch_id": "secondonlyarch"},
+		}})
+		require.NoError(t, err)
+	}
+	cleanupUpdaterApp(t, app)
+	cleanupMeta()
+	defer cleanupMeta()
+	defer cleanupUpdaterApp(t, app)
+
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	metaRouter := gin.Default()
+	metaRouter.Use(utils.AuthMiddleware())
+	metaRouter.POST("/channel/create", func(c *gin.Context) { h.CreateChannel(c) })
+	metaRouter.POST("/platform/create", func(c *gin.Context) { h.CreatePlatform(c) })
+	metaRouter.POST("/arch/create", func(c *gin.Context) { h.CreateArch(c) })
+	createMeta := func(token, path, body string) {
+		t.Helper()
+		req, err := http.NewRequest("POST", path, strings.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		metaRouter.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, "%s %s: %s", path, body, w.Body.String())
+	}
+
+	// The second admin's platform is created first, so an owner-less lookup finds it first.
+	createMeta(authTokenSecondUser, "/channel/create", `{"channel":"secondonlychannel"}`)
+	createMeta(authTokenSecondUser, "/platform/create", `{"platform":"secondonlyplatform"}`)
+	createMeta(authTokenSecondUser, "/arch/create", `{"arch":"secondonlyarch"}`)
+	createMeta(authTokenSecondUser, "/platform/create", `{"platform":"`+platform+`","updaters":[{"type":"manual","default":true}]}`)
+	createMeta(authToken, "/platform/create", `{"platform":"`+platform+`","updaters":[{"type":"manual","default":false},{"type":"tauri","default":true}]}`)
+
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, app)
+
+	t.Run("another_admins_entities_are_unknown", func(t *testing.T) {
+		cases := []struct{ channel, platform, arch, wantError string }{
+			{"secondonlychannel", "macos", "universalArch", "Channel does not exist"},
+			{"nightly", "secondonlyplatform", "universalArch", "Platform does not exist"},
+			{"nightly", "macos", "secondonlyarch", "Arch does not exist"},
+		}
+		for _, tc := range cases {
+			w := doUpdaterRequest(t, router, "/upload",
+				fmt.Sprintf(`{"app_name":"%s","version":"1.0.0","channel":"%s","publish":true,"platform":"%s","arch":"%s","updater":"manual"}`, app, tc.channel, tc.platform, tc.arch),
+				[]updaterFeedFile{{name: "build.dmg", content: []byte("dmg")}})
+			require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+			require.Contains(t, w.Body.String(), tc.wantError)
+			url := fmt.Sprintf("%s/%s-admin/%s/%s/%s/%s-1.0.0.dmg", s3Endpoint, app, tc.channel, tc.platform, tc.arch, app)
+			require.NotEqual(t, http.StatusOK, storageObjectStatus(t, url), "rejected upload must not write to storage")
+		}
+		require.Nil(t, storedVersionPackages(t, app, "1.0.0"))
+	})
+
+	t.Run("checkversion_uses_own_platform_updaters", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.1", platform, "tauri", `,"signature":"c2ln"`, app+".app.tar.gz")
+		w := serveVersionCheck(t, fmt.Sprintf("/checkVersion?app_name=%s&version=0.0.1&channel=nightly&platform=%s&arch=universalArch&owner=admin", app, platform), nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		require.Equal(t, "1.0.1", resp["version"], "default updater must be the caller's tauri, got %s", w.Body.String())
+		require.NotContains(t, resp, "update_available")
+	})
+}
+
+// ============================================================================
 // Presigned upload flow (self-contained block).
 // init -> direct PUT to storage -> complete, against the real configured storage.
 // Pins the contract TUF publish relies on: client-declared hashes are stored
@@ -4569,10 +4999,11 @@ func TestUpdateSpecificAppWithSecondUser(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
-			// Check the response status code.
-			assert.Equal(t, http.StatusNotFound, w.Code)
+			// Check the response status code. Platform names are scoped to the owner, so the
+			// first admin's platform does not exist for the second one.
+			assert.Equal(t, http.StatusBadRequest, w.Code)
 
-			expected := `{"error":"app_name not found in apps_meta collection"}`
+			expected := `{"error":"wrong name of platform. Platform does not exist"}`
 			assert.Equal(t, expected, w.Body.String())
 		}
 	}
@@ -4616,14 +5047,8 @@ func TestUpdateSpecificApp(t *testing.T) {
 			// Reset the request body for each iteration.
 			body := &bytes.Buffer{}
 			writer := multipart.NewWriter(body)
-			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = io.Copy(part, file)
-			if err != nil {
-				t.Fatal(err)
-			}
+			// LICENSE is already stored for this version; re-sending it is rejected with 409
+			// (TestUploadRejectsBeforeWriting), so only the metadata is updated here.
 			// Create a POST request for the update endpoint with the current combination.
 			dataPart, err := writer.CreateFormField("data")
 			if err != nil {
@@ -6050,13 +6475,16 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.dmg"),
+								"version": "0.0.2.137",
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137.pkg"),
+								"version": "0.0.2.137",
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fnightly%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.2.137"),
+								"version": "0.0.2.137",
 							},
 						},
 					},
@@ -6076,13 +6504,16 @@ func TestFetchkLatestVersionOfApp(t *testing.T) {
 					"universalPlatform": map[string]interface{}{
 						"universalArch": map[string]interface{}{
 							"dmg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.dmg"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.dmg"),
+								"version": "0.0.4.137",
 							},
 							"pkg": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.pkg"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137.pkg"),
+								"version": "0.0.4.137",
 							},
 							"no-extension": map[string]interface{}{
-								"url": fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137"),
+								"url":     fmt.Sprintf("%s/%s%s", apiUrl, "download?key=", "testapp-admin%2Fstable%2FuniversalPlatform%2FuniversalArch%2Ftestapp-0.0.4.137"),
+								"version": "0.0.4.137",
 							},
 						},
 					},
@@ -6345,14 +6776,8 @@ func TestUpdateSpecificAppWithCDNPublishFalseToCheckS3ObjectDeleted(t *testing.T
 			// Reset the request body for each iteration.
 			body := &bytes.Buffer{}
 			writer := multipart.NewWriter(body)
-			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = io.Copy(part, file)
-			if err != nil {
-				t.Fatal(err)
-			}
+			// LICENSE is already stored for this version; re-sending it is rejected with 409
+			// (TestUploadRejectsBeforeWriting), so only the metadata is updated here.
 			// Create a POST request for the update endpoint with the current combination.
 			dataPart, err := writer.CreateFormField("data")
 			if err != nil {
@@ -11971,14 +12396,8 @@ func TestUpdateSpecificAppWithIntermediate(t *testing.T) {
 			// Reset the request body for each iteration.
 			body := &bytes.Buffer{}
 			writer := multipart.NewWriter(body)
-			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = io.Copy(part, file)
-			if err != nil {
-				t.Fatal(err)
-			}
+			// LICENSE is already stored for this version; re-sending it is rejected with 409
+			// (TestUploadRejectsBeforeWriting), so only the metadata is updated here.
 			// Create a POST request for the update endpoint with the current combination.
 			dataPart, err := writer.CreateFormField("data")
 			if err != nil {

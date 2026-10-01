@@ -25,7 +25,10 @@ func DumpRequest(c *gin.Context) {
 	logrus.Debugln("Request data:", string(requestDump))
 }
 
-func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
+// The "required" checks deliberately count across all owners (a self-hosted instance
+// that started using channels/platforms/archs must keep using them); lookups by name
+// are scoped to the owner, since names are unique only per owner.
+func CheckPlatforms(input, owner string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
 		filter := bson.M{"platform_name": bson.M{"$exists": true}}
 		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
@@ -40,7 +43,7 @@ func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
 		return nil
 	}
 	// Check if the platform exists in the database
-	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input})
+	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input, "owner": owner})
 	if err != nil {
 		return err
 	}
@@ -55,7 +58,7 @@ func CheckPlatforms(input string, db *mongo.Database, ctx *gin.Context) error {
 	return nil
 }
 
-func CheckArchsLatest(input string, db *mongo.Database, ctx *gin.Context) (string, error) {
+func CheckArchsLatest(input, owner string, db *mongo.Database, ctx *gin.Context) (string, error) {
 	if input == "" {
 		filter := bson.M{"arch_id": bson.M{"$exists": true}}
 		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
@@ -70,7 +73,7 @@ func CheckArchsLatest(input string, db *mongo.Database, ctx *gin.Context) (strin
 		return "", nil
 	} else {
 		// Check if the channel exists in the database
-		cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"arch_id": input})
+		cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"arch_id": input, "owner": owner})
 		if err != nil {
 			return "", err
 		}
@@ -84,7 +87,7 @@ func CheckArchsLatest(input string, db *mongo.Database, ctx *gin.Context) (strin
 	return input, nil
 }
 
-func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
+func CheckArchs(input, owner string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
 		filter := bson.M{"arch_id": bson.M{"$exists": true}}
 		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
@@ -99,7 +102,7 @@ func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
 		return nil
 	}
 	// Check if the channel exists in the database
-	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"arch_id": input})
+	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"arch_id": input, "owner": owner})
 	if err != nil {
 		return err
 	}
@@ -114,7 +117,7 @@ func CheckArchs(input string, db *mongo.Database, ctx *gin.Context) error {
 	return nil
 }
 
-func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
+func CheckChannels(input, owner string, db *mongo.Database, ctx *gin.Context) error {
 	if input == "" {
 		filter := bson.M{"channel_name": bson.M{"$exists": true}}
 		count, err := db.Collection("apps_meta").CountDocuments(ctx, filter)
@@ -129,7 +132,7 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 		return nil
 	}
 	// Check if the channel exists in the database
-	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"channel_name": input})
+	cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"channel_name": input, "owner": owner})
 	if err != nil {
 		return err
 	}
@@ -144,7 +147,7 @@ func CheckChannels(input string, db *mongo.Database, ctx *gin.Context) error {
 	return nil
 }
 
-func CheckPlatformsLatest(input string, updater string, db *mongo.Database, ctx *gin.Context) (string, string, error) {
+func CheckPlatformsLatest(input, updater, owner string, db *mongo.Database, ctx *gin.Context) (string, string, error) {
 	logrus.Debugf("CheckPlatformsLatest called with input: '%s', updater: '%s'", input, updater)
 
 	if input == "" {
@@ -167,7 +170,7 @@ func CheckPlatformsLatest(input string, updater string, db *mongo.Database, ctx 
 	} else {
 		logrus.Debugf("Checking if platform '%s' exists in database", input)
 		// Check if the platform exists in the database
-		cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input})
+		cursor, err := db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input, "owner": owner})
 		if err != nil {
 			logrus.Debugf("Error finding platform '%s': %v", input, err)
 			return "", "", err
@@ -181,7 +184,7 @@ func CheckPlatformsLatest(input string, updater string, db *mongo.Database, ctx 
 		} else {
 			logrus.Debugf("Platform '%s' found, proceeding with updater logic", input)
 			cursor.Close(ctx)
-			cursor, err = db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input})
+			cursor, err = db.Collection("apps_meta").Find(ctx, bson.M{"platform_name": input, "owner": owner})
 			if err != nil {
 				logrus.Debugf("Error finding platform '%s' for updater check: %v", input, err)
 				return "", "", err

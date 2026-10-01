@@ -181,3 +181,26 @@ func TestPresignedPutTTL(t *testing.T) {
 		}
 	}
 }
+
+func TestArtifactHasKey(t *testing.T) {
+	cases := []struct {
+		name string
+		link string
+		key  string
+		want bool
+	}{
+		{"public link", "http://bucket.s3.local/test-admin/nightly/darwin/arm64/test-1.5.0.blockmap", "test-admin/nightly/darwin/arm64/test-1.5.0.blockmap", true},
+		{"public link escaped", "https://s3.local/bucket/electron-builder/App-admin/1.0.1/nightly/macos/x64/App%20Setup%201.0.1.exe.blockmap", "electron-builder/App-admin/1.0.1/nightly/macos/x64/App Setup 1.0.1.exe.blockmap", true},
+		{"private link", "https://api.local/download?key=test-admin%2Fnightly%2Fdarwin%2Farm64%2Ftest-1.5.0.blockmap", "test-admin/nightly/darwin/arm64/test-1.5.0.blockmap", true},
+		{"other file same dir", "http://s3.local/velopack/admin/App/darwin/arm64/App-1.0.4-nightly-full.nupkg", "velopack/admin/App/darwin/arm64/App-1.0.4-nightly-delta.nupkg", false},
+		{"suffix without separator", "http://s3.local/b/xApp-1.0.4-nightly-full.nupkg", "App-1.0.4-nightly-full.nupkg", false},
+		{"private other key", "https://api.local/download?key=a%2Fb.nupkg", "a/c.nupkg", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := artifactHasKey(tc.link, tc.key); got != tc.want {
+				t.Errorf("artifactHasKey(%q, %q) = %v, want %v", tc.link, tc.key, got, tc.want)
+			}
+		})
+	}
+}

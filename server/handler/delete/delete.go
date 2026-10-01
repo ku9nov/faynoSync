@@ -302,11 +302,6 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 
 func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client) {
 	env := viper.GetViper()
-	ctxQueryMap, err := utils.ValidateUpdateParams(c, db)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	username, err := utils.GetUsernameFromContext(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -317,6 +312,12 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	if err != nil {
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve owner"})
+		return
+	}
+
+	ctxQueryMap, err := utils.ValidateUpdateParams(c, db, owner)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

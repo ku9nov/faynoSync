@@ -81,8 +81,9 @@ func TestBuildObjectPlacementFileNaming(t *testing.T) {
 		wantKey       string
 	}{
 		{"build.dmg", ".dmg", "MyApp-acme/nightly/darwin/arm64/MyApp-1.0.0.dmg"},
-		// Only the last dot counts, so a compound extension is truncated.
-		{"build.tar.gz", ".gz", "MyApp-acme/nightly/darwin/arm64/MyApp-1.0.0.gz"},
+		{"build.tar.gz", ".tar.gz", "MyApp-acme/nightly/darwin/arm64/MyApp-1.0.0.tar.gz"},
+		{"MyApp.app.tar.gz", ".app.tar.gz", "MyApp-acme/nightly/darwin/arm64/MyApp-1.0.0.app.tar.gz"},
+		{"build-1.2.3.dmg", ".dmg", "MyApp-acme/nightly/darwin/arm64/MyApp-1.0.0.dmg"},
 		{"RELEASES", "", "MyApp-acme/nightly/darwin/arm64/MyApp-1.0.0"},
 		{".dotfile", ".dotfile", "MyApp-acme/nightly/darwin/arm64/MyApp-1.0.0.dotfile"},
 	}
@@ -139,5 +140,36 @@ func TestBuildObjectPlacementSetsAPIURLOnContext(t *testing.T) {
 
 	if ctxQuery["api_url"] != "https://api.example.com" {
 		t.Errorf("ctxQuery[api_url] = %v, want the configured API_URL", ctxQuery["api_url"])
+	}
+}
+
+func TestFileExtension(t *testing.T) {
+	cases := []struct {
+		fileName string
+		want     string
+	}{
+		{"myapp-1.2.3.dmg", ".dmg"},
+		{"MyApp Setup 1.0.1.exe", ".exe"},
+		{"myapp-1.2.3-arm64.tar.gz", ".tar.gz"},
+		{"myapp.tar.xz", ".tar.xz"},
+		{"myapp.tar.bz2", ".tar.bz2"},
+		{"myapp.tar.zst", ".tar.zst"},
+		{"MyApp.app.tar.gz", ".app.tar.gz"},
+		{"MyApp.APP.TAR.GZ", ".APP.TAR.GZ"},
+		{"my-app_1.0.0_amd64.AppImage.tar.gz", ".AppImage.tar.gz"},
+		{"my-app_1.0.0_x64-setup.nsis.zip", ".nsis.zip"},
+		{"my-app_1.0.0_x64_en-US.msi.zip", ".msi.zip"},
+		{"MyApp.app.tar.gz.sig", ".sig"},
+		{"myapp.zip.blockmap", ".blockmap"},
+		{"myapp.gz", ".gz"},
+		{".tar.gz", ".gz"},
+		{"RELEASES", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.fileName, func(t *testing.T) {
+			if got := FileExtension(tc.fileName); got != tc.want {
+				t.Errorf("FileExtension(%q) = %q, want %q", tc.fileName, got, tc.want)
+			}
+		})
 	}
 }

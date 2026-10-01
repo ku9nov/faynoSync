@@ -2,6 +2,8 @@ package updaters
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 )
 
 // TauriUpdater represents the Tauri updater configuration
@@ -59,4 +61,50 @@ func (v *NoOpParamValidator) ValidateParams(params map[string]interface{}) error
 
 func (v *NoOpParamValidator) GetUpdaterType() string {
 	return v.updaterType
+}
+
+var tauriPayloadPriority = []string{
+	"app.tar.gz",
+	"appimage.tar.gz",
+	"nsis.zip",
+	"msi.zip",
+	"gz",
+	"zip",
+	"exe",
+	"msi",
+	"appimage",
+}
+
+// tauriUpdateURL picks the update_url_* the Tauri updater should download. Signature
+// files and dmg are never a payload (the macOS updater only unpacks gzip tar); any
+// other package is a deterministic last resort.
+func tauriUpdateURL(response map[string]interface{}) (string, bool) {
+	candidates := map[string]string{}
+	for key, value := range response {
+		url, ok := value.(string)
+		if !ok || !strings.HasPrefix(key, "update_url") {
+			continue
+		}
+		pkg := strings.ToLower(strings.TrimPrefix(strings.TrimPrefix(key, "update_url"), "_"))
+		if pkg == "sig" || pkg == "dmg" {
+			continue
+		}
+		candidates[pkg] = url
+	}
+
+	for _, pkg := range tauriPayloadPriority {
+		if url, ok := candidates[pkg]; ok {
+			return url, true
+		}
+	}
+
+	remaining := make([]string, 0, len(candidates))
+	for pkg := range candidates {
+		remaining = append(remaining, pkg)
+	}
+	if len(remaining) == 0 {
+		return "", false
+	}
+	sort.Strings(remaining)
+	return candidates[remaining[0]], true
 }

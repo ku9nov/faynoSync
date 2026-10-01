@@ -25,7 +25,7 @@ type AppRepository interface {
 	UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, bool, bool, error)
 	CheckLatestVersion(appName, version, channel, platform, arch string, ctx context.Context, owner string) (CheckResult, error)
 	RequiredIntermediateStep(ctx context.Context, owner, appName, channel, platform, arch, currentVersion, latestVersion string) (string, error)
-	FetchLatestVersionOfApp(appName, channel string, ctx context.Context, owner string) ([]*model.SpecificAppWithoutIDs, error)
+	FetchLatestVersionOfApp(appName, channel, platform, arch, packageType string, ctx context.Context, owner string) ([]model.LatestDownload, error)
 	FetchAppByID(appID primitive.ObjectID, ctx context.Context) ([]*model.SpecificAppWithoutIDs, error)
 	CreateChannel(channelName string, owner string, ctx context.Context) (interface{}, error)
 	ListChannels(ctx context.Context, owner string) ([]*model.Channel, error)
@@ -193,6 +193,11 @@ func (c *appRepository) getBasePipeline() mongo.Pipeline {
 	}
 }
 func (c *appRepository) sortVersionPipeline() mongo.Pipeline {
+	return append(versionSortStages(), bson.D{{Key: "$limit", Value: 1}})
+}
+
+// versionSortStages sorts documents by their "version" field, newest first.
+func versionSortStages() mongo.Pipeline {
 	return mongo.Pipeline{
 		{{Key: "$addFields", Value: bson.D{
 			{Key: "versions_arr", Value: bson.D{
@@ -227,6 +232,5 @@ func (c *appRepository) sortVersionPipeline() mongo.Pipeline {
 			{Key: "patch_v", Value: -1},
 			{Key: "build_v", Value: -1},
 		}}},
-		{{Key: "$limit", Value: 1}},
 	}
 }

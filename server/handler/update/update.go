@@ -20,6 +20,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/text/cases"
@@ -235,16 +236,6 @@ func UpdateApp(c *gin.Context, repository db.AppRepository) {
 }
 
 func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
-	ctxQueryMap, err := utils.ValidateUpdateParams(c, db)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	// Add intermediate field to ctxQueryMap if it exists in the request
-	if intermediate := c.PostForm("intermediate"); intermediate != "" {
-		ctxQueryMap["intermediate"] = intermediate
-	}
-
 	// Get username from JWT token
 	owner, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -258,6 +249,16 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve owner"})
 		return
+	}
+
+	ctxQueryMap, err := utils.ValidateUpdateParams(c, db, s3Owner)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Add intermediate field to ctxQueryMap if it exists in the request
+	if intermediate := c.PostForm("intermediate"); intermediate != "" {
+		ctxQueryMap["intermediate"] = intermediate
 	}
 
 	// Convert string to ObjectID
@@ -294,6 +295,16 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	if form != nil {
 		files = form.File["file"] // Assuming the field name is "file" not "files"
 		fileNames = create.FileNames(files)
+		if channel, _ := ctxQueryMap["channel"].(string); channel == "" && len(files) > 0 {
+			versionChannel, err := versionChannelName(c.Request.Context(), db, objID, s3Owner)
+			if err != nil {
+				logrus.Errorf("failed to resolve channel of version %s: %v", objID.Hex(), err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve version channel"})
+				return
+			}
+			logrus.Debugf("Channel omitted on update of version %s, using its own: %q", objID.Hex(), versionChannel)
+			ctxQueryMap["channel"] = versionChannel
+		}
 		updaterType, _ = ctxQueryMap["updater"].(string)
 		// Validate updater requirements
 		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
@@ -330,6 +341,22 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 				}
 				ctxQueryMap["sparkle_meta"] = sparkleMeta
 			}
+		}
+		// Checked before any object is written: a file already stored for this version is
+		// rejected instead of overwritten in storage while its recorded hashes stay stale.
+		_, requestConflict, storedConflict, err := create.PlanUploadPlacements(c.Request.Context(), db, s3Owner, ctxQueryMap, fileNames, viper.GetViper(), checkAppVisibility, true)
+		if err != nil {
+			logrus.Errorf("failed to check artifact conflicts: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing artifacts"})
+			return
+		}
+		if requestConflict != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": requestConflict})
+			return
+		}
+		if storedConflict != "" {
+			c.JSON(http.StatusConflict, gin.H{"error": storedConflict})
+			return
 		}
 		for _, file := range files {
 			// Calculate hashes and length before uploading to S3
@@ -427,4 +454,27 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	}
 
 	c.JSON(http.StatusOK, gin.H{"updatedResult.Updated": result})
+}
+
+// versionChannelName returns the channel name of a version, "" when it has none or
+// does not exist (the update itself then reports the missing version).
+func versionChannelName(ctx context.Context, database *mongo.Database, versionID primitive.ObjectID, owner string) (string, error) {
+	var version struct {
+		ChannelID primitive.ObjectID `bson:"channel_id"`
+	}
+	err := database.Collection("apps").FindOne(ctx, bson.M{"_id": versionID, "owner": owner}).Decode(&version)
+	if errors.Is(err, mongo.ErrNoDocuments) || err == nil && version.ChannelID.IsZero() {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var channel struct {
+		Name string `bson:"channel_name"`
+	}
+	err = database.Collection("apps_meta").FindOne(ctx, bson.M{"_id": version.ChannelID}).Decode(&channel)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return "", nil
+	}
+	return channel.Name, err
 }
