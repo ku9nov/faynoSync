@@ -23,6 +23,7 @@
 - electron-builder macOS builds with both `.zip.blockmap` and `.dmg.blockmap` are accepted.
 - A `.nupkg`, `.delta` or `.blockmap` sent again under a storage key the version already has returns `409`; it used to overwrite the stored file and record a second artifact with the same link.
 - `POST /apps/update` without `channel` stores files in the version's channel folder; they used to land in a path without the channel, apart from the rest of the version.
+- Channel, platform and arch names are looked up among the caller's own.
 
 ## v2.5.0
 

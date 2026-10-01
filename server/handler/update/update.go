@@ -236,16 +236,6 @@ func UpdateApp(c *gin.Context, repository db.AppRepository) {
 }
 
 func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
-	ctxQueryMap, err := utils.ValidateUpdateParams(c, db)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	// Add intermediate field to ctxQueryMap if it exists in the request
-	if intermediate := c.PostForm("intermediate"); intermediate != "" {
-		ctxQueryMap["intermediate"] = intermediate
-	}
-
 	// Get username from JWT token
 	owner, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -259,6 +249,16 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		logrus.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve owner"})
 		return
+	}
+
+	ctxQueryMap, err := utils.ValidateUpdateParams(c, db, s3Owner)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Add intermediate field to ctxQueryMap if it exists in the request
+	if intermediate := c.PostForm("intermediate"); intermediate != "" {
+		ctxQueryMap["intermediate"] = intermediate
 	}
 
 	// Convert string to ObjectID

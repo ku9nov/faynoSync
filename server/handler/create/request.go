@@ -41,7 +41,7 @@ func ResolveUploadRequest(c *gin.Context, database *mongo.Database) (UploadReque
 		return UploadRequest{}, false
 	}
 
-	ctxQueryMap, err := utils.ValidateParams(c, database)
+	ctxQueryMap, err := utils.ValidateParams(c, database, owner)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return UploadRequest{}, false

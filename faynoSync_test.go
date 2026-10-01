@@ -3573,6 +3573,84 @@ func TestUploadRejectsBeforeWriting(t *testing.T) {
 	})
 }
 
+// Channel, platform and arch names are unique only per owner. The "required" checks
+// stay instance-wide by design, but a name lookup must only see the caller's own
+// entities: another admin's channel used to pass validation (and the upload then wrote
+// to storage before failing), and /checkVersion resolved the updaters of whichever
+// admin's platform with that name came first.
+func TestEntityLookupsAreOwnerScoped(t *testing.T) {
+	const app = "ownerscopeapp"
+	const platform = "ownerscopedplatform"
+	ctx := context.Background()
+	cleanupMeta := func() {
+		_, err := mongoDatabase.Collection("apps_meta").DeleteMany(ctx, bson.M{"$or": bson.A{
+			bson.M{"channel_name": "secondonlychannel"},
+			bson.M{"platform_name": bson.M{"$in": bson.A{"secondonlyplatform", platform}}},
+			bson.M{"arch_id": "secondonlyarch"},
+		}})
+		require.NoError(t, err)
+	}
+	cleanupUpdaterApp(t, app)
+	cleanupMeta()
+	defer cleanupMeta()
+	defer cleanupUpdaterApp(t, app)
+
+	h := handler.NewAppHandler(client, appDB, mongoDatabase, redisClient, viper.GetBool("PERFORMANCE_MODE"))
+	metaRouter := gin.Default()
+	metaRouter.Use(utils.AuthMiddleware())
+	metaRouter.POST("/channel/create", func(c *gin.Context) { h.CreateChannel(c) })
+	metaRouter.POST("/platform/create", func(c *gin.Context) { h.CreatePlatform(c) })
+	metaRouter.POST("/arch/create", func(c *gin.Context) { h.CreateArch(c) })
+	createMeta := func(token, path, body string) {
+		t.Helper()
+		req, err := http.NewRequest("POST", path, strings.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		metaRouter.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, "%s %s: %s", path, body, w.Body.String())
+	}
+
+	// The second admin's platform is created first, so an owner-less lookup finds it first.
+	createMeta(authTokenSecondUser, "/channel/create", `{"channel":"secondonlychannel"}`)
+	createMeta(authTokenSecondUser, "/platform/create", `{"platform":"secondonlyplatform"}`)
+	createMeta(authTokenSecondUser, "/arch/create", `{"arch":"secondonlyarch"}`)
+	createMeta(authTokenSecondUser, "/platform/create", `{"platform":"`+platform+`","updaters":[{"type":"manual","default":true}]}`)
+	createMeta(authToken, "/platform/create", `{"platform":"`+platform+`","updaters":[{"type":"manual","default":false},{"type":"tauri","default":true}]}`)
+
+	router := updaterFlowRouter()
+	createUpdaterApp(t, router, app)
+
+	t.Run("another_admins_entities_are_unknown", func(t *testing.T) {
+		cases := []struct{ channel, platform, arch, wantError string }{
+			{"secondonlychannel", "macos", "universalArch", "Channel does not exist"},
+			{"nightly", "secondonlyplatform", "universalArch", "Platform does not exist"},
+			{"nightly", "macos", "secondonlyarch", "Arch does not exist"},
+		}
+		for _, tc := range cases {
+			w := doUpdaterRequest(t, router, "/upload",
+				fmt.Sprintf(`{"app_name":"%s","version":"1.0.0","channel":"%s","publish":true,"platform":"%s","arch":"%s","updater":"manual"}`, app, tc.channel, tc.platform, tc.arch),
+				[]updaterFeedFile{{name: "build.dmg", content: []byte("dmg")}})
+			require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+			require.Contains(t, w.Body.String(), tc.wantError)
+			url := fmt.Sprintf("%s/%s-admin/%s/%s/%s/%s-1.0.0.dmg", s3Endpoint, app, tc.channel, tc.platform, tc.arch, app)
+			require.NotEqual(t, http.StatusOK, storageObjectStatus(t, url), "rejected upload must not write to storage")
+		}
+		require.Nil(t, storedVersionPackages(t, app, "1.0.0"))
+	})
+
+	t.Run("checkversion_uses_own_platform_updaters", func(t *testing.T) {
+		uploadLatestFlowVersion(t, router, app, "1.0.1", platform, "tauri", `,"signature":"c2ln"`, app+".app.tar.gz")
+		w := serveVersionCheck(t, fmt.Sprintf("/checkVersion?app_name=%s&version=0.0.1&channel=nightly&platform=%s&arch=universalArch&owner=admin", app, platform), nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		require.Equal(t, "1.0.1", resp["version"], "default updater must be the caller's tauri, got %s", w.Body.String())
+		require.NotContains(t, resp, "update_available")
+	})
+}
+
 // ============================================================================
 // Presigned upload flow (self-contained block).
 // init -> direct PUT to storage -> complete, against the real configured storage.
@@ -4921,10 +4999,11 @@ func TestUpdateSpecificAppWithSecondUser(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+authTokenSecondUser)
 			// Serve the request using the Gin router.
 			router.ServeHTTP(w, req)
-			// Check the response status code.
-			assert.Equal(t, http.StatusNotFound, w.Code)
+			// Check the response status code. Platform names are scoped to the owner, so the
+			// first admin's platform does not exist for the second one.
+			assert.Equal(t, http.StatusBadRequest, w.Code)
 
-			expected := `{"error":"app_name not found in apps_meta collection"}`
+			expected := `{"error":"wrong name of platform. Platform does not exist"}`
 			assert.Equal(t, expected, w.Body.String())
 		}
 	}
