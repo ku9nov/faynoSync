@@ -4,11 +4,16 @@ services:
     platform: linux/amd64
     container_name: "faynoSync_dashboard"
     networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.8
+      - faynosync_network
     environment:
       - VITE_API_URL=http://localhost:9000
     restart: always
     command: ["yarn", "dev", "--host", "0.0.0.0"]
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s

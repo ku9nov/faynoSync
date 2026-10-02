@@ -1,25 +1,38 @@
-FROM golang:1.26.3 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.3 AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /go/src/app
 
+COPY go.mod go.sum ./
+RUN go mod download
+
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o faynoSync .
-RUN CGO_ENABLED=0 GOOS=linux go test -c -o faynoSync_tests
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/faynoSync .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go test -c -o /out/faynoSync_tests
 
-FROM golang:1.26.3-alpine3.22
+RUN mkdir -p /out/app && cp LICENSE /out/app/LICENSE
 
-RUN addgroup -S faynosync && adduser -S -G faynosync faynosync
+FROM gcr.io/distroless/static-debian12:nonroot AS base
+
+COPY --from=builder --chown=nonroot:nonroot /out/app /app
+COPY --from=builder /out/faynoSync /usr/bin/faynoSync
 
 WORKDIR /app
 
-COPY --from=builder /go/src/app/LICENSE /app/LICENSE
-COPY --from=builder /go/src/app/mongod/migrations /app/mongod/migrations
-COPY --from=builder /go/src/app/faynoSync /usr/bin
-COPY --from=builder /go/src/app/faynoSync_tests /usr/bin
+# distroless has no curl/wget, so the binary probes /health itself
+HEALTHCHECK --interval=10s --timeout=10s --start-period=10s --retries=3 \
+    CMD ["/usr/bin/faynoSync", "healthcheck"]
 
-RUN chown -R faynosync:faynosync /app /usr/bin/faynoSync /usr/bin/faynoSync_tests
+CMD ["/usr/bin/faynoSync"]
 
-USER faynosync
+# Local compose and CI: ships the integration test binary
+FROM base AS dev
 
-CMD ["faynoSync"]
+COPY --from=builder /out/faynoSync_tests /usr/bin/faynoSync_tests
+
+FROM base AS runtime
+
+ENV GIN_MODE=release

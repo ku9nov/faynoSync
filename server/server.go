@@ -6,6 +6,7 @@ import (
 	"faynoSync/server/handler"
 	"faynoSync/server/tuf"
 	"faynoSync/server/utils"
+	"fmt"
 	"os"
 	"strings"
 
@@ -14,7 +15,40 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	insecureDevSecretPrefix = "insecure-dev-"
+	minJWTSecretBytes       = 32
+)
+
+func validateSecrets(config *viper.Viper, releaseMode bool) error {
+	if len(config.GetString("JWT_SECRET")) < minJWTSecretBytes {
+		return fmt.Errorf("JWT_SECRET is empty or shorter than %d bytes; generate one with: openssl rand -base64 32", minJWTSecretBytes)
+	}
+
+	devSecrets := []struct {
+		key  string
+		risk string
+	}{
+		{"JWT_SECRET", "forge admin tokens"},
+		{"API_KEY", "create admin accounts through /signup"},
+	}
+	for _, s := range devSecrets {
+		if !strings.HasPrefix(config.GetString(s.key), insecureDevSecretPrefix) {
+			continue
+		}
+		if releaseMode {
+			return fmt.Errorf("%s holds the public development value from the repository; generate one with: openssl rand -base64 32", s.key)
+		}
+		logrus.Warnf("%s holds the public development value from the repository: anyone can %s. Do not expose this instance", s.key, s.risk)
+	}
+	return nil
+}
+
 func StartServer(config *viper.Viper) {
+	if err := validateSecrets(config, gin.Mode() == gin.ReleaseMode); err != nil {
+		logrus.Fatal(err)
+	}
+
 	mongoUrl := config.GetString("MONGODB_URL")
 
 	router := gin.Default()

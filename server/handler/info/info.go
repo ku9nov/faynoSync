@@ -11,7 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func HealthCheck(c *gin.Context, mongoClient *mongo.Client, redisClient *redis.Client, performanceMode bool) {
+func HealthCheck(c *gin.Context, mongoClient *mongo.Client, redisClient *redis.Client) {
 	ctx, ctxCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer ctxCancel()
 
@@ -23,7 +23,7 @@ func HealthCheck(c *gin.Context, mongoClient *mongo.Client, redisClient *redis.C
 		}
 	}
 
-	if performanceMode && redisClient != nil {
+	if redisClient != nil {
 		if err := redisClient.Ping(ctx).Err(); err != nil {
 			logrus.Error("Redis connection error: ", err)
 			c.JSON(http.StatusFailedDependency, gin.H{"status": "unhealthy", "details": "Redis connection failed"})

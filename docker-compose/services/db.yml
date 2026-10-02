@@ -10,7 +10,12 @@ services:
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.4
+      - faynosync_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s

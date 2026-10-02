@@ -3,10 +3,18 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      target: dev
     container_name: "faynoSync_backend"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
     networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.6
+      - faynosync_network
     ports:
       - "9000:9000"
     volumes:

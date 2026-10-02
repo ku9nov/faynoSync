@@ -5,6 +5,7 @@ services:
       context: ../..
       dockerfile: docker-compose/images/garage/Dockerfile
     image: faynosync-garage:local
+    pull_policy: build
     container_name: garage
     restart: unless-stopped
     networks:
@@ -14,11 +15,11 @@ services:
           - cb-faynosync-s3-private.web.garage.localhost
 
     ports:
-      - "3900:3900"  # S3 API
-      - "3901:3901"  # RPC (internal communication)
-      - "3902:3902"  # S3 Web (static website hosting)
-      - "3903:3903"  # Admin API
-      - "3904:3904"  # K2V API (optional key-value store)
+      - "127.0.0.1:3900:3900"  # S3 API
+      - "127.0.0.1:3901:3901"  # RPC (internal communication)
+      - "127.0.0.1:3902:3902"  # S3 Web (static website hosting)
+      - "127.0.0.1:3903:3903"  # Admin API
+      - "127.0.0.1:3904:3904"  # K2V API (optional key-value store)
     
     volumes:
       - ../configs/garage.toml:/etc/garage.toml:ro
@@ -37,14 +38,14 @@ services:
       - GARAGE_SECRET_KEY=8a59fe92499699d139fcee6998343dad2ac73fb2b5dffafa0a7d0b0d4e305db9
 
     healthcheck:
-      test: ["CMD", "garage", "status"]
-      interval: 30s
+      test: ["CMD-SHELL", "test -f /tmp/garage-bootstrap-done && garage status"]
+      interval: 5s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 24
+      start_period: 10s
 
   webui:
-    image: khairul169/garage-webui:latest
+    image: khairul169/garage-webui:1.1.0
     container_name: garage-webui
     restart: unless-stopped
     depends_on:
@@ -55,11 +56,17 @@ services:
     volumes:
       - ../configs/garage.toml:/etc/garage.toml:ro
     ports:
-      - 3909:3909
+      - "127.0.0.1:3909:3909"
     environment:
       API_BASE_URL: "http://s3:3903"
       S3_ENDPOINT_URL: "http://s3:3900"
       AUTH_USER_PASS: "admin:$$2y$$10$$VoflX0ZOfqrBeCQpCwwU9eq4UrMwW3ciCYmZ/DJ16hS1Iz60gocIC"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "-o", "/dev/null", "http://127.0.0.1:3909"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
 volumes:
   garage_meta:

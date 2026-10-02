@@ -1,13 +1,17 @@
 services:
   cache:
-    image: redis:latest
+    image: redis:8.8
     container_name: "faynoSync_redis"
     networks:
-      faynosync_network:
-        ipv4_address: 172.25.0.7
+      - faynosync_network
     restart: always
     ports:
-      - '6379:6379'
+      - "127.0.0.1:6379:6379"
     command: redis-server --save 20 1 --loglevel warning
     volumes: 
       - cache:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
