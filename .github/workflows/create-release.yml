@@ -95,3 +95,66 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+
+  release_binaries:
+    if: |
+      contains(github.event.pull_request.title, 'release') == true &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: yarn
+          cache-dependency-path: dashboard/yarn.lock
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.3'
+
+      - name: Extract Version
+        run: |
+          version=$(grep -m 1 -oP '## v\d+\.\d+\.\d+' CHANGELOG.md | cut -d ' ' -f 2)
+          echo "version=$version" >> $GITHUB_ENV
+
+      - name: Build dashboard
+        working-directory: dashboard
+        run: |
+          yarn install --frozen-lockfile
+          yarn build
+
+      # No Windows build: TUF key loading relies on O_NOFOLLOW, which Windows lacks
+      - name: Build binaries
+        run: |
+          mkdir -p build dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*}
+            arch=${target#*/}
+            name="faynoSync_${version}_${os}_${arch}"
+            mkdir -p "build/$name"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "build/$name/faynoSync" .
+            cp LICENSE "build/$name/"
+            tar -C build -czf "dist/$name.tar.gz" "$name"
+          done
+          cd dist && sha256sum *.tar.gz > SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.tar.gz
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ env.version }}" dist/*.tar.gz dist/SHA256SUMS

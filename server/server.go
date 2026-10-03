@@ -3,6 +3,7 @@ package server
 import (
 	db "faynoSync/mongod"
 	"faynoSync/redisdb"
+	"faynoSync/server/dashboard"
 	"faynoSync/server/handler"
 	"faynoSync/server/tuf"
 	"faynoSync/server/utils"
@@ -82,6 +83,13 @@ func StartServer(config *viper.Viper) {
 	authMiddleware := utils.AuthMiddleware(mongoDatabase)
 
 	router.GET("/health", handler.HealthCheck)
+
+	config.SetDefault("DASHBOARD_ENABLED", true)
+	if config.GetBool("DASHBOARD_ENABLED") {
+		dashboard.Register(router, dashboard.Config{TUFMetadataURL: config.GetString("DASHBOARD_TUF_METADATA_URL")})
+	} else {
+		logrus.Infoln("DASHBOARD_ENABLED is false, the dashboard is not served")
+	}
 
 	allowedCORS := config.GetString("ALLOWED_CORS")
 	allowedOrigins := strings.Split(allowedCORS, ",")

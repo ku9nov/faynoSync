@@ -1,3 +1,13 @@
+FROM --platform=$BUILDPLATFORM node:20-alpine AS ui
+
+WORKDIR /src/dashboard
+
+COPY dashboard/package.json dashboard/yarn.lock ./
+RUN yarn install --frozen-lockfile
+
+COPY dashboard/ ./
+RUN yarn build
+
 FROM --platform=$BUILDPLATFORM golang:1.26.3 AS builder
 
 ARG TARGETOS
@@ -9,6 +19,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=ui /src/server/dashboard/ui/dist server/dashboard/ui/dist
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/faynoSync .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go test -c -o /out/faynoSync_tests

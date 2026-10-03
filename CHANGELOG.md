@@ -1,5 +1,32 @@
 # Changelog
 
+## v2.7.0
+
+> **Note from the maintainer**
+>
+> faynoSync was meant from the start to be simple to work with. Over time it grew new features and became harder for end users to understand and set up — and since I work with infrastructure every day, I didn't see that problem myself. This release is about fixing it: fewer and simpler deployment guides, and a much easier way to get faynoSync running.
+>
+> The update logic itself barely changes, but the dashboard is now part of the API binary. Whether you are new to faynoSync or upgrading, please read the updated guides:
+>
+> - [Local Deployment](https://faynosync.com/docs/getting-started/local-deploy)
+> - [Production Deployment](https://faynosync.com/docs/getting-started/production-deploy)
+
+### Upgrading from v2.6
+
+- The API refuses to start if `JWT_SECRET` is shorter than 32 bytes or starts with `insecure-dev-`. Check the length with `awk -F= '/^JWT_SECRET=/{print length($2)}' .env`.
+- The image is distroless and runs as UID `65532`: no shell, no `curl`. Mounted files (TUF online keys) must be readable by that UID; drop healthchecks that call `curl`/`sh` — the image has its own.
+- The dashboard is served by the API at `/dashboard/`. The `ku9nov/faynosync-dashboard` image is no longer published.
+- Run `faynoSync migrate up` after upgrading, as before.
+
+### Changes
+
+- Dashboard embedded into the API (`DASHBOARD_ENABLED`, `DASHBOARD_TUF_METADATA_URL`); fonts and icons bundled, strict CSP.
+- Distroless runtime image with a built-in `HEALTHCHECK` (`faynoSync healthcheck`); migrations embedded in the binary.
+- Release binaries for Linux and macOS (amd64, arm64) with `SHA256SUMS` and signed build provenance, for running without Docker.
+- Startup checks for `JWT_SECRET`; repository env files use `insecure-dev-*` placeholders.
+- `/health` checks Redis regardless of `PERFORMANCE_MODE`.
+- `.env.example` is the single env file for local runs, Docker Compose and CI; `.env.local` and `docker-compose/envs/backend.env` were removed.
+
 ## v2.6.0
 
 ### Breaking changes

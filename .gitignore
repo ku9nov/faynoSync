@@ -33,7 +33,9 @@ faynoSync_tests
 
 tmp*
 
-tuf_keys/
+tuf_keys/**
+!tuf_keys/private_keys/
+!tuf_keys/private_keys/.gitkeep
 
 docs/
 
@@ -46,4 +48,6 @@ server/utils/storage/presigned_live_test.go
 ROADMAP.md
 PRIVATE_FEATURE.md
 PRESIGNED_UPLOADS.md
+DEPLOY.md
 faynosync-upload.sh
+server/dashboard/ui/dist/

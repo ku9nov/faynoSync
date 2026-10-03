@@ -1,0 +1,39 @@
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+/* The danger-zone card animates `pulse` from an inline style. Tailwind only emits these
+   keyframes when some element uses `animate-pulse`, and the last one (the logo shimmer)
+   is gone — so the name is declared here and no longer depends on a utility existing. */
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Incomplete rollout: the glow breathes instead of the whole tile fading, so the card
+   still reads while it asks for attention — and it stays distinct from the red pulse. */
+@keyframes glowAmber {
+  0%,
+  100% {
+    box-shadow: 0 10px 25px -5px rgba(245, 158, 11, 0.35), 0 0 0 1px rgba(245, 158, 11, 0.25);
+  }
+  50% {
+    box-shadow: 0 10px 30px -5px rgba(245, 158, 11, 0.6), 0 0 0 2px rgba(245, 158, 11, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sharedCard {
+    animation: none !important;
+  }
+}
