@@ -20,7 +20,7 @@ const BasePath = "/dashboard"
 var uiFS embed.FS
 
 const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; " +
+	"img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'self'; object-src 'none'; " +
 	"base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 type Config struct {

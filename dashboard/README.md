@@ -1,10 +1,5 @@
 # FaynoSync Dashboard
 
-
-![demo](https://github.com/user-attachments/assets/17ab8692-d445-44bf-8a30-dc164025f805)
-
-
-
 ### 🧠 This frontend is the result of vibe coding
 
 The entire UI was built with the help of AI coding assistants — that's what made this possible, since I'm a **DevOps engineer**, not a frontend developer 😅
