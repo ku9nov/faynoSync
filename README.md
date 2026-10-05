@@ -4,7 +4,7 @@
 
 <div align="center">
   
-  [![Documentation](https://img.shields.io/badge/Documentation-available-brightgreen)](https://ku9nov.github.io/faynoSync-site/docs/intro)
+  [![Documentation](https://img.shields.io/badge/Documentation-available-brightgreen)](https://faynosync.com/docs/intro)
   ![Docker Pulls](https://img.shields.io/docker/pulls/ku9nov/faynosync)
   ![GitHub Release](https://img.shields.io/github/v/release/ku9nov/faynoSync)
   ![Docker Compose Test](https://github.com/ku9nov/faynoSync/actions/workflows/tests.yml/badge.svg)
@@ -32,7 +32,7 @@ The API is now live at `http://localhost:9000`. Check for an update from any cli
 curl "http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin"
 ```
 
-Upload builds and manage versions via the dashboard served by the API at `http://localhost:9000/dashboard/` or the [REST API](https://github.com/ku9nov/faynoSync/blob/main/dev-notes/API.md). Full setup, env vars, and self-build instructions are below.
+Upload builds and manage versions via the dashboard served by the API at `http://localhost:9000/dashboard/` or the [REST API](https://faynosync.com/docs/api). Full setup, env vars, and self-build instructions are below.
 
 ---
 
@@ -76,7 +76,7 @@ It’s ideal for managing updates in Electron apps, native desktop applications,
 
 ### 📖 Documentation Links
 - **Repository**: [faynoSync-site](https://github.com/ku9nov/faynoSync-site) - Source code for documentation
-- **Live Documentation**: [faynoSync Documentation](https://ku9nov.github.io/faynoSync-site/docs/intro) - Online documentation
+- **Live Documentation**: [faynoSync Documentation](https://faynosync.com/docs/intro) - Online documentation
 
 ---
 
@@ -95,13 +95,13 @@ You can find examples of client applications [here](https://github.com/ku9nov/fa
 ### 📋 API Usage Template
 
 - **Postman Collection**: [faynoSync.postman_collection.json](https://github.com/ku9nov/faynoSync/blob/main/examples/faynoSync.postman_collection.json) - Ready-to-use API requests
-- **API Documentation**: [API.md](https://github.com/ku9nov/faynoSync/blob/main/API.md) - Complete API reference
+- **API Documentation**: [API Reference](https://faynosync.com/docs/api) - Complete API reference
 
 ---
 
 ## 🚀 Installation
 
-To use this application, you will need to have Golang installed on your machine. You can install it from the official [website](https://golang.org/doc/install).
+To build this application from source, you will need Go and, for the embedded dashboard, Node.js with Yarn. Install Go from the official [website](https://golang.org/doc/install).
 
 ### 📥 Installation Steps
 
@@ -175,8 +175,11 @@ To use the auto updater service, follow these steps:
 ### 🔨 Build the Application
 
 ```bash
-go build -o faynoSync faynoSync.go
+cd dashboard && yarn install && yarn build && cd ..
+go build -o faynoSync .
 ```
+
+Skipping the dashboard build still produces a working API, but `/dashboard/` returns `503`.
 
 ### 🚀 Start the Service
 
@@ -214,13 +217,15 @@ The auto updater service will return a JSON response with the following structur
 
 ```json
 {
-    "update_available": false,
-    "update_url_deb": "http://localhost:9000/download?key=secondapp/myapp-0.0.1.deb",
-    "update_url_rpm": "http://localhost:9000/download?key=secondapp/myapp-0.0.1.rpm"
+    "update_available": true,
+    "update_url_deb": "https://<bucket_name>.s3.amazonaws.com/myapp-admin/stable/linux/amd64/myapp-0.0.2.deb",
+    "update_url_rpm": "https://<bucket_name>.s3.amazonaws.com/myapp-admin/stable/linux/amd64/myapp-0.0.2.rpm",
+    "changelog": "### Changelog\n\n- Added new feature X",
+    "critical": false
 }
 ```
 
-If an update is available, the `update_available` field will be `true`, and the `update_url` field will contain a link to the updated application.
+Each artifact is returned as `update_url_<ext>` (`update_url_dmg`, `update_url_deb`, ...), or as `update_url` when the file has no extension. Response formats for every updater are in [Check Latest Version](https://faynosync.com/docs/api/info/latest).
 
 ### 🔔 User Notification
 

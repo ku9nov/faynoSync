@@ -33,9 +33,17 @@ faynoSync_tests
 
 tmp*
 
+# TUF
 tuf_keys/**
 !tuf_keys/private_keys/
 !tuf_keys/private_keys/.gitkeep
+
+# tuf-kms outputs
+tuf-kms.yaml
+keys/
+out/
+trust/
+keystore.json
 
 docs/
 
@@ -51,3 +59,6 @@ PRESIGNED_UPLOADS.md
 DEPLOY.md
 faynosync-upload.sh
 server/dashboard/ui/dist/
+
+
+

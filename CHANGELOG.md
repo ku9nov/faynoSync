@@ -21,6 +21,7 @@
 ### Changes
 
 - Dashboard embedded into the API (`DASHBOARD_ENABLED`, `DASHBOARD_TUF_METADATA_URL`); fonts and icons bundled, strict CSP.
+- The dashboard CSP allows images from any `http:`/`https:` origin, so app logos load from whichever storage or CDN serves them.
 - Distroless runtime image with a built-in `HEALTHCHECK` (`faynoSync healthcheck`); migrations embedded in the binary.
 - Release binaries for Linux and macOS (amd64, arm64) with `SHA256SUMS` and signed build provenance, for running without Docker.
 - Startup checks for `JWT_SECRET`; repository env files use `insecure-dev-*` placeholders.

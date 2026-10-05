@@ -13,6 +13,7 @@ services:
         aliases:
           - cb-faynosync-s3-public.web.garage.localhost
           - cb-faynosync-s3-private.web.garage.localhost
+          - s3.garage.localhost
 
     ports:
       - "127.0.0.1:3900:3900"  # S3 API

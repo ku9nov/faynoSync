@@ -24,7 +24,7 @@ services:
       MONGODB_URL: mongodb://root:MheCk6sSKB1m4xKNw5I@db/cb_faynosync_db?authSource=admin
       MONGODB_URL_TESTS: mongodb://root:MheCk6sSKB1m4xKNw5I@db/cb_faynosync_db_tests?authSource=admin
       REDIS_HOST: cache
-      S3_API_ENDPOINT: http://s3:3900
+      S3_API_ENDPOINT: http://s3.garage.localhost:3900
       ONLINE_KEY_DIR: /app/tuf_keys/private_keys
     volumes:
       - ../../tuf_keys/:/app/tuf_keys/
