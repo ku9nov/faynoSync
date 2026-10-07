@@ -21,7 +21,7 @@ services:
     networks:
       - faynosync_network
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     env_file:
       - .env.example
     # .env.example targets the API running on the host; inside the network the services have their own names
