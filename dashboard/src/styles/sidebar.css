@@ -1,0 +1,117 @@
+/* Sidebar styles harmonized with card design */
+.sidebar {
+  background: linear-gradient(135deg, #ffffff1a, #ffffff0d);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-right: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 4px 0 32px 0 rgba(16, 24, 40, 0.18);
+}
+
+.sidebar-logo {
+  background: transparent;
+  border-radius: 0.75rem;
+  padding: 0.5rem;
+  margin-bottom: 1.5rem;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-logo:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(1.02);
+}
+
+.sidebar-nav-button {
+  width: 100%;
+  text-align: left;
+  padding: 0.875rem 1.25rem;
+  margin-bottom: 0.5rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-weight: 500;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar-nav-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.08) 50%, transparent 70%);
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.sidebar-nav-button:hover::before {
+  transform: translateX(100%);
+}
+
+.sidebar-nav-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateX(4px);
+  box-shadow: 0 4px 16px 0 rgba(16, 24, 40, 0.15);
+}
+
+.sidebar-nav-button.active {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(139, 92, 246, 0.15));
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 4px 20px 0 rgba(139, 92, 246, 0.2);
+  transform: translateX(4px);
+}
+
+.sidebar-nav-button.active:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(139, 92, 246, 0.2));
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.sidebar-nav-button i {
+  margin-right: 0.75rem;
+  font-size: 1.1rem;
+  position: relative;
+  z-index: 2;
+}
+
+.sidebar-nav-button span {
+  position: relative;
+  z-index: 2;
+}
+
+/* Mobile drawer overlay */
+.sidebar-drawer-overlay {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Mobile drawer panel */
+.sidebar-drawer-panel {
+  background: linear-gradient(135deg, #ffffff1a, #ffffff0d);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-right: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 4px 0 32px 0 rgba(16, 24, 40, 0.25);
+}
+
+/* Close button for mobile */
+.sidebar-close-button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  color: #fff;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-close-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+} 

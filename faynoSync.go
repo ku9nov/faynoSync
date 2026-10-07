@@ -54,8 +54,16 @@ func main() {
 		return
 	}
 
+	if args[0] == "healthcheck" {
+		if err := server.Healthcheck(viper.GetString("PORT")); err != nil {
+			logrus.Errorln(err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if args[0] != "migrate" {
-		logrus.Errorf("Unknown command %q. Supported commands: migrate up|down", args[0])
+		logrus.Errorf("Unknown command %q. Supported commands: migrate up|down, healthcheck", args[0])
 		os.Exit(1)
 	}
 

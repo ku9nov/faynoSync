@@ -1,0 +1,29 @@
+/* Only woff2 and the styles in use (fas, fab): all.min.css also ships eot/svg/ttf/woff, which tripled the bundle */
+@import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
+
+@font-face {
+  font-family: 'Font Awesome 5 Free';
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  src: url('@fortawesome/fontawesome-free/webfonts/fa-solid-900.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Font Awesome 5 Brands';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('@fortawesome/fontawesome-free/webfonts/fa-brands-400.woff2') format('woff2');
+}
+
+.fa,
+.fas {
+  font-family: 'Font Awesome 5 Free';
+  font-weight: 900;
+}
+
+.fab {
+  font-family: 'Font Awesome 5 Brands';
+  font-weight: 400;
+}

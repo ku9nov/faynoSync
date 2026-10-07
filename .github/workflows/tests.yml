@@ -24,9 +24,20 @@ jobs:
           go test ./server/... -race
         continue-on-error: false
 
+      - name: Validate production compose file
+        run: |
+          printf 'FAYNOSYNC_VERSION=latest\nMONGO_ROOT_PASSWORD=ci\nREDIS_PASSWORD=ci\n' > deploy/.env
+          docker compose -f deploy/docker-compose.yaml config -q
+
   integration-tests:
-    name: Docker Compose integration tests
+    name: Docker Compose integration tests (${{ matrix.mongo }})
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        mongo: ['mongo:7.0', 'mongo:8.0']
+    env:
+      MONGO_IMAGE: ${{ matrix.mongo }}
 
     steps:
       - name: Checkout code
@@ -40,7 +51,7 @@ jobs:
         continue-on-error: false
 
       - name: Run Tests
-        run: docker compose exec -T backend "/usr/bin/faynoSync_tests" -test.skip "TestCheckVersionWithUpdaters"
+        run: docker compose exec -T backend "/usr/bin/faynoSync_tests"
         continue-on-error: false
 
       - name: Stop Services

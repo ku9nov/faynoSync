@@ -3,9 +3,11 @@ package server
 import (
 	db "faynoSync/mongod"
 	"faynoSync/redisdb"
+	"faynoSync/server/dashboard"
 	"faynoSync/server/handler"
 	"faynoSync/server/tuf"
 	"faynoSync/server/utils"
+	"fmt"
 	"os"
 	"strings"
 
@@ -14,7 +16,40 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	insecureDevSecretPrefix = "insecure-dev-"
+	minJWTSecretBytes       = 32
+)
+
+func validateSecrets(config *viper.Viper, releaseMode bool) error {
+	if len(config.GetString("JWT_SECRET")) < minJWTSecretBytes {
+		return fmt.Errorf("JWT_SECRET is empty or shorter than %d bytes; generate one with: openssl rand -base64 32", minJWTSecretBytes)
+	}
+
+	devSecrets := []struct {
+		key  string
+		risk string
+	}{
+		{"JWT_SECRET", "forge admin tokens"},
+		{"API_KEY", "create admin accounts through /signup"},
+	}
+	for _, s := range devSecrets {
+		if !strings.HasPrefix(config.GetString(s.key), insecureDevSecretPrefix) {
+			continue
+		}
+		if releaseMode {
+			return fmt.Errorf("%s holds the public development value from the repository; generate one with: openssl rand -base64 32", s.key)
+		}
+		logrus.Warnf("%s holds the public development value from the repository: anyone can %s. Do not expose this instance", s.key, s.risk)
+	}
+	return nil
+}
+
 func StartServer(config *viper.Viper) {
+	if err := validateSecrets(config, gin.Mode() == gin.ReleaseMode); err != nil {
+		logrus.Fatal(err)
+	}
+
 	mongoUrl := config.GetString("MONGODB_URL")
 
 	router := gin.Default()
@@ -48,6 +83,13 @@ func StartServer(config *viper.Viper) {
 	authMiddleware := utils.AuthMiddleware(mongoDatabase)
 
 	router.GET("/health", handler.HealthCheck)
+
+	config.SetDefault("DASHBOARD_ENABLED", true)
+	if config.GetBool("DASHBOARD_ENABLED") {
+		dashboard.Register(router, dashboard.Config{TUFMetadataURL: config.GetString("DASHBOARD_TUF_METADATA_URL")})
+	} else {
+		logrus.Infoln("DASHBOARD_ENABLED is false, the dashboard is not served")
+	}
 
 	allowedCORS := config.GetString("ALLOWED_CORS")
 	allowedOrigins := strings.Split(allowedCORS, ",")

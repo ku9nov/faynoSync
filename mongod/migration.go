@@ -2,6 +2,7 @@ package mongod
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"faynoSync/server/utils"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/mongodb"
-	"github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
@@ -17,8 +18,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+//go:embed migrations/*.json
+var migrationsFS embed.FS
+
 func newMigration(client *mongo.Client, dbName string) (*migrate.Migrate, error) {
-	sourceDriver, err := (&file.File{}).Open("mongod/migrations/")
+	sourceDriver, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +32,7 @@ func newMigration(client *mongo.Client, dbName string) (*migrate.Migrate, error)
 	if err != nil {
 		return nil, err
 	}
-	m, err := migrate.NewWithInstance("file", sourceDriver, dbName, dbDriver)
+	m, err := migrate.NewWithInstance("iofs", sourceDriver, dbName, dbDriver)
 	if err != nil {
 		return nil, err
 	}

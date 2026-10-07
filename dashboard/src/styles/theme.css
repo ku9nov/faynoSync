@@ -1,0 +1,87 @@
+:root {
+  /* Light theme variables */
+  /* Deep end of the brand ramp: orange-500 lands at luminance .325, which caps
+     white-on-glass at 2.55:1. orange-900 is .062, so every surface above it clears AA. */
+  --bg-gradient-start: theme('colors.purple.900');
+  --bg-gradient-end: theme('colors.orange.900');
+  --bg-card: rgba(255, 255, 255, 0.1);
+  --bg-card-hover: rgba(255, 255, 255, 0.2);
+  --text-primary: theme('colors.white');
+  --text-primary-hover: theme('colors.gray.200');
+  --text-secondary: theme('colors.purple.300');
+  --button-primary: theme('colors.purple.600');
+  --button-primary-hover: theme('colors.purple.700');
+  --button-secondary: theme('colors.purple.700');
+  /* purple-500 held white text at 3.96:1; violet-600 clears AA and stays a shade
+     apart from --button-primary instead of collapsing into it. */
+  --button-submit: theme('colors.violet.600');
+  --button-submit-hover: theme('colors.violet.700');
+  --input-bg: theme('colors.purple.700');
+  /* purple-300 on purple-700 was 3.95:1 */
+  --input-placeholder: theme('colors.purple.200');
+  --border-color: theme('colors.gray.200');
+  --modal-bg: theme('colors.white');
+  --modal-text: theme('colors.gray.700');
+  --modal-hover: theme('colors.purple.50');
+  --modal-border: theme('colors.gray.200');
+  --danger-text: theme('colors.red.300');  /* surfaces are dark in both themes now; red-600 gave 1.81:1 */
+  --dropdown-bg: linear-gradient(135deg, rgba(107, 33, 168, 0.97), rgba(126, 34, 206, 0.95));
+
+  /* Modal gradient — lighter at the top, like any raised surface. The old end
+     stop (purple-400) put white text at 2.64:1 across the lower half, where the
+     buttons live. The blue-leaning end also keeps the dialog distinct from the
+     amber bottom of the field. */
+  --modal-gradient-start: theme('colors.purple.800');
+  --modal-gradient-end: theme('colors.violet.900');
+  
+  /* Auth page variables */
+  --auth-gradient-start: theme('colors.purple.900');
+  --auth-gradient-end: theme('colors.orange.900');
+  --auth-title: theme('colors.purple.800');
+  --auth-input-border: theme('colors.purple.300');
+  --auth-input-focus: theme('colors.purple.500');
+
+  /* Focus ring — follows the theme accent, not a hardcoded hue */
+  --focus-ring: theme('colors.purple.400');
+}
+
+.dark {
+  /* Dark theme variables */
+  --bg-gradient-start: theme('colors.gray.800');
+  --bg-gradient-mid: theme('colors.indigo.900');
+  --bg-gradient-end: theme('colors.gray.900');
+  --bg-card: rgba(0, 0, 0, 0.3);
+  --bg-card-hover: rgba(0, 0, 0, 0.4);
+  --text-primary: theme('colors.gray.200');
+  --text-primary-hover: theme('colors.gray.300');
+  --text-secondary: theme('colors.indigo.300');
+  --button-primary: theme('colors.indigo.600');
+  --button-primary-hover: theme('colors.indigo.700');
+  --button-secondary: theme('colors.indigo.800');
+  --button-submit: theme('colors.indigo.600');
+  --button-submit-hover: theme('colors.indigo.700');
+  --input-bg: theme('colors.indigo.900');
+  --input-placeholder: theme('colors.indigo.300');
+  --border-color: theme('colors.gray.700');
+  --modal-bg: theme('colors.gray.800');
+  --modal-text: theme('colors.gray.200');
+  --modal-hover: theme('colors.indigo.900');
+  --modal-border: theme('colors.gray.700');
+  --danger-text: theme('colors.red.300');
+  --dropdown-bg: linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(30, 41, 59, 0.92));
+
+  /* Modal gradient — same top-lighter direction as the light theme */
+  --modal-gradient-start: theme('colors.indigo.800');
+  --modal-gradient-mid: theme('colors.indigo.900');
+  --modal-gradient-end: theme('colors.gray.900');
+  
+  /* Auth page variables */
+  --auth-gradient-start: theme('colors.gray.900');
+  --auth-gradient-mid: theme('colors.indigo.900');
+  --auth-gradient-end: theme('colors.black');
+  --auth-title: theme('colors.indigo.300');
+  --auth-input-border: theme('colors.indigo.700');
+  --auth-input-focus: theme('colors.indigo.500');
+
+  --focus-ring: theme('colors.indigo.400');
+} 

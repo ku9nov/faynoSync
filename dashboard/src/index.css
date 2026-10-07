@@ -1,0 +1,198 @@
+@import './styles/animations.css';
+@import './styles/theme.css';
+@import './styles/cards.css';
+@import './styles/sidebar.css';
+@import './styles/header.css';
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+body {
+  margin: 0;
+  font-family: 'Urbanist', sans-serif;
+}
+
+/* Toasts render into document.body, outside any font-sans wrapper, and
+   react-toastify resolves its own variable instead of inheriting. */
+:root {
+  --toastify-font-family: 'Urbanist', sans-serif;
+}
+
+/* Custom utility classes using CSS variables */
+.bg-theme-gradient {
+  background-image: linear-gradient(to bottom, var(--bg-gradient-start), var(--bg-gradient-end));
+}
+
+.dark .bg-theme-gradient {
+  background-image: linear-gradient(to bottom, var(--bg-gradient-start), var(--bg-gradient-mid), var(--bg-gradient-end));
+}
+
+.bg-theme-card {
+  background-color: var(--bg-card);
+}
+
+.bg-theme-card-hover:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.text-theme-primary {
+  color: var(--text-primary);
+}
+
+.text-theme-primary:hover {
+  color: var(--text-primary-hover);
+}
+
+.text-theme-secondary {
+  color: var(--text-secondary);
+}
+
+.text-theme-modal-text {
+  color: var(--modal-text);
+}
+
+.bg-theme-button-primary {
+  background-color: var(--button-primary);
+}
+
+.bg-theme-button-primary:hover {
+  background-color: var(--button-primary-hover);
+}
+
+.bg-theme-button-secondary {
+  background-color: var(--button-secondary);
+}
+
+.bg-theme-button-submit {
+  background-color: var(--button-submit);
+}
+
+.bg-theme-button-submit:hover {
+  background-color: var(--button-submit-hover);
+}
+
+.bg-theme-input {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.bg-theme-input::placeholder {
+  color: var(--input-placeholder);
+}
+
+.border-theme {
+  border-color: var(--border-color);
+}
+
+.bg-theme-modal {
+  background-color: var(--modal-bg);
+  color: var(--modal-text);
+}
+
+/* The dialog is now darker than the field it floats on, so luminance alone only
+   separates it by ~1.6:1. The border carries the boundary, not the gradient. */
+.bg-theme-modal-gradient {
+  background-image: linear-gradient(to bottom, var(--modal-gradient-start), var(--modal-gradient-end));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.dark .bg-theme-modal-gradient {
+  background-image: linear-gradient(to bottom, var(--modal-gradient-start), var(--modal-gradient-mid), var(--modal-gradient-end));
+}
+
+.hover-bg-theme-modal:hover {
+  background-color: var(--modal-hover);
+}
+
+.border-theme-modal {
+  border-color: var(--modal-border);
+}
+
+.text-theme-danger {
+  color: var(--danger-text);
+}
+
+.bg-theme-auth-gradient {
+  background-image: linear-gradient(to bottom, var(--auth-gradient-start), var(--auth-gradient-end));
+}
+
+.dark .bg-theme-auth-gradient {
+  background-image: linear-gradient(to bottom, var(--auth-gradient-start), var(--auth-gradient-mid), var(--auth-gradient-end));
+}
+
+.text-theme-auth-title {
+  color: var(--auth-title);
+}
+
+.border-theme-auth-input {
+  border-color: var(--auth-input-border);
+}
+
+.focus\:ring-theme-auth-input:focus {
+  --tw-ring-color: var(--auth-input-focus);
+}
+
+.focus\:ring-theme-focus:focus {
+  --tw-ring-color: var(--focus-ring);
+}
+
+.focus\:border-theme-focus:focus {
+  border-color: var(--focus-ring);
+}
+
+/* Fix for hover-time blur seam artifacts in content area */
+.backdrop-blur-sm,
+.backdrop-blur-lg,
+.backdrop-blur-2xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Staged rollout: the native range keeps arrows/Home/End/screen readers, the rail,
+   ticks and bubble are drawn by siblings behind it — so only the thumb is painted here. */
+.rollout-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.rollout-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 4px solid theme('colors.violet.500');
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  cursor: grab;
+}
+
+.rollout-range::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 4px solid theme('colors.violet.500');
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  cursor: grab;
+}
+
+.rollout-range::-moz-range-track {
+  background: transparent;
+}
+
+.rollout-range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.rollout-range:focus-visible::-moz-range-thumb {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+
+
+

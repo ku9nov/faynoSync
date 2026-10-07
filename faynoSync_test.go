@@ -167,9 +167,11 @@ func setup() {
 	// set the configuration file path
 	viper.AddConfigPath(".")
 	// read in the configuration file
+	// Same as the API: the file is optional, environment variables (e.g. from Compose) take precedence
 	if err := viper.ReadInConfig(); err != nil {
-		panic(err)
+		logrus.Infoln(".env file not found, using system variables")
 	}
+	viper.AutomaticEnv()
 	// Create a single database connection
 	s3Bucket = viper.GetString("S3_BUCKET_NAME")
 	s3Endpoint = viper.GetString("S3_ENDPOINT")

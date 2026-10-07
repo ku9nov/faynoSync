@@ -124,6 +124,9 @@ ensure_public_website() {
   "$GARAGE_BIN" bucket website --allow "$GARAGE_PUBLIC_BUCKET"
 }
 
+GARAGE_READY_FILE="/tmp/garage-bootstrap-done"
+rm -f "$GARAGE_READY_FILE"
+
 log "Starting Garage server."
 "$GARAGE_BIN" server &
 SERVER_PID=$!
@@ -137,6 +140,7 @@ ensure_bucket_access "$GARAGE_PRIVATE_BUCKET"
 ensure_bucket_access "$GARAGE_PUBLIC_BUCKET"
 ensure_public_website
 
+touch "$GARAGE_READY_FILE"
 log "Garage bootstrap completed successfully."
 trap - EXIT
 wait "$SERVER_PID"
