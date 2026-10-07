@@ -1,3 +1,10 @@
 .env*
+.git
 dashboard/node_modules
 server/dashboard/ui/dist
+tuf_keys
+tuf-kms.yaml
+keys
+out
+trust
+keystore.json

@@ -13,7 +13,7 @@
 
 ### Upgrading from v2.6
 
-- The API refuses to start if `JWT_SECRET` is shorter than 32 bytes or starts with `insecure-dev-`. Check the length with `awk -F= '/^JWT_SECRET=/{print length($2)}' .env`.
+- The API refuses to start if `JWT_SECRET` is shorter than 32 bytes. With `GIN_MODE=release` (the default in the image) it also refuses to start if `JWT_SECRET` or `API_KEY` starts with `insecure-dev-`. Check the length with `awk -F= '/^JWT_SECRET=/{print length($2)}' .env`.
 - The image is distroless and runs as UID `65532`: no shell, no `curl`. Mounted files (TUF online keys) must be readable by that UID; drop healthchecks that call `curl`/`sh` — the image has its own.
 - The dashboard is served by the API at `/dashboard/`. The `ku9nov/faynosync-dashboard` image is no longer published.
 - Run `faynoSync migrate up` after upgrading, as before.
@@ -27,6 +27,9 @@
 - Startup checks for `JWT_SECRET`; repository env files use `insecure-dev-*` placeholders.
 - `/health` checks Redis regardless of `PERFORMANCE_MODE`.
 - `.env.example` is the single env file for local runs, Docker Compose and CI; `.env.local` and `docker-compose/envs/backend.env` were removed.
+- `deploy/docker-compose.yaml`: the production compose file from [Production Deployment](https://faynosync.com/docs/getting-started/production-deploy), validated in CI.
+- The local stack is a single `docker-compose.yaml`; `docker-compose/services/*.yml` and `docker-compose.development.yaml` were removed. To run only the dependencies, use `docker compose up -d db cache s3 webui`.
+- Docker Compose runs MongoDB 8.0 (override with `MONGO_IMAGE`, e.g. `MONGO_IMAGE=mongo:7.0`) and Redis 8.10; CI runs the integration tests against MongoDB 7.0 and 8.0. An existing 7.0 data volume starts on 8.0 with `featureCompatibilityVersion` 7.0 until you raise it.
 
 ## v2.6.0
 

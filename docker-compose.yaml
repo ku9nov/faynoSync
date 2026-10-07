@@ -1,4 +1,3 @@
-
 networks:
   faynosync_network:
     driver: bridge
@@ -6,35 +5,140 @@ networks:
 services:
 
   backend:
-    extends:
-      file: ./docker-compose/services/backend.yml
-      service: backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    container_name: "faynoSync_backend"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    networks:
+      - faynosync_network
+    ports:
+      - "9000:9000"
+    env_file:
+      - .env.example
+    # .env.example targets the API running on the host; inside the network the services have their own names
+    environment:
+      MONGODB_URL: mongodb://root:MheCk6sSKB1m4xKNw5I@db/cb_faynosync_db?authSource=admin
+      MONGODB_URL_TESTS: mongodb://root:MheCk6sSKB1m4xKNw5I@db/cb_faynosync_db_tests?authSource=admin
+      REDIS_HOST: cache
+      S3_API_ENDPOINT: http://s3.garage.localhost:3900
+      ONLINE_KEY_DIR: /app/tuf_keys/private_keys
+    volumes:
+      - ./tuf_keys/:/app/tuf_keys/
 
   s3:
-    extends:
-      file: ./docker-compose/services/s3.yml
-      service: s3
+    build:
+      context: .
+      dockerfile: docker-compose/images/garage/Dockerfile
+    image: faynosync-garage:local
+    pull_policy: build
+    container_name: garage
+    restart: unless-stopped
+    networks:
+      faynosync_network:
+        aliases:
+          - cb-faynosync-s3-public.web.garage.localhost
+          - cb-faynosync-s3-private.web.garage.localhost
+          - s3.garage.localhost
+    ports:
+      - "127.0.0.1:3900:3900"  # S3 API
+      - "127.0.0.1:3901:3901"  # RPC (internal communication)
+      - "127.0.0.1:3902:3902"  # S3 Web (static website hosting)
+      - "127.0.0.1:3903:3903"  # Admin API
+      - "127.0.0.1:3904:3904"  # K2V API (optional key-value store)
+    volumes:
+      - ./docker-compose/configs/garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    environment:
+      - RUST_LOG=garage=info
+      - GARAGE_LAYOUT_ZONE=dc1
+      - GARAGE_LAYOUT_CAPACITY=1G
+      - GARAGE_LAYOUT_VERSION=1
+      - GARAGE_PRIVATE_BUCKET=cb-faynosync-s3-private
+      - GARAGE_PUBLIC_BUCKET=cb-faynosync-s3-public
+      - GARAGE_KEY_NAME=faynosync-local-app-key
+      - GARAGE_ACCESS_KEY=GK8fcbbed327a9ff97f250eb4e
+      - GARAGE_SECRET_KEY=8a59fe92499699d139fcee6998343dad2ac73fb2b5dffafa0a7d0b0d4e305db9
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/garage-bootstrap-done && garage status"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 10s
 
   webui:
-    extends:
-      file: ./docker-compose/services/s3.yml
-      service: webui
+    image: khairul169/garage-webui:1.1.0
+    container_name: garage-webui
+    restart: unless-stopped
+    depends_on:
+      s3:
+        condition: service_healthy
+    networks:
+      - faynosync_network
+    volumes:
+      - ./docker-compose/configs/garage.toml:/etc/garage.toml:ro
+    ports:
+      - "127.0.0.1:3909:3909"
+    environment:
+      API_BASE_URL: "http://s3:3903"
+      S3_ENDPOINT_URL: "http://s3:3900"
+      AUTH_USER_PASS: "admin:$$2y$$10$$VoflX0ZOfqrBeCQpCwwU9eq4UrMwW3ciCYmZ/DJ16hS1Iz60gocIC"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "-o", "/dev/null", "http://127.0.0.1:3909"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
   db:
-    extends:
-      file: ./docker-compose/services/db.yml
-      service: db
+    image: ${MONGO_IMAGE:-mongo:8.0}
+    container_name: "faynoSync_db"
+    restart: always
+    volumes:
+      - data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=cb_faynosync_db
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=MheCk6sSKB1m4xKNw5I
+    ports:
+      - "127.0.0.1:27017:27017"
+    networks:
+      - faynosync_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   cache:
-    extends:
-      file: ./docker-compose/services/redis.yml
-      service: cache
-
+    image: redis:8.10
+    container_name: "faynoSync_redis"
+    restart: always
+    networks:
+      - faynosync_network
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - cache:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
 volumes:
   data:
-  data-s3:
   garage_meta:
   garage_data:
   cache:
-    driver: local

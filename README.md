@@ -120,7 +120,7 @@ git clone https://github.com/ku9nov/faynoSync.git
 All settings are environment variables. [`.env.example`](.env.example) lists every variable with a one-line description and working values for local development; the full reference is the [Environment Variables Overview](https://faynosync.com/docs/getting-started/env-overview).
 
 - Running the API from source: `cp .env.example .env`. The API reads `.env` from its working directory, and environment variables take precedence.
-- Docker Compose reads `.env.example` directly and overrides only the service hostnames (see `docker-compose/services/backend.yml`).
+- Docker Compose reads `.env.example` directly and overrides only the service hostnames (see the `backend` service in `docker-compose.yaml`).
 
 ### 🧪 Local Storage (Garage)
 
@@ -134,7 +134,7 @@ The dashboard is available at `http://localhost:9000/dashboard/`. For hot reload
 
 ## 🐳 Docker Configuration
 
-To build and run the API with all dependencies, you can use the following command:
+To build and run the API with all dependencies ([Local Setup — Docker Compose](https://faynosync.com/docs/getting-started/local-deploy?local-setup=compose)), use the following command:
 
 ```bash
 docker compose up --build
@@ -161,10 +161,10 @@ docker exec -it faynoSync_backend "/usr/bin/faynoSync_tests"
 If you only want to run dependency services (for local development without Docker), use this command:
 
 ```bash
-docker compose -f docker-compose.yaml -f docker-compose.development.yaml up
+docker compose up -d db cache s3 webui
 ```
 
-The `docker-compose.development.yaml` override scales the `backend` service to `0` replicas, so you can run the API and dashboard from source while MongoDB, Redis, and Garage stay containerized.
+Naming the services starts only them (and their dependencies), so `backend` stays down and you can run the API and dashboard from source while MongoDB, Redis, and Garage stay containerized. `docker compose down` stops them as usual. Step-by-step guide: [Local Setup — from source](https://faynosync.com/docs/getting-started/local-deploy?local-setup=source).
 
 ---
 
@@ -247,12 +247,12 @@ go test
 go test -c -o faynoSync_tests
 ```
 
-### 🧪 Run Unit Tests (TUF functionality)
+### 🧪 Run Unit Tests
 
 ```bash
 # Optional: set MONGODB_URL_TESTS for tests that require a MongoDB connection
 # export MONGODB_URL_TESTS=mongodb://root:MheCk6sSKB1m4xKNw5I@localhost/cb_faynosync_db_tests?authSource=admin
-go test ./server/tuf/...
+go test ./server/... -race
 ```
 
 ### 📋 Test Requirements
