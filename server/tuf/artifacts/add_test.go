@@ -1035,56 +1035,20 @@ func makeSnapshotAndTimestampSigners(t *testing.T) (timestampSigner, snapshotSig
 	return sig, sig
 }
 
-// To verify: In updateSnapshotAndTimestamp when context is already cancelled, return timeout error; skip lockCtx.Done() check and test will panic or hang.
-func TestUpdateSnapshotAndTimestamp_ContextCancelled_LockTimeout_ReturnsError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+// Lock acquire/timeout mechanics are covered by TestWithSnapshotLock_* in the
+// metadata package; these tests pin that the lock wraps the whole update.
 
+// To verify: In AddArtifacts take the metadata lock only around snapshot/timestamp; test will fail (storage error instead of lock timeout).
+func TestAddArtifacts_LockHeld_NoMetadataAccessUntilAcquired(t *testing.T) {
 	mr := miniredis.RunT(t)
-	defer mr.Close()
-	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	repo := repository.New()
-	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
-	tmpDir := t.TempDir()
-
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
-	assert.Contains(t, err.Error(), "timeout after")
-}
-
-// To verify: In updateSnapshotAndTimestamp skip SetNX error handling; test will fail (no error or wrong message).
-func TestUpdateSnapshotAndTimestamp_RedisSetNXError_ReturnsError(t *testing.T) {
-	mr := miniredis.RunT(t)
-	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	mr.Close()
-
-	ctx := context.Background()
-	repo := repository.New()
-	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
-	tmpDir := t.TempDir()
-
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
-}
-
-// To verify: In updateSnapshotAndTimestamp when lock is held and context times out, return timeout error; change timeout message and test will fail.
-func TestUpdateSnapshotAndTimestamp_LockHeld_Timeout_ReturnsError(t *testing.T) {
-	mr := miniredis.RunT(t)
-	defer mr.Close()
+	mr.Set("BOOTSTRAP_"+testAdminName+"_"+testAppName, "done")
 	mr.Set("LOCK_SNAPSHOT_"+testAdminName+"_"+testAppName, "locked")
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	repo := repository.New()
-	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
-	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
+	err := AddArtifacts(ctx, redisClient, nil, testAdminName, testAppName, []Artifact{{Path: "a/b"}}, true, testTaskID)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")

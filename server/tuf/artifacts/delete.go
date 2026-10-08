@@ -16,6 +16,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"faynoSync/server/tuf/delegations"
+	tuf_metadata "faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/signing"
 	tuf_storage "faynoSync/server/tuf/storage"
 	"faynoSync/server/tuf/tasks"
@@ -37,6 +38,19 @@ func RemoveArtifacts(
 		return fmt.Errorf("bootstrap not completed for admin %s, app %s", adminName, appName)
 	}
 
+	return tuf_metadata.WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+		return removeArtifactsLocked(ctx, redisClient, adminName, appName, artifacts, taskID)
+	})
+}
+
+func removeArtifactsLocked(
+	ctx context.Context,
+	redisClient *redis.Client,
+	adminName string,
+	appName string,
+	artifacts []Artifact,
+	taskID string,
+) error {
 	keySuffix := adminName + "_" + appName
 
 	tmpDir, err := os.MkdirTemp("", "tmp-tuf-*")

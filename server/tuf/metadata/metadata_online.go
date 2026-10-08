@@ -205,6 +205,22 @@ func forceOnlineMetadataUpdate(
 	appName string,
 	roles []string,
 ) ([]string, error) {
+	var updatedRoles []string
+	err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+		var err error
+		updatedRoles, err = forceOnlineMetadataUpdateLocked(ctx, redisClient, adminName, appName, roles)
+		return err
+	})
+	return updatedRoles, err
+}
+
+func forceOnlineMetadataUpdateLocked(
+	ctx context.Context,
+	redisClient *redis.Client,
+	adminName string,
+	appName string,
+	roles []string,
+) ([]string, error) {
 	keySuffix := adminName + "_" + appName
 
 	tmpDir, err := os.MkdirTemp("", "tmp-tuf-*")
@@ -310,20 +326,15 @@ func forceOnlineMetadataUpdate(
 	needTimestamp := contains(roles, "timestamp") || hasTargetsOrDelegations || contains(roles, "snapshot")
 
 	if needSnapshot || needTimestamp {
-		if err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
-			if needSnapshot {
-				if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
-					return fmt.Errorf("failed to bump snapshot role: %w", err)
-				}
+		if needSnapshot {
+			if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
+				return nil, fmt.Errorf("failed to bump snapshot role: %w", err)
 			}
-			if needTimestamp {
-				if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
-					return fmt.Errorf("failed to bump timestamp role: %w", err)
-				}
+		}
+		if needTimestamp {
+			if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
+				return nil, fmt.Errorf("failed to bump timestamp role: %w", err)
 			}
-			return nil
-		}); err != nil {
-			return nil, err
 		}
 		if needSnapshot && !contains(updatedRoles, "snapshot") {
 			updatedRoles = append(updatedRoles, "snapshot")
@@ -503,8 +514,8 @@ func bumpSnapshotRole(
 	tmpDir string,
 	keySuffix string,
 ) error {
-	// Caller (forceOnlineMetadataUpdate) holds the per-(admin,app) snapshot lock via
-	// WithSnapshotLock, covering both this snapshot bump and the following timestamp bump.
+	// Caller (forceOnlineMetadataUpdate) holds the per-(admin,app) metadata lock via
+	// WithSnapshotLock for the whole update.
 	_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
 	if err != nil {
 		return fmt.Errorf("failed to find latest snapshot version: %w", err)

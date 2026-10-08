@@ -2137,8 +2137,8 @@ func TestFinalizeRootMetadataUpdate_Success_Bootstrap_WithoutSigningPrefix_DoesN
 	assert.Error(t, errRedis, "Bootstrap key should not be set when bootstrapValue does not start with 'signing-'")
 }
 
-// To verify: In finalizeRootMetadataUpdate return error when Redis Set fails in bootstrap path; test expects nil (only warning is logged).
-func TestFinalizeRootMetadataUpdate_Success_Bootstrap_RedisSetFails_StillReturnsNil(t *testing.T) {
+// To verify: In finalizeRootMetadataUpdate upload root without the metadata lock; test will fail (no error while Redis is down).
+func TestFinalizeRootMetadataUpdate_RedisUnavailable_FailsBeforeUpload(t *testing.T) {
 	ctx := context.Background()
 	repo := makeValidRolesForValidateRoot(t)
 	tmpDir := t.TempDir()
@@ -2153,7 +2153,7 @@ func TestFinalizeRootMetadataUpdate_Success_Bootstrap_RedisSetFails_StillReturns
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
 	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &uploadMockFactory{}
+		return &uploadMockFactory{client: &uploadFailingMockClient{err: fmt.Errorf("upload must not be attempted")}}
 	}
 	defer func() {
 		tuf_storage.GetViperForUpload = savedViper
@@ -2162,7 +2162,8 @@ func TestFinalizeRootMetadataUpdate_Success_Bootstrap_RedisSetFails_StillReturns
 
 	err := finalizeRootMetadataUpdate(ctx, repo, "admin", "myapp", tmpDir, true, "signing-task-456", redisClient)
 
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
 }
 
 // --- finalizeTargetsMetadataUpdate tests ---
@@ -2222,24 +2223,11 @@ func TestFinalizeTargetsMetadataUpdate_ToFileFails_ReturnsError(t *testing.T) {
 // To verify: In finalizeTargetsMetadataUpdate ignore UploadMetadataToS3 error or return nil; test will fail (no error when S3 upload fails).
 func TestFinalizeTargetsMetadataUpdate_UploadToS3Fails_ReturnsError(t *testing.T) {
 	ctx := context.Background()
-	repo := makeValidRolesForValidateRoot(t)
+	repo, redisClient := setupFinalizeTargetsFixture(t, &uploadFailingMockClient{err: fmt.Errorf("s3 upload failed")})
 	tmpDir := t.TempDir()
-	uploadErr := fmt.Errorf("s3 upload failed")
+	repo.Targets("targets").Signed.Version = 2
 
-	savedViper := tuf_storage.GetViperForUpload
-	savedFactory := tuf_storage.StorageFactoryForUpload
-	mockViper := viper.New()
-	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
-	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
-	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &uploadMockFactory{client: &uploadFailingMockClient{err: uploadErr}}
-	}
-	defer func() {
-		tuf_storage.GetViperForUpload = savedViper
-		tuf_storage.StorageFactoryForUpload = savedFactory
-	}()
-
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, redisClient)
 
 	require.Error(t, err, "Expected error when S3 upload fails")
 	assert.Contains(t, err.Error(), "failed to upload targets metadata to S3")
@@ -2269,7 +2257,10 @@ func TestFinalizeTargetsMetadataUpdate_RootNotFound_ReturnsError(t *testing.T) {
 		tuf_storage.StorageFactoryForUpload = savedFactory
 	}()
 
-	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, nil)
+	mr := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, redisClient)
 
 	require.Error(t, err, "Expected error when root metadata cannot be found")
 	assert.Contains(t, err.Error(), "failed to find root metadata version")
@@ -2365,8 +2356,50 @@ func makeValidRolesWithKeys(t *testing.T) (*repository.Type, map[string]ed25519.
 // To verify: In finalizeTargetsMetadataUpdate skip snapshot/timestamp signing; test will fail (snapshot has stale signatures).
 func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotAndTimestampSigning(t *testing.T) {
 	ctx := context.Background()
-	repo, keys, keyIDs := makeValidRolesWithKeys(t)
+	repo, redisClient := setupFinalizeTargetsFixture(t, nil)
 	tmpDir := t.TempDir()
+	repo.Targets("targets").Signed.Version = 2
+
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, redisClient)
+
+	require.NoError(t, err)
+
+	targetsFilename := fmt.Sprintf("%d.targets.json", repo.Targets("targets").Signed.Version)
+	assert.FileExists(t, filepath.Join(tmpDir, targetsFilename), "Targets metadata file should be written")
+
+	newSnapshotFilename := fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
+	assert.FileExists(t, filepath.Join(tmpDir, newSnapshotFilename), "New snapshot metadata file should be written")
+	assert.Greater(t, repo.Snapshot().Signed.Version, int64(1), "Snapshot version should be bumped")
+
+	assert.NotEmpty(t, repo.Snapshot().Signatures, "Snapshot must have signatures after re-signing")
+
+	assert.FileExists(t, filepath.Join(tmpDir, "timestamp.json"), "Timestamp metadata file should be written")
+	assert.NotEmpty(t, repo.Timestamp().Signatures, "Timestamp must have signatures after re-signing")
+	tsMeta := repo.Timestamp().Signed.Meta["snapshot.json"]
+	require.NotNil(t, tsMeta, "Timestamp must reference snapshot.json in its meta")
+	assert.Equal(t, repo.Snapshot().Signed.Version, tsMeta.Version, "Timestamp must reference the new snapshot version")
+}
+
+// Regression: PostMetadataSign checks the version before taking the lock, so an
+// online update can bind the same version in snapshot before finalize runs.
+// To verify: remove the trusted snapshot version re-check in finalizeTargetsMetadataUpdate; test will fail (targets upload is attempted).
+func TestFinalizeTargetsMetadataUpdate_VersionNotAboveTrustedSnapshot_RejectedBeforeUpload(t *testing.T) {
+	ctx := context.Background()
+	repo, redisClient := setupFinalizeTargetsFixture(t, &uploadFailingMockClient{err: fmt.Errorf("upload must not be attempted")})
+	tmpDir := t.TempDir()
+
+	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, redisClient)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "targets version 1 must be greater than trusted snapshot version 1")
+}
+
+// setupFinalizeTargetsFixture serves 1.root.json and 1.snapshot.json (binding
+// targets.json v1) from mocked storage, writes online snapshot/timestamp keys,
+// and returns a repo whose targets is still at v1. A nil uploadClient accepts uploads.
+func setupFinalizeTargetsFixture(t *testing.T, uploadClient utils.StorageClient) (*repository.Type, *redis.Client) {
+	t.Helper()
+	repo, keys, keyIDs := makeValidRolesWithKeys(t)
 
 	keyDir := t.TempDir()
 	for _, role := range []string{"snapshot", "timestamp"} {
@@ -2376,7 +2409,7 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotAndTimestampSigning(t
 	}
 	oldKeyDir := viper.GetString("ONLINE_KEY_DIR")
 	viper.Set("ONLINE_KEY_DIR", keyDir)
-	defer viper.Set("ONLINE_KEY_DIR", oldKeyDir)
+	t.Cleanup(func() { viper.Set("ONLINE_KEY_DIR", oldKeyDir) })
 
 	serializeTmp := t.TempDir()
 
@@ -2408,7 +2441,7 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotAndTimestampSigning(t
 	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
 	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
-		return &uploadMockFactory{}
+		return &uploadMockFactory{client: uploadClient}
 	}
 	tuf_storage.GetViperForDownload = func() *viper.Viper { return mockViper }
 	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
@@ -2420,36 +2453,18 @@ func TestFinalizeTargetsMetadataUpdate_Success_WithSnapshotAndTimestampSigning(t
 			},
 		}}
 	}
-	defer func() {
+	t.Cleanup(func() {
 		tuf_storage.ListMetadataForLatest = savedList
 		tuf_storage.GetViperForUpload = savedViperUpload
 		tuf_storage.StorageFactoryForUpload = savedFactoryUpload
 		tuf_storage.GetViperForDownload = savedViperDownload
 		tuf_storage.StorageFactoryForDownload = savedFactoryDownload
-	}()
+	})
 
 	mr := miniredis.RunT(t)
-	defer mr.Close()
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
-	err = finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, redisClient)
-
-	require.NoError(t, err)
-
-	targetsFilename := fmt.Sprintf("%d.targets.json", repo.Targets("targets").Signed.Version)
-	assert.FileExists(t, filepath.Join(tmpDir, targetsFilename), "Targets metadata file should be written")
-
-	newSnapshotFilename := fmt.Sprintf("%d.snapshot.json", repo.Snapshot().Signed.Version)
-	assert.FileExists(t, filepath.Join(tmpDir, newSnapshotFilename), "New snapshot metadata file should be written")
-	assert.Greater(t, repo.Snapshot().Signed.Version, int64(1), "Snapshot version should be bumped")
-
-	assert.NotEmpty(t, repo.Snapshot().Signatures, "Snapshot must have signatures after re-signing")
-
-	assert.FileExists(t, filepath.Join(tmpDir, "timestamp.json"), "Timestamp metadata file should be written")
-	assert.NotEmpty(t, repo.Timestamp().Signatures, "Timestamp must have signatures after re-signing")
-	tsMeta := repo.Timestamp().Signed.Meta["snapshot.json"]
-	require.NotNil(t, tsMeta, "Timestamp must reference snapshot.json in its meta")
-	assert.Equal(t, repo.Snapshot().Signed.Version, tsMeta.Version, "Timestamp must reference the new snapshot version")
+	return repo, redisClient
 }
 
 // --- loadTrustedRootFromS3 tests ---

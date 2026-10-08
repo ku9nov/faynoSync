@@ -1503,6 +1503,22 @@ func makeValidSnapshotJSON(t *testing.T, repo *repository.Type, signer signature
 // Snapshot/timestamp locking is now centralized in WithSnapshotLock; the
 // dedicated lock behavior is covered by the TestWithSnapshotLock_* tests below.
 
+// To verify: In forceOnlineMetadataUpdate take the lock only around snapshot/timestamp; test will fail (storage error instead of lock timeout).
+func TestForceOnlineMetadataUpdate_LockHeld_NoMetadataAccessUntilAcquired(t *testing.T) {
+	mr := miniredis.RunT(t)
+	mr.Set("LOCK_SNAPSHOT_admin_app", "locked")
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	_, err := forceOnlineMetadataUpdate(ctx, redisClient, "admin", "app", []string{"targets", "snapshot", "timestamp"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
+	assert.Contains(t, err.Error(), "timeout after")
+}
+
 func TestWithSnapshotLock_NilRedis(t *testing.T) {
 	err := WithSnapshotLock(context.Background(), nil, "admin", "app", func() error {
 		t.Fatal("fn must not run without a redis client")

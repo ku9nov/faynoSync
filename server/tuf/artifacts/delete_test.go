@@ -203,6 +203,23 @@ func makeRemoveArtifactsTestEnv(t *testing.T, adminName, appName string) (storeD
 	return storeDir, keyDir, cleanup
 }
 
+// To verify: In RemoveArtifacts take the metadata lock only around snapshot/timestamp; test will fail (storage error instead of lock timeout).
+func TestRemoveArtifacts_LockHeld_NoMetadataAccessUntilAcquired(t *testing.T) {
+	mr := miniredis.RunT(t)
+	mr.Set("BOOTSTRAP_"+testAdminName+"_"+testAppName, "done")
+	mr.Set("LOCK_SNAPSHOT_"+testAdminName+"_"+testAppName, "locked")
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	err := RemoveArtifacts(ctx, redisClient, nil, testAdminName, testAppName, []Artifact{{Path: "a/b"}}, testTaskID)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
+	assert.Contains(t, err.Error(), "timeout after")
+}
+
 // To verify: In RemoveArtifacts change the bootstrap key check (BOOTSTRAP_...) or the redis.Nil/empty handling; test will fail (no error or wrong message).
 func TestRemoveArtifacts_BootstrapNotCompleted_ReturnsError(t *testing.T) {
 	ctx := context.Background()
