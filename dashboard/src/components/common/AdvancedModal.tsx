@@ -32,7 +32,7 @@ interface FileInfo {
 interface AdvancedModalProps {
   onClose: () => void;
   title: string;
-  onSubmit: (formData: any) => Promise<void>;
+  onSubmit: (e: React.FormEvent) => Promise<void>;
   children: React.ReactNode;
   submitButtonText?: string;
   onSuccess?: () => void;

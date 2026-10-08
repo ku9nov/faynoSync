@@ -2,7 +2,6 @@ import React from 'react';
 import { SettingsMenu } from '@/components/layout/SettingsMenu';
 import useMediaQuery from '@/hooks/useMediaQuery';
 import '@/styles/header.css';
-import { SettingsModal } from '@/components/modals/SettingsModal';
 import { ProfileModal } from '@/components/modals/ProfileModal';
 
 interface HeaderProps {
@@ -27,7 +26,6 @@ export const Header: React.FC<HeaderProps> = ({
   onMenuClick
 }) => {
   const [showSettings, setShowSettings] = React.useState(false);
-  const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState("");
   const [showProfileModal, setShowProfileModal] = React.useState(false);
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -35,10 +33,6 @@ export const Header: React.FC<HeaderProps> = ({
   const handleSettingsClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setShowSettings(!showSettings);
-  };
-
-  const handleCloseSettingsModal = () => {
-    setShowSettingsModal(false);
   };
 
   const handleOpenProfileModal = () => {
@@ -220,7 +214,6 @@ export const Header: React.FC<HeaderProps> = ({
         )}
       </div> 
       )}
-      {showSettingsModal && <SettingsModal onClose={handleCloseSettingsModal} />}
       {showProfileModal && <ProfileModal onClose={handleCloseProfileModal} />}
     </div>
   );

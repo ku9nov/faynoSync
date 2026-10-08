@@ -5,7 +5,7 @@ import { useArchitectureQuery } from '@/hooks/use-query/useArchitectureQuery';
 import { Artifact, useAppsQuery } from '@/hooks/use-query/useAppsQuery';
 import { DeleteArtifactConfirmationModal } from '@/components/modals/DeleteArtifactConfirmationModal';
 import { AxiosError } from 'axios';
-import axiosInstance from '@/config/axios';
+import axiosInstance, { type ApiError } from '@/config/axios';
 import { BaseModal } from '@/components/common/BaseModal';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { AppListItem } from '@/hooks/use-query/useAppsQuery';
@@ -288,11 +288,11 @@ export const EditVersionModal: React.FC<EditVersionModalProps> = ({
         const data = query.state.data;
         if (!data) continue;
         
-        let version: any = null;
+        let version: { ID: string; Artifacts: Artifact[] } | null | undefined = null;
         if (Array.isArray(data)) {
-          version = data.find((item: any) => item.ID === currentData.ID);
+          version = (data as { ID: string; Artifacts: Artifact[] }[]).find((item) => item.ID === currentData.ID);
         } else if (data && typeof data === 'object' && 'items' in data) {
-          version = (data as any).items.find((item: any) => item.ID === currentData.ID);
+          version = (data as { items: { ID: string; Artifacts: Artifact[] }[] }).items.find((item) => item.ID === currentData.ID);
         }
         
         if (version && version.Artifacts) {
@@ -580,7 +580,8 @@ export const EditVersionModal: React.FC<EditVersionModalProps> = ({
       setTimeout(async () => {
         await queryClient.refetchQueries({ queryKey: ['apps'] });
       }, 5000);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       const errorMessage = error.response?.data?.message || error.message || 'Failed to publish TUF artifacts';
       toastError(errorMessage);
       

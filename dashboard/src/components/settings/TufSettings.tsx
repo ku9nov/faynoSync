@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppsQuery, AppListItem } from '@/hooks/use-query/useAppsQuery';
 import { useToast } from '@/hooks/useToast';
-import axiosInstance from '@/config/axios';
+import axiosInstance, { type ApiError } from '@/config/axios';
 import { StepStatus, TaskData, TufHistoryEntry, TufConfig } from '@/components/settings/tuf/types';
 import { loadHistoryFromStorage, saveToHistory, updateHistoryStatus, clearHistory } from '@/components/settings/tuf/history';
 import { AppSelection } from '@/components/settings/tuf/AppSelection';
@@ -89,6 +89,7 @@ export const TufSettings: React.FC = () => {
     if (bootstrapTaskId) {
       setStep3Status('ready');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- step2Status is written by this effect; re-evaluate only when the app, step 1 or bootstrap task changes
   }, [selectedApp, step1Status, bootstrapTaskId]);
 
   // Auto-check bootstrap status when app is selected
@@ -96,6 +97,7 @@ export const TufSettings: React.FC = () => {
     if (selectedApp) {
       checkBootstrapStatus();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- check only when the selected app changes, not on every render
   }, [selectedApp]);
 
   // Polling for bootstrap status - only when bootstrap is in progress, not when already successful
@@ -169,7 +171,8 @@ export const TufSettings: React.FC = () => {
       setTimeout(() => {
         checkTufTasks(taskId);
       }, 1000);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to start TUF bootstrap:', error);
       console.log('[TufSettings] Bootstrap failed, setting step2Status to error');
       setStep2Status('error');
@@ -286,7 +289,8 @@ export const TufSettings: React.FC = () => {
       if (statusData.task_id) {
         setHistory(prevHistory => updateHistoryStatus(statusData.task_id, statusData.state, prevHistory, statusData.result));
       }
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to check bootstrap status:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to check bootstrap status';
       toastError(errorMessage);
@@ -323,7 +327,8 @@ export const TufSettings: React.FC = () => {
       }
 
       await checkBootstrapStatus();
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       const errorMessage = error.response?.data?.message || error.message || 'Failed to recover bootstrap state';
       toastError(errorMessage);
     } finally {
@@ -368,7 +373,8 @@ export const TufSettings: React.FC = () => {
       if (!options?.silent) {
         toastSuccess('TUF task loaded successfully!');
       }
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to check TUF task:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to check TUF task';
       if (!options?.silent) {
@@ -403,7 +409,8 @@ export const TufSettings: React.FC = () => {
         snapshot: configData.snapshot_expiration || 50,
         timestamp: configData.timestamp_expiration || 20,
       });
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to load config:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to load config';
       toastError(errorMessage);
@@ -411,7 +418,7 @@ export const TufSettings: React.FC = () => {
     } finally {
       setConfigLoading(false);
     }
-  }, [selectedApp]);
+  }, [selectedApp, toastError]);
 
   // Load config when bootstrap is successful
   useEffect(() => {
@@ -472,7 +479,8 @@ export const TufSettings: React.FC = () => {
       } else {
         throw new Error('Invalid response: missing task_id');
       }
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to update config:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to update config';
       toastError(errorMessage);
@@ -562,7 +570,8 @@ export const TufSettings: React.FC = () => {
       } else {
         throw new Error('Invalid response: missing task_id');
       }
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to update metadata:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to update metadata';
       toastError(errorMessage);

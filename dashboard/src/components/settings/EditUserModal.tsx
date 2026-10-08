@@ -12,6 +12,7 @@ import {
   MODAL_SURFACE,
   MODAL_TITLE,
 } from '@/components/common/ui';
+import type { ApiError } from '@/config/axios';
 
 interface EditUserModalProps {
   userId: string;
@@ -56,7 +57,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
     try {
       await onSave(userId, newUsername, newPassword);
       onClose();
-    } catch (err: any) {
+    } catch (e) {
+      const err = e as ApiError;
       setError(err.message || 'Failed to update user');
     } finally {
       setIsSaving(false);

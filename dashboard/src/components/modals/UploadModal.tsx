@@ -12,6 +12,7 @@ import {
   FIELD_INPUT,
   FIELD_LABEL,
 } from '@/components/common/ui';
+import type { ApiError } from '@/config/axios';
 
 interface UploadModalProps {
   onClose: () => void;
@@ -106,7 +107,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
       setTimeout(() => {
         onClose();
       }, 500);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Upload failed:', error);
       // Extract error message from API response
       let errorMessage = 'Upload failed';

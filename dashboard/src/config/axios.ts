@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { env } from '@/config/env';
 
 const axiosInstance = axios.create({
@@ -31,5 +31,7 @@ axiosInstance.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export type ApiError = AxiosError<{ error?: string; message?: string }>;
 
 export default axiosInstance; 

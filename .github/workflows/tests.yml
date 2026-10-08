@@ -29,6 +29,33 @@ jobs:
           printf 'FAYNOSYNC_VERSION=latest\nMONGO_ROOT_PASSWORD=ci\nREDIS_PASSWORD=ci\n' > deploy/.env
           docker compose -f deploy/docker-compose.yaml config -q
 
+  dashboard:
+    name: Dashboard lint and build
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: yarn
+          cache-dependency-path: dashboard/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Build
+        run: yarn build
+
   integration-tests:
     name: Docker Compose integration tests (${{ matrix.mongo }})
     runs-on: ubuntu-22.04

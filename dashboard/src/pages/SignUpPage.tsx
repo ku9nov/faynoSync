@@ -57,8 +57,8 @@ export const SignUpPage = () => {
       toastSuccess('Signed Up successfully.');
       navigate('/applications');
       resetForm();
-    } catch (error: any) {
-      setRespError(error);
+    } catch (e) {
+      setRespError(typeof e === 'string' ? e : '');
     }
   };
 
@@ -83,7 +83,7 @@ export const SignUpPage = () => {
                 ) => {
                   handleSubmit(values, formikHelpers);
                 }}>
-                {({}) => (
+                {() => (
                   <Form className='flex flex-col gap-5 w-full'>
                     <AuthInputs
                       name='username'

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useUsersListQuery } from '@/hooks/use-query/useUsersListQuery';
+import { useUsersListQuery, type Permission, type Permissions } from '@/hooks/use-query/useUsersListQuery';
 import { useAppsQuery } from '@/hooks/use-query/useAppsQuery';
 import { useChannelQuery } from '@/hooks/use-query/useChannelQuery';
 import { usePlatformQuery } from '@/hooks/use-query/usePlatformQuery';
@@ -9,7 +9,9 @@ import { EditUserModal } from '@/components/settings/EditUserModal';
 import axiosInstance from '@/config/axios';
 import { useQueryClient } from '@tanstack/react-query';
 import { DeleteUserConfirmationModal } from '@/components/settings/DeleteUserConfirmationModal';
-import { CreateUserModal } from '@/components/settings/CreateUserModal';
+import { CreateUserModal, type Permissions as NewUserPermissions } from '@/components/settings/CreateUserModal';
+
+type EditablePermissions = { [K in keyof Permissions]: Partial<Permission> };
 
 // Add styles for checkboxes
 const checkboxStyles = `
@@ -42,7 +44,7 @@ export const UsersSettings: React.FC = () => {
   const [currentUserId, setCurrentUserId] = useState<string>('');
   
   // State for tracking modified permissions
-  const [modifiedPermissions, setModifiedPermissions] = useState<Record<string, any>>({});
+  const [modifiedPermissions, setModifiedPermissions] = useState<Record<string, { permissions: EditablePermissions }>>({});
   const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
   
   // State for delete confirmation modal
@@ -59,7 +61,7 @@ export const UsersSettings: React.FC = () => {
   // Initialize modified permissions when users data is loaded
   useEffect(() => {
     if (usersData?.users) {
-      const initialPermissions: Record<string, any> = {};
+      const initialPermissions: Record<string, { permissions: EditablePermissions }> = {};
       usersData.users.forEach(user => {
         initialPermissions[user.id] = {
           permissions: { ...user.permissions }
@@ -302,7 +304,7 @@ export const UsersSettings: React.FC = () => {
       if (!user) return;
       
       // Prepare the data for the API request
-      const requestData: any = {
+      const requestData: { id: string; username: string; password?: string; permissions: object } = {
         id: userId,
         username: newUsername,
         permissions: {
@@ -353,7 +355,7 @@ export const UsersSettings: React.FC = () => {
   };
 
   // Function to handle creating a new user
-  const handleCreateUser = async (username: string, password: string, permissions: any) => {
+  const handleCreateUser = async (username: string, password: string, permissions: NewUserPermissions) => {
     try {
       // Prepare the data for the API request
       const requestData = {

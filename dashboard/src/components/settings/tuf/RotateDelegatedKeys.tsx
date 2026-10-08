@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import axiosInstance from '@/config/axios';
+import axiosInstance, { type ApiError } from '@/config/axios';
 import { useToast } from '@/hooks/useToast';
 import { deleteSigningMetadata } from '@/components/settings/tuf/deleteSigningMetadata';
+import type { TufMetadata, TufMetadataEnvelope } from '@/components/settings/tuf/types';
 
 interface RotateDelegatedKeysProps {
   selectedApp: string;
@@ -19,7 +20,7 @@ const isThresholdNotMetError = (message: string): boolean => {
   );
 };
 
-const normalizeTrustedTargetsMetadata = (value: unknown): any | null => {
+const normalizeTrustedTargetsMetadata = (value: unknown): TufMetadata | null => {
   if (!value) {
     return null;
   }
@@ -33,9 +34,9 @@ const normalizeTrustedTargetsMetadata = (value: unknown): any | null => {
   if (typeof value !== 'object') {
     return null;
   }
-  const candidate = value as Record<string, any>;
+  const candidate = value as TufMetadataEnvelope;
   if (candidate.signed?.version && candidate.signed?.expires) {
-    return candidate;
+    return candidate as TufMetadata;
   }
   if (candidate.data?.trusted_targets) {
     return normalizeTrustedTargetsMetadata(candidate.data.trusted_targets);
@@ -46,7 +47,7 @@ const normalizeTrustedTargetsMetadata = (value: unknown): any | null => {
   return null;
 };
 
-const normalizeTrustedDelegatedMetadata = (value: unknown): any | null => {
+const normalizeTrustedDelegatedMetadata = (value: unknown): TufMetadata | null => {
   if (!value) {
     return null;
   }
@@ -60,9 +61,9 @@ const normalizeTrustedDelegatedMetadata = (value: unknown): any | null => {
   if (typeof value !== 'object') {
     return null;
   }
-  const candidate = value as Record<string, any>;
+  const candidate = value as TufMetadataEnvelope;
   if (candidate.signed?.version && candidate.signed?.expires) {
-    return candidate;
+    return candidate as TufMetadata;
   }
   if (candidate.data?.trusted_delegated) {
     return normalizeTrustedDelegatedMetadata(candidate.data.trusted_delegated);
@@ -86,8 +87,8 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
   const [keyCount, setKeyCount] = useState(1);
   const [threshold, setThreshold] = useState(1);
 
-  const [targetsMetadata, setTargetsMetadata] = useState<any>(null);
-  const [delegatedMetadata, setDelegatedMetadata] = useState<any>(null);
+  const [targetsMetadata, setTargetsMetadata] = useState<TufMetadata | null>(null);
+  const [delegatedMetadata, setDelegatedMetadata] = useState<TufMetadata | null>(null);
   const [loadingTargetsMetadata, setLoadingTargetsMetadata] = useState(false);
   const [loadingDelegatedMetadata, setLoadingDelegatedMetadata] = useState(false);
   const [showTargetsMetadata, setShowTargetsMetadata] = useState(false);
@@ -136,7 +137,8 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
       }
       setTargetsMetadata(normalized);
       toastSuccess('Targets metadata loaded successfully!');
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to fetch targets metadata:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to fetch targets metadata';
       toastError(errorMessage);
@@ -166,7 +168,8 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
       }
       setDelegatedMetadata(normalized);
       toastSuccess('Delegated metadata loaded successfully!');
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to fetch delegated metadata:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to fetch delegated metadata';
       toastError(errorMessage);
@@ -217,7 +220,8 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
         taskId: responseData.task_id,
       });
       setTimeout(() => onCheckTufTasks(responseData.task_id), 1000);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to stage delegated rotation:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to stage delegated rotation';
       toastError(errorMessage);
@@ -245,7 +249,8 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
       const message = response.data?.message || response.data?.data?.message || 'Signing queue checked successfully';
       setSigningQueueMessage(message);
       toastSuccess(message);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to check signing queue';
       setSigningQueueMessage(errorMessage);
       toastError(errorMessage);
@@ -301,7 +306,8 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
       }
 
       setSignaturePayload('');
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       const errorDetail = error.response?.data?.error || '';
       const errorMessage = error.response?.data?.message || '';
       const fullErrorMessage = errorDetail || errorMessage || error.message || 'Failed to submit signature payload';
@@ -360,7 +366,8 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
       setSignatureStatusMessage('');
       setSignatureErrorMessage('');
       setSignaturePayload('');
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       toastError(error.message || 'Failed to delete signing metadata');
     } finally {
       setDeletingSigningMetadata(false);

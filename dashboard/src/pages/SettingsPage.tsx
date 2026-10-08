@@ -8,27 +8,27 @@ import { TokenSettings } from '@/components/settings/TokenSettings';
 
 type SettingsPage = 'users' | 'tokens' | 'tuf';
 
+// Determine current page from URL or default to 'users'
+const getCurrentPage = (pathname: string): SettingsPage => {
+  if (pathname === '/settings/tuf') {
+    return 'tuf';
+  }
+  if (pathname === '/settings/tokens') {
+    return 'tokens';
+  }
+  return 'users';
+};
+
 export const SettingsPage = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Determine current page from URL or default to 'users'
-  const getCurrentPage = (): SettingsPage => {
-    if (location.pathname === '/settings/tuf') {
-      return 'tuf';
-    }
-    if (location.pathname === '/settings/tokens') {
-      return 'tokens';
-    }
-    return 'users';
-  };
-  
-  const [currentPage, setCurrentPage] = useState<SettingsPage>(getCurrentPage());
+  const [currentPage, setCurrentPage] = useState<SettingsPage>(getCurrentPage(location.pathname));
 
   // Update current page when location changes
   useEffect(() => {
-    const page = getCurrentPage();
+    const page = getCurrentPage(location.pathname);
     setCurrentPage(page);
   }, [location.pathname]);
 

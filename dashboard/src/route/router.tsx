@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- route config; edits trigger a full reload anyway */
 import { createBrowserRouter } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { PrivateRoute } from '@/route/PrivateRoute.tsx';

@@ -20,9 +20,10 @@ import { useAppsQuery } from '@/hooks/use-query/useAppsQuery';
 import { useChannelQuery } from '@/hooks/use-query/useChannelQuery';
 import { usePlatformQuery } from '@/hooks/use-query/usePlatformQuery';
 import { useArchitectureQuery } from '@/hooks/use-query/useArchitectureQuery';
+import type { ApiError } from '@/config/axios';
 
 // Define proper types for permissions
-interface Permission {
+export interface Permission {
   create: boolean;
   delete: boolean;
   edit: boolean;
@@ -31,7 +32,7 @@ interface Permission {
   allowed: string[];
 }
 
-interface Permissions {
+export interface Permissions {
   apps: Permission;
   channels: Permission;
   platforms: Permission;
@@ -41,7 +42,7 @@ interface Permissions {
 interface CreateUserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (username: string, password: string, permissions: any) => Promise<void>;
+  onSave: (username: string, password: string, permissions: Permissions) => Promise<void>;
 }
 
 export const CreateUserModal: React.FC<CreateUserModalProps> = ({
@@ -148,7 +149,8 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
     try {
       await onSave(username, password, permissions);
       onClose();
-    } catch (err: any) {
+    } catch (e) {
+      const err = e as ApiError;
       setError(err.message || 'Failed to create user');
     } finally {
       setIsSaving(false);
@@ -249,20 +251,14 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
   };
   
   const getNameById = (id: string, type: 'app' | 'channel' | 'platform' | 'arch') => {
-    let items: any[] = [];
-    
     if (type === 'app' && Array.isArray(apps)) {
-      items = apps;
-      return items.find(item => item.ID === id)?.AppName || id;
+      return apps.find(item => item.ID === id)?.AppName || id;
     } else if (type === 'channel' && Array.isArray(channels)) {
-      items = channels;
-      return items.find(item => item.ID === id)?.ChannelName || id;
+      return channels.find(item => item.ID === id)?.ChannelName || id;
     } else if (type === 'platform' && Array.isArray(platforms)) {
-      items = platforms;
-      return items.find(item => item.ID === id)?.PlatformName || id;
+      return platforms.find(item => item.ID === id)?.PlatformName || id;
     } else if (type === 'arch' && Array.isArray(architectures)) {
-      items = architectures;
-      return items.find(item => item.ID === id)?.ArchID || id;
+      return architectures.find(item => item.ID === id)?.ArchID || id;
     }
     
     return id;
