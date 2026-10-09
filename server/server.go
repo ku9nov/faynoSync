@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	db "faynoSync/mongod"
 	"faynoSync/redisdb"
 	"faynoSync/server/dashboard"
 	"faynoSync/server/handler"
 	"faynoSync/server/tuf"
+	tuf_metadata "faynoSync/server/tuf/metadata"
 	"faynoSync/server/utils"
 	"fmt"
 	"os"
@@ -189,6 +191,7 @@ func StartServer(config *viper.Viper) {
 	// TUF routes
 	if config.GetBool("TUF_ENABLED") {
 		tuf.SetupRoutes(router, authMiddleware, mongoDatabase, redisClient, db)
+		tuf_metadata.StartOnlineRolesBumper(context.Background(), mongoDatabase, redisClient)
 	}
 
 	// get the port from the configuration file

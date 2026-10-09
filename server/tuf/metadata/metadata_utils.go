@@ -1057,6 +1057,14 @@ func finalizeTargetsMetadataUpdate(
 		if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
 			return fmt.Errorf("failed to load snapshot metadata: %w", err)
 		}
+		trustedRoot := metadata.Root(time.Now())
+		if _, err := trustedRoot.FromFile(rootPath); err != nil {
+			return fmt.Errorf("failed to load root metadata: %w", err)
+		}
+
+		if err := VerifyForResign(ctx, adminName, appName, trustedRoot, "snapshot", repo.Snapshot(), tmpDir); err != nil {
+			return err
+		}
 
 		if trusted, ok := repo.Snapshot().Signed.Meta[fmt.Sprintf("%s.json", roleName)]; ok && trusted.Version >= targets.Signed.Version {
 			return fmt.Errorf("%s version %d must be greater than trusted snapshot version %d", roleName, targets.Signed.Version, trusted.Version)

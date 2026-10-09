@@ -1035,6 +1035,71 @@ func makeSnapshotAndTimestampSigners(t *testing.T) (timestampSigner, snapshotSig
 	return sig, sig
 }
 
+// setRootTrustingSigner gives repo a root whose snapshot and timestamp roles
+// trust signer, so stored metadata it signed passes the re-sign verification.
+func setRootTrustingSigner(t *testing.T, repo *repository.Type, signer signature.Signer) {
+	t.Helper()
+	pub, err := signer.PublicKey()
+	require.NoError(t, err)
+	key, err := tuf_metadata.KeyFromPublicKey(pub)
+	require.NoError(t, err)
+	root := tuf_metadata.Root(tuf_utils.HelperExpireIn(365))
+	require.NoError(t, root.Signed.AddKey(key, "snapshot"))
+	require.NoError(t, root.Signed.AddKey(key, "timestamp"))
+	repo.SetRoot(root)
+}
+
+// Regression: meta for roles not touched by an upload is carried over from the
+// stored snapshot, so a snapshot not signed by the snapshot key must be refused.
+// To verify: remove the VerifyForResign call from updateSnapshotAndTimestamp; test will fail (forged snapshot re-signed).
+func TestUpdateSnapshotAndTimestamp_ForgedSnapshot_RefusedBeforeUpload(t *testing.T) {
+	mr := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	storeDir := t.TempDir()
+	metadataPrefix := filepath.Join(storeDir, "tuf_metadata", testAdminName, testAppName)
+	require.NoError(t, os.MkdirAll(metadataPrefix, 0755))
+
+	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
+	_, forger := makeSnapshotAndTimestampSigners(t)
+	repo := repository.New()
+	setRootTrustingSigner(t, repo, snapSigner)
+	repo.SetSnapshot(tuf_metadata.Snapshot(tuf_utils.HelperExpireIn(7)))
+	_, err := repo.Snapshot().Sign(forger)
+	require.NoError(t, err)
+	require.NoError(t, repo.Snapshot().ToFile(filepath.Join(metadataPrefix, "1.snapshot.json"), true))
+
+	savedList := tuf_storage.ListMetadataForLatest
+	savedGetViperD := tuf_storage.GetViperForDownload
+	savedFactoryD := tuf_storage.StorageFactoryForDownload
+	savedFactoryU := tuf_storage.StorageFactoryForUpload
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.snapshot.json"}, nil
+	}
+	tuf_storage.GetViperForDownload = func() *viper.Viper {
+		v := viper.New()
+		v.Set("S3_BUCKET_NAME", "test-bucket")
+		return v
+	}
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
+	}
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		t.Fatal("forged snapshot must not be re-signed and uploaded")
+		return nil
+	}
+	t.Cleanup(func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedGetViperD
+		tuf_storage.StorageFactoryForDownload = savedFactoryD
+		tuf_storage.StorageFactoryForUpload = savedFactoryU
+	})
+
+	err = updateSnapshotAndTimestamp(context.Background(), repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, t.TempDir())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to re-sign snapshot")
+}
+
 // Lock acquire/timeout mechanics are covered by TestWithSnapshotLock_* in the
 // metadata package; these tests pin that the lock wraps the whole update.
 
@@ -1163,6 +1228,7 @@ func TestUpdateSnapshotAndTimestamp_UploadSnapshotFails_ReturnsError(t *testing.
 
 	_, snapSigner := makeSnapshotAndTimestampSigners(t)
 	repo := repository.New()
+	setRootTrustingSigner(t, repo, snapSigner)
 	exp := tuf_utils.HelperExpireIn(7)
 	snap := tuf_metadata.Snapshot(exp)
 	repo.SetSnapshot(snap)

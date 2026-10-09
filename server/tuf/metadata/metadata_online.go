@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -89,25 +88,13 @@ func PostMetadataOnline(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
-	targetsOnlineRedisKey := "TARGETS_ONLINE_KEY_" + keySuffix
-	targetsOnlineVal, err := redisClient.Get(ctx, targetsOnlineRedisKey).Result()
-	var targetsOnline bool
-	switch {
-	case err == redis.Nil:
-		targetsOnline = true
-	case err != nil:
-		logrus.Errorf("Redis error reading targets online key %q: %v", targetsOnlineRedisKey, err)
+	targetsOnline, err := isTargetsOnline(ctx, redisClient, keySuffix)
+	if err != nil {
+		logrus.Errorf("Redis error reading targets online key %q: %v", "TARGETS_ONLINE_KEY_"+keySuffix, err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": "Storage temporarily unavailable",
 		})
 		return
-	default:
-		switch {
-		case strings.EqualFold(targetsOnlineVal, "true"), targetsOnlineVal == "1":
-			targetsOnline = true
-		default:
-			targetsOnline = false
-		}
 	}
 
 	if contains(payload.Roles, "targets") && !targetsOnline {
@@ -373,6 +360,9 @@ func bumpTargetsRole(
 	if _, err := repo.Targets("targets").FromFile(targetsPath); err != nil {
 		return fmt.Errorf("failed to load targets metadata: %w", err)
 	}
+	if err := VerifyForResign(ctx, adminName, appName, repo.Root(), "targets", repo.Targets("targets"), tmpDir); err != nil {
+		return err
+	}
 
 	repo.Targets("targets").Signed.Version++
 	repo.Targets("targets").Signed.Expires = tuf_utils.HelperExpireIn(targetsExpiration)
@@ -425,6 +415,9 @@ func bumpDelegatedRoles(
 	if _, err := repo.Targets("targets").FromFile(targetsPath); err != nil {
 		return nil, fmt.Errorf("failed to load targets metadata: %w", err)
 	}
+	if err := VerifyForResign(ctx, adminName, appName, repo.Root(), "targets", repo.Targets("targets"), tmpDir); err != nil {
+		return nil, err
+	}
 
 	var updated []string
 	for _, roleName := range roleNames {
@@ -466,6 +459,11 @@ func bumpDelegatedRoles(
 
 		if len(roleKeyIDs) == 0 {
 			return nil, fmt.Errorf("no key IDs found for delegated role %s", roleName)
+		}
+		// Delegated key rotation re-signs the role together with targets, so the
+		// stored role must always verify against the current delegator.
+		if err := repo.Targets("targets").VerifyDelegate(roleName, repo.Targets(roleName)); err != nil {
+			return nil, fmt.Errorf("refusing to re-sign %s: signature does not verify against targets: %w", roleName, err)
 		}
 		if roleThreshold < 1 {
 			roleThreshold = 1
@@ -531,6 +529,9 @@ func bumpSnapshotRole(
 	repo.SetSnapshot(snapshot)
 	if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
 		return fmt.Errorf("failed to load snapshot metadata: %w", err)
+	}
+	if err := VerifyForResign(ctx, adminName, appName, repo.Root(), "snapshot", repo.Snapshot(), tmpDir); err != nil {
+		return err
 	}
 
 	snapshotMeta := repo.Snapshot().Signed.Meta
@@ -609,6 +610,11 @@ func bumpTimestampRole(
 	if err != nil {
 		return err
 	}
+	if loadedTimestamp {
+		if err := VerifyForResign(ctx, adminName, appName, repo.Root(), "timestamp", repo.Timestamp(), tmpDir); err != nil {
+			return err
+		}
+	}
 
 	timestampMeta := repo.Timestamp().Signed.Meta
 	if timestampMeta == nil {
@@ -636,6 +642,9 @@ func bumpTimestampRole(
 		repo.SetSnapshot(snap)
 		if _, loadErr := repo.Snapshot().FromFile(snapshotDlPath); loadErr != nil {
 			return fmt.Errorf("failed to load snapshot for timestamp reference: %w", loadErr)
+		}
+		if err := VerifyForResign(ctx, adminName, appName, repo.Root(), "snapshot", repo.Snapshot(), tmpDir); err != nil {
+			return err
 		}
 		snapshot = repo.Snapshot()
 		snapshotPath = snapshotDlPath

@@ -424,6 +424,7 @@ func TestUpdateSnapshotAndTimestamp_AfterRemove_TimestampVersionIncremented(t *t
 
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
 	repo := repository.New()
+	setRootTrustingSigner(t, repo, snapSigner)
 	exp := tuf_utils.HelperExpireIn(7)
 	snap := tuf_metadata.Snapshot(exp)
 	snap.Signed.Version = 1

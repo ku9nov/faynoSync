@@ -541,6 +541,9 @@ func updateSnapshotAndTimestamp(
 	if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
 		return fmt.Errorf("failed to load snapshot metadata: %w", err)
 	}
+	if err := tuf_metadata.VerifyForResign(ctx, adminName, appName, repo.Root(), "snapshot", repo.Snapshot(), tmpDir); err != nil {
+		return err
+	}
 
 	snapshotMeta := repo.Snapshot().Signed.Meta
 	if snapshotMeta == nil {

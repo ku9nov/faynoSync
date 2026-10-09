@@ -659,9 +659,20 @@ func TestForceOnlineMetadataUpdate_Success_TimestampOnly(t *testing.T) {
 	defer mr.Close()
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
+	var rootMeta models.RootMetadata
+	require.NoError(t, json.Unmarshal(rootJSON, &rootMeta))
+	snapshotKeyID := rootMeta.Signed.Roles["snapshot"].KeyIDs[0]
+	snapshotPriv, err := loadEd25519PrivateKeyFromFilesystem(t, snapshotKeyID, snapshotKeyID)
+	require.NoError(t, err)
+	snapshotSigner, err := signature.LoadSigner(snapshotPriv, crypto.Hash(0))
+	require.NoError(t, err)
+
 	snapTmp := t.TempDir()
 	snapPath := filepath.Join(snapTmp, "1.snapshot.json")
-	require.NoError(t, tuf_metadata.Snapshot(time.Now().Add(7*24*time.Hour)).ToFile(snapPath, false))
+	snapshot := tuf_metadata.Snapshot(time.Now().Add(7 * 24 * time.Hour))
+	_, err = snapshot.Sign(snapshotSigner)
+	require.NoError(t, err)
+	require.NoError(t, snapshot.ToFile(snapPath, false))
 	snapshotJSON, err := os.ReadFile(snapPath)
 	require.NoError(t, err)
 
@@ -959,9 +970,9 @@ func makeTargetsWithDelegationsButNoRoles(t *testing.T, repo *repository.Type, s
 	return data
 }
 
-func makeTargetsAndDelegationForBumpDelegated(t *testing.T, delegationRoleName string) (targetsJSON, delegationJSON []byte, keyDir string, cleanup func()) {
+func makeTargetsAndDelegationForBumpDelegated(t *testing.T, delegationRoleName string) (rootJSON, targetsJSON, delegationJSON []byte, keyDir string, cleanup func()) {
 	t.Helper()
-	rootJSON, keyDir, cleanup := makeRootAndOnlineKeysForForceUpdate(t)
+	rootJSON, keyDir, cleanup = makeRootAndOnlineKeysForForceUpdate(t)
 	tmpDir := t.TempDir()
 	rootPath := filepath.Join(tmpDir, "root.json")
 	require.NoError(t, os.WriteFile(rootPath, rootJSON, 0644))
@@ -1013,13 +1024,13 @@ func makeTargetsAndDelegationForBumpDelegated(t *testing.T, delegationRoleName s
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(keyDir, delegationKeyID), delegationPriv.Seed(), 0600))
-	return targetsJSON, delegationJSON, keyDir, cleanup
+	return rootJSON, targetsJSON, delegationJSON, keyDir, cleanup
 }
 
-// makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey returns targets and delegation JSON for a role with Threshold: 2 but only one key (bump will fail with "not enough distinct keys").
-func makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t *testing.T, delegationRoleName string) (targetsJSON, delegationJSON []byte, keyDir string, cleanup func()) {
+// makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey returns targets and delegation JSON for a role with Threshold: 2 but only one key (bump refuses to re-sign it).
+func makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t *testing.T, delegationRoleName string) (rootJSON, targetsJSON, delegationJSON []byte, keyDir string, cleanup func()) {
 	t.Helper()
-	rootJSON, keyDir, cleanup := makeRootAndOnlineKeysForForceUpdate(t)
+	rootJSON, keyDir, cleanup = makeRootAndOnlineKeysForForceUpdate(t)
 	tmpDir := t.TempDir()
 	rootPath := filepath.Join(tmpDir, "root.json")
 	require.NoError(t, os.WriteFile(rootPath, rootJSON, 0644))
@@ -1071,15 +1082,15 @@ func makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t *testing.T, dele
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(keyDir, delegationKeyID), delegationPriv.Seed(), 0600))
-	return targetsJSON, delegationJSON, keyDir, cleanup
+	return rootJSON, targetsJSON, delegationJSON, keyDir, cleanup
 }
 
-// To verify: In bumpDelegatedRoles skip "not enough distinct keys" check; test will fail (no error or wrong message).
+// To verify: In bumpDelegatedRoles skip the stored-role signature verification; test will fail (no error or wrong message).
 func TestBumpDelegatedRoles_NotEnoughDistinctKeys(t *testing.T) {
-	targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t, "my-role")
+	rootJSON, targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t, "my-role")
 	defer cleanup()
 
-	repo := repository.New()
+	repo := repoWithRoot(t, rootJSON)
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -1108,9 +1119,12 @@ func TestBumpDelegatedRoles_NotEnoughDistinctKeys(t *testing.T) {
 
 	_, err := bumpDelegatedRoles(ctx, repo, "admin", "app", redisClient, tmpDir, "admin_app", []string{"my-role"})
 
+	// The stored role cannot meet threshold 2 with one key, so it is refused
+	// before signing; the distinct-key signing check is covered by the
+	// artifacts add tests and the BootstrapOnlineRoles tests.
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not enough distinct keys for my-role role")
-	assert.Contains(t, err.Error(), "need 2, got 1")
+	assert.Contains(t, err.Error(), "refusing to re-sign my-role")
+	assert.Contains(t, err.Error(), "got 1, want 2")
 }
 
 // To verify: In bumpDelegatedRoles remove the FindLatestMetadataVersion (targets) error handling; test will fail (no error or wrong message).
@@ -1243,8 +1257,8 @@ func TestBumpDelegatedRoles_DelegationsNil_ReturnsError(t *testing.T) {
 	repo, signer, tmpDir, keySuffix, cleanup := makeRepoWithRootAndTargetsSigner(t)
 	defer cleanup()
 
-	targetsJSON := makeValidTargetsJSON(t, repo, signer, tmpDir)                      // no delegations
-	_, delegationJSON, _, _ := makeTargetsAndDelegationForBumpDelegated(t, "my-role") // valid delegation so download/load succeeds, then we hit Delegations nil
+	targetsJSON := makeValidTargetsJSON(t, repo, signer, tmpDir)                         // no delegations
+	_, _, delegationJSON, _, _ := makeTargetsAndDelegationForBumpDelegated(t, "my-role") // valid delegation so download/load succeeds, then we hit Delegations nil
 	bodies := map[string][]byte{"1.targets.json": targetsJSON, "1.my-role.json": delegationJSON}
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
@@ -1281,7 +1295,7 @@ func TestBumpDelegatedRoles_NoKeyIDsForRole_ReturnsError(t *testing.T) {
 	defer cleanup()
 
 	targetsJSON := makeTargetsWithDelegationsButNoRoles(t, repo, signer, tmpDir)
-	_, delegationJSON, _, _ := makeTargetsAndDelegationForBumpDelegated(t, "my-role") // valid delegation so we reach "no key IDs" check
+	_, _, delegationJSON, _, _ := makeTargetsAndDelegationForBumpDelegated(t, "my-role") // valid delegation so we reach "no key IDs" check
 	bodies := map[string][]byte{"1.targets.json": targetsJSON, "1.my-role.json": delegationJSON}
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
@@ -1314,13 +1328,13 @@ func TestBumpDelegatedRoles_NoKeyIDsForRole_ReturnsError(t *testing.T) {
 
 // To verify: In bumpDelegatedRoles remove the delegation key load error handling; test will fail (no error or wrong message).
 func TestBumpDelegatedRoles_LoadDelegationKeyFails(t *testing.T) {
-	targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegated(t, "my-role")
+	rootJSON, targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegated(t, "my-role")
 	defer cleanup()
 
 	emptyKeyDir := t.TempDir()
 	viper.GetViper().Set("ONLINE_KEY_DIR", emptyKeyDir)
 
-	repo := repository.New()
+	repo := repoWithRoot(t, rootJSON)
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -1363,10 +1377,10 @@ func TestBumpDelegatedRoles_LoadDelegationKeyFails(t *testing.T) {
 
 // To verify: In bumpDelegatedRoles remove the Upload error handling; test will fail (no error or wrong message).
 func TestBumpDelegatedRoles_UploadFails(t *testing.T) {
-	targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegated(t, "my-role")
+	rootJSON, targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegated(t, "my-role")
 	defer cleanup()
 
-	repo := repository.New()
+	repo := repoWithRoot(t, rootJSON)
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -1409,10 +1423,10 @@ func TestBumpDelegatedRoles_UploadFails(t *testing.T) {
 
 // To verify: In bumpDelegatedRoles change success path; test will fail (error or wrong state).
 func TestBumpDelegatedRoles_Success(t *testing.T) {
-	targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegated(t, "my-role")
+	rootJSON, targetsJSON, delegationJSON, _, cleanup := makeTargetsAndDelegationForBumpDelegated(t, "my-role")
 	defer cleanup()
 
-	repo := repository.New()
+	repo := repoWithRoot(t, rootJSON)
 	ctx := context.Background()
 	mr := miniredis.RunT(t)
 	defer mr.Close()
@@ -1452,6 +1466,17 @@ func TestBumpDelegatedRoles_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"my-role"}, updated)
 	assert.Equal(t, int64(2), repo.Targets("my-role").Signed.Version)
+}
+
+func repoWithRoot(t *testing.T, rootJSON []byte) *repository.Type {
+	t.Helper()
+	rootPath := filepath.Join(t.TempDir(), "root.json")
+	require.NoError(t, os.WriteFile(rootPath, rootJSON, 0644))
+	repo := repository.New()
+	repo.SetRoot(tuf_metadata.Root(time.Now().Add(365 * 24 * time.Hour)))
+	_, err := repo.Root().FromFile(rootPath)
+	require.NoError(t, err)
+	return repo
 }
 
 // --- bumpSnapshotRole tests ---
