@@ -216,6 +216,7 @@ func addArtifactsLocked(
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, correctTargetsFilename, correctTargetsPath); err != nil {
 			return fmt.Errorf("failed to upload targets metadata to S3 after path update: %w", err)
 		}
+		tuf_metadata.RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "targets")
 		logrus.Debugf("Successfully updated and saved targets metadata with new delegation paths")
 	}
 
@@ -598,6 +599,7 @@ func updateSnapshotAndTimestamp(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, snapshotFilename, snapshotPath); err != nil {
 		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 	}
+	tuf_metadata.RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "snapshot")
 
 	if err := updateTimestamp(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir); err != nil {
 		return fmt.Errorf("failed to update timestamp: %w", err)
@@ -667,6 +669,7 @@ func updateTimestamp(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
 		return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
 	}
+	tuf_metadata.RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "timestamp")
 
 	return nil
 }

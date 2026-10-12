@@ -389,3 +389,31 @@ func TestFinalizeRootMetadataUpdate_RecordsStoredRolesBeforeRotation(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, want, recorded)
 }
+
+func TestFinalizeTargetsMetadataUpdate_RetiresRotationRecordsAfterUpload(t *testing.T) {
+	ctx := context.Background()
+	repo, redisClient := setupFinalizeTargetsFixture(t, nil)
+	repo.Targets("targets").Signed.Version = 2
+	key := rotatedRoleDigestsKey("admin", "app")
+	require.NoError(t, redisClient.HSet(ctx, key, "snapshot", "old", "timestamp", "old", "targets", "old").Err())
+
+	require.NoError(t, finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", t.TempDir(), redisClient))
+
+	left, err := redisClient.HKeys(ctx, key).Result()
+	require.NoError(t, err)
+	assert.Empty(t, left)
+}
+
+// To verify: In RetireRotatedRoleDigest delete a different field; test will fail.
+func TestRetireRotatedRoleDigest_RemovesOnlyThatRole(t *testing.T) {
+	ctx := context.Background()
+	redisClient := anchorRoots(t, nil)
+	key := rotatedRoleDigestsKey("admin", "app")
+	require.NoError(t, redisClient.HSet(ctx, key, "snapshot", "a", "timestamp", "b").Err())
+
+	RetireRotatedRoleDigest(ctx, redisClient, "admin", "app", "snapshot")
+
+	left, err := redisClient.HKeys(ctx, key).Result()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"timestamp"}, left)
+}

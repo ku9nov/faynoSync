@@ -193,6 +193,7 @@ func removeArtifactsLocked(
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, correctTargetsFilename, correctTargetsPath); err != nil {
 			return fmt.Errorf("failed to upload targets metadata to S3 after path removal: %w", err)
 		}
+		tuf_metadata.RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "targets")
 		logrus.Debugf("Successfully updated and saved targets metadata with removed delegation paths")
 	}
 

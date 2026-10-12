@@ -369,6 +369,7 @@ func bumpTargetsRole(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newTargetsFilename, newTargetsPath); err != nil {
 		return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
 	}
+	RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "targets")
 
 	logrus.Infof("Successfully bumped targets role to version %d", repo.Targets("targets").Signed.Version)
 	return nil
@@ -572,6 +573,7 @@ func bumpSnapshotRole(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newSnapshotFilename, newSnapshotPath); err != nil {
 		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 	}
+	RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "snapshot")
 
 	logrus.Infof("Successfully bumped snapshot role to version %d", repo.Snapshot().Signed.Version)
 	return nil
@@ -662,6 +664,7 @@ func bumpTimestampRole(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
 		return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
 	}
+	RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "timestamp")
 
 	logrus.Infof("Successfully updated timestamp role with expiration %s", repo.Timestamp().Signed.Expires.Format(time.RFC3339))
 	return nil

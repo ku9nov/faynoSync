@@ -1100,6 +1100,7 @@ func finalizeTargetsMetadataUpdate(
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, targetsFilename, targetsPath); err != nil {
 			return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
 		}
+		RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, roleName)
 
 		targetsMF, err := metaFileFromPath(targetsPath, int64(targets.Signed.Version))
 		if err != nil {
@@ -1125,6 +1126,7 @@ func finalizeTargetsMetadataUpdate(
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newSnapshotFilename, newSnapshotPath); err != nil {
 			return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 		}
+		RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "snapshot")
 
 		logrus.Infof("Successfully updated and signed snapshot to version %d", repo.Snapshot().Signed.Version)
 
@@ -1169,6 +1171,7 @@ func finalizeTargetsMetadataUpdate(
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampOutPath); err != nil {
 			return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
 		}
+		RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "timestamp")
 
 		logrus.Infof("Successfully updated and signed timestamp referencing snapshot version %d", repo.Snapshot().Signed.Version)
 
