@@ -317,7 +317,12 @@ func TestAddArtifacts_FindLatestTargetsFails_ReturnsError(t *testing.T) {
 	defer cleanup()
 
 	savedList := tuf_storage.ListMetadataForLatest
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	listCalls := 0
+	tuf_storage.ListMetadataForLatest = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		listCalls++
+		if listCalls == 1 { // root lookup
+			return savedList(ctx, adminName, appName, prefix)
+		}
 		return nil, fmt.Errorf("list failed")
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
@@ -360,7 +365,7 @@ func TestAddArtifacts_DownloadRootFails_ReturnsError(t *testing.T) {
 	}, false, testTaskID)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to download latest root metadata")
+	assert.Contains(t, err.Error(), "failed to download 1.root.json")
 }
 
 type failDownloadClient struct{}

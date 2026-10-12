@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,6 +38,7 @@ func TestMain(m *testing.M) {
 	originalDownloadMetadataForBootstrap := downloadMetadataForBootstrap
 	originalGetAllDelegatedRolesForRecovery := getAllDelegatedRolesForRecovery
 	originalRecoverSettingsFromStorageFn := recoverSettingsFromStorageFn
+	originalAnchorRecoveredRootFn := anchorRecoveredRootFn
 	listMetadataForBootstrap = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
 		return []string{}, nil
 	}
@@ -44,6 +46,7 @@ func TestMain(m *testing.M) {
 	downloadMetadataForBootstrap = tuf_storage.DownloadMetadataFromS3
 	getAllDelegatedRolesForRecovery = tuf_storage.GetAllDelegatedRoles
 	recoverSettingsFromStorageFn = recoverSettingsFromStorage
+	anchorRecoveredRootFn = func(context.Context, *redis.Client, string, string) error { return nil }
 
 	code := m.Run()
 	listMetadataForBootstrap = originalListMetadataForBootstrap
@@ -51,6 +54,7 @@ func TestMain(m *testing.M) {
 	downloadMetadataForBootstrap = originalDownloadMetadataForBootstrap
 	getAllDelegatedRolesForRecovery = originalGetAllDelegatedRolesForRecovery
 	recoverSettingsFromStorageFn = originalRecoverSettingsFromStorageFn
+	anchorRecoveredRootFn = originalAnchorRecoveredRootFn
 	os.Exit(code)
 }
 
@@ -1472,4 +1476,37 @@ func TestRecoverSettingsFromStorage_OnlineTargets_TargetsOnlineKeyTrue(t *testin
 
 	require.NoError(t, err)
 	assert.True(t, settings.TargetsOnlineKey, "targets must be online when key file is present in ONLINE_KEY_DIR")
+}
+
+// A root chain that does not verify must fail the recovery itself, before the
+// BOOTSTRAP marker is claimed, instead of surfacing on the next online update.
+// To verify: In runBootstrapRecovery ignore the anchorRecoveredRootFn error; test will fail (marker claimed, task succeeds).
+func TestRunBootstrapRecovery_RootChainNotVerified_FailsBeforeClaimingMarker(t *testing.T) {
+	mockRecoverySettingsFunc(t, recoveredBootstrapSettings{}, nil)
+	original := anchorRecoveredRootFn
+	anchorRecoveredRootFn = func(context.Context, *redis.Client, string, string) error {
+		return errors.New("refusing to use root v2: not a trusted successor of v1")
+	}
+	t.Cleanup(func() { anchorRecoveredRootFn = original })
+
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	bootstrapKey := "BOOTSTRAP_admin_myapp"
+	lockKey := "BOOTSTRAP_RECOVERY_LOCK_admin_myapp"
+	require.NoError(t, client.Set(context.Background(), lockKey, "task-anchor", time.Minute).Err())
+
+	runBootstrapRecovery(context.Background(), client, "task-anchor", "admin", "myapp", lockKey, time.Minute, "")
+
+	exists, err := client.Exists(context.Background(), bootstrapKey).Result()
+	require.NoError(t, err)
+	assert.Zero(t, exists)
+	taskData, err := client.Get(context.Background(), "task:task-anchor").Result()
+	require.NoError(t, err)
+	var st tasks.TaskStatus
+	require.NoError(t, json.Unmarshal([]byte(taskData), &st))
+	assert.Equal(t, tasks.TaskStateFailure, st.State)
+	require.NotNil(t, st.Result)
+	require.NotNil(t, st.Result.Error)
+	assert.Contains(t, *st.Result.Error, "failed to verify root metadata chain")
 }

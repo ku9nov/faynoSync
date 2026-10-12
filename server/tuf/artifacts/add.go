@@ -80,25 +80,11 @@ func addArtifactsLocked(
 
 	repo := repository.New()
 
-	rootPath := filepath.Join(tmpDir, "root.json")
-	_, latestRootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
+	trustedRoot, rootPath, err := tuf_metadata.LoadAnchoredRoot(ctx, redisClient, adminName, appName, tmpDir)
 	if err != nil {
-		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); err != nil {
-			if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err2 != nil {
-				return fmt.Errorf("failed to download root metadata (tried root.json and 1.root.json): %w", err)
-			}
-		}
-	} else {
-		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, latestRootFilename, rootPath); err != nil {
-			return fmt.Errorf("failed to download latest root metadata: %w", err)
-		}
+		return err
 	}
-
-	tempRoot := metadata.Root(time.Now().Add(365 * 24 * time.Hour))
-	repo.SetRoot(tempRoot)
-	if _, err := repo.Root().FromFile(rootPath); err != nil {
-		return fmt.Errorf("failed to load root metadata: %w", err)
-	}
+	repo.SetRoot(trustedRoot)
 	if err := verifyTrustedRoot(repo); err != nil {
 		return err
 	}
@@ -541,7 +527,7 @@ func updateSnapshotAndTimestamp(
 	if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
 		return fmt.Errorf("failed to load snapshot metadata: %w", err)
 	}
-	if err := tuf_metadata.VerifyForResign(ctx, adminName, appName, repo.Root(), "snapshot", repo.Snapshot(), tmpDir); err != nil {
+	if err := tuf_metadata.VerifyForResign(ctx, redisClient, adminName, appName, repo.Root(), "snapshot", repo.Snapshot(), tmpDir); err != nil {
 		return err
 	}
 

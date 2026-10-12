@@ -2023,11 +2023,11 @@ func TestFinalizeRootMetadataUpdate_ToFileFails_ReturnsError(t *testing.T) {
 // To verify: In finalizeRootMetadataUpdate ignore UploadMetadataToS3 error or return nil; test will fail (no error when S3 upload fails).
 func TestFinalizeRootMetadataUpdate_UploadToS3Fails_ReturnsError(t *testing.T) {
 	ctx := context.Background()
-	repo := makeValidRolesForValidateRoot(t)
 	tmpDir := t.TempDir()
 	mr := miniredis.RunT(t)
 	defer mr.Close()
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	repo := rootRotationFixture(t, redisClient)
 
 	uploadErr := fmt.Errorf("s3 upload failed")
 	savedViper := tuf_storage.GetViperForUpload
@@ -2052,11 +2052,11 @@ func TestFinalizeRootMetadataUpdate_UploadToS3Fails_ReturnsError(t *testing.T) {
 // To verify: In finalizeRootMetadataUpdate change root filename format or skip upload; test will fail (wrong file or no upload).
 func TestFinalizeRootMetadataUpdate_Success_NotBootstrap(t *testing.T) {
 	ctx := context.Background()
-	repo := makeValidRolesForValidateRoot(t)
 	tmpDir := t.TempDir()
 	mr := miniredis.RunT(t)
 	defer mr.Close()
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	repo := rootRotationFixture(t, redisClient)
 
 	savedViper := tuf_storage.GetViperForUpload
 	savedFactory := tuf_storage.StorageFactoryForUpload
@@ -2076,6 +2076,74 @@ func TestFinalizeRootMetadataUpdate_Success_NotBootstrap(t *testing.T) {
 	require.NoError(t, err)
 	rootFilename := fmt.Sprintf("%d.root.json", repo.Root().Signed.Version)
 	assert.FileExists(t, filepath.Join(tmpDir, rootFilename), "Root metadata file should be written to tmpDir")
+	_, anchored, err := anchoredRootDigests(ctx, redisClient, "admin", "app")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), anchored)
+}
+
+// A root update that the anchored root does not sign must not reach storage,
+// even if the caller verified it against a (tampered) root in the bucket.
+// To verify: In finalizeRootMetadataUpdate skip verifyNewRootMetadata against LoadAnchoredRoot; test will fail (upload attempted).
+func TestFinalizeRootMetadataUpdate_NotSignedByAnchoredRoot_Refused(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	repo := rootRotationFixture(t, redisClient)
+	repo.Root().ClearSignatures()
+	_, err := repo.Root().Sign(newResignKey(t).signer)
+	require.NoError(t, err)
+
+	savedViper := tuf_storage.GetViperForUpload
+	savedFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{client: &uploadFailingMockClient{err: fmt.Errorf("upload must not be attempted")}}
+	}
+	defer func() {
+		tuf_storage.GetViperForUpload = savedViper
+		tuf_storage.StorageFactoryForUpload = savedFactory
+	}()
+
+	err = finalizeRootMetadataUpdate(ctx, repo, "admin", "app", tmpDir, false, "", redisClient)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to persist root v2")
+}
+
+// rootRotationFixture serves and anchors root v1 and returns a repo holding root
+// v2 signed by the v1 root key, i.e. a legitimate root update.
+func rootRotationFixture(t *testing.T, redisClient *redis.Client) *repository.Type {
+	t.Helper()
+	rootKey := newResignKey(t)
+	v1 := tuf_metadata.Root(time.Now().Add(365 * 24 * time.Hour))
+	require.NoError(t, v1.Signed.AddKey(rootKey.key, "root"))
+	_, err := v1.Sign(rootKey.signer)
+	require.NoError(t, err)
+	v1Bytes, err := v1.ToBytes(false)
+	require.NoError(t, err)
+
+	v2, err := tuf_metadata.Root(time.Now()).FromBytes(v1Bytes)
+	require.NoError(t, err)
+	v2.Signed.Version = 2
+	v2.ClearSignatures()
+	_, err = v2.Sign(rootKey.signer)
+	require.NoError(t, err)
+
+	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes})
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.root.json"}, nil
+	}
+	t.Cleanup(func() { tuf_storage.ListMetadataForLatest = savedList })
+	require.NoError(t, anchorRootVersion(context.Background(), redisClient, "admin", "app", 1, v1Bytes))
+
+	repo := repository.New()
+	repo.SetRoot(v2)
+	return repo
 }
 
 // To verify: In finalizeRootMetadataUpdate skip Redis Set when isBootstrap and bootstrapValue has "signing-" prefix; test will fail (key not set).
@@ -2263,7 +2331,7 @@ func TestFinalizeTargetsMetadataUpdate_RootNotFound_ReturnsError(t *testing.T) {
 	err := finalizeTargetsMetadataUpdate(ctx, repo, "targets", "admin", "app", tmpDir, redisClient)
 
 	require.Error(t, err, "Expected error when root metadata cannot be found")
-	assert.Contains(t, err.Error(), "failed to find root metadata version")
+	assert.Contains(t, err.Error(), "failed to find latest root version")
 }
 
 // multiFileDownloadMockClient dispatches downloads by matching the object key suffix.

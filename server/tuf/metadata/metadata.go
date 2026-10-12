@@ -346,6 +346,14 @@ func BootstrapOnlineRolesWithContext(
 		logrus.Errorf("Failed to upload root metadata to S3: %v", err)
 		return fmt.Errorf("failed to upload root metadata to S3: %w", err)
 	}
+	persistedRoot, err := os.ReadFile(rootPath)
+	if err != nil {
+		return fmt.Errorf("failed to read root metadata: %w", err)
+	}
+	if err := resetRootAnchor(ctx, redisClient, adminName, appName, repo.Root().Signed.Version, persistedRoot); err != nil {
+		logrus.Errorf("Failed to anchor root metadata: %v", err)
+		return err
+	}
 
 	targetsFilename := fmt.Sprintf("%d.targets.json", targets.Signed.Version)
 	targetsPath := filepath.Join(tmpDir, targetsFilename)

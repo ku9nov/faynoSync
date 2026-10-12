@@ -467,6 +467,17 @@ func makeRootAndOnlineKeysForForceUpdate(t *testing.T) (rootJSON []byte, keyDir 
 	return rootJSON, keyDir, cleanup
 }
 
+// serveAnchoredRoot lists rootBody as root v1 and anchors it, as bootstrap does.
+func serveAnchoredRoot(t *testing.T, redisClient *redis.Client, rootBody []byte) {
+	t.Helper()
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.root.json"}, nil
+	}
+	t.Cleanup(func() { tuf_storage.ListMetadataForLatest = savedList })
+	require.NoError(t, anchorRootVersion(context.Background(), redisClient, "admin", "app", 1, rootBody))
+}
+
 // To verify: In forceOnlineMetadataUpdate remove the root download error handling or return a different error; test will fail (no error or wrong message).
 func TestForceOnlineMetadataUpdate_RootDownloadFails(t *testing.T) {
 	ctx := context.Background()
@@ -485,11 +496,13 @@ func TestForceOnlineMetadataUpdate_RootDownloadFails(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
+	serveAnchoredRoot(t, redisClient, nil)
+
 	updatedRoles, err := forceOnlineMetadataUpdate(ctx, redisClient, "admin", "app", []string{"timestamp"})
 
 	require.Error(t, err)
 	assert.Nil(t, updatedRoles)
-	assert.Contains(t, err.Error(), "failed to download root metadata")
+	assert.Contains(t, err.Error(), "failed to download 1.root.json")
 }
 
 type forceUpdateMockFactory struct {
@@ -536,6 +549,8 @@ func TestForceOnlineMetadataUpdate_TimestampRoleNotFound(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
+	serveAnchoredRoot(t, redisClient, rootBody)
+
 	updatedRoles, err := forceOnlineMetadataUpdate(ctx, redisClient, "admin", "app", []string{"timestamp"})
 
 	require.Error(t, err)
@@ -573,6 +588,8 @@ func TestForceOnlineMetadataUpdate_SnapshotRoleNotFound(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
+	serveAnchoredRoot(t, redisClient, rootBody)
+
 	updatedRoles, err := forceOnlineMetadataUpdate(ctx, redisClient, "admin", "app", []string{"timestamp"})
 
 	require.Error(t, err)
@@ -609,6 +626,8 @@ func TestForceOnlineMetadataUpdate_TargetsRoleNotFound(t *testing.T) {
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
 
+	serveAnchoredRoot(t, redisClient, rootBody)
+
 	updatedRoles, err := forceOnlineMetadataUpdate(ctx, redisClient, "admin", "app", []string{"timestamp"})
 
 	require.Error(t, err)
@@ -641,6 +660,8 @@ func TestForceOnlineMetadataUpdate_TimestampKeyLoadFails(t *testing.T) {
 		tuf_storage.GetViperForDownload = savedDownloadViper
 		tuf_storage.StorageFactoryForDownload = savedDownloadFactory
 	}()
+
+	serveAnchoredRoot(t, redisClient, rootJSON)
 
 	updatedRoles, err := forceOnlineMetadataUpdate(ctx, redisClient, "admin", "app", []string{"timestamp"})
 

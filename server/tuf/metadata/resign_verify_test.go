@@ -65,6 +65,17 @@ func rotatedRoots(t *testing.T, rootKey, oldSnapshot, newSnapshot, timestampKey 
 	return v1Bytes, v2
 }
 
+// anchorRoots records the given root versions as server-verified, the way bootstrap and root updates do.
+func anchorRoots(t *testing.T, files map[int64][]byte) *redis.Client {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	for version, body := range files {
+		require.NoError(t, anchorRootVersion(context.Background(), redisClient, "admin", "app", version, body))
+	}
+	return redisClient
+}
+
 func signedSnapshot(t *testing.T, signer signature.Signer) *tuf_metadata.Metadata[tuf_metadata.SnapshotType] {
 	t.Helper()
 	snapshot := tuf_metadata.Snapshot(time.Now().Add(-time.Hour))
@@ -79,7 +90,7 @@ func TestVerifyForResign_ExpiredButSignedUnderCurrentRoot_Accepted(t *testing.T)
 	rootKey, oldSnap, newSnap, tsKey := newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t)
 	_, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
 
-	err := VerifyForResign(context.Background(), "admin", "app", root, "snapshot", signedSnapshot(t, newSnap.signer), t.TempDir())
+	err := VerifyForResign(context.Background(), anchorRoots(t, nil), "admin", "app", root, "snapshot", signedSnapshot(t, newSnap.signer), t.TempDir())
 
 	require.NoError(t, err)
 }
@@ -90,7 +101,7 @@ func TestVerifyForResign_SignedWithRotatedKey_AcceptedUnderPreviousRoot(t *testi
 	v1Bytes, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
 	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes})
 
-	err := VerifyForResign(context.Background(), "admin", "app", root, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
+	err := VerifyForResign(context.Background(), anchorRoots(t, map[int64][]byte{1: v1Bytes}), "admin", "app", root, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
 
 	require.NoError(t, err)
 }
@@ -101,7 +112,7 @@ func TestVerifyForResign_ForgedSignature_Refused(t *testing.T) {
 	v1Bytes, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
 	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes})
 
-	err := VerifyForResign(context.Background(), "admin", "app", root, "snapshot", signedSnapshot(t, newResignKey(t).signer), t.TempDir())
+	err := VerifyForResign(context.Background(), anchorRoots(t, map[int64][]byte{1: v1Bytes}), "admin", "app", root, "snapshot", signedSnapshot(t, newResignKey(t).signer), t.TempDir())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to re-sign snapshot")
@@ -126,7 +137,7 @@ func TestVerifyForResign_TwoRotationsBeforeResign_AcceptedUnderOldestRoot(t *tes
 	require.NoError(t, err)
 	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes, "2.root.json": v2Bytes})
 
-	err = VerifyForResign(context.Background(), "admin", "app", v3, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
+	err = VerifyForResign(context.Background(), anchorRoots(t, map[int64][]byte{1: v1Bytes, 2: v2Bytes}), "admin", "app", v3, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
 
 	require.NoError(t, err)
 }
@@ -138,11 +149,32 @@ func TestVerifyForResign_CurrentRootNotSignedByPrevious_Refused(t *testing.T) {
 	v1Bytes, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, newResignKey(t).signer)
 	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes})
 
-	err := VerifyForResign(context.Background(), "admin", "app", root, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
+	err := VerifyForResign(context.Background(), anchorRoots(t, map[int64][]byte{1: v1Bytes}), "admin", "app", root, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to re-sign snapshot")
 	assert.Contains(t, err.Error(), "root v1 does not sign root v2")
+}
+
+// A forged older root that copies the real root keys (so it "signs" the current
+// root) but swaps in an attacker snapshot key must not be usable for walk-back.
+// To verify: In VerifyForResign load older roots without checking the anchored digest; test will fail (forged snapshot accepted).
+func TestVerifyForResign_ForgedOlderRootInStorage_Refused(t *testing.T) {
+	rootKey, oldSnap, newSnap, tsKey, attacker := newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t)
+	v1Bytes, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
+
+	forgedV1, err := tuf_metadata.Root(time.Now()).FromBytes(v1Bytes)
+	require.NoError(t, err)
+	require.NoError(t, forgedV1.Signed.RevokeKey(oldSnap.id, "snapshot"))
+	require.NoError(t, forgedV1.Signed.AddKey(attacker.key, "snapshot"))
+	forgedV1Bytes, err := forgedV1.ToBytes(false)
+	require.NoError(t, err)
+	serveMetadata(t, map[string][]byte{"1.root.json": forgedV1Bytes})
+
+	err = VerifyForResign(context.Background(), anchorRoots(t, map[int64][]byte{1: v1Bytes}), "admin", "app", root, "snapshot", signedSnapshot(t, attacker.signer), t.TempDir())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match the anchored digest")
 }
 
 // End to end through bumpTargetsRole: forged targets in storage must not be re-signed or uploaded.

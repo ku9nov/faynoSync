@@ -28,6 +28,7 @@ var (
 	downloadMetadataForBootstrap    = tuf_storage.DownloadMetadataFromS3
 	getAllDelegatedRolesForRecovery = tuf_storage.GetAllDelegatedRoles
 	recoverSettingsFromStorageFn    = recoverSettingsFromStorage
+	anchorRecoveredRootFn           = anchorRecoveredRoot
 
 	errBootstrapInProgress = errors.New("bootstrap in progress")
 )

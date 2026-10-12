@@ -3,6 +3,8 @@ package metadata
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -238,4 +240,26 @@ func TestBumpExpiringOnlineRoles_BootstrapIncomplete_NoStorageAccess(t *testing.
 func TestFilterRoles(t *testing.T) {
 	assert.Equal(t, []string{"snapshot", "timestamp"}, filterRoles([]string{"targets", "snapshot", "default", "timestamp"}, "snapshot", "timestamp"))
 	assert.Empty(t, filterRoles([]string{"targets", "default"}, "snapshot", "timestamp"))
+}
+
+// The snapshot is read before any signature check and its role names become
+// local paths, so a name with path components must not escape the temp dir.
+// To verify: In expiringOnlineRoles remove the isSafeRoleName check; test will fail (file written outside the temp dir).
+func TestExpiringOnlineRoles_PathTraversalRoleName_Refused(t *testing.T) {
+	now := time.Now().UTC()
+	escapeName := fmt.Sprintf("escape-%d.json", now.UnixNano())
+	roleName := "x/../../" + escapeName
+	serveMetadata(t, map[string][]byte{
+		"timestamp.json":  signedJSON(now.Add(20*time.Hour), map[string]int64{"snapshot.json": 4}),
+		"4.snapshot.json": signedJSON(now.Add(7*24*time.Hour), map[string]int64{roleName: 3}),
+		"3." + roleName:   []byte("attacker content"),
+	})
+	escaped := filepath.Join(os.TempDir(), escapeName)
+	t.Cleanup(func() { os.Remove(escaped) })
+
+	_, err := expiringOnlineRoles(context.Background(), "admin", "app", now.Add(onlineBumpThreshold), true)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid role name")
+	assert.NoFileExists(t, escaped)
 }

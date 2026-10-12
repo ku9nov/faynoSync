@@ -337,7 +337,12 @@ func TestRemoveArtifacts_FindLatestTargetsFails_ReturnsError(t *testing.T) {
 	defer cleanup()
 
 	savedList := tuf_storage.ListMetadataForLatest
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	listCalls := 0
+	tuf_storage.ListMetadataForLatest = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		listCalls++
+		if listCalls == 1 { // root lookup
+			return savedList(ctx, adminName, appName, prefix)
+		}
 		return nil, fmt.Errorf("list failed")
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()

@@ -209,6 +209,10 @@ func expiringOnlineRoles(ctx context.Context, adminName, appName string, deadlin
 	var roles []string
 	for name, meta := range snapshot.Signed.Meta {
 		role := strings.TrimSuffix(name, ".json")
+		// The snapshot is not verified yet and the name becomes a local file path.
+		if !isSafeRoleName(role) {
+			return nil, fmt.Errorf("snapshot v%d references invalid role name %q", snapshotMeta.Version, name)
+		}
 		header, err := readSignedHeader(ctx, adminName, appName, fmt.Sprintf("%d.%s", meta.Version, name), tmpDir)
 		if err != nil {
 			return nil, err
@@ -229,6 +233,10 @@ func expiringOnlineRoles(ctx context.Context, adminName, appName string, deadlin
 		roles = append(roles, "timestamp")
 	}
 	return roles, nil
+}
+
+func isSafeRoleName(role string) bool {
+	return role != "" && !strings.ContainsAny(role, `/\`) && !strings.Contains(role, "..")
 }
 
 func readSignedHeader(ctx context.Context, adminName, appName, filename, tmpDir string) (*signedHeader, error) {

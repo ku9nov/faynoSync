@@ -3,13 +3,10 @@ package metadata
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/theupdateframework/go-tuf/v2/metadata"
-
-	tuf_storage "faynoSync/server/tuf/storage"
 )
 
 // VerifyForResign refuses to re-sign stored metadata whose signature does not
@@ -19,9 +16,10 @@ import (
 //
 // After online key rotations the stored file can still be signed with keys from
 // an earlier root (several rotations may land before the next re-sign), so the
-// root history is walked back, each step checked to sign its successor, and the
-// file is accepted under the first root whose keys it verifies against.
-func VerifyForResign(ctx context.Context, adminName, appName string, root *metadata.Metadata[metadata.RootType], roleName string, md any, tmpDir string) error {
+// root history is walked back, each step checked against its anchored digest and
+// to sign its successor, and the file is accepted under the first root whose
+// keys it verifies against. root must come from LoadAnchoredRoot.
+func VerifyForResign(ctx context.Context, redisClient *redis.Client, adminName, appName string, root *metadata.Metadata[metadata.RootType], roleName string, md any, tmpDir string) error {
 	if root == nil {
 		return fmt.Errorf("refusing to re-sign %s: root metadata not loaded", roleName)
 	}
@@ -30,9 +28,14 @@ func VerifyForResign(ctx context.Context, adminName, appName string, root *metad
 		return nil
 	}
 
+	digests, _, err := anchoredRootDigests(ctx, redisClient, adminName, appName)
+	if err != nil {
+		return fmt.Errorf("refusing to re-sign %s: signature does not verify against root v%d: %w (root history unavailable: %v)", roleName, root.Signed.Version, currentErr, err)
+	}
+
 	newer := root
 	for version := root.Signed.Version - 1; version >= 1; version-- {
-		prev, err := loadRootVersion(ctx, adminName, appName, version, tmpDir)
+		prev, _, err := loadAnchoredRootVersion(ctx, adminName, appName, version, digests[version], tmpDir)
 		if err != nil {
 			return fmt.Errorf("refusing to re-sign %s: signature does not verify against root v%d: %w (root history unavailable: %v)", roleName, root.Signed.Version, currentErr, err)
 		}
@@ -47,17 +50,4 @@ func VerifyForResign(ctx context.Context, adminName, appName string, root *metad
 	}
 
 	return fmt.Errorf("refusing to re-sign %s: signature does not verify against root v%d or any earlier root: %w", roleName, root.Signed.Version, currentErr)
-}
-
-func loadRootVersion(ctx context.Context, adminName, appName string, version int64, tmpDir string) (*metadata.Metadata[metadata.RootType], error) {
-	filename := fmt.Sprintf("%d.root.json", version)
-	path := filepath.Join(tmpDir, "resign_"+filename)
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, filename, path); err != nil {
-		return nil, fmt.Errorf("failed to download %s: %w", filename, err)
-	}
-	prev := metadata.Root(time.Now())
-	if _, err := prev.FromFile(path); err != nil {
-		return nil, fmt.Errorf("failed to load %s: %w", filename, err)
-	}
-	return prev, nil
 }

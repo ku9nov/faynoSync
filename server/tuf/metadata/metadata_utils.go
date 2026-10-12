@@ -927,10 +927,27 @@ func finalizeRootMetadataUpdate(
 	// Online updates load root once and sign with the keys it declares, so a root
 	// rotation must not land in the middle of one.
 	if err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+		rootData, err := os.ReadFile(rootPath)
+		if err != nil {
+			return fmt.Errorf("failed to read root metadata: %w", err)
+		}
+		// Callers verify against the root in storage; the anchor is what decides.
+		if !isBootstrap {
+			trustedRoot, _, err := LoadAnchoredRoot(ctx, redisClient, adminName, appName, tmpDir)
+			if err != nil {
+				return err
+			}
+			if err := verifyNewRootMetadata(trustedRoot, root); err != nil {
+				return fmt.Errorf("refusing to persist root v%d: %w", root.Signed.Version, err)
+			}
+		}
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
 			return fmt.Errorf("failed to upload root metadata to S3: %w", err)
 		}
-		return nil
+		if isBootstrap {
+			return resetRootAnchor(ctx, redisClient, adminName, appName, root.Signed.Version, rootData)
+		}
+		return anchorRootVersion(ctx, redisClient, adminName, appName, root.Signed.Version, rootData)
 	}); err != nil {
 		return err
 	}
@@ -1002,13 +1019,9 @@ func finalizeTargetsMetadataUpdate(
 
 	if err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
 		// Load root metadata to obtain snapshot and timestamp key IDs for re-signing.
-		rootPath := filepath.Join(tmpDir, "finalize_root.json")
-		_, rootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
+		trustedRoot, rootPath, err := LoadAnchoredRoot(ctx, redisClient, adminName, appName, tmpDir)
 		if err != nil {
-			return fmt.Errorf("failed to find root metadata version: %w", err)
-		}
-		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
-			return fmt.Errorf("failed to download root metadata: %w", err)
+			return err
 		}
 
 		rootData, err := os.ReadFile(rootPath)
@@ -1057,12 +1070,7 @@ func finalizeTargetsMetadataUpdate(
 		if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
 			return fmt.Errorf("failed to load snapshot metadata: %w", err)
 		}
-		trustedRoot := metadata.Root(time.Now())
-		if _, err := trustedRoot.FromFile(rootPath); err != nil {
-			return fmt.Errorf("failed to load root metadata: %w", err)
-		}
-
-		if err := VerifyForResign(ctx, adminName, appName, trustedRoot, "snapshot", repo.Snapshot(), tmpDir); err != nil {
+		if err := VerifyForResign(ctx, redisClient, adminName, appName, trustedRoot, "snapshot", repo.Snapshot(), tmpDir); err != nil {
 			return err
 		}
 
