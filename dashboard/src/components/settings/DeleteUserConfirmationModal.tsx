@@ -11,6 +11,7 @@ import {
   MODAL_SURFACE,
   MODAL_TITLE,
 } from '@/components/common/ui';
+import type { ApiError } from '@/config/axios';
 
 interface DeleteUserConfirmationModalProps {
   userId: string;
@@ -38,7 +39,8 @@ export const DeleteUserConfirmationModal: React.FC<DeleteUserConfirmationModalPr
     try {
       await onConfirm();
       onClose();
-    } catch (err: any) {
+    } catch (e) {
+      const err = e as ApiError;
       setError(err.message || 'Failed to delete user');
     } finally {
       setIsDeleting(false);

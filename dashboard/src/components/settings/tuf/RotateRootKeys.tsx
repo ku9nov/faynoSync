@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/useToast';
-import axiosInstance from '@/config/axios';
+import axiosInstance, { type ApiError } from '@/config/axios';
 import { deleteSigningMetadata } from '@/components/settings/tuf/deleteSigningMetadata';
+import type { TufMetadata, TufMetadataEnvelope } from '@/components/settings/tuf/types';
 
 interface RotateRootKeysProps {
   selectedApp: string;
@@ -23,7 +24,7 @@ interface SignatureProgress {
   missingNewKeys: string[];
 }
 
-const normalizeTrustedRootMetadata = (value: unknown): any | null => {
+const normalizeTrustedRootMetadata = (value: unknown): TufMetadata | null => {
   if (!value) {
     return null;
   }
@@ -40,10 +41,10 @@ const normalizeTrustedRootMetadata = (value: unknown): any | null => {
     return null;
   }
 
-  const candidate = value as Record<string, any>;
+  const candidate = value as TufMetadataEnvelope;
 
   if (candidate.signed?.keys && candidate.signed?.roles) {
-    return candidate;
+    return candidate as TufMetadata;
   }
 
   if (candidate.data?.trusted_root) {
@@ -66,7 +67,7 @@ export const RotateRootKeys: React.FC<RotateRootKeysProps> = ({
   const [showRotateKeys, setShowRotateKeys] = useState(false);
   const [keyCount, setKeyCount] = useState<number>(2);
   const [expirationDays, setExpirationDays] = useState<number>(364);
-  const [rootMetadata, setRootMetadata] = useState<any>(null);
+  const [rootMetadata, setRootMetadata] = useState<TufMetadata | null>(null);
   const [rootMetadataAppName, setRootMetadataAppName] = useState<string | null>(null);
   const [showRootMetadataStep1, setShowRootMetadataStep1] = useState(false);
   const [showRootMetadataStep3, setShowRootMetadataStep3] = useState(false);
@@ -126,7 +127,8 @@ export const RotateRootKeys: React.FC<RotateRootKeysProps> = ({
         toastSuccess('Root metadata loaded successfully!');
       }
       return true;
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to get root metadata:', error);
       if (showSuccessToast) {
         const errorMessage = error.response?.data?.message || error.message || 'Failed to get root metadata';
@@ -159,6 +161,7 @@ export const RotateRootKeys: React.FC<RotateRootKeysProps> = ({
     }
 
     void fetchCurrentRootMetadata(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchCurrentRootMetadata is recreated every render; adding it would refetch in a loop after a failed load
   }, [
     showRotateKeys,
     selectedApp,
@@ -257,7 +260,8 @@ export const RotateRootKeys: React.FC<RotateRootKeysProps> = ({
       setTimeout(() => {
         onCheckTufTasks(taskId);
       }, 1000);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to submit metadata:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to submit metadata';
       toastError(errorMessage);
@@ -420,7 +424,8 @@ export const RotateRootKeys: React.FC<RotateRootKeysProps> = ({
         toastSuccess('Signature submitted successfully! Continue submitting more signatures until threshold is reached.');
         setSignaturePayload(''); // Clear input for next signature
       }
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to submit signature:', error);
       console.log('Error response data:', error.response?.data);
       
@@ -511,7 +516,8 @@ export const RotateRootKeys: React.FC<RotateRootKeysProps> = ({
         setMetadataStatusResult('unknown');
         toastSuccess('Status checked successfully');
       }
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to check metadata status:', error);
       const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to check metadata status';
       
@@ -569,7 +575,8 @@ export const RotateRootKeys: React.FC<RotateRootKeysProps> = ({
       setSignatureErrorMessage('');
       setSignatureProgress(null);
       setSignaturePayload('');
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       console.error('Failed to delete signing metadata:', error);
       const errorMessage = error.message || 'Failed to delete signing metadata';
       toastError(errorMessage);

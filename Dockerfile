@@ -8,7 +8,7 @@ RUN yarn install --frozen-lockfile
 COPY dashboard/ ./
 RUN yarn build
 
-FROM --platform=$BUILDPLATFORM golang:1.26.3 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.9 AS builder
 
 ARG TARGETOS
 ARG TARGETARCH

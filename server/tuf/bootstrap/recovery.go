@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	tuf_metadata "faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/models"
 	"faynoSync/server/tuf/tasks"
 	tuf_utils "faynoSync/server/tuf/utils"
@@ -226,6 +227,21 @@ func runBootstrapRecovery(
 		return
 	}
 
+	// Lost Redis data includes the root anchor: re-establish it now so a broken
+	// root chain fails the recovery instead of the next online update.
+	if err := anchorRecoveredRootFn(ctx, redisClient, adminName, appName); err != nil {
+		logrus.Errorf("Bootstrap recovery failed while anchoring root metadata: admin=%s app=%s task_id=%s err=%v", adminName, appName, taskID, err)
+		taskName := tasks.TaskNameBootstrapRecovery
+		success := false
+		errMsg := fmt.Sprintf("Bootstrap recovery failed to verify root metadata chain: %v", err)
+		_ = tasks.SaveTaskStatus(redisClient, taskID, tasks.TaskStateFailure, &tasks.TaskResult{
+			Task:   &taskName,
+			Status: &success,
+			Error:  &errMsg,
+		})
+		return
+	}
+
 	claimed, err := finalizeRecoveredBootstrapMarker(ctx, redisClient, bootstrapKey, expectedBootstrapMarker, recoveryMarker)
 	if err != nil {
 		logrus.Errorf("Bootstrap recovery failed while claiming BOOTSTRAP key: admin=%s app=%s task_id=%s key=%s err=%v", adminName, appName, taskID, bootstrapKey, err)
@@ -344,6 +360,16 @@ func runBootstrapRecovery(
 		recovered.SnapshotExpiration,
 		recovered.TimestampExpiration,
 	)
+}
+
+func anchorRecoveredRoot(ctx context.Context, redisClient *redis.Client, adminName, appName string) error {
+	tmpDir, err := os.MkdirTemp("", "tmp-tuf-recovery-root-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	_, _, err = tuf_metadata.LoadAnchoredRoot(ctx, redisClient, adminName, appName, tmpDir)
+	return err
 }
 
 func releaseRecoveryLock(ctx context.Context, redisClient *redis.Client, lockKey, taskID string) {

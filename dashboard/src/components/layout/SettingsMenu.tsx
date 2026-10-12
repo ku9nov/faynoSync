@@ -23,7 +23,6 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({ onClose, onOpenProfi
   const { logout } = useAuth();
   const { themeMode, setThemeMode } = useTheme();
   const { data: userData } = useUsersQuery();
-  const [showSettingsModal] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
 
   React.useEffect(() => {
@@ -40,10 +39,6 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({ onClose, onOpenProfi
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showSettingsModal) {
-        return;
-      }
-      
       // Check if click was on the settings button
       const settingsButton = document.querySelector('[aria-label="Settings"]');
       if (settingsButton?.contains(event.target as Node)) {
@@ -59,7 +54,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({ onClose, onOpenProfi
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [onClose, showSettingsModal]);
+  }, [onClose]);
 
   React.useEffect(() => {
     const handleViewportChange = () => {

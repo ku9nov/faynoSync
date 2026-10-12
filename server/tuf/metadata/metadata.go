@@ -103,6 +103,10 @@ func BootstrapOnlineRolesWithContext(
 	} else {
 		logrus.Debug("Successfully verified root metadata")
 	}
+	if err := ensureRootKeysStrength(repo.Root()); err != nil {
+		logrus.Errorf("Rejected root metadata: %v", err)
+		return err
+	}
 
 	keySuffix := adminName + "_" + appName
 	targetsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TARGETS_EXPIRATION_"+keySuffix, payload.Settings.Roles.Targets.Expiration)
@@ -345,6 +349,14 @@ func BootstrapOnlineRolesWithContext(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "1.root.json", rootPath); err != nil {
 		logrus.Errorf("Failed to upload root metadata to S3: %v", err)
 		return fmt.Errorf("failed to upload root metadata to S3: %w", err)
+	}
+	persistedRoot, err := os.ReadFile(rootPath)
+	if err != nil {
+		return fmt.Errorf("failed to read root metadata: %w", err)
+	}
+	if err := resetRootAnchor(ctx, redisClient, adminName, appName, repo.Root().Signed.Version, persistedRoot); err != nil {
+		logrus.Errorf("Failed to anchor root metadata: %v", err)
+		return err
 	}
 
 	targetsFilename := fmt.Sprintf("%d.targets.json", targets.Signed.Version)

@@ -4,8 +4,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/rsa"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
@@ -383,4 +383,56 @@ func TestBuildSignerFromPrivateKeyFile_RSA_PSS_CompatibleWithTUFVerifyDelegate(t
 
 	err = root.VerifyDelegate("timestamp", timestamp)
 	require.NoError(t, err)
+}
+
+func TestCheckKeyStrength(t *testing.T) {
+	rsa1024, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+	rsa2048, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	p224, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	require.NoError(t, err)
+	p256, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	edPub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	assert.ErrorContains(t, CheckKeyStrength(&rsa1024.PublicKey), "RSA key is 1024 bits, minimum is 2048")
+	assert.NoError(t, CheckKeyStrength(&rsa2048.PublicKey))
+	assert.ErrorContains(t, CheckKeyStrength(&p224.PublicKey), "ECDSA key is 224 bits, minimum is 256")
+	assert.NoError(t, CheckKeyStrength(&p256.PublicKey))
+	assert.NoError(t, CheckKeyStrength(edPub))
+}
+
+func TestBuildSignerFromPrivateKeyFile_WeakRSAKeyRejected(t *testing.T) {
+	dir := t.TempDir()
+	env := viper.GetViper()
+	oldDir := env.GetString("ONLINE_KEY_DIR")
+	env.Set("ONLINE_KEY_DIR", dir)
+	defer env.Set("ONLINE_KEY_DIR", oldDir)
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+	tufKey, err := tuf_metadata.KeyFromPublicKey(privateKey.Public())
+	require.NoError(t, err)
+	keyID, err := tufKey.ID()
+	require.NoError(t, err)
+
+	der, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, keyID), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0600))
+
+	_, err = BuildSignerFromPrivateKeyFile(keyID, keyID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to sign with key")
+	assert.Contains(t, err.Error(), "minimum is 2048")
+}
+
+func TestBuildVerifierForPublicKey_WeakRSAKeyRejected(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+
+	_, err = BuildVerifierForPublicKey(&privateKey.PublicKey)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "minimum is 2048")
 }

@@ -1,4 +1,4 @@
-import axiosInstance from '@/config/axios';
+import axiosInstance, { type ApiError } from '@/config/axios';
 
 export interface DeleteSigningMetadataParams {
   appName: string;
@@ -68,7 +68,8 @@ export const deleteSigningMetadata = async (
       hasTask: false,
       message: responseData.message || 'Signing metadata deleted successfully.',
     };
-  } catch (error: any) {
+  } catch (e) {
+    const error = e as ApiError;
     // Check if it's a 404 error (nothing to delete - this is actually a success case)
     if (error.response?.status === 404) {
       const message = error.response?.data?.message || 'No signing process for root.';

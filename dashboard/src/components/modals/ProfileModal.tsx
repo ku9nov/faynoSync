@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useBackdropClose } from '../../hooks/useBackdropClose';
 import ReactDOM from 'react-dom';
-import { useUsersQuery } from '@/hooks/use-query/useUsersQuery';
+import { useUsersQuery, type Permission } from '@/hooks/use-query/useUsersQuery';
 import { useAppsQuery } from '@/hooks/use-query/useAppsQuery';
 import { useChannelQuery } from '@/hooks/use-query/useChannelQuery';
 import { usePlatformQuery } from '@/hooks/use-query/usePlatformQuery';
@@ -18,6 +18,7 @@ import {
   STATUS_BADGE,
   STATUS_DOT,
 } from '@/components/common/ui';
+import type { ApiError } from '@/config/axios';
 
 interface ProfileModalProps {
   onClose: () => void;
@@ -109,27 +110,22 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
       setTimeout(() => {
         onClose();
       }, 1500);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       setPasswordError(error.message || 'Failed to change password');
     }
   };
 
   // Helper function to get name by ID
   const getNameById = (id: string, type: 'app' | 'channel' | 'platform' | 'arch') => {
-    let items: any[] = [];
-    
     if (type === 'app' && Array.isArray(apps)) {
-      items = apps;
-      return items.find(item => item.ID === id)?.AppName || id;
+      return apps.find(item => item.ID === id)?.AppName || id;
     } else if (type === 'channel' && Array.isArray(channels)) {
-      items = channels;
-      return items.find(item => item.ID === id)?.ChannelName || id;
+      return channels.find(item => item.ID === id)?.ChannelName || id;
     } else if (type === 'platform' && Array.isArray(platforms)) {
-      items = platforms;
-      return items.find(item => item.ID === id)?.PlatformName || id;
+      return platforms.find(item => item.ID === id)?.PlatformName || id;
     } else if (type === 'arch' && Array.isArray(architectures)) {
-      items = architectures;
-      return items.find(item => item.ID === id)?.ArchID || id;
+      return architectures.find(item => item.ID === id)?.ArchID || id;
     }
     
     return id;
@@ -277,7 +273,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(userData.permissions).map(([resource, permissions]: [string, any]) => (
+                        {Object.entries(userData.permissions).map(([resource, permissions]: [string, Permission]) => (
                           <tr key={resource} className="border-t border-white/10">
                             <td className="px-4 py-2 text-theme-primary font-medium">{resource}</td>
                             <td className="px-4 py-2 text-theme-primary">

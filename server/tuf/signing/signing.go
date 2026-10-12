@@ -22,6 +22,33 @@ import (
 	tufmetadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
 
+const (
+	minRSAKeyBits   = 2048
+	minECDSAKeyBits = 256
+)
+
+func CheckKeyStrength(publicKey crypto.PublicKey) error {
+	switch key := publicKey.(type) {
+	case *rsa.PublicKey:
+		if bits := key.N.BitLen(); bits < minRSAKeyBits {
+			return fmt.Errorf("RSA key is %d bits, minimum is %d", bits, minRSAKeyBits)
+		}
+	case *ecdsa.PublicKey:
+		if bits := key.Curve.Params().BitSize; bits < minECDSAKeyBits {
+			return fmt.Errorf("ECDSA key is %d bits, minimum is %d", bits, minECDSAKeyBits)
+		}
+	}
+	return nil
+}
+
+func CheckMetadataKeyStrength(key *tufmetadata.Key) error {
+	publicKey, err := key.ToPublicKey()
+	if err != nil {
+		return fmt.Errorf("failed to parse public key: %w", err)
+	}
+	return CheckKeyStrength(publicKey)
+}
+
 func LoadPrivateKeyAnyFromFilesystem(keyID string, keyURI string) (crypto.PrivateKey, error) {
 	env := viper.GetViper()
 	keyDir := env.GetString("ONLINE_KEY_DIR")
@@ -166,6 +193,9 @@ func BuildSignerFromPrivateKeyFile(keyID string, keyURI string) (signature.Signe
 	if !ok {
 		return nil, fmt.Errorf("private key for %s does not expose public key", keyID)
 	}
+	if err := CheckKeyStrength(pubProvider.Public()); err != nil {
+		return nil, fmt.Errorf("refusing to sign with key %s: %w", keyID, err)
+	}
 	tufKey, err := tufmetadata.KeyFromPublicKey(pubProvider.Public())
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive TUF key from private key %s: %w", keyID, err)
@@ -198,6 +228,9 @@ func BuildSignerFromPrivateKeyFile(keyID string, keyURI string) (signature.Signe
 }
 
 func BuildVerifierForPublicKey(publicKey crypto.PublicKey) (signature.Verifier, error) {
+	if err := CheckKeyStrength(publicKey); err != nil {
+		return nil, err
+	}
 	switch key := publicKey.(type) {
 	case ed25519.PublicKey:
 		return signature.LoadED25519Verifier(key)

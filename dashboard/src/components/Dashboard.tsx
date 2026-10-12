@@ -9,7 +9,7 @@ import { EditAppModal } from '@/components/modals/EditAppModal';
 import { DeleteAppConfirmationModal } from '@/components/modals/DeleteAppConfirmationModal';
 import { CiUploadCommandModal } from '@/components/modals/CiUploadCommandModal';
 import { useSearchParams } from 'react-router-dom';
-import axiosInstance from '@/config/axios';
+import axiosInstance, { type ApiError } from '@/config/axios';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearch } from '@/hooks/useSearch.ts';
 import { usePlatformQuery } from '@/hooks/use-query/usePlatformQuery';
@@ -149,7 +149,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const appVersions = paginatedVersions.items || [];
 
-  const filteredAppList = useSearch(appList, searchTerm) as AppListItem[];
+  const filteredAppList = useSearch<AppListItem | AppVersion>(appList, searchTerm) as AppListItem[];
 
   const { data: appData } = useAppDataQuery(selectedApp);
 
@@ -210,7 +210,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       await queryClient.invalidateQueries({ queryKey: ['reportKeys', selectedApp] });
       await queryClient.refetchQueries({ queryKey: ['reportKeys', selectedApp] });
       toastSuccess('Report key regenerated');
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       const errorMessage = error.response?.data?.message || error.message || 'Failed to regenerate report key';
       toastError(errorMessage);
     } finally {
@@ -482,7 +483,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           queryKey: ['apps', selectedApp, currentPage, refreshKey, filters] 
         });
       }, 5000);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       const errorMessage = error.response?.data?.message || error.message || 'Failed to publish TUF artifacts';
       toastError(errorMessage);
     } finally {
@@ -842,7 +844,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   isSelected ? 'ring-2 ring-purple-400' : ''
                 }`}
                 style={{
-                  ['--card-color' as any]: isDangerZone ? '#EF4444' : isIncompleteRollout ? '#F59E0B' : '#8B5CF6',
+                  '--card-color': isDangerZone ? '#EF4444' : isIncompleteRollout ? '#F59E0B' : '#8B5CF6',
                   ...(isDangerZone ? {
                     backgroundColor: 'rgba(239, 68, 68, 0.25)',
                     boxShadow: '0 10px 25px -5px rgba(239, 68, 68, 0.5), 0 0 0 1px rgba(239, 68, 68, 0.3)',
@@ -1241,7 +1243,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             key={app.ID}
             onClick={() => onAppClick(app.AppName)}
             className={"bg-theme-card backdrop-blur-lg rounded-lg p-6 text-theme-primary hover:bg-theme-card-hover transition-colors cursor-pointer sharedCard"}
-            style={{ ['--card-color' as any]: '#8B5CF6' }}
+            style={{ '--card-color': '#8B5CF6' }}
           >
             <div className="flex items-center mb-4 min-w-0 w-full">
               <div className="relative w-12 h-12 flex-shrink-0">

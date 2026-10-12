@@ -4,8 +4,29 @@ on:
   pull_request:
     branches:
       - main
+      - development
+
+permissions:
+  contents: read
 
 jobs:
+  govulncheck:
+    name: Go vulnerability check
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.9'
+
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+
   unit-tests:
     name: Go unit tests
     runs-on: ubuntu-22.04
@@ -17,7 +38,19 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.9'
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt -w on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
 
       - name: Run unit tests
         run: |
@@ -28,6 +61,33 @@ jobs:
         run: |
           printf 'FAYNOSYNC_VERSION=latest\nMONGO_ROOT_PASSWORD=ci\nREDIS_PASSWORD=ci\n' > deploy/.env
           docker compose -f deploy/docker-compose.yaml config -q
+
+  dashboard:
+    name: Dashboard lint and build
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: yarn
+          cache-dependency-path: dashboard/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Build
+        run: yarn build
 
   integration-tests:
     name: Docker Compose integration tests (${{ matrix.mongo }})

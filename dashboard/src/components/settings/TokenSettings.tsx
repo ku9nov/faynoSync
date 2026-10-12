@@ -153,6 +153,7 @@ export const TokenSettings: React.FC = () => {
 
   useEffect(() => {
     loadTokens();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount; the refresh button reloads explicitly
   }, []);
 
   const handleCreateToken = async () => {

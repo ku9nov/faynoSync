@@ -1,11 +1,6 @@
 import { useMemo } from 'react';
 
-type SearchableItem = {
-  ID: string;
-  [key: string]: any;
-};
-
-export const useSearch = (items: SearchableItem[], searchTerm: string): SearchableItem[] => {
+export const useSearch = <T extends { ID: string }>(items: T[], searchTerm: string): T[] => {
   return useMemo(() => {
     if (!searchTerm) return items;
     if (!items) return [];

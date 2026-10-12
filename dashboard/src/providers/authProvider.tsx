@@ -1,6 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { env } from '@/config/env';
+import type { ApiError } from '@/config/axios';
 
 type LoginProviderProps = {
   username: string;
@@ -46,7 +47,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         }
       );
       setToken(response.data.token);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       throw error?.response?.data?.error;
     }
   };
@@ -67,7 +69,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         }
       );
       console.log('Success:', response.data);
-    } catch (error: any) {
+    } catch (e) {
+      const error = e as ApiError;
       throw error?.response?.data?.error;
     }
   };

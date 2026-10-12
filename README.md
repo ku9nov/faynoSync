@@ -208,7 +208,7 @@ Skipping the dashboard build still produces a working API, but `/dashboard/` ret
 4. In your client application, make a GET request to the auto updater service API, passing the current version number as a query parameter:
 
 ```
-http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin
+http://localhost:9000/checkVersion?app_name=myapp&version=0.0.1&owner=admin&channel=stable&platform=linux&arch=amd64
 ```
 
 ### 📋 API Response

@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -89,25 +88,13 @@ func PostMetadataOnline(c *gin.Context, redisClient *redis.Client) {
 		return
 	}
 
-	targetsOnlineRedisKey := "TARGETS_ONLINE_KEY_" + keySuffix
-	targetsOnlineVal, err := redisClient.Get(ctx, targetsOnlineRedisKey).Result()
-	var targetsOnline bool
-	switch {
-	case err == redis.Nil:
-		targetsOnline = true
-	case err != nil:
-		logrus.Errorf("Redis error reading targets online key %q: %v", targetsOnlineRedisKey, err)
+	targetsOnline, err := isTargetsOnline(ctx, redisClient, keySuffix)
+	if err != nil {
+		logrus.Errorf("Redis error reading targets online key %q: %v", "TARGETS_ONLINE_KEY_"+keySuffix, err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": "Storage temporarily unavailable",
 		})
 		return
-	default:
-		switch {
-		case strings.EqualFold(targetsOnlineVal, "true"), targetsOnlineVal == "1":
-			targetsOnline = true
-		default:
-			targetsOnline = false
-		}
 	}
 
 	if contains(payload.Roles, "targets") && !targetsOnline {
@@ -205,6 +192,22 @@ func forceOnlineMetadataUpdate(
 	appName string,
 	roles []string,
 ) ([]string, error) {
+	var updatedRoles []string
+	err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+		var err error
+		updatedRoles, err = forceOnlineMetadataUpdateLocked(ctx, redisClient, adminName, appName, roles)
+		return err
+	})
+	return updatedRoles, err
+}
+
+func forceOnlineMetadataUpdateLocked(
+	ctx context.Context,
+	redisClient *redis.Client,
+	adminName string,
+	appName string,
+	roles []string,
+) ([]string, error) {
 	keySuffix := adminName + "_" + appName
 
 	tmpDir, err := os.MkdirTemp("", "tmp-tuf-*")
@@ -215,25 +218,11 @@ func forceOnlineMetadataUpdate(
 
 	repo := repository.New()
 
-	rootPath := filepath.Join(tmpDir, "root.json")
-	_, latestRootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
+	trustedRoot, rootPath, err := LoadAnchoredRoot(ctx, redisClient, adminName, appName, tmpDir)
 	if err != nil {
-		if downloadErr := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "root.json", rootPath); downloadErr != nil {
-			if err2 := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, "1.root.json", rootPath); err2 != nil {
-				return nil, fmt.Errorf("failed to download root metadata (tried root.json and 1.root.json): %w", err2)
-			}
-		}
-	} else {
-		if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, latestRootFilename, rootPath); err != nil {
-			return nil, fmt.Errorf("failed to download root metadata: %w", err)
-		}
+		return nil, err
 	}
-
-	tempRoot := metadata.Root(time.Now().Add(365 * 24 * time.Hour))
-	repo.SetRoot(tempRoot)
-	if _, err := repo.Root().FromFile(rootPath); err != nil {
-		return nil, fmt.Errorf("failed to load root metadata: %w", err)
-	}
+	repo.SetRoot(trustedRoot)
 	if !repo.Root().Signed.Expires.After(time.Now().UTC()) {
 		return nil, fmt.Errorf("root metadata is expired at %s", repo.Root().Signed.Expires.UTC().Format(time.RFC3339))
 	}
@@ -310,20 +299,15 @@ func forceOnlineMetadataUpdate(
 	needTimestamp := contains(roles, "timestamp") || hasTargetsOrDelegations || contains(roles, "snapshot")
 
 	if needSnapshot || needTimestamp {
-		if err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
-			if needSnapshot {
-				if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
-					return fmt.Errorf("failed to bump snapshot role: %w", err)
-				}
+		if needSnapshot {
+			if err := bumpSnapshotRole(ctx, repo, adminName, appName, redisClient, snapshotSigners, tmpDir, keySuffix); err != nil {
+				return nil, fmt.Errorf("failed to bump snapshot role: %w", err)
 			}
-			if needTimestamp {
-				if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
-					return fmt.Errorf("failed to bump timestamp role: %w", err)
-				}
+		}
+		if needTimestamp {
+			if err := bumpTimestampRole(ctx, repo, adminName, appName, redisClient, timestampSigners, tmpDir, keySuffix); err != nil {
+				return nil, fmt.Errorf("failed to bump timestamp role: %w", err)
 			}
-			return nil
-		}); err != nil {
-			return nil, err
 		}
 		if needSnapshot && !contains(updatedRoles, "snapshot") {
 			updatedRoles = append(updatedRoles, "snapshot")
@@ -362,6 +346,9 @@ func bumpTargetsRole(
 	if _, err := repo.Targets("targets").FromFile(targetsPath); err != nil {
 		return fmt.Errorf("failed to load targets metadata: %w", err)
 	}
+	if err := VerifyForResign(ctx, redisClient, adminName, appName, repo.Root(), "targets", repo.Targets("targets"), tmpDir); err != nil {
+		return err
+	}
 
 	repo.Targets("targets").Signed.Version++
 	repo.Targets("targets").Signed.Expires = tuf_utils.HelperExpireIn(targetsExpiration)
@@ -382,6 +369,7 @@ func bumpTargetsRole(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newTargetsFilename, newTargetsPath); err != nil {
 		return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
 	}
+	RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "targets")
 
 	logrus.Infof("Successfully bumped targets role to version %d", repo.Targets("targets").Signed.Version)
 	return nil
@@ -413,6 +401,9 @@ func bumpDelegatedRoles(
 	repo.SetTargets("targets", targets)
 	if _, err := repo.Targets("targets").FromFile(targetsPath); err != nil {
 		return nil, fmt.Errorf("failed to load targets metadata: %w", err)
+	}
+	if err := VerifyForResign(ctx, redisClient, adminName, appName, repo.Root(), "targets", repo.Targets("targets"), tmpDir); err != nil {
+		return nil, err
 	}
 
 	var updated []string
@@ -455,6 +446,11 @@ func bumpDelegatedRoles(
 
 		if len(roleKeyIDs) == 0 {
 			return nil, fmt.Errorf("no key IDs found for delegated role %s", roleName)
+		}
+		// Delegated key rotation re-signs the role together with targets, so the
+		// stored role must always verify against the current delegator.
+		if err := repo.Targets("targets").VerifyDelegate(roleName, repo.Targets(roleName)); err != nil {
+			return nil, fmt.Errorf("refusing to re-sign %s: signature does not verify against targets: %w", roleName, err)
 		}
 		if roleThreshold < 1 {
 			roleThreshold = 1
@@ -503,8 +499,8 @@ func bumpSnapshotRole(
 	tmpDir string,
 	keySuffix string,
 ) error {
-	// Caller (forceOnlineMetadataUpdate) holds the per-(admin,app) snapshot lock via
-	// WithSnapshotLock, covering both this snapshot bump and the following timestamp bump.
+	// Caller (forceOnlineMetadataUpdate) holds the per-(admin,app) metadata lock via
+	// WithSnapshotLock for the whole update.
 	_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
 	if err != nil {
 		return fmt.Errorf("failed to find latest snapshot version: %w", err)
@@ -520,6 +516,9 @@ func bumpSnapshotRole(
 	repo.SetSnapshot(snapshot)
 	if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
 		return fmt.Errorf("failed to load snapshot metadata: %w", err)
+	}
+	if err := VerifyForResign(ctx, redisClient, adminName, appName, repo.Root(), "snapshot", repo.Snapshot(), tmpDir); err != nil {
+		return err
 	}
 
 	snapshotMeta := repo.Snapshot().Signed.Meta
@@ -574,6 +573,7 @@ func bumpSnapshotRole(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newSnapshotFilename, newSnapshotPath); err != nil {
 		return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 	}
+	RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "snapshot")
 
 	logrus.Infof("Successfully bumped snapshot role to version %d", repo.Snapshot().Signed.Version)
 	return nil
@@ -597,6 +597,11 @@ func bumpTimestampRole(
 	loadedTimestamp, err := LoadExistingTimestampForBump(ctx, repo, adminName, appName, timestampPath)
 	if err != nil {
 		return err
+	}
+	if loadedTimestamp {
+		if err := VerifyForResign(ctx, redisClient, adminName, appName, repo.Root(), "timestamp", repo.Timestamp(), tmpDir); err != nil {
+			return err
+		}
 	}
 
 	timestampMeta := repo.Timestamp().Signed.Meta
@@ -625,6 +630,9 @@ func bumpTimestampRole(
 		repo.SetSnapshot(snap)
 		if _, loadErr := repo.Snapshot().FromFile(snapshotDlPath); loadErr != nil {
 			return fmt.Errorf("failed to load snapshot for timestamp reference: %w", loadErr)
+		}
+		if err := VerifyForResign(ctx, redisClient, adminName, appName, repo.Root(), "snapshot", repo.Snapshot(), tmpDir); err != nil {
+			return err
 		}
 		snapshot = repo.Snapshot()
 		snapshotPath = snapshotDlPath
@@ -656,6 +664,7 @@ func bumpTimestampRole(
 	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampPath); err != nil {
 		return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
 	}
+	RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "timestamp")
 
 	logrus.Infof("Successfully updated timestamp role with expiration %s", repo.Timestamp().Signed.Expires.Format(time.RFC3339))
 	return nil

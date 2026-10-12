@@ -622,6 +622,10 @@ func verifyNewRootMetadata(currentRoot, newRoot *metadata.Metadata[metadata.Root
 		return fmt.Errorf("%w: new root threshold not reached: %v", errRootSignaturesMissing, err)
 	}
 
+	if err := ensureRootKeysStrength(newRoot); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -696,8 +700,20 @@ func decodeAndValidateMetadataKey(keyData interface{}, expectedKeyID string) (*m
 	if computedKeyID != expectedKeyID {
 		return nil, fmt.Errorf("keyid mismatch: provided %s, computed %s", expectedKeyID, computedKeyID)
 	}
+	if err := signing.CheckMetadataKeyStrength(&key); err != nil {
+		return nil, fmt.Errorf("weak key %s: %w", expectedKeyID, err)
+	}
 
 	return &key, nil
+}
+
+func ensureRootKeysStrength(root *metadata.Metadata[metadata.RootType]) error {
+	for keyID, key := range root.Signed.Keys {
+		if err := signing.CheckMetadataKeyStrength(key); err != nil {
+			return fmt.Errorf("weak root metadata key %s: %w", keyID, err)
+		}
+	}
+	return nil
 }
 
 func getRootRoleKeysFromSigned(signedData map[string]interface{}, roleName string) (map[string]*metadata.Key, error) {
@@ -924,8 +940,35 @@ func finalizeRootMetadataUpdate(
 		return fmt.Errorf("failed to save root metadata: %w", err)
 	}
 
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
-		return fmt.Errorf("failed to upload root metadata to S3: %w", err)
+	// Online updates load root once and sign with the keys it declares, so a root
+	// rotation must not land in the middle of one.
+	if err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+		rootData, err := os.ReadFile(rootPath)
+		if err != nil {
+			return fmt.Errorf("failed to read root metadata: %w", err)
+		}
+		// Callers verify against the root in storage; the anchor is what decides.
+		if !isBootstrap {
+			trustedRoot, _, err := LoadAnchoredRoot(ctx, redisClient, adminName, appName, tmpDir)
+			if err != nil {
+				return err
+			}
+			if err := verifyNewRootMetadata(trustedRoot, root); err != nil {
+				return fmt.Errorf("refusing to persist root v%d: %w", root.Signed.Version, err)
+			}
+			if err := recordRotatedRoleDigests(ctx, redisClient, adminName, appName, trustedRoot, tmpDir); err != nil {
+				return fmt.Errorf("refusing to persist root v%d: %w", root.Signed.Version, err)
+			}
+		}
+		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
+			return fmt.Errorf("failed to upload root metadata to S3: %w", err)
+		}
+		if isBootstrap {
+			return resetRootAnchor(ctx, redisClient, adminName, appName, root.Signed.Version, rootData)
+		}
+		return anchorRootVersion(ctx, redisClient, adminName, appName, root.Signed.Version, rootData)
+	}); err != nil {
+		return err
 	}
 
 	if isBootstrap {
@@ -991,55 +1034,45 @@ func finalizeTargetsMetadataUpdate(
 		return fmt.Errorf("failed to save targets metadata: %w", err)
 	}
 
-	if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, targetsFilename, targetsPath); err != nil {
-		return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
-	}
-
-	// Load root metadata to obtain snapshot and timestamp key IDs for re-signing.
-	rootPath := filepath.Join(tmpDir, "finalize_root.json")
-	_, rootFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "root")
-	if err != nil {
-		return fmt.Errorf("failed to find root metadata version: %w", err)
-	}
-	if err := tuf_storage.DownloadMetadataFromS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
-		return fmt.Errorf("failed to download root metadata: %w", err)
-	}
-
-	rootData, err := os.ReadFile(rootPath)
-	if err != nil {
-		return fmt.Errorf("failed to read root metadata: %w", err)
-	}
-
-	var rootMetadata models.RootMetadata
-	if err := json.Unmarshal(rootData, &rootMetadata); err != nil {
-		return fmt.Errorf("failed to parse root metadata: %w", err)
-	}
-
-	// Build snapshot signers from root-declared keys.
-	snapshotRole, ok := rootMetadata.Signed.Roles["snapshot"]
-	if !ok || len(snapshotRole.KeyIDs) == 0 {
-		return fmt.Errorf("snapshot role not found in root metadata")
-	}
-	snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
-	if err != nil {
-		return fmt.Errorf("failed to build snapshot signers: %w", err)
-	}
-
-	// Build timestamp signers from root-declared keys.
-	timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]
-	if !ok || len(timestampRole.KeyIDs) == 0 {
-		return fmt.Errorf("timestamp role not found in root metadata")
-	}
-	timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
-	if err != nil {
-		return fmt.Errorf("failed to build timestamp signers: %w", err)
-	}
-
 	keySuffix := adminName + "_" + appName
 
-	// Hold a single per-(admin,app) lock across the snapshot AND timestamp
-	// read-modify-write so concurrent updates cannot break version monotonicity.
 	if err := WithSnapshotLock(ctx, redisClient, adminName, appName, func() error {
+		// Load root metadata to obtain snapshot and timestamp key IDs for re-signing.
+		trustedRoot, rootPath, err := LoadAnchoredRoot(ctx, redisClient, adminName, appName, tmpDir)
+		if err != nil {
+			return err
+		}
+
+		rootData, err := os.ReadFile(rootPath)
+		if err != nil {
+			return fmt.Errorf("failed to read root metadata: %w", err)
+		}
+
+		var rootMetadata models.RootMetadata
+		if err := json.Unmarshal(rootData, &rootMetadata); err != nil {
+			return fmt.Errorf("failed to parse root metadata: %w", err)
+		}
+
+		// Build snapshot signers from root-declared keys.
+		snapshotRole, ok := rootMetadata.Signed.Roles["snapshot"]
+		if !ok || len(snapshotRole.KeyIDs) == 0 {
+			return fmt.Errorf("snapshot role not found in root metadata")
+		}
+		snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
+		if err != nil {
+			return fmt.Errorf("failed to build snapshot signers: %w", err)
+		}
+
+		// Build timestamp signers from root-declared keys.
+		timestampRole, ok := rootMetadata.Signed.Roles["timestamp"]
+		if !ok || len(timestampRole.KeyIDs) == 0 {
+			return fmt.Errorf("timestamp role not found in root metadata")
+		}
+		timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
+		if err != nil {
+			return fmt.Errorf("failed to build timestamp signers: %w", err)
+		}
+
 		_, snapshotFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, "snapshot")
 		if err != nil {
 			return fmt.Errorf("failed to find latest snapshot version: %w", err)
@@ -1056,6 +1089,18 @@ func finalizeTargetsMetadataUpdate(
 		if _, err := repo.Snapshot().FromFile(snapshotPath); err != nil {
 			return fmt.Errorf("failed to load snapshot metadata: %w", err)
 		}
+		if err := VerifyForResign(ctx, redisClient, adminName, appName, trustedRoot, "snapshot", repo.Snapshot(), tmpDir); err != nil {
+			return err
+		}
+
+		if trusted, ok := repo.Snapshot().Signed.Meta[fmt.Sprintf("%s.json", roleName)]; ok && trusted.Version >= targets.Signed.Version {
+			return fmt.Errorf("%s version %d must be greater than trusted snapshot version %d", roleName, targets.Signed.Version, trusted.Version)
+		}
+
+		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, targetsFilename, targetsPath); err != nil {
+			return fmt.Errorf("failed to upload targets metadata to S3: %w", err)
+		}
+		RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, roleName)
 
 		targetsMF, err := metaFileFromPath(targetsPath, int64(targets.Signed.Version))
 		if err != nil {
@@ -1081,6 +1126,7 @@ func finalizeTargetsMetadataUpdate(
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, newSnapshotFilename, newSnapshotPath); err != nil {
 			return fmt.Errorf("failed to upload snapshot metadata to S3: %w", err)
 		}
+		RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "snapshot")
 
 		logrus.Infof("Successfully updated and signed snapshot to version %d", repo.Snapshot().Signed.Version)
 
@@ -1125,6 +1171,7 @@ func finalizeTargetsMetadataUpdate(
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, "timestamp.json", timestampOutPath); err != nil {
 			return fmt.Errorf("failed to upload timestamp metadata to S3: %w", err)
 		}
+		RetireRotatedRoleDigest(ctx, redisClient, adminName, appName, "timestamp")
 
 		logrus.Infof("Successfully updated and signed timestamp referencing snapshot version %d", repo.Snapshot().Signed.Version)
 

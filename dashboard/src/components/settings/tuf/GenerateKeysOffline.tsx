@@ -18,8 +18,6 @@ interface GenerateKeysOfflineProps {
 export const GenerateKeysOffline: React.FC<GenerateKeysOfflineProps> = ({
   selectedApp,
   isBootstrapSuccess,
-  onGeneratedPayload: _onGeneratedPayload,
-  onStartBootstrap: _onStartBootstrap,
   onSaveToHistory,
 }) => {
   const [showStep1, setShowStep1] = useState(false);

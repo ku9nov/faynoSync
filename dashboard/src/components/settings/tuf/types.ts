@@ -23,6 +23,20 @@ export type TufHistoryEntry = {
   version?: string;
 };
 
+export type TufMetadata = {
+  signed: {
+    version?: number;
+    expires?: string;
+    roles?: Record<string, { threshold?: number }>;
+  };
+};
+
+export type TufMetadataEnvelope = {
+  signed?: Record<string, unknown>;
+  data?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
 export type TaskState = 'PENDING' | 'SUCCESS' | 'FAILURE';
 
 export type TaskData = {

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import axiosInstance from '@/config/axios';
 
-interface Permission {
+export interface Permission {
   Create: boolean;
   Delete: boolean;
   Edit: boolean;
@@ -10,7 +10,7 @@ interface Permission {
   Allowed: string[];
 }
 
-interface Permissions {
+export interface Permissions {
   Apps?: Permission;
   Channels?: Permission;
   Platforms?: Permission;

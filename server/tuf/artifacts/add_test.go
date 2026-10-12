@@ -317,7 +317,12 @@ func TestAddArtifacts_FindLatestTargetsFails_ReturnsError(t *testing.T) {
 	defer cleanup()
 
 	savedList := tuf_storage.ListMetadataForLatest
-	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+	listCalls := 0
+	tuf_storage.ListMetadataForLatest = func(ctx context.Context, adminName, appName, prefix string) ([]string, error) {
+		listCalls++
+		if listCalls == 1 { // root lookup
+			return savedList(ctx, adminName, appName, prefix)
+		}
 		return nil, fmt.Errorf("list failed")
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
@@ -360,7 +365,7 @@ func TestAddArtifacts_DownloadRootFails_ReturnsError(t *testing.T) {
 	}, false, testTaskID)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to download latest root metadata")
+	assert.Contains(t, err.Error(), "failed to download 1.root.json")
 }
 
 type failDownloadClient struct{}
@@ -1035,56 +1040,85 @@ func makeSnapshotAndTimestampSigners(t *testing.T) (timestampSigner, snapshotSig
 	return sig, sig
 }
 
-// To verify: In updateSnapshotAndTimestamp when context is already cancelled, return timeout error; skip lockCtx.Done() check and test will panic or hang.
-func TestUpdateSnapshotAndTimestamp_ContextCancelled_LockTimeout_ReturnsError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	mr := miniredis.RunT(t)
-	defer mr.Close()
-	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	repo := repository.New()
-	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
-	tmpDir := t.TempDir()
-
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
-	assert.Contains(t, err.Error(), "timeout after")
+// setRootTrustingSigner gives repo a root whose snapshot and timestamp roles
+// trust signer, so stored metadata it signed passes the re-sign verification.
+func setRootTrustingSigner(t *testing.T, repo *repository.Type, signer signature.Signer) {
+	t.Helper()
+	pub, err := signer.PublicKey()
+	require.NoError(t, err)
+	key, err := tuf_metadata.KeyFromPublicKey(pub)
+	require.NoError(t, err)
+	root := tuf_metadata.Root(tuf_utils.HelperExpireIn(365))
+	require.NoError(t, root.Signed.AddKey(key, "snapshot"))
+	require.NoError(t, root.Signed.AddKey(key, "timestamp"))
+	repo.SetRoot(root)
 }
 
-// To verify: In updateSnapshotAndTimestamp skip SetNX error handling; test will fail (no error or wrong message).
-func TestUpdateSnapshotAndTimestamp_RedisSetNXError_ReturnsError(t *testing.T) {
+// Regression: meta for roles not touched by an upload is carried over from the
+// stored snapshot, so a snapshot not signed by the snapshot key must be refused.
+// To verify: remove the VerifyForResign call from updateSnapshotAndTimestamp; test will fail (forged snapshot re-signed).
+func TestUpdateSnapshotAndTimestamp_ForgedSnapshot_RefusedBeforeUpload(t *testing.T) {
 	mr := miniredis.RunT(t)
 	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	mr.Close()
+	storeDir := t.TempDir()
+	metadataPrefix := filepath.Join(storeDir, "tuf_metadata", testAdminName, testAppName)
+	require.NoError(t, os.MkdirAll(metadataPrefix, 0755))
 
-	ctx := context.Background()
-	repo := repository.New()
 	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
-	tmpDir := t.TempDir()
+	_, forger := makeSnapshotAndTimestampSigners(t)
+	repo := repository.New()
+	setRootTrustingSigner(t, repo, snapSigner)
+	repo.SetSnapshot(tuf_metadata.Snapshot(tuf_utils.HelperExpireIn(7)))
+	_, err := repo.Snapshot().Sign(forger)
+	require.NoError(t, err)
+	require.NoError(t, repo.Snapshot().ToFile(filepath.Join(metadataPrefix, "1.snapshot.json"), true))
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
+	savedList := tuf_storage.ListMetadataForLatest
+	savedGetViperD := tuf_storage.GetViperForDownload
+	savedFactoryD := tuf_storage.StorageFactoryForDownload
+	savedFactoryU := tuf_storage.StorageFactoryForUpload
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.snapshot.json"}, nil
+	}
+	tuf_storage.GetViperForDownload = func() *viper.Viper {
+		v := viper.New()
+		v.Set("S3_BUCKET_NAME", "test-bucket")
+		return v
+	}
+	tuf_storage.StorageFactoryForDownload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &fsStorageFactory{client: &fsStorageClient{baseDir: storeDir}}
+	}
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		t.Fatal("forged snapshot must not be re-signed and uploaded")
+		return nil
+	}
+	t.Cleanup(func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForDownload = savedGetViperD
+		tuf_storage.StorageFactoryForDownload = savedFactoryD
+		tuf_storage.StorageFactoryForUpload = savedFactoryU
+	})
+
+	err = updateSnapshotAndTimestamp(context.Background(), repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, t.TempDir())
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
+	assert.Contains(t, err.Error(), "refusing to re-sign snapshot")
 }
 
-// To verify: In updateSnapshotAndTimestamp when lock is held and context times out, return timeout error; change timeout message and test will fail.
-func TestUpdateSnapshotAndTimestamp_LockHeld_Timeout_ReturnsError(t *testing.T) {
+// Lock acquire/timeout mechanics are covered by TestWithSnapshotLock_* in the
+// metadata package; these tests pin that the lock wraps the whole update.
+
+// To verify: In AddArtifacts take the metadata lock only around snapshot/timestamp; test will fail (storage error instead of lock timeout).
+func TestAddArtifacts_LockHeld_NoMetadataAccessUntilAcquired(t *testing.T) {
 	mr := miniredis.RunT(t)
-	defer mr.Close()
+	mr.Set("BOOTSTRAP_"+testAdminName+"_"+testAppName, "done")
 	mr.Set("LOCK_SNAPSHOT_"+testAdminName+"_"+testAppName, "locked")
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	repo := repository.New()
-	tsSigner, snapSigner := makeSnapshotAndTimestampSigners(t)
-	tmpDir := t.TempDir()
 
-	err := updateSnapshotAndTimestamp(ctx, repo, nil, testAdminName, testAppName, redisClient, []signature.Signer{tsSigner}, []signature.Signer{snapSigner}, tmpDir)
+	err := AddArtifacts(ctx, redisClient, nil, testAdminName, testAppName, []Artifact{{Path: "a/b"}}, true, testTaskID)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire snapshot lock")
@@ -1199,6 +1233,7 @@ func TestUpdateSnapshotAndTimestamp_UploadSnapshotFails_ReturnsError(t *testing.
 
 	_, snapSigner := makeSnapshotAndTimestampSigners(t)
 	repo := repository.New()
+	setRootTrustingSigner(t, repo, snapSigner)
 	exp := tuf_utils.HelperExpireIn(7)
 	snap := tuf_metadata.Snapshot(exp)
 	repo.SetSnapshot(snap)

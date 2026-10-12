@@ -43,8 +43,8 @@ export const SignInPage = () => {
       // Use the 'from' state if available, otherwise default to '/applications'
       const from = location.state?.from || '/applications';
       navigate(from);
-    } catch (error: any) {
-      setRespError(error);
+    } catch (e) {
+      setRespError(typeof e === 'string' ? e : '');
     }
   };
 
@@ -66,7 +66,7 @@ export const SignInPage = () => {
                 onSubmit={(values: FormValues) => {
                   handleSubmit(values);
                 }}>
-                {({}) => (
+                {() => (
                   <Form className='flex flex-col gap-5 w-full'>
                     <AuthInputs
                       name='username'

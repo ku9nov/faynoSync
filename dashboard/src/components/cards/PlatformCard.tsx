@@ -25,7 +25,7 @@ export const PlatformCard: React.FC<PlatformCardProps> = ({
   return (
     <div
       className={"sharedCard sharedCard--compact bg-theme-card backdrop-blur-lg rounded-lg p-2 text-theme-primary hover:bg-theme-card-hover transition-colors cursor-pointer flex items-center"}
-      style={{ ['--card-color' as any]: '#8B5CF6' }}
+      style={{ '--card-color': '#8B5CF6' }}
       onClick={onClick}
     >
       <div className="flex items-center min-w-0 w-full">
