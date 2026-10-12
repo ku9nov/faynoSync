@@ -66,6 +66,9 @@ func VerifyForResign(ctx context.Context, redisClient *redis.Client, adminName, 
 	return fmt.Errorf("refusing to re-sign %s: signature does not verify against root v%d or any earlier root: %w", roleName, root.Signed.Version, currentErr)
 }
 
+// The upload has already happened, so the error is logged: returning it would not
+// remove the record and would only leave the publish half-done. VerifyForResign
+// clears the record again on the next current-root verification and fails closed.
 func RetireRotatedRoleDigest(ctx context.Context, redisClient *redis.Client, adminName, appName, roleName string) {
 	if err := redisClient.HDel(ctx, rotatedRoleDigestsKey(adminName, appName), roleName).Err(); err != nil {
 		logrus.Errorf("Failed to retire rotated %s digest for %s/%s: %v", roleName, adminName, appName, err)
