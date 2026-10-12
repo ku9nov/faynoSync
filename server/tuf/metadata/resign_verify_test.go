@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
 	tuf_metadata "github.com/theupdateframework/go-tuf/v2/metadata"
 
 	tuf_storage "faynoSync/server/tuf/storage"
@@ -76,6 +77,14 @@ func anchorRoots(t *testing.T, files map[int64][]byte) *redis.Client {
 	return redisClient
 }
 
+// recordRotation stores the role digest the way recordRotatedRoleDigests does at root rotation.
+func recordRotation(t *testing.T, redisClient *redis.Client, roleName string, md any) {
+	t.Helper()
+	digest, err := metadataContentDigest(md)
+	require.NoError(t, err)
+	require.NoError(t, redisClient.HSet(context.Background(), rotatedRoleDigestsKey("admin", "app"), roleName, digest).Err())
+}
+
 func signedSnapshot(t *testing.T, signer signature.Signer) *tuf_metadata.Metadata[tuf_metadata.SnapshotType] {
 	t.Helper()
 	snapshot := tuf_metadata.Snapshot(time.Now().Add(-time.Hour))
@@ -100,8 +109,11 @@ func TestVerifyForResign_SignedWithRotatedKey_AcceptedUnderPreviousRoot(t *testi
 	rootKey, oldSnap, newSnap, tsKey := newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t)
 	v1Bytes, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
 	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes})
+	redisClient := anchorRoots(t, map[int64][]byte{1: v1Bytes})
+	snapshot := signedSnapshot(t, oldSnap.signer)
+	recordRotation(t, redisClient, "snapshot", snapshot)
 
-	err := VerifyForResign(context.Background(), anchorRoots(t, map[int64][]byte{1: v1Bytes}), "admin", "app", root, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
+	err := VerifyForResign(context.Background(), redisClient, "admin", "app", root, "snapshot", snapshot, t.TempDir())
 
 	require.NoError(t, err)
 }
@@ -137,7 +149,11 @@ func TestVerifyForResign_TwoRotationsBeforeResign_AcceptedUnderOldestRoot(t *tes
 	require.NoError(t, err)
 	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes, "2.root.json": v2Bytes})
 
-	err = VerifyForResign(context.Background(), anchorRoots(t, map[int64][]byte{1: v1Bytes, 2: v2Bytes}), "admin", "app", v3, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
+	redisClient := anchorRoots(t, map[int64][]byte{1: v1Bytes, 2: v2Bytes})
+	snapshot := signedSnapshot(t, oldSnap.signer)
+	recordRotation(t, redisClient, "snapshot", snapshot)
+
+	err = VerifyForResign(context.Background(), redisClient, "admin", "app", v3, "snapshot", snapshot, t.TempDir())
 
 	require.NoError(t, err)
 }
@@ -175,6 +191,94 @@ func TestVerifyForResign_ForgedOlderRootInStorage_Refused(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not match the anchored digest")
+}
+
+// The attack from a leaked, rotated-out key: new content signed with it must not
+// be re-signed with the current key, even though the old root verifies it.
+// To verify: In VerifyForResign drop the verifyRotatedRoleDigest check; test will fail (forged snapshot accepted).
+func TestVerifyForResign_ContentSignedWithRotatedKeyAfterRotation_Refused(t *testing.T) {
+	rootKey, oldSnap, newSnap, tsKey := newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t)
+	v1Bytes, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
+	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes})
+	redisClient := anchorRoots(t, map[int64][]byte{1: v1Bytes})
+	recordRotation(t, redisClient, "snapshot", signedSnapshot(t, oldSnap.signer))
+
+	forged := tuf_metadata.Snapshot(time.Now().Add(time.Hour))
+	forged.Signed.Version = 7
+	_, err := forged.Sign(oldSnap.signer)
+	require.NoError(t, err)
+
+	err = VerifyForResign(context.Background(), redisClient, "admin", "app", root, "snapshot", forged, t.TempDir())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "signed with keys from root v1 that were rotated out")
+	assert.Contains(t, err.Error(), "differs from the one recorded at root rotation")
+}
+
+// To verify: In verifyRotatedRoleDigest treat a missing record as a match; test will fail.
+func TestVerifyForResign_SignedWithRotatedKeyNothingRecorded_Refused(t *testing.T) {
+	rootKey, oldSnap, newSnap, tsKey := newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t)
+	v1Bytes, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
+	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes})
+
+	err := VerifyForResign(context.Background(), anchorRoots(t, map[int64][]byte{1: v1Bytes}), "admin", "app", root, "snapshot", signedSnapshot(t, oldSnap.signer), t.TempDir())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no snapshot was recorded at root rotation")
+}
+
+// Once the role verifies under the current root the record must go, or the old
+// file could be replayed and re-signed later.
+// To verify: In VerifyForResign drop the HDel on the current-root path; test will fail.
+func TestVerifyForResign_VerifiedUnderCurrentRoot_ClearsRecord(t *testing.T) {
+	rootKey, oldSnap, newSnap, tsKey := newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t)
+	_, root := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
+	redisClient := anchorRoots(t, nil)
+	recordRotation(t, redisClient, "snapshot", signedSnapshot(t, oldSnap.signer))
+
+	require.NoError(t, VerifyForResign(context.Background(), redisClient, "admin", "app", root, "snapshot", signedSnapshot(t, newSnap.signer), t.TempDir()))
+
+	exists, err := redisClient.HExists(context.Background(), rotatedRoleDigestsKey("admin", "app"), "snapshot").Result()
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+// Records the stored roles at rotation; afterwards the exact stored snapshot is
+// re-signable under the new root and different content signed with the old key is not.
+// To verify: In recordRotatedRoleDigests skip the HSet; test will fail (stored snapshot refused).
+func TestRecordRotatedRoleDigests_StoredSnapshotStaysResignable(t *testing.T) {
+	rootKey, oldSnap, newSnap, tsKey := newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t)
+	v1Bytes, v2 := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
+	v1, err := tuf_metadata.Root(time.Now()).FromBytes(v1Bytes)
+	require.NoError(t, err)
+
+	stored := tuf_metadata.Snapshot(time.Now().Add(time.Hour))
+	stored.Signed.Version = 3
+	_, err = stored.Sign(oldSnap.signer)
+	require.NoError(t, err)
+	storedBytes, err := stored.ToBytes(true)
+	require.NoError(t, err)
+	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes, "3.snapshot.json": storedBytes})
+	savedList := tuf_storage.ListMetadataForLatest
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.root.json", "3.snapshot.json"}, nil
+	}
+	t.Cleanup(func() { tuf_storage.ListMetadataForLatest = savedList })
+	redisClient := anchorRoots(t, map[int64][]byte{1: v1Bytes})
+
+	require.NoError(t, recordRotatedRoleDigests(context.Background(), redisClient, "admin", "app", v1, t.TempDir()))
+
+	reloaded, err := tuf_metadata.Snapshot().FromBytes(storedBytes)
+	require.NoError(t, err)
+	require.NoError(t, VerifyForResign(context.Background(), redisClient, "admin", "app", v2, "snapshot", reloaded, t.TempDir()))
+
+	forged := tuf_metadata.Snapshot(time.Now().Add(time.Hour))
+	forged.Signed.Version = 4
+	_, err = forged.Sign(oldSnap.signer)
+	require.NoError(t, err)
+	err = VerifyForResign(context.Background(), redisClient, "admin", "app", v2, "snapshot", forged, t.TempDir())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "differs from the one recorded at root rotation")
 }
 
 // End to end through bumpTargetsRole: forged targets in storage must not be re-signed or uploaded.
@@ -242,4 +346,46 @@ func TestFinalizeTargetsMetadataUpdate_ForgedSnapshot_RefusedBeforeUpload(t *tes
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to re-sign snapshot")
+}
+
+// To verify: In finalizeRootMetadataUpdate drop the recordRotatedRoleDigests call; test will fail (nothing recorded).
+func TestFinalizeRootMetadataUpdate_RecordsStoredRolesBeforeRotation(t *testing.T) {
+	ctx := context.Background()
+	rootKey, oldSnap, newSnap, tsKey := newResignKey(t), newResignKey(t), newResignKey(t), newResignKey(t)
+	v1Bytes, v2 := rotatedRoots(t, rootKey, oldSnap, newSnap, tsKey, rootKey.signer)
+
+	stored := tuf_metadata.Snapshot(time.Now().Add(time.Hour))
+	_, err := stored.Sign(oldSnap.signer)
+	require.NoError(t, err)
+	storedBytes, err := stored.ToBytes(false)
+	require.NoError(t, err)
+	serveMetadata(t, map[string][]byte{"1.root.json": v1Bytes, "1.snapshot.json": storedBytes})
+	savedList := tuf_storage.ListMetadataForLatest
+	savedUploadViper := tuf_storage.GetViperForUpload
+	savedUploadFactory := tuf_storage.StorageFactoryForUpload
+	mockViper := viper.New()
+	mockViper.Set("S3_BUCKET_NAME", "test-bucket")
+	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
+		return []string{"1.root.json", "1.snapshot.json"}, nil
+	}
+	tuf_storage.GetViperForUpload = func() *viper.Viper { return mockViper }
+	tuf_storage.StorageFactoryForUpload = func(*viper.Viper) tuf_storage.StorageFactory {
+		return &uploadMockFactory{}
+	}
+	t.Cleanup(func() {
+		tuf_storage.ListMetadataForLatest = savedList
+		tuf_storage.GetViperForUpload = savedUploadViper
+		tuf_storage.StorageFactoryForUpload = savedUploadFactory
+	})
+	redisClient := anchorRoots(t, map[int64][]byte{1: v1Bytes})
+	repo := repository.New()
+	repo.SetRoot(v2)
+
+	require.NoError(t, finalizeRootMetadataUpdate(ctx, repo, "admin", "app", t.TempDir(), false, "", redisClient))
+
+	recorded, err := redisClient.HGet(ctx, rotatedRoleDigestsKey("admin", "app"), "snapshot").Result()
+	require.NoError(t, err)
+	want, err := metadataContentDigest(stored)
+	require.NoError(t, err)
+	assert.Equal(t, want, recorded)
 }

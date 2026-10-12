@@ -43,7 +43,8 @@ jobs:
         id: create-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$version" --title "$version" --notes-file "$changelog_file"
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: gh release create "$version" --target "$MERGE_SHA" --title "$version" --notes-file "$changelog_file"
           
   push_to_registry:
     if: |

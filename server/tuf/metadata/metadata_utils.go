@@ -956,6 +956,9 @@ func finalizeRootMetadataUpdate(
 			if err := verifyNewRootMetadata(trustedRoot, root); err != nil {
 				return fmt.Errorf("refusing to persist root v%d: %w", root.Signed.Version, err)
 			}
+			if err := recordRotatedRoleDigests(ctx, redisClient, adminName, appName, trustedRoot, tmpDir); err != nil {
+				return fmt.Errorf("refusing to persist root v%d: %w", root.Signed.Version, err)
+			}
 		}
 		if err := tuf_storage.UploadMetadataToS3(ctx, adminName, appName, rootFilename, rootPath); err != nil {
 			return fmt.Errorf("failed to upload root metadata to S3: %w", err)
