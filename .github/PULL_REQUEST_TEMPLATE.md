@@ -12,3 +12,12 @@ Please delete options that are not relevant.
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] This change requires a documentation update
+
+## Checklist
+
+See [CONTRIBUTING.md](https://github.com/ku9nov/faynoSync/blob/main/CONTRIBUTING.md).
+
+- [ ] Tests added or updated for new functionality or the fixed bug
+- [ ] `go test ./server/... -race` and the integration tests pass locally
+- [ ] `yarn lint` and `yarn build` pass (dashboard changes only)
+- [ ] Security impact described (TUF, signing, auth, or storage changes only)

@@ -1,6 +1,20 @@
+[extend]
+useDefault = true
+
 [allowlist]
-description = "Ignore local development env file with non-production placeholder secrets"
+description = "Sample credentials of the local development stack (bound to 127.0.0.1, not used in production) and test fixtures"
 paths = [
+  '''^\.env\.example$''',
+  '''^docker-compose\.yaml$''',
+  '''^docker-compose/configs/garage\.toml$''',
+  '''_test\.go$''',
+  # Removed files, still present in git history
   '''^\.env\.local$''',
   '''^docker-compose/envs/backend\.env$''',
+  '''^docker-compose/services/[^/]+\.yml$''',
+  '''^API\.md$''',
+]
+# "migrate from minio to garage": local Garage keys and web UI password in README
+commits = [
+  "28c34937fd74ddc9c47db856763fa60eda70d12a",
 ]

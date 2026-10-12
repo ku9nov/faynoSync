@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	logLevel  string
+	logLevel string
 )
 
 func init() {

@@ -103,6 +103,10 @@ func BootstrapOnlineRolesWithContext(
 	} else {
 		logrus.Debug("Successfully verified root metadata")
 	}
+	if err := ensureRootKeysStrength(repo.Root()); err != nil {
+		logrus.Errorf("Rejected root metadata: %v", err)
+		return err
+	}
 
 	keySuffix := adminName + "_" + appName
 	targetsExpiration := tuf_utils.GetExpirationFromRedis(redisClient, ctx, "TARGETS_EXPIRATION_"+keySuffix, payload.Settings.Roles.Targets.Expiration)

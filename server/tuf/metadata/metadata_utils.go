@@ -622,6 +622,10 @@ func verifyNewRootMetadata(currentRoot, newRoot *metadata.Metadata[metadata.Root
 		return fmt.Errorf("%w: new root threshold not reached: %v", errRootSignaturesMissing, err)
 	}
 
+	if err := ensureRootKeysStrength(newRoot); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -696,8 +700,20 @@ func decodeAndValidateMetadataKey(keyData interface{}, expectedKeyID string) (*m
 	if computedKeyID != expectedKeyID {
 		return nil, fmt.Errorf("keyid mismatch: provided %s, computed %s", expectedKeyID, computedKeyID)
 	}
+	if err := signing.CheckMetadataKeyStrength(&key); err != nil {
+		return nil, fmt.Errorf("weak key %s: %w", expectedKeyID, err)
+	}
 
 	return &key, nil
+}
+
+func ensureRootKeysStrength(root *metadata.Metadata[metadata.RootType]) error {
+	for keyID, key := range root.Signed.Keys {
+		if err := signing.CheckMetadataKeyStrength(key); err != nil {
+			return fmt.Errorf("weak root metadata key %s: %w", keyID, err)
+		}
+	}
+	return nil
 }
 
 func getRootRoleKeysFromSigned(signedData map[string]interface{}, roleName string) (map[string]*metadata.Key, error) {

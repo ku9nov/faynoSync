@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto"
 	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
 	"faynoSync/server/tuf/models"
@@ -884,6 +886,68 @@ func TestVerifyNewRootMetadata_ThresholdNotReached(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "new root threshold not reached")
+}
+
+func TestVerifyNewRootMetadata_WeakRSAKeyRejected(t *testing.T) {
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	_, rootKey, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	rootPub, err := tuf_metadata.KeyFromPublicKey(rootKey.Public())
+	require.NoError(t, err)
+	signer, err := signature.LoadSigner(rootKey, crypto.Hash(0))
+	require.NoError(t, err)
+
+	currentRepo := repository.New()
+	currentRepo.SetRoot(tuf_metadata.Root(expires))
+	require.NoError(t, currentRepo.Root().Signed.AddKey(rootPub, "root"))
+	_, err = currentRepo.Root().Sign(signer)
+	require.NoError(t, err)
+
+	weakKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+	weakPub, err := tuf_metadata.KeyFromPublicKey(weakKey.Public())
+	require.NoError(t, err)
+
+	newRepo := repository.New()
+	newRepo.SetRoot(tuf_metadata.Root(expires))
+	newRepo.Root().Signed.Version = 2
+	require.NoError(t, newRepo.Root().Signed.AddKey(rootPub, "root"))
+	require.NoError(t, newRepo.Root().Signed.AddKey(weakPub, "timestamp"))
+	_, err = newRepo.Root().Sign(signer)
+	require.NoError(t, err)
+
+	err = verifyNewRootMetadata(currentRepo.Root(), newRepo.Root())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "weak root metadata key")
+	assert.Contains(t, err.Error(), "minimum is 2048")
+}
+
+func TestDecodeAndValidateMetadataKey_WeakRSAKeyRejected(t *testing.T) {
+	weakKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+	weakPub, err := tuf_metadata.KeyFromPublicKey(weakKey.Public())
+	require.NoError(t, err)
+	keyID, err := weakPub.ID()
+	require.NoError(t, err)
+
+	_, err = decodeAndValidateMetadataKey(weakPub, keyID)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "minimum is 2048")
+}
+
+func TestDecodeAndValidateMetadataKey_RSA2048Accepted(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	pub, err := tuf_metadata.KeyFromPublicKey(key.Public())
+	require.NoError(t, err)
+	keyID, err := pub.ID()
+	require.NoError(t, err)
+
+	_, err = decodeAndValidateMetadataKey(pub, keyID)
+
+	require.NoError(t, err)
 }
 
 // To verify: Change c.Query("appName") or c.ShouldBindJSON in PostMetadataRotate; test will fail (wrong status/body).
