@@ -269,7 +269,7 @@ func LoadAndSignDelegation(
 	}
 
 	seen := make(map[string]bool)
-	keysToUse := make([]string, 0, min(threshold, len(roleKeyIDs)))
+	var keysToUse []string
 	for _, keyID := range roleKeyIDs {
 		if seen[keyID] {
 			continue

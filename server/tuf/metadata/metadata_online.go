@@ -684,7 +684,7 @@ func buildOnlineRoleSigners(keyIDs []string, threshold int, roleName string) ([]
 		threshold = 1
 	}
 	seen := make(map[string]bool)
-	keysToSign := make([]string, 0, min(threshold, len(keyIDs)))
+	var keysToSign []string
 	for _, keyID := range keyIDs {
 		if seen[keyID] {
 			continue
