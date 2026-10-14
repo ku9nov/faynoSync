@@ -4,6 +4,7 @@
 
 <div align="center">
   
+  [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15494/badge)](https://www.bestpractices.dev/projects/15494)
   [![Documentation](https://img.shields.io/badge/Documentation-available-brightgreen)](https://faynosync.com/docs/intro)
   ![Docker Pulls](https://img.shields.io/docker/pulls/ku9nov/faynosync)
   ![GitHub Release](https://img.shields.io/github/v/release/ku9nov/faynoSync)
