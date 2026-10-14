@@ -600,6 +600,10 @@ func PostMetadataDelegatedRotate(c *gin.Context, redisClient *redis.Client) {
 		})
 		return
 	}
+	if !IsValidDelegatedRoleName(roleName) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid delegated role name %q", roleName)})
+		return
+	}
 
 	delegatorRole := strings.TrimSpace(payload.Delegator)
 	if delegatorRole == "" {
