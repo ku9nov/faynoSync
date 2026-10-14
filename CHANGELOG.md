@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.8.0
+
+### Changes
+
+- TUF timestamp and snapshot are re-signed in the background before they expire (checked every 5 minutes, re-signed within an hour of expiry), so metadata no longer expires between releases.
+- TUF metadata updates hold one per-app lock for the whole flow, so concurrent uploads, deletes and re-signs no longer race.
+
+### Security
+
+- TUF root versions are anchored in Redis after verification: write access to the bucket alone can no longer replace the trusted root. Existing apps are verified from storage and anchored on first use.
+- Stricter verification of TUF metadata before it is re-signed.
+- TUF rejects RSA keys shorter than 2048 bits and ECDSA keys below P-256: online keys refuse to sign, and bootstrap, root rotation, delegations and offline signatures with such keys are refused.
+- Updated Go to 1.26.9 and `golang.org/x/net` to 0.60.0 to fix stdlib and `x/net` CVEs.
+- Generated passwords in the dashboard use crypto.getRandomValues instead of Math.random.
+- TUF rejects delegated role names containing path separators or "..", or named after a top-level role.
+
 ## v2.7.0
 
 > **Note from the maintainer**

@@ -117,6 +117,30 @@ func TestPostMetadataDelegatedRotate_StagesTargetsAndDelegated(t *testing.T) {
 	assert.NotEmpty(t, delegatedStaged)
 }
 
+// Unsafe names must be refused before any signing state or task is created.
+// To verify: In PostMetadataDelegatedRotate remove the IsValidDelegatedRoleName check; test will fail (wrong status).
+func TestPostMetadataDelegatedRotate_InvalidRoleName_ReturnsBadRequest(t *testing.T) {
+	for _, name := range []string{"../evil", "a/b", "Root", "TARGETS"} {
+		t.Run(name, func(t *testing.T) {
+			payload := models.MetadataDelegatedRotatePayload{
+				Role:     name,
+				Metadata: map[string]json.RawMessage{name: json.RawMessage(`{}`)},
+			}
+			c, w := makePostMetadataDelegatedRotateContext("admin", "myapp", payload)
+			mr := miniredis.RunT(t)
+			defer mr.Close()
+			client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+			mr.Set("BOOTSTRAP_admin_myapp", "done")
+
+			PostMetadataDelegatedRotate(c, client)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "Invalid delegated role name")
+			assert.Equal(t, []string{"BOOTSTRAP_admin_myapp"}, mr.Keys())
+		})
+	}
+}
+
 func TestPostMetadataSign_DuplicateSignatureKeyIDs_ReturnsBadRequest(t *testing.T) {
 	payload := models.MetadataSignPostPayload{
 		Role: "delegated",
