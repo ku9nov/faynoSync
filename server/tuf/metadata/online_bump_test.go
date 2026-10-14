@@ -244,7 +244,7 @@ func TestFilterRoles(t *testing.T) {
 
 // The snapshot is read before any signature check and its role names become
 // local paths, so a name with path components must not escape the temp dir.
-// To verify: In expiringOnlineRoles remove the isSafeRoleName check; test will fail (file written outside the temp dir).
+// To verify: In expiringOnlineRoles remove the IsSafeRoleName check; test will fail (file written outside the temp dir).
 func TestExpiringOnlineRoles_PathTraversalRoleName_Refused(t *testing.T) {
 	now := time.Now().UTC()
 	escapeName := fmt.Sprintf("escape-%d.json", now.UnixNano())

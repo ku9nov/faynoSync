@@ -412,6 +412,15 @@ func PostBootstrap(c *gin.Context, redisClient *redis.Client) {
 		}
 	}
 
+	if delegations := payload.Settings.Roles.Delegations; delegations != nil {
+		for _, role := range delegations.Roles {
+			if !tuf_metadata.IsValidDelegatedRoleName(role.Name) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid delegated role name %q", role.Name)})
+				return
+			}
+		}
+	}
+
 	if len(payload.Metadata) == 0 {
 		logrus.Error("Missing required field: metadata")
 		c.JSON(http.StatusBadRequest, gin.H{

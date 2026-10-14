@@ -2147,3 +2147,11 @@ func TestIsStandardRole(t *testing.T) {
 		})
 	}
 }
+
+// threshold comes from the bootstrap payload; it must not size an allocation.
+// To verify: In buildOnlineRoleSigners use threshold as the slice capacity again; test will panic.
+func TestBuildOnlineRoleSigners_HugeThreshold_NoPanic(t *testing.T) {
+	_, err := buildOnlineRoleSigners([]string{"a"}, int(^uint(0)>>1), "snapshot")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough distinct keys")
+}

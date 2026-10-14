@@ -13,6 +13,7 @@ import {
   MODAL_TITLE,
 } from '@/components/common/ui';
 import type { ApiError } from '@/config/axios';
+import { generateRandomPassword } from '@/utils/password';
 
 interface EditUserModalProps {
   userId: string;
@@ -66,15 +67,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   };
 
   const generatePassword = () => {
-    const length = 32;
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let password = '';
-    
-    for (let i = 0; i < length; i++) {
-      const randomIndex = Math.floor(Math.random() * charset.length);
-      password += charset[randomIndex];
-    }
-    
+    const password = generateRandomPassword();
     setNewPassword(password);
   };
 

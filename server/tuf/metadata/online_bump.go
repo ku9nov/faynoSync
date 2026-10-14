@@ -210,7 +210,7 @@ func expiringOnlineRoles(ctx context.Context, adminName, appName string, deadlin
 	for name, meta := range snapshot.Signed.Meta {
 		role := strings.TrimSuffix(name, ".json")
 		// The snapshot is not verified yet and the name becomes a local file path.
-		if !isSafeRoleName(role) {
+		if !IsSafeRoleName(role) {
 			return nil, fmt.Errorf("snapshot v%d references invalid role name %q", snapshotMeta.Version, name)
 		}
 		header, err := readSignedHeader(ctx, adminName, appName, fmt.Sprintf("%d.%s", meta.Version, name), tmpDir)
@@ -235,8 +235,19 @@ func expiringOnlineRoles(ctx context.Context, adminName, appName string, deadlin
 	return roles, nil
 }
 
-func isSafeRoleName(role string) bool {
+func IsSafeRoleName(role string) bool {
 	return role != "" && !strings.ContainsAny(role, `/\`) && !strings.Contains(role, "..")
+}
+
+// Delegated role files are stored as N.<name>.json next to the top-level ones,
+// so a delegation named after a top-level role would overwrite its files. Case is
+// ignored because signing state is keyed in Redis by the upper-cased role name.
+func IsValidDelegatedRoleName(role string) bool {
+	switch strings.ToLower(role) {
+	case "root", "targets", "snapshot", "timestamp":
+		return false
+	}
+	return IsSafeRoleName(role)
 }
 
 func readSignedHeader(ctx context.Context, adminName, appName, filename, tmpDir string) (*signedHeader, error) {

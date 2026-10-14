@@ -205,3 +205,49 @@ func TestPostMetadataSign_DelegatedVersionNotMonotonic_ReturnsBadRequest(t *test
 	assert.Equal(t, "Signature Failed", body["message"])
 	assert.Contains(t, body["error"], "version must be greater than trusted version")
 }
+
+// The role name becomes part of a file path in the temp dir.
+// To verify: In PostMetadataSign remove the IsSafeRoleName check; test will fail (path outside the temp dir is processed).
+func TestPostMetadataSign_TraversalRoleName_ReturnsBadRequest(t *testing.T) {
+	payload := models.MetadataSignPostPayload{
+		Role:      "../evil",
+		Signature: models.Signature{KeyID: "k", Sig: "00"},
+	}
+	c, w := makePostMetadataSignContext("admin", "myapp", payload)
+	mr := miniredis.RunT(t)
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mr.Set("BOOTSTRAP_admin_myapp", "done")
+	mr.Set("../EVIL_SIGNING_admin_myapp", `{"signed":{"_type":"targets","version":2,"expires":"2030-01-01T00:00:00Z","targets":{}},"signatures":[]}`)
+
+	PostMetadataSign(c, client)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Invalid role name")
+}
+
+// To verify: In IsValidDelegatedRoleName drop the top-level name cases, the ToLower or the IsSafeRoleName call; test will fail.
+func TestIsValidDelegatedRoleName(t *testing.T) {
+	for _, name := range []string{"root", "targets", "snapshot", "timestamp", "Root", "TARGETS", "", "../x", "a/b", `a\b`, "x..y"} {
+		assert.False(t, IsValidDelegatedRoleName(name), name)
+	}
+	for _, name := range []string{"default", "beta-channel", "team_1"} {
+		assert.True(t, IsValidDelegatedRoleName(name), name)
+	}
+}
+
+// Incoming signed targets must not introduce delegations whose names escape the
+// metadata directory or collide with top-level role files.
+// To verify: In ensureDelegatedRoleNamesValid return nil; test will fail.
+func TestEnsureDelegatedRoleNamesValid(t *testing.T) {
+	signed := func(name string) map[string]interface{} {
+		return map[string]interface{}{"delegations": map[string]interface{}{
+			"keys":  map[string]interface{}{},
+			"roles": []interface{}{map[string]interface{}{"name": name}},
+		}}
+	}
+	assert.NoError(t, ensureDelegatedRoleNamesValid(signed("default")))
+	assert.NoError(t, ensureDelegatedRoleNamesValid(map[string]interface{}{}))
+	assert.ErrorContains(t, ensureDelegatedRoleNamesValid(signed("../evil")), "invalid delegated role name")
+	assert.ErrorContains(t, ensureDelegatedRoleNamesValid(signed("root")), "invalid delegated role name")
+}

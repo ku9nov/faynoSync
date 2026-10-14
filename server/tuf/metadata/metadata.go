@@ -194,6 +194,9 @@ func BootstrapOnlineRolesWithContext(
 
 		delegatedRoles := make([]metadata.DelegatedRole, 0, len(customDelegations.Roles))
 		for _, tufRole := range customDelegations.Roles {
+			if !IsValidDelegatedRoleName(tufRole.Name) {
+				return fmt.Errorf("invalid delegated role name %q", tufRole.Name)
+			}
 			roleExpiration := 90
 
 			// add role-specific expiration logic here?
@@ -978,6 +981,10 @@ func PostMetadataSign(c *gin.Context, redisClient *redis.Client) {
 
 	ctx := context.Background()
 	keySuffix := adminName + "_" + appName
+	if !IsSafeRoleName(payload.Role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role name"})
+		return
+	}
 	roleUpper := strings.ToUpper(payload.Role)
 
 	bootstrapKey := "BOOTSTRAP_" + keySuffix

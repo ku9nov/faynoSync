@@ -21,6 +21,7 @@ import { useChannelQuery } from '@/hooks/use-query/useChannelQuery';
 import { usePlatformQuery } from '@/hooks/use-query/usePlatformQuery';
 import { useArchitectureQuery } from '@/hooks/use-query/useArchitectureQuery';
 import type { ApiError } from '@/config/axios';
+import { generateRandomPassword } from '@/utils/password';
 
 // Define proper types for permissions
 export interface Permission {
@@ -158,15 +159,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
   };
 
   const generatePassword = () => {
-    const length = 32;
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let generatedPassword = '';
-    
-    for (let i = 0; i < length; i++) {
-      const randomIndex = Math.floor(Math.random() * charset.length);
-      generatedPassword += charset[randomIndex];
-    }
-    
+    const generatedPassword = generateRandomPassword();
     setPassword(generatedPassword);
   };
 

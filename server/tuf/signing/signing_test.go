@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -435,4 +436,12 @@ func TestBuildVerifierForPublicKey_WeakRSAKeyRejected(t *testing.T) {
 	_, err = BuildVerifierForPublicKey(&privateKey.PublicKey)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "minimum is 2048")
+}
+
+// threshold comes from request payloads; it must not size an allocation.
+// To verify: In LoadAndSignDelegation use threshold as the slice capacity again; test will panic.
+func TestLoadAndSignDelegation_HugeThreshold_NoPanic(t *testing.T) {
+	_, err := LoadAndSignDelegation("custom", []string{"a"}, int(^uint(0)>>1), func(signature.Signer, string) error { return nil })
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough distinct keys")
 }
