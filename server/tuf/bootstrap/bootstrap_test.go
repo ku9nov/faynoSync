@@ -1510,3 +1510,22 @@ func TestRunBootstrapRecovery_RootChainNotVerified_FailsBeforeClaimingMarker(t *
 	require.NotNil(t, st.Result.Error)
 	assert.Contains(t, *st.Result.Error, "failed to verify root metadata chain")
 }
+
+// To verify: In PostBootstrap remove the IsValidDelegatedRoleName check; test will fail (wrong status).
+func TestPostBootstrap_InvalidDelegatedRoleName_ReturnsBadRequest(t *testing.T) {
+	for _, name := range []string{"../evil", "a/b", `a\b`, "", "root", "snapshot"} {
+		t.Run(name, func(t *testing.T) {
+			payload := validMinimalBootstrapPayload()
+			payload.Settings.Roles.Delegations = &models.TUFDelegations{Roles: []models.TUFDelegatedRole{{Name: name}}}
+			c, w := makePostBootstrapContext("admin", payload)
+			mr := miniredis.RunT(t)
+			defer mr.Close()
+			client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+			PostBootstrap(c, client)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "Invalid delegated role name")
+		})
+	}
+}

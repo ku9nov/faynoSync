@@ -209,6 +209,28 @@ func ensureDelegationsKeysMatchKeyIDs(signedData map[string]interface{}) error {
 	return nil
 }
 
+func ensureDelegatedRoleNamesValid(signedData map[string]interface{}) error {
+	delegationsMap, ok := signedData["delegations"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	roles, ok := delegationsMap["roles"].([]interface{})
+	if !ok {
+		return nil
+	}
+	for _, raw := range roles {
+		role, ok := raw.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("invalid metadata format: delegated role must be an object")
+		}
+		name, _ := role["name"].(string)
+		if !IsValidDelegatedRoleName(name) {
+			return fmt.Errorf("invalid delegated role name %q", name)
+		}
+	}
+	return nil
+}
+
 func loadTrustedTargetsMetadataFromS3(ctx context.Context, adminName string, appName string, roleName string) (*metadata.Metadata[metadata.TargetsType], error) {
 	roleMeta, _, err := loadVerifiedTrustedTargetsRole(ctx, adminName, appName, roleName)
 	if err != nil {
@@ -531,6 +553,9 @@ func validateTargetsMetadataForStaging(metadataJSON []byte) (map[string]interfac
 		return nil, nil, err
 	}
 	if err := ensureDelegationsKeysMatchKeyIDs(signedData); err != nil {
+		return nil, nil, err
+	}
+	if err := ensureDelegatedRoleNamesValid(signedData); err != nil {
 		return nil, nil, err
 	}
 

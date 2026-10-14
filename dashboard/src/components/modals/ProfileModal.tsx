@@ -19,6 +19,7 @@ import {
   STATUS_DOT,
 } from '@/components/common/ui';
 import type { ApiError } from '@/config/axios';
+import { generateRandomPassword } from '@/utils/password';
 
 interface ProfileModalProps {
   onClose: () => void;
@@ -50,15 +51,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
   const backdropProps = useBackdropClose(onClose);
 
   const generatePassword = () => {
-    const length = 32;
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let generatedPassword = '';
-    
-    for (let i = 0; i < length; i++) {
-      const randomIndex = Math.floor(Math.random() * charset.length);
-      generatedPassword += charset[randomIndex];
-    }
-    
+    const generatedPassword = generateRandomPassword();
     setNewPassword(generatedPassword);
     setConfirmPassword(generatedPassword);
   };
