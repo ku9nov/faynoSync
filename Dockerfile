@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM node:20-alpine AS ui
+FROM --platform=$BUILDPLATFORM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS ui
 
 WORKDIR /src/dashboard
 
@@ -8,7 +8,7 @@ RUN yarn install --frozen-lockfile
 COPY dashboard/ ./
 RUN yarn build
 
-FROM --platform=$BUILDPLATFORM golang:1.26.9 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.9@sha256:37cfcca63222ec499bec5e8ad7aad52dbf7529db36d5812b8eae2f0621aa92d6 AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -26,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go test -c -o /out/faynoSync
 
 RUN mkdir -p /out/app && cp LICENSE /out/app/LICENSE
 
-FROM gcr.io/distroless/static-debian12:nonroot AS base
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS base
 
 COPY --from=builder --chown=nonroot:nonroot /out/app /app
 COPY --from=builder /out/faynoSync /usr/bin/faynoSync

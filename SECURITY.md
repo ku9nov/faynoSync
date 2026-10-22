@@ -24,6 +24,16 @@ Please include:
 - Once a fix is released, a GitHub Security Advisory is published (with a CVE when applicable) and the fix is listed in the `### Security` section of [CHANGELOG.md](CHANGELOG.md).
 - Credit in the advisory, unless you ask to stay anonymous.
 
+## Verifying releases
+
+Release binaries carry a SLSA build provenance attestation signed with Sigstore by the release workflow. Verify a downloaded archive with the [GitHub CLI](https://cli.github.com/):
+
+```shell
+gh attestation verify faynoSync_<version>_linux_amd64.tar.gz --repo ku9nov/faynoSync
+```
+
+The same attestation is attached to the release as `faynoSync_<version>.sigstore.json` for offline verification with `--bundle faynoSync_<version>.sigstore.json`.
+
 ## Scope
 
 In scope: the faynoSync server, the embedded dashboard, TUF metadata handling, release binaries, and the `ku9nov/faynosync` Docker image.
