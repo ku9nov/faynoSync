@@ -325,7 +325,7 @@ func TestPostPublishArtifacts_AllArtifactsAlreadySigned_ReturnsOK(t *testing.T) 
 	assert.Equal(t, http.StatusOK, w.Code, "Expected 200 when all artifacts are already signed")
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, "All artifacts are already signed", body["message"])
+	assert.Equal(t, "Nothing to sign: all signable artifacts are already signed", body["message"])
 	data, ok := body["data"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, appID.Hex(), data["app_id"])
