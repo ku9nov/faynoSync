@@ -31,6 +31,20 @@ jobs:
     name: Go unit tests
     runs-on: ubuntu-22.04
 
+    services:
+      mongo:
+        image: mongo:8.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: ci
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping: 1})'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -53,6 +67,8 @@ jobs:
         run: go vet ./...
 
       - name: Run unit tests
+        env:
+          MONGODB_URL_TESTS: mongodb://root:ci@localhost:27017/cb_faynosync_db_tests?authSource=admin
         run: |
           go test ./server/... -race
         continue-on-error: false
