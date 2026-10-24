@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.8.1
+
+### Security
+
+- `/tuf/v1/artifacts/publish` and `/tuf/v1/artifacts/delete` return 403 when a team user publishes or removes TUF targets of an app outside their allowed apps.
+- `/apps/update` checks a team user's allowed apps, channels, platforms and archs before anything is written to storage, and returns 403 instead of 500.
+
 ## v2.8.0
 
 ### Changes

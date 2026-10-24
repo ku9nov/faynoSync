@@ -42,6 +42,23 @@ func selectSignableArtifacts(artifacts []model.Artifact) []model.Artifact {
 	return signable
 }
 
+// ensureAppAccess applies the team user's allowed apps before anything is signed or removed;
+// owner-scoped lookups alone cover every app of the admin.
+func ensureAppAccess(ctx context.Context, c *gin.Context, appName string, mongoDatabase *mongo.Database) error {
+	username, err := utils.GetUsernameFromContext(c)
+	if err != nil {
+		logrus.Errorf("Failed to get username from context: %v", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return err
+	}
+	if err := utils.EnsureTeamUserAppAccess(ctx, username, appName, mongoDatabase); err != nil {
+		logrus.Error(err)
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return err
+	}
+	return nil
+}
+
 func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabase *mongo.Database) {
 	owner, err := utils.GetOwnerFromContext(c)
 	if err != nil {
@@ -108,6 +125,10 @@ func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDataba
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to find app metadata",
 		})
+		return
+	}
+
+	if err := ensureAppAccess(ctx, c, appMeta.AppName, mongoDatabase); err != nil {
 		return
 	}
 
@@ -357,6 +378,10 @@ func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabas
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to find app metadata",
 		})
+		return
+	}
+
+	if err := ensureAppAccess(ctx, c, appMeta.AppName, mongoDatabase); err != nil {
 		return
 	}
 

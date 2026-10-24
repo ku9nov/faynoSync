@@ -305,6 +305,12 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			logrus.Debugf("Channel omitted on update of version %s, using its own: %q", objID.Hex(), versionChannel)
 			ctxQueryMap["channel"] = versionChannel
 		}
+		// Checked before any object is written; repository.UpdateSpecificApp repeats it only after the upload.
+		if err := utils.EnsureTeamUserUploadAccess(c.Request.Context(), owner, ctxQueryMap, db); err != nil {
+			logrus.Error(err)
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
 		updaterType, _ = ctxQueryMap["updater"].(string)
 		// Validate updater requirements
 		if updater, exists := ctxQueryMap["updater"]; exists && updater != "" {
