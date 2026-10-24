@@ -16,10 +16,10 @@ import (
 )
 
 type UpdateTeamUserRequest struct {
-	ID          string            `json:"id" binding:"required"`
-	Username    string            `json:"username" binding:"required"`
-	Password    string            `json:"password,omitempty"`
-	Permissions model.Permissions `json:"permissions,omitempty"`
+	ID          string             `json:"id" binding:"required"`
+	Username    string             `json:"username" binding:"required"`
+	Password    string             `json:"password,omitempty"`
+	Permissions *model.Permissions `json:"permissions,omitempty"`
 }
 
 // UpdateTeamUser updates a team user's information
@@ -76,6 +76,18 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
+	taken, err := utils.UsernameTaken(ctx, req.Username, &objID, database)
+	if err != nil {
+		logrus.Errorf("Failed to check username uniqueness: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update team user"})
+		return
+	}
+	if taken {
+		logrus.Errorf("Username already exists: %s", req.Username)
+		c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
+		return
+	}
+
 	// Prepare update document
 	update := bson.M{"username": req.Username}
 
@@ -90,17 +102,9 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 		update["password"] = string(hashedPassword)
 	}
 
-	// Update permissions if provided
-	// Check if permissions were provided by checking if any field is set
-	if req.Permissions.Apps.Create || req.Permissions.Apps.Delete || req.Permissions.Apps.Edit ||
-		req.Permissions.Apps.Download || req.Permissions.Apps.Upload || len(req.Permissions.Apps.Allowed) > 0 ||
-		req.Permissions.Channels.Create || req.Permissions.Channels.Delete || req.Permissions.Channels.Edit ||
-		len(req.Permissions.Channels.Allowed) > 0 ||
-		req.Permissions.Platforms.Create || req.Permissions.Platforms.Delete || req.Permissions.Platforms.Edit ||
-		len(req.Permissions.Platforms.Allowed) > 0 ||
-		req.Permissions.Archs.Create || req.Permissions.Archs.Delete || req.Permissions.Archs.Edit ||
-		len(req.Permissions.Archs.Allowed) > 0 {
-		update["permissions"] = req.Permissions
+	// A nil pointer means permissions were omitted; an all-false object is an explicit revoke
+	if req.Permissions != nil {
+		update["permissions"] = *req.Permissions
 	}
 
 	// Update the updated_at timestamp

@@ -9,7 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
@@ -69,9 +68,13 @@ func CreateTeamUser(c *gin.Context, database *mongo.Database) {
 	defer cancel()
 
 	// Check if username already exists
-	var existingUser bson.M
-	err = collection.FindOne(ctx, bson.M{"username": req.Username}).Decode(&existingUser)
-	if err == nil {
+	taken, err := utils.UsernameTaken(ctx, req.Username, nil, database)
+	if err != nil {
+		logrus.Errorf("Failed to check username uniqueness: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create team user"})
+		return
+	}
+	if taken {
 		logrus.Errorf("Username already exists: %s", req.Username)
 		c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
 		return

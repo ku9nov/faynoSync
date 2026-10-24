@@ -5,13 +5,13 @@ import (
 	"crypto/subtle"
 	"faynoSync/mongod"
 	"faynoSync/server/model"
+	"faynoSync/server/utils"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -33,11 +33,12 @@ func SignUp(c *gin.Context, database *mongo.Database, client *mongo.Client, rdb 
 	}
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
-	// check the user credentials against the admins collection in MongoDB
-	admins := database.Collection("admins")
-	var result bson.M
-	err := admins.FindOne(ctx, bson.M{"username": creds.Username}).Decode(&result)
-	if err == nil {
+	taken, err := utils.UsernameTaken(ctx, creds.Username, nil, database)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to check username"})
+		return
+	}
+	if taken {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user already exists"})
 		return
 	}

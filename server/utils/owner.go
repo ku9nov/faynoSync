@@ -141,3 +141,27 @@ func GetOwnerFromContext(c *gin.Context) (string, error) {
 
 	return GetUsernameFromContext(c)
 }
+
+// UsernameTaken reports whether username belongs to any admin or team user.
+func UsernameTaken(ctx context.Context, username string, excludeTeamUserID *primitive.ObjectID, database *mongo.Database) (bool, error) {
+	err := database.Collection("admins").FindOne(ctx, bson.M{"username": username}).Err()
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return false, err
+	}
+
+	filter := bson.M{"username": username}
+	if excludeTeamUserID != nil {
+		filter["_id"] = bson.M{"$ne": *excludeTeamUserID}
+	}
+	err = database.Collection("team_users").FindOne(ctx, filter).Err()
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	}
+	return false, err
+}
