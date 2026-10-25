@@ -58,7 +58,7 @@ func authorizeRead(ctx context.Context, c *gin.Context, repository db.AppReposit
 	}
 
 	if tokenString, ok := utils.BearerToken(c.GetHeader("Authorization")); ok {
-		if username, err := utils.UsernameFromJWT(tokenString); err == nil {
+		if username, err := repository.SessionUsername(ctx, tokenString); err == nil {
 			allowed, err := repository.CanDownloadPrivateArtifact(ctx, username, artifact)
 			if err != nil {
 				return false, err

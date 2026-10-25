@@ -110,11 +110,17 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 	// Update the updated_at timestamp
 	update["updated_at"] = primitive.NewDateTimeFromTime(time.Now())
 
+	// Outstanding sessions must not survive a rename (the old name becomes free) or a password change.
+	changes := bson.M{"$set": update}
+	if req.Username != teamUser.Username || req.Password != "" {
+		changes["$inc"] = bson.M{"token_version": int64(1)}
+	}
+
 	// Apply the update
 	_, err = collection.UpdateOne(
 		ctx,
 		bson.M{"_id": objID},
-		bson.M{"$set": update},
+		changes,
 	)
 	if err != nil {
 		logrus.Errorf("Failed to update team user: %v", err)

@@ -6,6 +6,7 @@
 
 - `/tuf/v1/artifacts/publish` and `/tuf/v1/artifacts/delete` return 403 when a team user publishes or removes TUF targets of an app outside their allowed apps.
 - `/apps/update` checks a team user's allowed apps, channels, platforms and archs before anything is written to storage, and returns 403 instead of 500.
+- Login sessions are bound to the user's ID and a token version that is checked on every request.
 
 ## v2.8.0
 

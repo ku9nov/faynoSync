@@ -63,6 +63,10 @@ func (c *appRepository) FindPrivateArtifact(ctx context.Context, key string) (*m
 	return &artifact, nil
 }
 
+func (c *appRepository) SessionUsername(ctx context.Context, tokenString string) (string, error) {
+	return utils.SessionUsernameFromJWT(ctx, c.client.Database(c.config.Database), tokenString)
+}
+
 func (c *appRepository) CanDownloadPrivateArtifact(ctx context.Context, username string, artifact *model.PrivateArtifact) (bool, error) {
 	owner, teamUser, err := c.resolveOwnerAndTeamUser(ctx, username)
 	if err != nil {
