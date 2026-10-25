@@ -124,7 +124,7 @@ func BootstrapOnlineRolesWithContext(
 			return fmt.Errorf("targets key %s not found in root metadata", keyID)
 		}
 	}
-	targetsSigners, err := buildOnlineRoleSigners(targetsRole.KeyIDs, targetsRole.Threshold, "targets")
+	targetsSigners, err := buildOnlineRoleSigners(adminName, appName, targetsRole.KeyIDs, targetsRole.Threshold, "targets")
 	if err != nil {
 		logrus.Errorf("Failed to build targets signers: %v", err)
 		return fmt.Errorf("failed to build targets signers: %w", err)
@@ -142,7 +142,7 @@ func BootstrapOnlineRolesWithContext(
 			return fmt.Errorf("snapshot key %s not found in root metadata", keyID)
 		}
 	}
-	snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
+	snapshotSigners, err := buildOnlineRoleSigners(adminName, appName, snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 	if err != nil {
 		logrus.Errorf("Failed to build snapshot signers: %v", err)
 		return fmt.Errorf("failed to build snapshot signers: %w", err)
@@ -160,7 +160,7 @@ func BootstrapOnlineRolesWithContext(
 			return fmt.Errorf("timestamp key %s not found in root metadata", keyID)
 		}
 	}
-	timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
+	timestampSigners, err := buildOnlineRoleSigners(adminName, appName, timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
 	if err != nil {
 		logrus.Errorf("Failed to build timestamp signers: %v", err)
 		return fmt.Errorf("failed to build timestamp signers: %w", err)
@@ -247,6 +247,8 @@ func BootstrapOnlineRolesWithContext(
 			}
 
 			usedKeyIDs, err := signing.LoadAndSignDelegation(
+				adminName,
+				appName,
 				roleName,
 				roleKeyIDs,
 				delegatedRoles[i].Threshold,

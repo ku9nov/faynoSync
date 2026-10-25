@@ -49,11 +49,41 @@ func CheckMetadataKeyStrength(key *tufmetadata.Key) error {
 	return CheckKeyStrength(publicKey)
 }
 
-func LoadPrivateKeyAnyFromFilesystem(keyID string, keyURI string) (crypto.PrivateKey, error) {
-	env := viper.GetViper()
-	keyDir := env.GetString("ONLINE_KEY_DIR")
-	if keyDir == "" {
-		return nil, fmt.Errorf("ONLINE_KEY_DIR environment variable not set")
+func validOnlineKeyDirComponent(name string) bool {
+	return name != "" && name != "." && name != ".." && name == filepath.Base(name) && !strings.ContainsAny(name, `/\`+"\x00")
+}
+
+// Online keys are bound to one tenant by where the operator puts them:
+// ONLINE_KEY_DIR/<admin>/<app>/<keyid>. A keyid listed in a tenant's own
+// metadata must never resolve to another tenant's private key.
+func OnlineKeyDir(adminName string, appName string) (string, error) {
+	baseDir := viper.GetViper().GetString("ONLINE_KEY_DIR")
+	if baseDir == "" {
+		return "", fmt.Errorf("ONLINE_KEY_DIR environment variable not set")
+	}
+	if !validOnlineKeyDirComponent(adminName) {
+		return "", fmt.Errorf("invalid admin name %q for online key directory", adminName)
+	}
+	if !validOnlineKeyDirComponent(appName) {
+		return "", fmt.Errorf("invalid app name %q for online key directory", appName)
+	}
+	return filepath.Join(baseDir, adminName, appName), nil
+}
+
+func LoadPrivateKeyAnyFromFilesystem(adminName string, appName string, keyID string, keyURI string) (crypto.PrivateKey, error) {
+	keyDir, err := OnlineKeyDir(adminName, appName)
+	if err != nil {
+		return nil, err
+	}
+	baseDir := viper.GetViper().GetString("ONLINE_KEY_DIR")
+	for _, dir := range []string{filepath.Join(baseDir, adminName), keyDir} {
+		dirInfo, statErr := os.Lstat(dir)
+		if statErr != nil {
+			return nil, fmt.Errorf("online key directory %s for admin %s app %s is not accessible: %w", dir, adminName, appName, statErr)
+		}
+		if dirInfo.Mode()&os.ModeSymlink != 0 || !dirInfo.IsDir() {
+			return nil, fmt.Errorf("online key directory %s must be a real directory, not a symlink or file", dir)
+		}
 	}
 
 	var fileName string
@@ -181,8 +211,8 @@ func LoadPrivateKeyAnyFromFilesystem(keyID string, keyURI string) (crypto.Privat
 	return nil, fmt.Errorf("could not load private key from %s: expected PEM format, raw 32 bytes, or hex-encoded seed", keyPath)
 }
 
-func BuildSignerFromPrivateKeyFile(keyID string, keyURI string) (signature.Signer, error) {
-	privateKey, err := LoadPrivateKeyAnyFromFilesystem(keyID, keyURI)
+func BuildSignerFromPrivateKeyFile(adminName string, appName string, keyID string, keyURI string) (signature.Signer, error) {
+	privateKey, err := LoadPrivateKeyAnyFromFilesystem(adminName, appName, keyID, keyURI)
 	if err != nil {
 		return nil, err
 	}
@@ -256,6 +286,8 @@ func SignatureHashForKey(key interface{}) (crypto.Hash, error) {
 }
 
 func LoadAndSignDelegation(
+	adminName string,
+	appName string,
 	roleName string,
 	roleKeyIDs []string,
 	threshold int,
@@ -286,7 +318,7 @@ func LoadAndSignDelegation(
 
 	usedKeyIDs := make([]string, 0, len(keysToUse))
 	for _, keyID := range keysToUse {
-		signer, err := BuildSignerFromPrivateKeyFile(keyID, keyID)
+		signer, err := BuildSignerFromPrivateKeyFile(adminName, appName, keyID, keyID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load %s private key %s: %w", roleName, keyID, err)
 		}

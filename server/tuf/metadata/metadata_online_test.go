@@ -85,9 +85,17 @@ func waitForOnlineTaskTerminalState(t *testing.T, redisClient *redis.Client, tas
 	t.Fatalf("timeout waiting for task %s to reach terminal state", taskID)
 }
 
+// tenantKeyDir creates the directory holding adminName/appName online keys under ONLINE_KEY_DIR=baseDir.
+func tenantKeyDir(t *testing.T, baseDir, adminName, appName string) string {
+	t.Helper()
+	dir := filepath.Join(baseDir, adminName, appName)
+	require.NoError(t, os.MkdirAll(dir, 0700))
+	return dir
+}
+
 func loadEd25519PrivateKeyFromFilesystem(t *testing.T, keyID string, keyURI string) (ed25519.PrivateKey, error) {
 	t.Helper()
-	privateKey, err := signing.LoadPrivateKeyAnyFromFilesystem(keyID, keyURI)
+	privateKey, err := signing.LoadPrivateKeyAnyFromFilesystem("admin", "app", keyID, keyURI)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +464,7 @@ func makeRootAndOnlineKeysForForceUpdate(t *testing.T) (rootJSON []byte, keyDir 
 		require.NotEmpty(t, role.KeyIDs, "key ID for %s", name)
 		keyID := role.KeyIDs[0]
 		seed := keys[name].Seed()
-		require.NoError(t, os.WriteFile(filepath.Join(keyDir, keyID), seed, 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, "admin", "app"), keyID), seed, 0600))
 	}
 
 	oldDir := viper.GetViper().GetString("ONLINE_KEY_DIR")
@@ -1044,7 +1052,7 @@ func makeTargetsAndDelegationForBumpDelegated(t *testing.T, delegationRoleName s
 	delegationJSON, err = os.ReadFile(delegationPath)
 	require.NoError(t, err)
 
-	require.NoError(t, os.WriteFile(filepath.Join(keyDir, delegationKeyID), delegationPriv.Seed(), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, "admin", "app"), delegationKeyID), delegationPriv.Seed(), 0600))
 	return rootJSON, targetsJSON, delegationJSON, keyDir, cleanup
 }
 
@@ -1102,7 +1110,7 @@ func makeTargetsAndDelegationForBumpDelegatedThreshold2OneKey(t *testing.T, dele
 	delegationJSON, err = os.ReadFile(delegationPath)
 	require.NoError(t, err)
 
-	require.NoError(t, os.WriteFile(filepath.Join(keyDir, delegationKeyID), delegationPriv.Seed(), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, "admin", "app"), delegationKeyID), delegationPriv.Seed(), 0600))
 	return rootJSON, targetsJSON, delegationJSON, keyDir, cleanup
 }
 
@@ -2151,7 +2159,7 @@ func TestIsStandardRole(t *testing.T) {
 // threshold comes from the bootstrap payload; it must not size an allocation.
 // To verify: In buildOnlineRoleSigners use threshold as the slice capacity again; test will panic.
 func TestBuildOnlineRoleSigners_HugeThreshold_NoPanic(t *testing.T) {
-	_, err := buildOnlineRoleSigners([]string{"a"}, int(^uint(0)>>1), "snapshot")
+	_, err := buildOnlineRoleSigners("admin", "app", []string{"a"}, int(^uint(0)>>1), "snapshot")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not enough distinct keys")
 }

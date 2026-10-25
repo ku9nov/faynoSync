@@ -114,7 +114,7 @@ func addArtifactsLocked(
 		return fmt.Errorf("invalid root metadata: no timestamp role")
 	}
 
-	timestampSigners, err := buildSignersFromRoleMap(timestampRole, "timestamp")
+	timestampSigners, err := buildSignersFromRoleMap(adminName, appName, timestampRole, "timestamp")
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func addArtifactsLocked(
 		return fmt.Errorf("invalid root metadata: no targets role")
 	}
 
-	targetsSigners, err := buildSignersFromRoleMap(targetsRole, "targets")
+	targetsSigners, err := buildSignersFromRoleMap(adminName, appName, targetsRole, "targets")
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func addArtifactsLocked(
 		if !ok || len(snapshotRole.KeyIDs) == 0 {
 			return fmt.Errorf("failed to find snapshot key in root metadata")
 		}
-		snapshotSigners, err := buildSignersFromKeyIDsAndThreshold(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
+		snapshotSigners, err := buildSignersFromKeyIDsAndThreshold(adminName, appName, snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 		if err != nil {
 			return fmt.Errorf("failed to build snapshot signers: %w", err)
 		}
@@ -432,6 +432,8 @@ func updateDelegatedRoleWithArtifacts(
 		return false, fmt.Errorf("no key IDs found for delegated role %s", roleName)
 	}
 	usedKeyIDs, err := signing.LoadAndSignDelegation(
+		adminName,
+		appName,
 		roleName,
 		roleKeyIDs,
 		roleThreshold,
@@ -674,7 +676,7 @@ func updateTimestamp(
 	return nil
 }
 
-func buildSignersFromRoleMap(roleMap map[string]interface{}, roleName string) ([]signature.Signer, error) {
+func buildSignersFromRoleMap(adminName string, appName string, roleMap map[string]interface{}, roleName string) ([]signature.Signer, error) {
 	keyIDsRaw, ok := roleMap["keyids"].([]interface{})
 	if !ok || len(keyIDsRaw) == 0 {
 		return nil, fmt.Errorf("invalid root metadata: no %s keyids", roleName)
@@ -689,12 +691,14 @@ func buildSignersFromRoleMap(roleMap map[string]interface{}, roleName string) ([
 			keyIDs = append(keyIDs, s)
 		}
 	}
-	return buildSignersFromKeyIDsAndThreshold(keyIDs, threshold, roleName)
+	return buildSignersFromKeyIDsAndThreshold(adminName, appName, keyIDs, threshold, roleName)
 }
 
-func buildSignersFromKeyIDsAndThreshold(keyIDs []string, threshold int, roleName string) ([]signature.Signer, error) {
+func buildSignersFromKeyIDsAndThreshold(adminName string, appName string, keyIDs []string, threshold int, roleName string) ([]signature.Signer, error) {
 	signers := make([]signature.Signer, 0)
 	_, err := signing.LoadAndSignDelegation(
+		adminName,
+		appName,
 		roleName,
 		keyIDs,
 		threshold,

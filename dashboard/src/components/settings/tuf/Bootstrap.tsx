@@ -98,7 +98,7 @@ export const Bootstrap: React.FC<BootstrapProps> = ({
               <strong>Checklist:</strong>
             </p>
             <ul className="text-theme-primary text-sm leading-relaxed list-disc list-inside ml-2 space-y-1 mb-3">
-              <li><code className="bg-theme-input px-1 rounded">out/online-keys/*</code> from Step 1 is already in <code className="bg-theme-input px-1 rounded">ONLINE_KEY_DIR</code> on the faynosync API server. The server signs targets, snapshot and timestamp itself and cannot finish bootstrapping without them.</li>
+              <li><code className="bg-theme-input px-1 rounded">out/online-keys/*</code> from Step 1 is already in <code className="bg-theme-input px-1 rounded">ONLINE_KEY_DIR/&lt;admin&gt;/&lt;app&gt;/</code> on the faynosync API server. The server signs targets, snapshot and timestamp itself and cannot finish bootstrapping without them.</li>
               <li>Paste <code className="bg-theme-input px-1 rounded">out/bootstrap-payload.json</code> into the Custom Payload field below.</li>
             </ul>
             <p className="text-theme-primary text-sm leading-relaxed mb-2">

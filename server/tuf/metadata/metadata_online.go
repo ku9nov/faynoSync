@@ -242,7 +242,7 @@ func forceOnlineMetadataUpdateLocked(
 	if !ok || len(timestampRole.KeyIDs) == 0 {
 		return nil, fmt.Errorf("timestamp role not found in root metadata")
 	}
-	timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
+	timestampSigners, err := buildOnlineRoleSigners(adminName, appName, timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func forceOnlineMetadataUpdateLocked(
 	if !ok || len(snapshotRole.KeyIDs) == 0 {
 		return nil, fmt.Errorf("snapshot role not found in root metadata")
 	}
-	snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
+	snapshotSigners, err := buildOnlineRoleSigners(adminName, appName, snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +260,7 @@ func forceOnlineMetadataUpdateLocked(
 	if !ok || len(targetsRole.KeyIDs) == 0 {
 		return nil, fmt.Errorf("targets role not found in root metadata")
 	}
-	targetsSigners, err := buildOnlineRoleSigners(targetsRole.KeyIDs, targetsRole.Threshold, "targets")
+	targetsSigners, err := buildOnlineRoleSigners(adminName, appName, targetsRole.KeyIDs, targetsRole.Threshold, "targets")
 	if err != nil {
 		return nil, err
 	}
@@ -461,6 +461,8 @@ func bumpDelegatedRoles(
 		repo.Targets(roleName).ClearSignatures()
 
 		if _, err := signing.LoadAndSignDelegation(
+			adminName,
+			appName,
 			roleName,
 			roleKeyIDs,
 			roleThreshold,
@@ -679,7 +681,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func buildOnlineRoleSigners(keyIDs []string, threshold int, roleName string) ([]signature.Signer, error) {
+func buildOnlineRoleSigners(adminName string, appName string, keyIDs []string, threshold int, roleName string) ([]signature.Signer, error) {
 	if threshold < 1 {
 		threshold = 1
 	}
@@ -700,7 +702,7 @@ func buildOnlineRoleSigners(keyIDs []string, threshold int, roleName string) ([]
 	}
 	signers := make([]signature.Signer, 0, len(keysToSign))
 	for _, keyID := range keysToSign {
-		sig, err := signing.BuildSignerFromPrivateKeyFile(keyID, keyID)
+		sig, err := signing.BuildSignerFromPrivateKeyFile(adminName, appName, keyID, keyID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load %s private key %s: %w", roleName, keyID, err)
 		}

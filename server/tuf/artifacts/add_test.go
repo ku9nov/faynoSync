@@ -166,7 +166,7 @@ func makeAddArtifactsTestEnv(t *testing.T, adminName, appName string) (storeDir,
 		require.NotEmpty(t, role.KeyIDs)
 		keyID := role.KeyIDs[0]
 		seed := keys[name].Seed()
-		require.NoError(t, os.WriteFile(filepath.Join(keyDir, keyID), seed, 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, testAdminName, testAppName), keyID), seed, 0600))
 	}
 
 	targetsKeyID := rootMeta.Signed.Roles["targets"].KeyIDs[0]
@@ -774,7 +774,7 @@ func makeRepoAndKeyForUpdateDelegatedRole(t *testing.T, roleName string) (repo *
 	require.NoError(t, err)
 
 	keyDir = t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(keyDir, keyID), priv.Seed(), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, testAdminName, testAppName), keyID), priv.Seed(), 0600))
 
 	expires := time.Now().Add(365 * 24 * time.Hour)
 	repo = repository.New()

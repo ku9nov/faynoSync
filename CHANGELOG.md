@@ -1,8 +1,18 @@
 # Changelog
 
-## v2.8.1
+## v2.9.0
+
+### Upgrading from v2.8
+
+- TUF online keys are read only from `ONLINE_KEY_DIR/<admin>/<app>/`, where `<admin>` is the app owner (the admin account, also for apps created by team users) and `<app>` the app name, the same pair as in the bucket path `tuf_metadata/<admin>/<app>/`. Keys left directly in `ONLINE_KEY_DIR` are no longer used: move them before or right after upgrading, otherwise publishing and the background re-sign fail and `timestamp.json` expires within its lifetime (1 day by default). For each app, from its latest metadata in `tuf_metadata/<admin>/<app>/`:
+  - list the online keyids: `jq -r '.signed.roles | (.targets, .snapshot, .timestamp).keyids[]' N.root.json` and `jq -r '.signed.delegations.roles[]?.keyids[]' N.targets.json`;
+  - move the matching files from `ONLINE_KEY_DIR/<keyid>` to `ONLINE_KEY_DIR/<admin>/<app>/<keyid>` (directories readable by UID `65532`, not symlinks);
+  - if a keyid appears in the metadata of more than one app, do not copy it into each directory: find out why before placing it. Apps of the same admin may share a key on purpose; two different admins listing the same online keyid is what this fix blocks.
+- `tuf-kms` prints the per-app target directory from its next release; earlier versions still say `ONLINE_KEY_DIR`.
 
 ### Security
+
+- TUF online keys are bound to one app: the server signs an app's targets, snapshot, timestamp and delegated roles only with keys from `ONLINE_KEY_DIR/<admin>/<app>/`. An admin could previously bootstrap a root listing another tenant's online public keys and get metadata signed with that tenant's private keys.
 
 - `/tuf/v1/artifacts/publish` and `/tuf/v1/artifacts/delete` return 403 when a team user publishes or removes TUF targets of an app outside their allowed apps.
 - `/apps/update` checks a team user's allowed apps, channels, platforms and archs before anything is written to storage, and returns 403 instead of 500.
