@@ -92,10 +92,36 @@ func testRepository(t *testing.T) (mongod.AppRepository, *mongo.Database) {
 	return mongod.NewAppRepository(&configDB, client), client.Database(configDB.Database)
 }
 
+type uploadedFile struct{ name, content string }
+
+const sparkleAppcastXML = `<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <item>
+            <title>1.0.0</title>
+            <sparkle:version>1</sparkle:version>
+            <enclosure url="http://cdn/MyApp-1.0.0.zip" length="10" type="application/octet-stream" sparkle:edSignature="SIG=="/>
+        </item>
+    </channel>
+</rss>`
+
 // A team user with apps.edit restricted to app A updates a version of app X
 // through /apps/update. The grant must be checked before anything is written.
 // To verify: In UpdateSpecificApp upload files before checking the team user's allowed apps; test will fail (object written under X).
 func TestUpdateSpecificApp_TeamUserOutsideAllowedApps_NothingWritten(t *testing.T) {
+	assertUpdateOutsideGrantWritesNothing(t, "linux", "electron-builder",
+		uploadedFile{"latest.yml", "version: 1.0.0\npath: attacker-marker.exe\n"})
+}
+
+// Same as above for sparkle, whose appcast is also a managed feed key.
+// To verify: In UpdateSpecificApp upload files before checking the team user's allowed apps; test will fail (appcast written under X).
+func TestUpdateSpecificApp_TeamUserOutsideAllowedApps_Sparkle_NothingWritten(t *testing.T) {
+	assertUpdateOutsideGrantWritesNothing(t, "macos", "sparkle",
+		uploadedFile{"appcast.xml", sparkleAppcastXML}, uploadedFile{"MyApp-1.0.0.zip", "attacker-marker"})
+}
+
+func assertUpdateOutsideGrantWritesNothing(t *testing.T, platform, updater string, files ...uploadedFile) {
+	t.Helper()
 	repo, db := testRepository(t)
 	s3 := useFakeS3(t)
 	ctx := context.Background()
@@ -110,7 +136,7 @@ func TestUpdateSpecificApp_TeamUserOutsideAllowedApps_NothingWritten(t *testing.
 	}
 	_, err := repo.CreateChannel("stable", owner, ctx)
 	require.NoError(t, err)
-	_, err = repo.CreatePlatform("linux", []model.Updater{{Type: "electron-builder", Default: true}}, owner, ctx)
+	_, err = repo.CreatePlatform(platform, []model.Updater{{Type: updater, Default: true}}, owner, ctx)
 	require.NoError(t, err)
 	_, err = repo.CreateArch("x64", owner, ctx)
 	require.NoError(t, err)
@@ -139,14 +165,16 @@ func TestUpdateSpecificApp_TeamUserOutsideAllowedApps_NothingWritten(t *testing.
 	mw := multipart.NewWriter(&body)
 	data, err := json.Marshal(map[string]string{
 		"id": versionX.Hex(), "app_name": appX, "version": "1.0.0",
-		"channel": "stable", "platform": "linux", "arch": "x64", "updater": "electron-builder",
+		"channel": "stable", "platform": platform, "arch": "x64", "updater": updater,
 	})
 	require.NoError(t, err)
 	require.NoError(t, mw.WriteField("data", string(data)))
-	part, err := mw.CreateFormFile("file", "latest.yml")
-	require.NoError(t, err)
-	_, err = part.Write([]byte("version: 1.0.0\npath: attacker-marker.exe\n"))
-	require.NoError(t, err)
+	for _, f := range files {
+		part, err := mw.CreateFormFile("file", f.name)
+		require.NoError(t, err)
+		_, err = part.Write([]byte(f.content))
+		require.NoError(t, err)
+	}
 	require.NoError(t, mw.Close())
 
 	mr := miniredis.RunT(t)
