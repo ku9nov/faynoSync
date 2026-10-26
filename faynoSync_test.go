@@ -3565,11 +3565,12 @@ func TestUploadRejectsBeforeWriting(t *testing.T) {
 			"signature": "", "changelog": "", "publish": "true",
 		}
 		link := defaultLayoutURL("1.0.4", ".blockmap")
-		_, err := appDB.Upload(ctxQuery, link, ".blockmap", "admin", context.Background(), redisClient, viper.GetViper(), false)
+		ctx := utils.WithPrincipal(context.Background(), utils.Principal{Type: utils.PrincipalAdmin, Username: "admin"})
+		_, err := appDB.Upload(ctxQuery, link, ".blockmap", "admin", ctx, redisClient, viper.GetViper(), false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "already exists")
 
-		_, err = appDB.Upload(ctxQuery, defaultLayoutURL("1.0.4", "-other.blockmap"), ".blockmap", "admin", context.Background(), redisClient, viper.GetViper(), false)
+		_, err = appDB.Upload(ctxQuery, defaultLayoutURL("1.0.4", "-other.blockmap"), ".blockmap", "admin", ctx, redisClient, viper.GetViper(), false)
 		require.NoError(t, err, "a different link of a repeatable extension may still be added")
 		require.Equal(t, []string{".blockmap", ".blockmap"}, storedVersionPackages(t, app, "1.0.4"))
 	})

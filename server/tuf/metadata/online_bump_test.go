@@ -28,7 +28,7 @@ func signedJSON(expires time.Time, meta map[string]int64) []byte {
 		metaJSON += fmt.Sprintf(`%q:{"version":%d}`, name, version)
 	}
 	metaJSON += "}"
-	return []byte(fmt.Sprintf(`{"signed":{"expires":%q,"meta":%s},"signatures":[]}`, expires.UTC().Format(time.RFC3339), metaJSON))
+	return fmt.Appendf(nil, `{"signed":{"expires":%q,"meta":%s},"signatures":[]}`, expires.UTC().Format(time.RFC3339), metaJSON)
 }
 
 // serveMetadata serves files from mocked storage; keys are matched as "/<filename>".
