@@ -2,11 +2,13 @@ package mongod
 
 import (
 	"context"
+	"errors"
 	"faynoSync/server/model"
 
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -18,9 +20,11 @@ func (c *appRepository) listItems(ctx context.Context, collectionName string, fi
 	logrus.Debugf("Initial filter: %v", filter)
 
 	// Check if the user is a team user
-	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
-	err := teamUsersCollection.FindOne(ctx, bson.M{"username": owner}).Decode(&teamUser)
+	err := c.callerTeamUser(ctx, &teamUser)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return err
+	}
 
 	// If user is a team user, we need to consider their permissions
 	if err == nil {

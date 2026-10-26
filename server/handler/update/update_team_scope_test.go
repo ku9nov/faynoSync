@@ -124,9 +124,9 @@ func assertUpdateOutsideGrantWritesNothing(t *testing.T, platform, updater strin
 	t.Helper()
 	repo, db := testRepository(t)
 	s3 := useFakeS3(t)
-	ctx := context.Background()
 	suffix := primitive.NewObjectID().Hex()[16:]
 	owner := "upscope-admin-" + suffix
+	ctx := utils.WithPrincipal(context.Background(), utils.Principal{Type: utils.PrincipalAdmin, Username: owner})
 	teamUser := "upscope-team-" + suffix
 	appA, appX := "upscopea"+suffix, "upscopex"+suffix
 
@@ -182,7 +182,14 @@ func assertUpdateOutsideGrantWritesNothing(t *testing.T, platform, updater strin
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.POST("/apps/update",
-		func(c *gin.Context) { c.Set("username", teamUser) },
+		func(c *gin.Context) {
+			var u struct {
+				ID primitive.ObjectID `bson:"_id"`
+			}
+			_ = db.Collection("team_users").FindOne(c, bson.M{"username": teamUser}).Decode(&u)
+			c.Set("username", teamUser)
+			c.Request = c.Request.WithContext(utils.WithPrincipal(c.Request.Context(), utils.Principal{Type: utils.PrincipalTeam, ID: u.ID, Username: teamUser}))
+		},
 		utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, db),
 		func(c *gin.Context) { UpdateSpecificApp(c, repo, db, rdb, false) },
 	)

@@ -13,6 +13,7 @@ import (
 	"faynoSync/mongod"
 	"faynoSync/server/model"
 	"faynoSync/server/tuf/tasks"
+	"faynoSync/server/utils"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
@@ -63,6 +64,7 @@ func makePostPublishArtifactsContext(username string, payload interface{}) (*gin
 	}
 	if username != "" {
 		c.Set("username", username)
+		c.Request = c.Request.WithContext(utils.WithPrincipal(c.Request.Context(), utils.Principal{Type: utils.PrincipalAdmin, Username: username}))
 	}
 	return c, w
 }
@@ -83,6 +85,7 @@ func makePostDeleteArtifactsContext(username string, payload interface{}) (*gin.
 	}
 	if username != "" {
 		c.Set("username", username)
+		c.Request = c.Request.WithContext(utils.WithPrincipal(c.Request.Context(), utils.Principal{Type: utils.PrincipalAdmin, Username: username}))
 	}
 	return c, w
 }

@@ -60,7 +60,7 @@ func DownloadArtifact(c *gin.Context, repository db.AppRepository) {
 func authorizeDownload(ctx context.Context, c *gin.Context, repository db.AppRepository, artifact *model.PrivateArtifact) (bool, bool, error) {
 	if tokenString, ok := utils.BearerToken(c.GetHeader("Authorization")); ok {
 		if username, err := repository.SessionUsername(ctx, tokenString); err == nil {
-			allowed, err := repository.CanDownloadPrivateArtifact(ctx, username, artifact)
+			allowed, err := repository.CanDownloadPrivateArtifact(utils.SessionPrincipalContext(ctx, tokenString, username), username, artifact)
 			if err != nil {
 				return false, false, err
 			}

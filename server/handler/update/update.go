@@ -306,9 +306,9 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 			ctxQueryMap["channel"] = versionChannel
 		}
 		// Checked before any object is written; repository.UpdateSpecificApp repeats it only after the upload.
-		if err := utils.EnsureTeamUserUploadAccess(c.Request.Context(), owner, ctxQueryMap, db); err != nil {
+		if err := utils.EnsureTeamUserUploadAccess(c.Request.Context(), ctxQueryMap, db); err != nil {
 			logrus.Error(err)
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			utils.RespondTeamAccessError(c, err)
 			return
 		}
 		updaterType, _ = ctxQueryMap["updater"].(string)

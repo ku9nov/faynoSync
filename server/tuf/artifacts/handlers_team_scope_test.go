@@ -90,7 +90,14 @@ func (f teamScopeFixture) serve(t *testing.T, path string, handler func(*gin.Con
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.POST(path,
-		func(c *gin.Context) { c.Set("username", f.teamUser) },
+		func(c *gin.Context) {
+			var u struct {
+				ID primitive.ObjectID `bson:"_id"`
+			}
+			_ = f.db.Collection("team_users").FindOne(c, bson.M{"username": f.teamUser}).Decode(&u)
+			c.Set("username", f.teamUser)
+			c.Request = c.Request.WithContext(utils.WithPrincipal(c.Request.Context(), utils.Principal{Type: utils.PrincipalTeam, ID: u.ID, Username: f.teamUser}))
+		},
 		utils.CheckPermission(utils.PermissionEdit, utils.ResourceApps, f.db),
 		utils.ResolveOwnerMiddleware(f.db),
 		handler,

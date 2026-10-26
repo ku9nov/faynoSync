@@ -237,9 +237,9 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	}
 	appName := appNames[0]
 
-	if err := utils.EnsureTeamUserAppAccess(ctx, username, appName, db); err != nil {
+	if err := utils.EnsureTeamUserAppAccess(ctx, appName, db); err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		utils.RespondTeamAccessError(c, err)
 		return
 	}
 
@@ -321,9 +321,9 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 		return
 	}
 
-	if err := utils.EnsureTeamUserAppAccess(c.Request.Context(), username, ctxQueryMap["app_name"].(string), db); err != nil {
+	if err := utils.EnsureTeamUserAppAccess(c.Request.Context(), ctxQueryMap["app_name"].(string), db); err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		utils.RespondTeamAccessError(c, err)
 		return
 	}
 

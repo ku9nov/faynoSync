@@ -44,16 +44,57 @@ func selectSignableArtifacts(artifacts []model.Artifact) []model.Artifact {
 
 // ensureAppAccess applies the team user's allowed apps before anything is signed or removed;
 // owner-scoped lookups alone cover every app of the admin.
-func ensureAppAccess(ctx context.Context, c *gin.Context, appName string, mongoDatabase *mongo.Database) error {
-	username, err := utils.GetUsernameFromContext(c)
-	if err != nil {
+func ensureAppAccess(c *gin.Context, appName string, mongoDatabase *mongo.Database) error {
+	if _, err := utils.GetUsernameFromContext(c); err != nil {
 		logrus.Errorf("Failed to get username from context: %v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return err
 	}
-	if err := utils.EnsureTeamUserAppAccess(ctx, username, appName, mongoDatabase); err != nil {
+	if err := utils.EnsureTeamUserAppAccess(c.Request.Context(), appName, mongoDatabase); err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		utils.RespondTeamAccessError(c, err)
+		return err
+	}
+	return nil
+}
+
+// ensureAppAccessByID runs the team user's app check before anything about a version is looked up,
+// so 404 versus 403 does not tell a team user which versions exist outside their grant.
+// metaFound is false when the owner has no such app: an admin then gets the usual answers, a team user is denied.
+func ensureAppAccessByID(c *gin.Context, ctx context.Context, appID primitive.ObjectID, owner string, mongoDatabase *mongo.Database) (appName string, metaFound bool, err error) {
+	var appMeta struct {
+		AppName string `bson:"app_name"`
+	}
+	err = mongoDatabase.Collection("apps_meta").FindOne(ctx, bson.D{
+		{Key: "_id", Value: appID},
+		{Key: "owner", Value: owner},
+	}).Decode(&appMeta)
+	if err == nil {
+		return appMeta.AppName, true, ensureAppAccess(c, appMeta.AppName, mongoDatabase)
+	}
+	if err != mongo.ErrNoDocuments {
+		logrus.Errorf("Failed to find app meta: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to find app metadata",
+		})
+		return "", false, err
+	}
+	return "", false, denyTeamUser(c, mongoDatabase)
+}
+
+// denyTeamUser rejects a team user whose request names nothing that exists in the tenant,
+// answering as for an app outside the grant.
+func denyTeamUser(c *gin.Context, mongoDatabase *mongo.Database) error {
+	teamUser, err := utils.CallerTeamUser(c.Request.Context(), mongoDatabase)
+	if err != nil {
+		logrus.Error(err)
+		utils.RespondTeamAccessError(c, err)
+		return err
+	}
+	if teamUser != nil {
+		err = utils.ErrAccessDenied
+		logrus.Errorf("Team user %s requested an app or version that does not exist in tenant %s", teamUser.ID.Hex(), teamUser.Owner)
+		c.JSON(http.StatusForbidden, gin.H{"error": "you don't have access to this app"})
 		return err
 	}
 	return nil
@@ -87,6 +128,11 @@ func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDataba
 		return
 	}
 
+	appName, metaFound, err := ensureAppAccessByID(c, ctx, appID, owner, mongoDatabase)
+	if err != nil {
+		return
+	}
+
 	collection := mongoDatabase.Collection("apps")
 	var appDoc model.SpecificApp
 	filter := bson.D{
@@ -111,24 +157,11 @@ func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDataba
 		return
 	}
 
-	metaCollection := mongoDatabase.Collection("apps_meta")
-	var appMeta struct {
-		ID      primitive.ObjectID `bson:"_id"`
-		AppName string             `bson:"app_name"`
-	}
-	err = metaCollection.FindOne(ctx, bson.D{
-		{Key: "_id", Value: appID},
-		{Key: "owner", Value: owner},
-	}).Decode(&appMeta)
-	if err != nil {
-		logrus.Errorf("Failed to find app meta: %v", err)
+	if !metaFound {
+		logrus.Errorf("Failed to find app meta: %v", mongo.ErrNoDocuments)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to find app metadata",
 		})
-		return
-	}
-
-	if err := ensureAppAccess(ctx, c, appMeta.AppName, mongoDatabase); err != nil {
 		return
 	}
 
@@ -210,7 +243,7 @@ func PostPublishArtifacts(c *gin.Context, redisClient *redis.Client, mongoDataba
 				redisClient,
 				mongoDatabase,
 				owner,
-				appMeta.AppName,
+				appName,
 				tufArtifacts,
 				true,
 				taskID,
@@ -340,48 +373,47 @@ func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabas
 		return
 	}
 
+	// The version is matched only after the access check, see ensureAppAccessByID.
 	collection := mongoDatabase.Collection("apps")
 	var appDoc model.SpecificApp
 	filter := bson.D{
 		{Key: "_id", Value: appID},
-		{Key: "version", Value: payload.Version},
 		{Key: "owner", Value: owner},
 	}
 
 	err = collection.FindOne(ctx, filter).Decode(&appDoc)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			logrus.Errorf("App version not found: app_id=%s, version=%s, owner=%s", payload.AppID, payload.Version, owner)
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": fmt.Sprintf("App version not found: app_id=%s, version=%s", payload.AppID, payload.Version),
-			})
-			return
-		}
+	if err != nil && err != mongo.ErrNoDocuments {
 		logrus.Errorf("Failed to find app document: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to find app document",
 		})
 		return
 	}
+	docFound := err == nil
 
-	metaCollection := mongoDatabase.Collection("apps_meta")
-	var appMeta struct {
-		ID      primitive.ObjectID `bson:"_id"`
-		AppName string             `bson:"app_name"`
+	var appName string
+	metaFound := false
+	if docFound {
+		if appName, metaFound, err = ensureAppAccessByID(c, ctx, appDoc.AppID, owner, mongoDatabase); err != nil {
+			return
+		}
+	} else if err := denyTeamUser(c, mongoDatabase); err != nil {
+		return
 	}
-	err = metaCollection.FindOne(ctx, bson.D{
-		{Key: "_id", Value: appDoc.AppID},
-		{Key: "owner", Value: owner},
-	}).Decode(&appMeta)
-	if err != nil {
-		logrus.Errorf("Failed to find app meta: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to find app metadata",
+
+	if !docFound || appDoc.Version != payload.Version {
+		logrus.Errorf("App version not found: app_id=%s, version=%s, owner=%s", payload.AppID, payload.Version, owner)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("App version not found: app_id=%s, version=%s", payload.AppID, payload.Version),
 		})
 		return
 	}
 
-	if err := ensureAppAccess(ctx, c, appMeta.AppName, mongoDatabase); err != nil {
+	if !metaFound {
+		logrus.Errorf("Failed to find app meta: %v", mongo.ErrNoDocuments)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to find app metadata",
+		})
 		return
 	}
 
@@ -464,7 +496,7 @@ func PostDeleteArtifacts(c *gin.Context, redisClient *redis.Client, mongoDatabas
 			redisClient,
 			mongoDatabase,
 			owner,
-			appMeta.AppName,
+			appName,
 			tufArtifacts,
 			taskID,
 		); err != nil {

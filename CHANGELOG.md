@@ -17,6 +17,10 @@
 - `/tuf/v1/artifacts/publish` and `/tuf/v1/artifacts/delete` return 403 when a team user publishes or removes TUF targets of an app outside their allowed apps.
 - `/apps/update` checks a team user's allowed apps, channels, platforms and archs before anything is written to storage, and returns 403 instead of 500.
 - Login sessions are bound to the user's ID and a token version that is checked on every request.
+- Authorization uses the session's user type and ID instead of the username, so an admin and a team user with the same name can no longer act in each other's tenant (admin-only routes, permissions, owner resolution).
+- Usernames that differ only by case are treated as taken at signup, team user creation and rename, and app names that differ only by case are rejected within one admin at app create and rename. On a case-insensitive filesystem such names shared one `ONLINE_KEY_DIR/<admin>/<app>/` directory, so one tenant's metadata could be signed with another's online keys. Existing names are not changed.
+- `/tuf/v1/artifacts/publish` and `/tuf/v1/artifacts/delete` check a team user's allowed apps before looking up the version, so they no longer reveal which versions exist in apps outside the grant (403 instead of 404).
+- Internal errors during a team user's access check return 500 with a generic message instead of 403 with the database error.
 
 ## v2.8.0
 

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"faynoSync/mongod"
 	"faynoSync/server/handler/team"
@@ -15,6 +16,7 @@ import (
 	"faynoSync/server/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -132,7 +134,10 @@ func TestSession_CurrentTokenAccepted(t *testing.T) {
 
 func TestSession_LegacyTokenRejected(t *testing.T) {
 	env := newSessionEnv(t)
-	legacy, err := utils.GenerateJWT(env.tenantA)
+	legacy, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": env.tenantA,
+		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+	}).SignedString([]byte(viper.GetViper().GetString("JWT_SECRET")))
 	require.NoError(t, err)
 
 	code, _ := env.probe(t, legacy)

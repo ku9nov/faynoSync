@@ -62,9 +62,9 @@ func ResolveUploadRequest(c *gin.Context, database *mongo.Database) (UploadReque
 		return UploadRequest{}, false
 	}
 	// Checked before any object is written, so a team user cannot store files outside their allowed apps, channels, platforms and archs.
-	if err := utils.EnsureTeamUserUploadAccess(c.Request.Context(), username, ctxQueryMap, database); err != nil {
+	if err := utils.EnsureTeamUserUploadAccess(c.Request.Context(), ctxQueryMap, database); err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		utils.RespondTeamAccessError(c, err)
 		return UploadRequest{}, false
 	}
 

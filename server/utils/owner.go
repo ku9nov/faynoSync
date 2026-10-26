@@ -3,33 +3,38 @@ package utils
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
-
-	"faynoSync/server/model"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // Maybe use the same flow for main API?
 
 const ownerContextKey = "owner"
 
+// ResolveRequestOwner resolves the tenant of the principal in ctx; username must be
+// that principal's name and is never looked up on its own.
 func ResolveRequestOwner(ctx context.Context, username string, database *mongo.Database) (string, error) {
-	teamUsersCollection := database.Collection("team_users")
-	var teamUser model.TeamUser
-	err := teamUsersCollection.FindOne(ctx, bson.M{"username": username}).Decode(&teamUser)
-	if err == nil {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return "", errNoPrincipal
+	}
+	if principal.Username != username {
+		return "", errors.New("username does not match the authenticated principal")
+	}
+	teamUser, err := CallerTeamUser(ctx, database)
+	if err != nil {
+		return "", err
+	}
+	if teamUser != nil {
 		return teamUser.Owner, nil
 	}
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return username, nil
-	}
-	return "", err
+	return principal.Username, nil
 }
 
 func ResolveOwnerMiddleware(database *mongo.Database) gin.HandlerFunc {
@@ -53,15 +58,35 @@ func ResolveOwnerMiddleware(database *mongo.Database) gin.HandlerFunc {
 	}
 }
 
-// EnsureTeamUserAppAccess verifies that a team user may act on the given app.
-func EnsureTeamUserAppAccess(ctx context.Context, username, appName string, database *mongo.Database) error {
-	var teamUser model.TeamUser
-	err := database.Collection("team_users").FindOne(ctx, bson.M{"username": username}).Decode(&teamUser)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return nil
+// ErrAccessDenied matches the refusals of EnsureTeamUser*; any other error they return is internal.
+var ErrAccessDenied = errors.New("access denied")
+
+type accessDeniedError struct{ entity string }
+
+func (e accessDeniedError) Error() string { return "you don't have access to this " + e.entity }
+
+func (e accessDeniedError) Is(target error) bool { return target == ErrAccessDenied }
+
+// RespondTeamAccessError answers a failed EnsureTeamUser* check without exposing internal errors.
+func RespondTeamAccessError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, ErrAccessDenied):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case errors.Is(err, errSessionRevoked):
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check access"})
 	}
+}
+
+// EnsureTeamUserAppAccess verifies that a team user may act on the given app.
+func EnsureTeamUserAppAccess(ctx context.Context, appName string, database *mongo.Database) error {
+	teamUser, err := CallerTeamUser(ctx, database)
 	if err != nil {
 		return err
+	}
+	if teamUser == nil {
+		return nil
 	}
 
 	var appMeta struct {
@@ -73,7 +98,7 @@ func EnsureTeamUserAppAccess(ctx context.Context, username, appName string, data
 	}).Decode(&appMeta)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return errors.New("you don't have access to this app")
+			return accessDeniedError{"app"}
 		}
 		return err
 	}
@@ -84,19 +109,18 @@ func EnsureTeamUserAppAccess(ctx context.Context, username, appName string, data
 		}
 	}
 
-	return errors.New("you don't have access to this app")
+	return accessDeniedError{"app"}
 }
 
 // EnsureTeamUserUploadAccess applies the app, channel, platform and arch allowed lists that
 // repository.Upload enforces, so a denied upload is rejected before anything reaches storage.
-func EnsureTeamUserUploadAccess(ctx context.Context, username string, params map[string]interface{}, database *mongo.Database) error {
-	var teamUser model.TeamUser
-	err := database.Collection("team_users").FindOne(ctx, bson.M{"username": username}).Decode(&teamUser)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return nil
-	}
+func EnsureTeamUserUploadAccess(ctx context.Context, params map[string]interface{}, database *mongo.Database) error {
+	teamUser, err := CallerTeamUser(ctx, database)
 	if err != nil {
 		return err
+	}
+	if teamUser == nil {
+		return nil
 	}
 
 	checks := []struct {
@@ -119,13 +143,13 @@ func EnsureTeamUserUploadAccess(ctx context.Context, username string, params map
 		}
 		err := database.Collection("apps_meta").FindOne(ctx, bson.M{check.field: value, "owner": teamUser.Owner}).Decode(&meta)
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return fmt.Errorf("you don't have access to this %s", check.entity)
+			return accessDeniedError{check.entity}
 		}
 		if err != nil {
 			return err
 		}
 		if !slices.Contains(check.allowed, meta.ID.Hex()) {
-			return fmt.Errorf("you don't have access to this %s", check.entity)
+			return accessDeniedError{check.entity}
 		}
 	}
 	return nil
@@ -139,12 +163,20 @@ func GetOwnerFromContext(c *gin.Context) (string, error) {
 		}
 	}
 
-	return GetUsernameFromContext(c)
+	if principal, ok := PrincipalFromContext(c.Request.Context()); ok && principal.Type == PrincipalAdmin {
+		return principal.Username, nil
+	}
+	return "", errors.New("owner not found in context")
 }
 
-// UsernameTaken reports whether username belongs to any admin or team user.
+// CaseInsensitiveCollation compares names the way a case-insensitive filesystem would.
+var CaseInsensitiveCollation = &options.Collation{Locale: "en", Strength: 2, Normalization: true}
+
+// UsernameTaken reports whether username, compared case-insensitively, belongs to any admin or team user:
+// online keys live in ONLINE_KEY_DIR/<admin>/, which a case-insensitive filesystem cannot tell apart.
 func UsernameTaken(ctx context.Context, username string, excludeTeamUserID *primitive.ObjectID, database *mongo.Database) (bool, error) {
-	err := database.Collection("admins").FindOne(ctx, bson.M{"username": username}).Err()
+	caseInsensitive := options.FindOne().SetCollation(CaseInsensitiveCollation)
+	err := database.Collection("admins").FindOne(ctx, bson.M{"username": username}, caseInsensitive).Err()
 	if err == nil {
 		return true, nil
 	}
@@ -156,7 +188,7 @@ func UsernameTaken(ctx context.Context, username string, excludeTeamUserID *prim
 	if excludeTeamUserID != nil {
 		filter["_id"] = bson.M{"$ne": *excludeTeamUserID}
 	}
-	err = database.Collection("team_users").FindOne(ctx, filter).Err()
+	err = database.Collection("team_users").FindOne(ctx, filter, caseInsensitive).Err()
 	if err == nil {
 		return true, nil
 	}

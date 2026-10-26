@@ -56,9 +56,11 @@ func (c *appRepository) GetAppByName(appName string, ctx context.Context, page, 
 	}
 
 	// Check if the user is a team user
-	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
-	err := teamUsersCollection.FindOne(ctx, bson.M{"username": owner}).Decode(&teamUser)
+	err := c.callerTeamUser(ctx, &teamUser)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, err
+	}
 
 	// If user is a team user, we need to check their permissions
 	if err == nil {

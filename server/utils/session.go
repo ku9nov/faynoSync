@@ -3,8 +3,10 @@ package utils
 import (
 	"context"
 	"errors"
+	"faynoSync/server/model"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
@@ -71,6 +73,14 @@ func ParseSessionJWT(tokenString string) (SessionClaims, error) {
 // with errSessionRevoked when the principal is gone or its token_version moved
 // on (rename, password change).
 func VerifySession(ctx context.Context, database *mongo.Database, claims SessionClaims) (string, error) {
+	principal, err := VerifySessionPrincipal(ctx, database, claims)
+	if err != nil {
+		return "", err
+	}
+	return principal.Username, nil
+}
+
+func VerifySessionPrincipal(ctx context.Context, database *mongo.Database, claims SessionClaims) (Principal, error) {
 	collection := "admins"
 	if claims.Type == PrincipalTeam {
 		collection = "team_users"
@@ -84,15 +94,24 @@ func VerifySession(ctx context.Context, database *mongo.Database, claims Session
 		options.FindOne().SetProjection(bson.M{"username": 1, "token_version": 1}),
 	).Decode(&principal)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return "", errSessionRevoked
+		return Principal{}, errSessionRevoked
 	}
 	if err != nil {
-		return "", err
+		return Principal{}, err
 	}
 	if principal.TokenVersion != claims.Version || principal.Username != claims.Username {
-		return "", errSessionRevoked
+		return Principal{}, errSessionRevoked
 	}
-	return principal.Username, nil
+	return Principal{Type: claims.Type, ID: claims.Subject, Username: principal.Username}, nil
+}
+
+// SessionPrincipalContext attaches the principal of an already verified session token to ctx.
+func SessionPrincipalContext(ctx context.Context, tokenString, username string) context.Context {
+	claims, err := ParseSessionJWT(tokenString)
+	if err != nil || claims.Username != username {
+		return ctx
+	}
+	return WithPrincipal(ctx, Principal{Type: claims.Type, ID: claims.Subject, Username: username})
 }
 
 func SessionUsernameFromJWT(ctx context.Context, database *mongo.Database, tokenString string) (string, error) {
@@ -101,4 +120,57 @@ func SessionUsernameFromJWT(ctx context.Context, database *mongo.Database, token
 		return "", err
 	}
 	return VerifySession(ctx, database, claims)
+}
+
+// Principal is the authenticated caller. Authorization must branch on Type and
+// ID, never on Username: an admin and a team user can share a name.
+type Principal struct {
+	Type     string
+	ID       primitive.ObjectID
+	Username string
+}
+
+type principalContextKey struct{}
+
+const principalGinKey = "principal"
+
+var errNoPrincipal = errors.New("no authenticated principal")
+
+func WithPrincipal(ctx context.Context, principal Principal) context.Context {
+	return context.WithValue(ctx, principalContextKey{}, principal)
+}
+
+func PrincipalFromContext(ctx context.Context) (Principal, bool) {
+	principal, ok := ctx.Value(principalContextKey{}).(Principal)
+	if !ok || (principal.Type != PrincipalAdmin && principal.Type != PrincipalTeam) {
+		return Principal{}, false
+	}
+	return principal, true
+}
+
+func setPrincipal(c *gin.Context, principal Principal) {
+	c.Set(principalGinKey, principal)
+	c.Request = c.Request.WithContext(WithPrincipal(c.Request.Context(), principal))
+}
+
+// CallerTeamUser returns the caller's team user document, or nil for an admin.
+// A team principal is resolved by _id only.
+func CallerTeamUser(ctx context.Context, database *mongo.Database) (*model.TeamUser, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, errNoPrincipal
+	}
+	if principal.Type == PrincipalAdmin {
+		return nil, nil
+	}
+	var teamUser model.TeamUser
+	err := database.Collection("team_users").FindOne(ctx, bson.M{"_id": principal.ID}).Decode(&teamUser)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		// Never surface ErrNoDocuments: callers read it as "not a team user", i.e. an admin.
+		return nil, errSessionRevoked
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &teamUser, nil
 }

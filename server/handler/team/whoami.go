@@ -2,6 +2,7 @@ package team
 
 import (
 	"context"
+	"errors"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
 	"net/http"
@@ -40,31 +41,42 @@ func Whoami(c *gin.Context, database *mongo.Database) {
 		Username: username,
 	}
 
-	// First check if user is an admin
-	adminsCollection := database.Collection("admins")
+	principal, ok := utils.PrincipalFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	var adminUser bson.M
-	err = adminsCollection.FindOne(ctx, bson.M{"username": username}).Decode(&adminUser)
-	if err == nil {
+	if principal.Type == utils.PrincipalAdmin {
 		// User is an admin - just set is_admin flag
 		response.IsAdmin = true
-		response.ID = adminUser["_id"].(primitive.ObjectID)
+		response.ID = principal.ID
+		if response.ID.IsZero() {
+			// API tokens carry the admin by name only; admins are looked up in admins, never in team_users.
+			var adminUser bson.M
+			if err := database.Collection("admins").FindOne(ctx, bson.M{"username": username}).Decode(&adminUser); err == nil {
+				response.ID = adminUser["_id"].(primitive.ObjectID)
+			}
+		}
 		c.JSON(http.StatusOK, response)
 		return
 	}
 	logrus.Debugf("User is not an admin: %s", username)
 	// If not admin, check team user permissions
-	teamUsersCollection := database.Collection("team_users")
-	var teamUser model.TeamUser
-	err = teamUsersCollection.FindOne(ctx, bson.M{"username": username}).Decode(&teamUser)
+	teamUserDoc, err := utils.CallerTeamUser(ctx, database)
+	if err == nil && teamUserDoc == nil {
+		err = errors.New("team user not found")
+	}
 	if err != nil {
 		logrus.Errorf("Failed to find user: %v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
 		return
 	}
 
+	teamUser := *teamUserDoc
 	// User is a team user
 	response.IsAdmin = false
 	response.Owner = teamUser.Owner

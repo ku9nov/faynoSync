@@ -2,6 +2,7 @@ package mongod
 
 import (
 	"context"
+	"errors"
 	"faynoSync/server/model"
 	"fmt"
 	"strconv"
@@ -167,9 +168,11 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 	}
 
 	// Check if the user is a team user
-	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
-	err = teamUsersCollection.FindOne(ctx, bson.M{"username": owner}).Decode(&teamUser)
+	err = c.callerTeamUser(ctx, &teamUser)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return 0, err
+	}
 
 	// Determine the keyType based on the document type
 	var keyType string
@@ -344,6 +347,7 @@ func (c *appRepository) DeleteDocument(collectionName string, id primitive.Objec
 		// Get the resource ID as a string
 		resourceID := id.Hex()
 
+		teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 		// Find all team users
 		cursor, err := teamUsersCollection.Find(ctx, bson.M{})
 		if err != nil {

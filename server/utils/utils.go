@@ -14,10 +14,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -34,19 +32,6 @@ type DatabaseSetting struct {
 
 type ServerSettings struct {
 	Port string
-}
-
-// GenerateJWT generates a new JWT token for the given username
-func GenerateJWT(username string) (string, error) {
-	env := viper.GetViper()
-	// Define JWT claims
-	claims := jwt.MapClaims{
-		"username": username,
-		"exp":      time.Now().Add(24 * time.Hour).Unix(), // Token expiration time (24 hours)
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(env.GetString("JWT_SECRET")))
 }
 
 func extractParamsFromPost(c *gin.Context) (map[string]interface{}, error) {

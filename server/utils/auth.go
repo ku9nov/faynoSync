@@ -17,6 +17,11 @@ import (
 
 func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Routes listing authMiddleware explicitly also pass through router.Use(authMiddleware).
+		if _, ok := PrincipalFromContext(c.Request.Context()); ok {
+			c.Next()
+			return
+		}
 		var database *mongo.Database
 		if len(databases) > 0 {
 			database = databases[0]
@@ -43,7 +48,7 @@ func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 			}
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 			defer cancel()
-			username, verifyErr := VerifySession(ctx, database, claims)
+			principal, verifyErr := VerifySessionPrincipal(ctx, database, claims)
 			if errors.Is(verifyErr, errSessionRevoked) {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": verifyErr.Error()})
 				return
@@ -53,7 +58,8 @@ func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to verify session"})
 				return
 			}
-			c.Set("username", username)
+			c.Set("username", principal.Username)
+			setPrincipal(c, principal)
 			c.Next()
 			return
 		}
@@ -117,6 +123,8 @@ func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 		c.Set("is_api_token", true)
 		c.Set("api_token_id", apiToken.ID.Hex())
 		c.Set("allowed_apps", apiToken.AllowedApps)
+		// Only admins can mint API tokens (/token/create is admin-only), so the owner is an admin name.
+		setPrincipal(c, Principal{Type: PrincipalAdmin, Username: apiToken.Owner})
 		c.Next()
 	}
 }

@@ -2,13 +2,11 @@ package utils
 
 import (
 	"context"
-	"faynoSync/server/model"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -71,24 +69,22 @@ func CheckPermission(permissionType PermissionType, resourceType ResourceType, d
 			}
 		}
 
-		// First check if user is an admin
-		adminsCollection := database.Collection("admins")
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
-		defer cancel()
-
-		var adminUser bson.M
-		err = adminsCollection.FindOne(ctx, bson.M{"username": username}).Decode(&adminUser)
-		if err == nil {
-			// User is an admin, allow access
+		principal, ok := PrincipalFromContext(c.Request.Context())
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.Abort()
+			return
+		}
+		if principal.Type == PrincipalAdmin {
 			c.Next()
 			return
 		}
 
-		// If not admin, check team user permissions
-		teamUsersCollection := database.Collection("team_users")
-		var teamUser model.TeamUser
-		err = teamUsersCollection.FindOne(ctx, bson.M{"username": username}).Decode(&teamUser)
-		if err != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		defer cancel()
+
+		teamUser, err := CallerTeamUser(ctx, database)
+		if err != nil || teamUser == nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
 			c.Abort()
 			return
@@ -174,21 +170,13 @@ func AdminOnlyMiddleware(database *mongo.Database) gin.HandlerFunc {
 			}
 		}
 
-		username, err := GetUsernameFromContext(c)
-		if err != nil {
+		if _, err := GetUsernameFromContext(c); err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 			c.Abort()
 			return
 		}
 
-		// Check if user is an admin
-		adminsCollection := database.Collection("admins")
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
-		defer cancel()
-
-		var adminUser bson.M
-		err = adminsCollection.FindOne(ctx, bson.M{"username": username}).Decode(&adminUser)
-		if err != nil {
+		if principal, ok := PrincipalFromContext(c.Request.Context()); !ok || principal.Type != PrincipalAdmin {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
 			c.Abort()
 			return

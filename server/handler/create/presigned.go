@@ -71,19 +71,22 @@ type pendingFile struct {
 // pendingUpload holds everything complete needs, so complete takes no parameters from
 // the client besides the upload id.
 type pendingUpload struct {
-	ID           string        `bson:"_id"`
-	Username     string        `bson:"username"`
-	Owner        string        `bson:"owner"`
-	AppName      string        `bson:"app_name"`
-	Data         string        `bson:"data"`
-	Intermediate string        `bson:"intermediate,omitempty"`
-	Private      bool          `bson:"private"`
-	Bucket       string        `bson:"bucket"`
-	Public       bool          `bson:"public"`
-	Files        []pendingFile `bson:"files"`
-	State        string        `bson:"state"`
-	CreatedAt    time.Time     `bson:"created_at"`
-	ExpiresAt    time.Time     `bson:"expires_at"`
+	ID       string `bson:"_id"`
+	Username string `bson:"username"`
+	// The principal binds the upload to one account; username alone is shared by an admin and a team user of the same name.
+	PrincipalType string             `bson:"principal_type"`
+	PrincipalID   primitive.ObjectID `bson:"principal_id"`
+	Owner         string             `bson:"owner"`
+	AppName       string             `bson:"app_name"`
+	Data          string             `bson:"data"`
+	Intermediate  string             `bson:"intermediate,omitempty"`
+	Private       bool               `bson:"private"`
+	Bucket        string             `bson:"bucket"`
+	Public        bool               `bson:"public"`
+	Files         []pendingFile      `bson:"files"`
+	State         string             `bson:"state"`
+	CreatedAt     time.Time          `bson:"created_at"`
+	ExpiresAt     time.Time          `bson:"expires_at"`
 }
 
 type presignedFileResponse struct {
@@ -370,6 +373,11 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
+	principal, ok := utils.PrincipalFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 
 	manifest, err := parsePresignedManifest(c.PostForm("files"))
 	if err != nil {
@@ -438,18 +446,20 @@ func InitPresignedUpload(c *gin.Context, database *mongo.Database) {
 
 	bucket := placements[0].Bucket
 	pending := pendingUpload{
-		ID:           uploadID,
-		Username:     username,
-		Owner:        owner,
-		AppName:      appName,
-		Data:         c.PostForm("data"),
-		Intermediate: c.PostForm("intermediate"),
-		Private:      checkAppVisibility,
-		Bucket:       bucket,
-		Public:       placements[0].Public,
-		State:        pendingStatePending,
-		CreatedAt:    time.Now(),
-		ExpiresAt:    time.Now().Add(putTTL + pendingUploadGrace),
+		ID:            uploadID,
+		Username:      username,
+		PrincipalType: principal.Type,
+		PrincipalID:   principal.ID,
+		Owner:         owner,
+		AppName:       appName,
+		Data:          c.PostForm("data"),
+		Intermediate:  c.PostForm("intermediate"),
+		Private:       checkAppVisibility,
+		Bucket:        bucket,
+		Public:        placements[0].Public,
+		State:         pendingStatePending,
+		CreatedAt:     time.Now(),
+		ExpiresAt:     time.Now().Add(putTTL + pendingUploadGrace),
 	}
 
 	for i, file := range inlineFiles {
@@ -614,6 +624,11 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
+	principal, ok := utils.PrincipalFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 
 	var payload completePresignedPayload
 	if err := c.ShouldBindJSON(&payload); err != nil || !isLowerHex(payload.UploadID, 32) {
@@ -626,7 +641,7 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 	var pending pendingUpload
 	// Claiming the upload makes concurrent or repeated completes fail instead of creating the version twice.
 	err = collection.FindOneAndUpdate(ctx,
-		bson.M{"_id": payload.UploadID, "username": username, "state": pendingStatePending, "expires_at": bson.M{"$gt": time.Now()}},
+		bson.M{"_id": payload.UploadID, "username": username, "principal_type": principal.Type, "principal_id": principal.ID, "state": pendingStatePending, "expires_at": bson.M{"$gt": time.Now()}},
 		bson.M{"$set": bson.M{"state": pendingStateCompleting}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After),
 	).Decode(&pending)
@@ -661,10 +676,10 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
-	if err := utils.EnsureTeamUserUploadAccess(ctx, username, ctxQueryMap, database); err != nil {
+	if err := utils.EnsureTeamUserUploadAccess(ctx, ctxQueryMap, database); err != nil {
 		logrus.Error(err)
 		release()
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		utils.RespondTeamAccessError(c, err)
 		return
 	}
 	checkAppVisibility, ok := ResolveAppVisibility(c, database, pending.AppName, pending.Owner, ctxQueryMap)
