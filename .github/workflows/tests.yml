@@ -70,7 +70,7 @@ jobs:
         env:
           MONGODB_URL_TESTS: mongodb://root:ci@localhost:27017/cb_faynosync_db_tests?authSource=admin
         run: |
-          go test ./server/... -race
+          go test ./server/... ./mongod/... -race
         continue-on-error: false
 
       - name: Validate production compose file
