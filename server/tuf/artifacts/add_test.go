@@ -802,7 +802,7 @@ func TestUpdateDelegatedRoleWithArtifacts_TargetsOrDelegationsNil_ReturnsError(t
 
 	savedList := tuf_storage.ListMetadataForLatest
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("no files")
+		return []string{}, nil
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
@@ -834,7 +834,7 @@ func TestUpdateDelegatedRoleWithArtifacts_NotEnoughDistinctKeys_ReturnsError(t *
 
 	savedList := tuf_storage.ListMetadataForLatest
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("no files")
+		return []string{}, nil
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
@@ -858,7 +858,7 @@ func TestUpdateDelegatedRoleWithArtifacts_NoKeyIDsForRole_ReturnsError(t *testin
 
 	savedList := tuf_storage.ListMetadataForLatest
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("no files")
+		return []string{}, nil
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
@@ -887,7 +887,7 @@ func TestUpdateDelegatedRoleWithArtifacts_LoadDelegationKeyFails_ReturnsError(t 
 
 	savedList := tuf_storage.ListMetadataForLatest
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("no files")
+		return []string{}, nil
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 

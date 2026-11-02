@@ -32,6 +32,11 @@ func CreateTeamUser(c *gin.Context, database *mongo.Database) {
 
 	logrus.Debugf("Creating team user: %s", req.Username)
 
+	if err := utils.ValidateTeamUsername(req.Username); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	// Get owner (admin) username from context
 	owner, err := utils.GetUsernameFromContext(c)
 	if err != nil {

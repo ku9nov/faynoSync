@@ -21,6 +21,14 @@
 - Usernames that differ only by case are treated as taken at signup, team user creation and rename, and app names that differ only by case are rejected within one admin at app create and rename. On a case-insensitive filesystem such names shared one `ONLINE_KEY_DIR/<admin>/<app>/` directory, so one tenant's metadata could be signed with another's online keys. Existing names are not changed.
 - `/tuf/v1/artifacts/publish` and `/tuf/v1/artifacts/delete` check a team user's allowed apps before looking up the version, so they no longer reveal which versions exist in apps outside the grant (403 instead of 404).
 - Internal errors during a team user's access check return 500 with a generic message instead of 403 with the database error.
+- New admin usernames may not contain `-` or `/` (`/signup` returns 400), and new or renamed team usernames may not contain `/` (`-` stays allowed, e.g. `name-qa`).
+- `/app/create` and `/app/update` validate the app name (letters, digits, `-` and spaces)
+- API tokens no longer read `/telemetry` (403) or apps outside their `allowed_apps` on `/search` (403). 
+- `X-Device-ID` values longer than 128 bytes are not counted in telemetry on `/checkVersion` and `/telemetry/beacon`, instead of being kept in Redis for 30 days. Shorter IDs are counted as before.
+- TUF publish no longer treats a failed storage listing as a missing delegated role.
+- CDN response copies under `responses/<owner>/<app>/` are swept on every cache invalidation whenever `S3_BUCKET_NAME_CDN` is configured, not only while the app's `cdn` flag is on.
+- `/artifact/delete` invalidates the cached `/checkVersion` and `/apps/latest` responses and the CDN copies of the app, like `/apps/delete`.
+- Granting a team user access to a resource they just created adds only that resource to their allowed list, instead of rewriting all their permissions from the state read at request start.
 
 ## v2.8.0
 

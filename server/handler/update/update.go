@@ -20,7 +20,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/text/cases"
@@ -161,6 +160,14 @@ func UpdateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 
 		var logoLink string
 		form, _ := c.MultipartForm()
+		hasLogo := form != nil && len(form.File["file"]) > 0
+		// A legacy name stored before validation stays editable as long as no key is built from it.
+		if paramValue != currentApp.AppName || hasLogo {
+			if err := utils.ValidateItemName(itemType, paramValue); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
 		if form != nil {
 			files := form.File["file"]
 			if len(files) > 0 {
@@ -296,7 +303,7 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 		files = form.File["file"] // Assuming the field name is "file" not "files"
 		fileNames = create.FileNames(files)
 		if channel, _ := ctxQueryMap["channel"].(string); channel == "" && len(files) > 0 {
-			versionChannel, err := versionChannelName(c.Request.Context(), db, objID, s3Owner)
+			versionChannel, err := utils.VersionChannelName(c.Request.Context(), db, objID, s3Owner)
 			if err != nil {
 				logrus.Errorf("failed to resolve channel of version %s: %v", objID.Hex(), err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve version channel"})
@@ -460,27 +467,4 @@ func UpdateSpecificApp(c *gin.Context, repository db.AppRepository, db *mongo.Da
 	}
 
 	c.JSON(http.StatusOK, gin.H{"updatedResult.Updated": result})
-}
-
-// versionChannelName returns the channel name of a version, "" when it has none or
-// does not exist (the update itself then reports the missing version).
-func versionChannelName(ctx context.Context, database *mongo.Database, versionID primitive.ObjectID, owner string) (string, error) {
-	var version struct {
-		ChannelID primitive.ObjectID `bson:"channel_id"`
-	}
-	err := database.Collection("apps").FindOne(ctx, bson.M{"_id": versionID, "owner": owner}).Decode(&version)
-	if errors.Is(err, mongo.ErrNoDocuments) || err == nil && version.ChannelID.IsZero() {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	var channel struct {
-		Name string `bson:"channel_name"`
-	}
-	err = database.Collection("apps_meta").FindOne(ctx, bson.M{"_id": version.ChannelID}).Decode(&channel)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return "", nil
-	}
-	return channel.Name, err
 }

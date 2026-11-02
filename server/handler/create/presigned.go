@@ -671,7 +671,7 @@ func CompletePresignedUpload(c *gin.Context, repository db.AppRepository, databa
 	if pending.Intermediate != "" {
 		ctxQueryMap["intermediate"] = pending.Intermediate
 	}
-	if err := validateAPITokenAppScope(c, database, pending.Owner, pending.AppName); err != nil {
+	if err := utils.ValidateAPITokenAppScope(c, database, pending.Owner, pending.AppName); err != nil {
 		release()
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return

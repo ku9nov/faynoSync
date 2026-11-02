@@ -31,6 +31,10 @@ func SignUp(c *gin.Context, database *mongo.Database, client *mongo.Client, rdb 
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "wrong api key"})
 		return
 	}
+	if err := utils.ValidateAdminUsername(creds.Username); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 	taken, err := utils.UsernameTaken(ctx, creds.Username, nil, database)

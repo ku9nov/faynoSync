@@ -280,7 +280,7 @@ func TestAuthRateLimits(t *testing.T) {
 		time.Sleep(time.Duration(61-s) * time.Second)
 	}
 
-	const rlUser = "ratelimit-admin"
+	const rlUser = "ratelimitadmin"
 	const rlPassword = "ratelimit-password"
 
 	resetLimits := func() {

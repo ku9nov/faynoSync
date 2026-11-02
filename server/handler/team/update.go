@@ -76,6 +76,13 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
+	if req.Username != teamUser.Username {
+		if err := utils.ValidateTeamUsername(req.Username); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	taken, err := utils.UsernameTaken(ctx, req.Username, &objID, database)
 	if err != nil {
 		logrus.Errorf("Failed to check username uniqueness: %v", err)

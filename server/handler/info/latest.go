@@ -521,9 +521,16 @@ func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[str
 	trackClientTelemetryWithLatest(ctx, rdb, params, hasUpdate, true, deviceID)
 }
 
+const maxDeviceIDLen = 128
+
 func trackClientTelemetryWithLatest(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, hasLatestState bool, deviceID string) {
 	if rdb == nil || deviceID == "" {
 		logrus.Debug("Redis client is not set or deviceID is empty, skipping analytics collection")
+		return
+	}
+	// X-Device-ID is an anonymous header stored in several 30-day sets; an oversized one is not counted.
+	if len(deviceID) > maxDeviceIDLen {
+		logrus.Debugf("deviceID is %d bytes, above the %d-byte limit, skipping analytics collection", len(deviceID), maxDeviceIDLen)
 		return
 	}
 

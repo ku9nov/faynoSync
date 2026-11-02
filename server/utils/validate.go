@@ -171,6 +171,21 @@ func ValidateItemName(itemType, paramValue string) error {
 	return nil
 }
 
+// Usernames are storage-key segments ("<app>-<owner>/", "<owner>/<app>/").
+func ValidateAdminUsername(username string) error {
+	if strings.ContainsAny(username, "-/") {
+		return errors.New("username must not contain '-' or '/'")
+	}
+	return nil
+}
+
+func ValidateTeamUsername(username string) error {
+	if strings.Contains(username, "/") {
+		return errors.New("username must not contain '/'")
+	}
+	return nil
+}
+
 func IsValidAppName(input string) bool {
 	// Only allow letters and numbers, no special characters
 	validName := regexp.MustCompile(`^[a-zA-Z0-9\- ]+$`)
@@ -250,6 +265,19 @@ func validateUpdateCommonParams(ctxQueryMap map[string]interface{}, owner string
 	hasFile := form != nil && len(form.File["file"]) > 0
 
 	if hasFile {
+		appName, _ := ctxQueryMap["app_name"].(string)
+		if !IsValidAppName(appName) {
+			return nil, errors.New("invalid app_name parameter")
+		}
+		version, _ := ctxQueryMap["version"].(string)
+		if !IsValidVersion(version) {
+			return nil, errors.New("invalid version parameter")
+		}
+		channel, _ := ctxQueryMap["channel"].(string)
+		if !IsValidChannelName(channel) {
+			return nil, errors.New("invalid channel parameter")
+		}
+
 		platform, _ := ctxQueryMap["platform"].(string)
 		if !IsValidPlatformName(platform) {
 			return nil, errors.New("invalid platform parameter")
@@ -264,6 +292,13 @@ func validateUpdateCommonParams(ctxQueryMap map[string]interface{}, owner string
 		}
 		if err := CheckArchs(arch, owner, database, c); err != nil {
 			return nil, err
+		}
+
+		// An omitted channel is resolved from the version record later.
+		if channel != "" {
+			if err := CheckChannels(channel, owner, database, c); err != nil {
+				return nil, err
+			}
 		}
 	}
 

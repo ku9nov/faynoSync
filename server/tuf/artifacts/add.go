@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -367,6 +368,9 @@ func updateDelegatedRoleWithArtifacts(
 ) (bool, error) {
 
 	_, delegationFilename, err := tuf_storage.FindLatestMetadataVersion(ctx, adminName, appName, roleName)
+	if err != nil && !errors.Is(err, tuf_storage.ErrMetadataNotFound) {
+		return false, fmt.Errorf("failed to find latest delegation metadata for role %s: %w", roleName, err)
+	}
 	isNewDelegation := err != nil
 
 	roleExpirationKey := roleName + "_EXPIRATION_" + adminName + "_" + appName
@@ -547,6 +551,9 @@ func updateSnapshotAndTimestamp(
 		delegation := repo.Targets(roleName)
 		if delegation != nil && delegation.Signed.Version > 0 {
 			metaFilename := fmt.Sprintf("%s.json", roleName)
+			if bound, ok := snapshotMeta[metaFilename]; ok && bound != nil && int64(delegation.Signed.Version) <= bound.Version {
+				return fmt.Errorf("refusing to bind %s at version %d: snapshot already binds version %d", roleName, delegation.Signed.Version, bound.Version)
+			}
 			delegationFile := filepath.Join(tmpDir, fmt.Sprintf("%d.%s.json", delegation.Signed.Version, roleName))
 			if _, statErr := os.Stat(delegationFile); statErr != nil {
 				if err := delegation.ToFile(delegationFile, true); err != nil {

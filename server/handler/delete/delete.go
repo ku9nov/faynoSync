@@ -300,7 +300,7 @@ func DeleteSpecificVersionOfApp(c *gin.Context, repository db.AppRepository, db 
 	c.JSON(http.StatusOK, response)
 }
 
-func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client) {
+func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db *mongo.Database, rdb *redis.Client, performanceMode bool) {
 	env := viper.GetViper()
 	username, err := utils.GetUsernameFromContext(c)
 	if err != nil {
@@ -335,6 +335,13 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	}
 
 	delete(ctxQueryMap, "id")
+	// Resolved before the delete: the dashboard omits the channel, and the version may be gone afterwards.
+	cacheChannel, _ := ctxQueryMap["channel"].(string)
+	if cacheChannel == "" {
+		if cacheChannel, err = utils.VersionChannelName(c.Request.Context(), db, objID, owner); err != nil {
+			logrus.Errorf("failed to resolve channel of version %s for cache invalidation: %v", objID.Hex(), err)
+		}
+	}
 	links, result, err := repository.DeleteSpecificArtifactOfApp(objID, ctxQueryMap, c.Request.Context(), owner)
 	if err != nil {
 		logrus.Error(err)
@@ -347,6 +354,10 @@ func DeleteSpecificArtifactOfApp(c *gin.Context, repository db.AppRepository, db
 	}
 
 	failedLinks := deleteLinksFromStorage(links, checkAppVisibility, env)
+
+	if result {
+		create.InvalidateAppCaches(c.Request.Context(), db, rdb, performanceMode, owner, ctxQueryMap["app_name"].(string), []string{cacheChannel}, env)
+	}
 
 	// Deleting one artifact only changes its own (channel, platform, arch) feed.
 	deleteTuples := info.TupleFromContext(ctxQueryMap)

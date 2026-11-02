@@ -10,7 +10,6 @@ import (
 	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -21,8 +20,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 )
 
 func generateRolloutSeed() (string, error) {
@@ -55,16 +52,6 @@ func (c *appRepository) CreateDocument(collectionName string, document bson.D, u
 	}
 
 	return uploadResult.InsertedID, nil
-}
-
-// Helper function to check if a string slice contains a value
-func contains(slice []string, value string) bool {
-	for _, v := range slice {
-		if v == value {
-			return true
-		}
-	}
-	return false
 }
 
 // createMetaDocument is a helper function that handles the common logic for creating meta documents
@@ -116,49 +103,29 @@ func (c *appRepository) createMetaDocument(
 // updateTeamUserPermissions is a generic function that updates team user permissions for any resource type
 func (c *appRepository) updateTeamUserPermissions(teamUser model.TeamUser, result interface{}, resourceType string, ctx context.Context) error {
 	resourceID := result.(primitive.ObjectID).Hex()
-	var allowedList []string
 	var permissionsField string
 
 	switch resourceType {
 	case "channel":
-		allowedList = teamUser.Permissions.Channels.Allowed
 		permissionsField = "channels"
 	case "platform":
-		allowedList = teamUser.Permissions.Platforms.Allowed
 		permissionsField = "platforms"
 	case "arch":
-		allowedList = teamUser.Permissions.Archs.Allowed
 		permissionsField = "archs"
 	case "app":
-		allowedList = teamUser.Permissions.Apps.Allowed
 		permissionsField = "apps"
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)
 	}
 
-	if !contains(allowedList, resourceID) {
-		// Create a new permissions object to avoid modifying the original
-		updatedPermissions := teamUser.Permissions
-
-		// Update the appropriate field using reflection
-		permissionsValue := reflect.ValueOf(&updatedPermissions).Elem()
-		resourceField := permissionsValue.FieldByName(cases.Title(language.English).String(permissionsField))
-		if resourceField.IsValid() {
-			allowedField := resourceField.FieldByName("Allowed")
-			if allowedField.IsValid() {
-				allowedField.Set(reflect.Append(allowedField, reflect.ValueOf(resourceID)))
-			}
-		}
-
-		update := bson.M{"$set": bson.M{"permissions": updatedPermissions}}
-		_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
-			ctx,
-			bson.M{"_id": teamUser.ID},
-			update,
-		)
-		return err
-	}
-	return nil
+	// Touches only this one allowed list, so a revocation that landed after teamUser was read survives.
+	update := bson.M{"$addToSet": bson.M{"permissions." + permissionsField + ".allowed": resourceID}}
+	_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
+		ctx,
+		bson.M{"_id": teamUser.ID},
+		update,
+	)
+	return err
 }
 
 // CreateChannel creates a new channel document

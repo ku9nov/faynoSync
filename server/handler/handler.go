@@ -107,7 +107,7 @@ func (ch *appHandler) FetchLatestVersionOfApp(c *gin.Context) {
 
 func (ch *appHandler) GetAppByName(c *gin.Context) {
 	// Call the GetAppByName function from the catalog package
-	catalog.GetAppByName(c, ch.repository)
+	catalog.GetAppByName(c, ch.repository, ch.database)
 }
 
 // func (ch *appHandler) GetAllApps(c *gin.Context) {
@@ -242,7 +242,7 @@ func (ch *appHandler) UpdateArch(c *gin.Context) {
 }
 func (ch *appHandler) DeleteSpecificArtifactOfApp(c *gin.Context) {
 	// Call the DeleteSpecificArtifactOfApp function from the delete package
-	delete.DeleteSpecificArtifactOfApp(c, ch.repository, ch.database, ch.redisClient)
+	delete.DeleteSpecificArtifactOfApp(c, ch.repository, ch.database, ch.redisClient, ch.performanceMode)
 	ch.reloadTelemetryAllowListAfterSuccess(c, "deleting app artifact")
 }
 

@@ -92,6 +92,12 @@ func GetTelemetry(c *gin.Context, rdb *redis.Client, db *mongo.Database) {
 		return
 	}
 
+	// Telemetry covers the whole tenant, beyond an app-scoped API token.
+	if utils.IsAPITokenRequest(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "API tokens cannot read telemetry"})
+		return
+	}
+
 	// A team user reads their admin's statistics, not their own
 	admin, err := utils.ResolveRequestOwner(c.Request.Context(), username, db)
 	if err != nil {

@@ -2,7 +2,6 @@ package create
 
 import (
 	"context"
-	"errors"
 	db "faynoSync/mongod"
 	"faynoSync/server/handler/info"
 	"faynoSync/server/model"
@@ -20,7 +19,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -200,25 +198,6 @@ func InvalidateCache(ctx context.Context, params map[string]interface{}, rdb *re
 	return nil
 }
 
-func IsCdnEdgeEnabled(ctx context.Context, database *mongo.Database, owner, appName string) (bool, error) {
-	var appMeta struct {
-		CdnEdge bool `bson:"cdn_edge"`
-	}
-
-	err := database.Collection("apps_meta").FindOne(ctx, bson.M{
-		"app_name": appName,
-		"owner":    owner,
-	}).Decode(&appMeta)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to check cdn_edge flag: %w", err)
-	}
-
-	return appMeta.CdnEdge, nil
-}
-
 func InvalidateCDNResponseCache(ctx context.Context, owner, appName string, rdb *redis.Client, env *viper.Viper) error {
 	bucketName := env.GetString("S3_BUCKET_NAME_CDN")
 	if bucketName == "" {
@@ -304,15 +283,10 @@ func InvalidateAppCaches(
 		}
 	}
 
-	isCdnEdgeEnabled, err := IsCdnEdgeEnabled(ctx, database, owner, appName)
-	if err != nil {
-		logrus.Error("Error checking cdn_edge flag:", err)
-		return
-	}
-	if isCdnEdgeEnabled {
-		if err := InvalidateCDNResponseCache(ctx, owner, appName, rdb, env); err != nil {
-			logrus.Error("Error invalidating CDN response cache:", err)
-		}
+	// Copies published while cdn_edge was on (or before the v2.3.0 private-app backfill) outlive the flag,
+	// so the prefix is swept whenever the CDN bucket is configured.
+	if err := InvalidateCDNResponseCache(ctx, owner, appName, rdb, env); err != nil {
+		logrus.Error("Error invalidating CDN response cache:", err)
 	}
 }
 
