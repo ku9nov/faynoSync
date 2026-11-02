@@ -30,6 +30,10 @@
 - `/artifact/delete` invalidates the cached `/checkVersion` and `/apps/latest` responses and the CDN copies of the app, like `/apps/delete`.
 - Granting a team user access to a resource they just created adds only that resource to their allowed list, instead of rewriting all their permissions from the state read at request start.
 
+### Fixed
+
+- Telemetry counts a device that switches channel only in the channel it asked from last that day, like versions.
+
 ## v2.8.0
 
 ### Changes
