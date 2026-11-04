@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- route config; edits trigger a full reload anyway */
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { PrivateRoute } from '@/route/PrivateRoute.tsx';
 import { PublicRoute } from '@/route/PublicRoute.tsx';
@@ -7,6 +7,7 @@ import { AuthProvider } from '@/providers/authProvider.tsx';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { RouteError } from '@/components/RouteError';
 
 // Lazy load page components
 const SignInPage = lazy(() => import('@/pages/SignInPage.tsx').then(module => ({ default: module.SignInPage })));
@@ -28,7 +29,7 @@ const RootLayout = ({ children }: { children: React.ReactNode }) => (
   </AuthProvider>
 );
 
-export const router = createBrowserRouter([
+const routes: RouteObject[] = [
   {
     path: '/',
     element: <RootLayout><PrivateRoute><HomePage /></PrivateRoute></RootLayout>,
@@ -81,4 +82,9 @@ export const router = createBrowserRouter([
     path: '/signup',
     element: <RootLayout><PublicRoute><SignUpPage /></PublicRoute></RootLayout>,
   },
-], { basename: import.meta.env.BASE_URL });
+];
+
+export const router = createBrowserRouter(
+  routes.map(route => ({ ...route, errorElement: <RouteError /> })),
+  { basename: import.meta.env.BASE_URL },
+);
