@@ -84,7 +84,12 @@ func CheckPermission(permissionType PermissionType, resourceType ResourceType, d
 		defer cancel()
 
 		teamUser, err := CallerTeamUser(ctx, database)
-		if err != nil || teamUser == nil {
+		if err != nil {
+			RespondTeamAccessError(c, err)
+			c.Abort()
+			return
+		}
+		if teamUser == nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
 			c.Abort()
 			return

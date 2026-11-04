@@ -5,18 +5,17 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 
 // Chrome, Firefox, Safari and Vite's CSS preload wording for a lazy chunk that no longer exists after a redeploy
 const staleChunkPattern = /dynamically imported module|Importing a module script failed|Unable to preload CSS/i;
-const reloadKey = 'staleChunkReloadAt';
-const reloadWindowMs = 10_000;
+const reloadKey = 'staleChunkReloadFor';
 
-const isStaleChunkError = (error: unknown) =>
-  error instanceof Error && staleChunkPattern.test(error.message);
+const staleChunkMessage = (error: unknown) =>
+  error instanceof Error && staleChunkPattern.test(error.message) ? error.message : '';
 
-// Guards against a reload loop when the chunk is genuinely missing on the server
-const shouldReload = () => {
+// One reload per failing chunk: the message names the chunk URL, so a chunk still missing after
+// the reload stops here regardless of how long the reload took, while a later deploy can reload again.
+const shouldReload = (message: string) => {
   try {
-    const last = Number(sessionStorage.getItem(reloadKey));
-    if (last && Date.now() - last < reloadWindowMs) return false;
-    sessionStorage.setItem(reloadKey, String(Date.now()));
+    if (sessionStorage.getItem(reloadKey) === message) return false;
+    sessionStorage.setItem(reloadKey, message);
     return true;
   } catch {
     return false;
@@ -59,14 +58,15 @@ const ReloadButton = styled.button`
 
 export const RouteError = () => {
   const error = useRouteError();
-  const stale = isStaleChunkError(error);
+  const staleMessage = staleChunkMessage(error);
+  const stale = staleMessage !== '';
   const [reloadSkipped, setReloadSkipped] = useState(false);
 
   useEffect(() => {
-    if (!stale) return;
-    if (shouldReload()) window.location.reload();
+    if (!staleMessage) return;
+    if (shouldReload(staleMessage)) window.location.reload();
     else setReloadSkipped(true);
-  }, [stale]);
+  }, [staleMessage]);
 
   if (stale && !reloadSkipped) return <LoadingSpinner />;
 

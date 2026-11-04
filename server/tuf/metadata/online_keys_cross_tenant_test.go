@@ -104,6 +104,7 @@ func TestBootstrapOnlineRoles_OtherTenantOnlineKeys_Refused(t *testing.T) {
 
 	err := BootstrapOnlineRolesWithContext(context.Background(), redisClient, "task-a", "adminA", "appA", payload)
 	if err != nil {
+		require.ErrorContains(t, err, "online key directory")
 		return
 	}
 
