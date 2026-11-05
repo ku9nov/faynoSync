@@ -77,7 +77,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <nav>
             <button 
               className={getButtonClass('applications')}
-              aria-current={currentPath === 'applications' ? 'page' : undefined}
+              aria-current={isOnPage('applications') ? 'page' : undefined}
               onClick={() => handleNavigation('applications')}
             >
               <i className="fas fa-th-large"></i>
@@ -85,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button 
               className={getButtonClass('channels')}
-              aria-current={currentPath === 'channels' ? 'page' : undefined}
+              aria-current={isOnPage('channels') ? 'page' : undefined}
               onClick={() => handleNavigation('channels')}
             >
               <i className="fas fa-broadcast-tower"></i>
@@ -93,7 +93,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button 
               className={getButtonClass('platforms')}
-              aria-current={currentPath === 'platforms' ? 'page' : undefined}
+              aria-current={isOnPage('platforms') ? 'page' : undefined}
               onClick={() => handleNavigation('platforms')}
             >
               <i className="fas fa-desktop"></i>
@@ -101,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button 
               className={getButtonClass('architectures')}
-              aria-current={currentPath === 'architectures' ? 'page' : undefined}
+              aria-current={isOnPage('architectures') ? 'page' : undefined}
               onClick={() => handleNavigation('architectures')}
             >
               <i className="fas fa-microchip"></i>
@@ -109,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button
               className={getButtonClass('statistics')}
-              aria-current={currentPath === 'statistics' ? 'page' : undefined}
+              aria-current={isOnPage('statistics') ? 'page' : undefined}
               onClick={() => handleNavigation('statistics')}
             >
               <i className="fas fa-chart-bar"></i>
@@ -117,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button
               className={getButtonClass('reports')}
-              aria-current={currentPath === 'reports' ? 'page' : undefined}
+              aria-current={isOnPage('reports') ? 'page' : undefined}
               onClick={() => handleNavigation('reports')}
             >
               <i className="fas fa-flag"></i>
@@ -151,7 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <nav>
             <button 
               className={getButtonClass('applications')}
-              aria-current={currentPath === 'applications' ? 'page' : undefined}
+              aria-current={isOnPage('applications') ? 'page' : undefined}
               onClick={() => handleNavigation('applications')}
             >
               <i className="fas fa-th-large"></i>
@@ -159,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button 
               className={getButtonClass('channels')}
-              aria-current={currentPath === 'channels' ? 'page' : undefined}
+              aria-current={isOnPage('channels') ? 'page' : undefined}
               onClick={() => handleNavigation('channels')}
             >
               <i className="fas fa-broadcast-tower"></i>
@@ -167,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button 
               className={getButtonClass('platforms')}
-              aria-current={currentPath === 'platforms' ? 'page' : undefined}
+              aria-current={isOnPage('platforms') ? 'page' : undefined}
               onClick={() => handleNavigation('platforms')}
             >
               <i className="fas fa-desktop"></i>
@@ -175,7 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button 
               className={getButtonClass('architectures')}
-              aria-current={currentPath === 'architectures' ? 'page' : undefined}
+              aria-current={isOnPage('architectures') ? 'page' : undefined}
               onClick={() => handleNavigation('architectures')}
             >
               <i className="fas fa-microchip"></i>
@@ -183,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button
               className={getButtonClass('statistics')}
-              aria-current={currentPath === 'statistics' ? 'page' : undefined}
+              aria-current={isOnPage('statistics') ? 'page' : undefined}
               onClick={() => handleNavigation('statistics')}
             >
               <i className="fas fa-chart-bar"></i>
@@ -191,7 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
             <button
               className={getButtonClass('reports')}
-              aria-current={currentPath === 'reports' ? 'page' : undefined}
+              aria-current={isOnPage('reports') ? 'page' : undefined}
               onClick={() => handleNavigation('reports')}
             >
               <i className="fas fa-flag"></i>

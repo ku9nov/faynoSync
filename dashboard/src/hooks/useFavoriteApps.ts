@@ -22,16 +22,19 @@ export const useFavoriteApps = () => {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify([...favorites]));
+    } catch {
+      // storage unavailable: keep in-memory state only
+    }
+  }, [favorites]);
+
   const toggleFavorite = React.useCallback((id: string) => {
     setFavorites(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      try {
-        localStorage.setItem(storageKey, JSON.stringify([...next]));
-      } catch {
-        // storage unavailable: keep in-memory state only
-      }
       return next;
     });
   }, []);

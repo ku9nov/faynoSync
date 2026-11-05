@@ -50,7 +50,8 @@ const FillClamp: React.FC<{ className: string; children: React.ReactNode }> = ({
     if (!box || !content) return;
     const update = () => {
       const lineHeight = parseFloat(getComputedStyle(content).lineHeight) || 20;
-      setLines(Math.max(1, Math.floor(box.clientHeight / lineHeight)));
+      if (box.parentElement) box.parentElement.style.minHeight = `${Math.ceil(lineHeight * 2)}px`;
+      setLines(Math.max(2, Math.floor(box.clientHeight / lineHeight)));
     };
     update();
     const observer = new ResizeObserver(update);
