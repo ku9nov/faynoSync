@@ -150,7 +150,7 @@ func freedNameTokenReuse(t *testing.T, free func(db *mongo.Database, tenantA, na
 	require.NoError(t, db.Collection("team_users").FindOne(context.Background(), bson.M{"username": name, "owner": tenantA}).Decode(&holder))
 	token, err := utils.GenerateSessionJWT(holder.ID, utils.PrincipalTeam, holder.TokenVersion, name)
 	require.NoError(t, err)
-	code, owner := sessionAs(t, db, token)
+	code, _ := sessionAs(t, db, token)
 	require.Equal(t, http.StatusForbidden, code, "the session must authenticate before the name is freed (403: no download permission)")
 
 	free(db, tenantA, name)
@@ -159,7 +159,7 @@ func freedNameTokenReuse(t *testing.T, free func(db *mongo.Database, tenantA, na
 		map[string]any{"username": name, "password": "p2", "permissions": map[string]any{"apps": map[string]any{"download": true}}})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
-	code, owner = sessionAs(t, db, token)
+	code, owner := sessionAs(t, db, token)
 	assert.Equal(t, http.StatusUnauthorized, code, "token issued to tenant %s's team user must not act as tenant %s's new one (served owner %q)", tenantA, tenantD, owner)
 }
 

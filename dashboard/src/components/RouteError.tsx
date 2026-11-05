@@ -10,12 +10,14 @@ const reloadKey = 'staleChunkReloadFor';
 const staleChunkMessage = (error: unknown) =>
   error instanceof Error && staleChunkPattern.test(error.message) ? error.message : '';
 
-// One reload per failing chunk: the message names the chunk URL, so a chunk still missing after
-// the reload stops here regardless of how long the reload took, while a later deploy can reload again.
+// One reload per failing chunk per build: import.meta.url is this build's hashed entry chunk, so a
+// chunk still missing after the reload stops here however long the reload took, while a later deploy
+// reloads again even when the browser (Safari) reports no chunk URL in the message.
 const shouldReload = (message: string) => {
+  const guard = `${import.meta.url} ${message}`;
   try {
-    if (sessionStorage.getItem(reloadKey) === message) return false;
-    sessionStorage.setItem(reloadKey, message);
+    if (sessionStorage.getItem(reloadKey) === guard) return false;
+    sessionStorage.setItem(reloadKey, guard);
     return true;
   } catch {
     return false;

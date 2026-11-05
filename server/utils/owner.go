@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -75,6 +76,7 @@ func RespondTeamAccessError(c *gin.Context, err error) {
 	case errors.Is(err, errSessionRevoked):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 	default:
+		logrus.Errorf("Failed to check team user access: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check access"})
 	}
 }

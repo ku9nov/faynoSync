@@ -76,23 +76,24 @@ func UpdateTeamUser(c *gin.Context, database *mongo.Database) {
 		return
 	}
 
+	// Unchanged legacy names skip both checks, so a name that collides from before stays editable.
 	if req.Username != teamUser.Username {
 		if err := utils.ValidateTeamUsername(req.Username); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-	}
 
-	taken, err := utils.UsernameTaken(ctx, req.Username, &objID, database)
-	if err != nil {
-		logrus.Errorf("Failed to check username uniqueness: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update team user"})
-		return
-	}
-	if taken {
-		logrus.Errorf("Username already exists: %s", req.Username)
-		c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
-		return
+		taken, err := utils.UsernameTaken(ctx, req.Username, &objID, database)
+		if err != nil {
+			logrus.Errorf("Failed to check username uniqueness: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update team user"})
+			return
+		}
+		if taken {
+			logrus.Errorf("Username already exists: %s", req.Username)
+			c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
+			return
+		}
 	}
 
 	// Prepare update document
