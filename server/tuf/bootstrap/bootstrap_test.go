@@ -1465,9 +1465,11 @@ func TestRecoverSettingsFromStorage_OnlineTargets_TargetsOnlineKeyTrue(t *testin
 		downloadMetadataForBootstrap = savedDownload
 	}()
 
-	// ONLINE_KEY_DIR contains a file named after the targets keyID — targets is online.
+	// ONLINE_KEY_DIR/admin/myapp contains a file named after the targets keyID — targets is online.
 	keyDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(keyDir, targetsKeyID), []byte("dummy"), 0600))
+	tenantDir := filepath.Join(keyDir, "admin", "myapp")
+	require.NoError(t, os.MkdirAll(tenantDir, 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(tenantDir, targetsKeyID), []byte("dummy"), 0600))
 	oldDir := viper.GetString("ONLINE_KEY_DIR")
 	viper.Set("ONLINE_KEY_DIR", keyDir)
 	defer viper.Set("ONLINE_KEY_DIR", oldDir)

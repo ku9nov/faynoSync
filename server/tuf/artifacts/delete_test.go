@@ -81,7 +81,7 @@ func makeRemoveArtifactsTestEnv(t *testing.T, adminName, appName string) (storeD
 		require.NotEmpty(t, role.KeyIDs)
 		keyID := role.KeyIDs[0]
 		seed := keys[name].Seed()
-		require.NoError(t, os.WriteFile(filepath.Join(keyDir, keyID), seed, 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, testAdminName, testAppName), keyID), seed, 0600))
 	}
 
 	targetsKeyID := rootMeta.Signed.Roles["targets"].KeyIDs[0]
@@ -523,7 +523,7 @@ func makeRemoveArtifactsFromDelegatedRoleEnv(t *testing.T, adminName, appName st
 
 	targetsKeyID := repo.Root().Signed.Roles["targets"].KeyIDs[0]
 	seed := keys["targets"].Seed()
-	require.NoError(t, os.WriteFile(filepath.Join(keyDir, targetsKeyID), seed, 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, testAdminName, testAppName), targetsKeyID), seed, 0600))
 
 	targetsKey := repo.Root().Signed.Keys[targetsKeyID]
 	exp := tuf_utils.HelperExpireIn(365)
@@ -665,7 +665,7 @@ func TestRemoveArtifactsFromDelegatedRole_DelegationHasNoTargets_ReturnsFalseNil
 	emptyTargets.Signed.Version = 1
 	repo.SetTargets("updates", emptyTargets)
 	targetsKeyID := repo.Root().Signed.Roles["targets"].KeyIDs[0]
-	seed := loadKeyFromFile(t, filepath.Join(keyDir, targetsKeyID))
+	seed := loadKeyFromFile(t, filepath.Join(tenantKeyDir(t, keyDir, testAdminName, testAppName), targetsKeyID))
 	priv := ed25519.NewKeyFromSeed(seed)
 	signer, err := signature.LoadSigner(priv, crypto.Hash(0))
 	require.NoError(t, err)
@@ -680,6 +680,14 @@ func TestRemoveArtifactsFromDelegatedRole_DelegationHasNoTargets_ReturnsFalseNil
 	require.NoError(t, err)
 	assert.False(t, removed)
 	t.Logf("Delegation with no targets: removed=false, err=nil")
+}
+
+// tenantKeyDir creates the directory holding adminName/appName online keys under ONLINE_KEY_DIR=baseDir.
+func tenantKeyDir(t *testing.T, baseDir, adminName, appName string) string {
+	t.Helper()
+	dir := filepath.Join(baseDir, adminName, appName)
+	require.NoError(t, os.MkdirAll(dir, 0700))
+	return dir
 }
 
 func loadKeyFromFile(t *testing.T, path string) []byte {

@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.9.0
+
+### Upgrading from v2.8
+
+- TUF online keys are read only from `ONLINE_KEY_DIR/<admin>/<app>/` (`<admin>` is the app owner, same pair as in `tuf_metadata/<admin>/<app>/`). Move each key from `ONLINE_KEY_DIR/<keyid>` there before or right after upgrading, otherwise publishing and re-signing fail and `timestamp.json` expires within a day:
+  - find an app's online keyids: `jq -r '.signed.roles | (.targets, .snapshot, .timestamp).keyids[]' N.root.json` and `jq -r '.signed.delegations.roles[]?.keyids[]' N.targets.json`;
+  - directories must be readable by UID `65532` and not be symlinks;
+  - a key shared on purpose by apps of one admin goes into each app's directory; a keyid listed by two different admins is what this release blocks, do not copy it across.
+- If `ONLINE_KEY_DIR` is on a case-insensitive filesystem, check existing admin and app names for case-only duplicates, or move the directory to a case-sensitive filesystem. Renaming a TUF app does not move its metadata or keys.
+- `tuf-kms` prints the per-app directory from its next release.
+
+### Security
+
+- TUF online keys are bound to one app, so an admin can no longer get metadata signed with another tenant's online keys by listing them in a bootstrapped root.
+- New usernames, and app names of one admin, that differ only by case are rejected; new admin usernames may not contain `-` or `/`, team usernames may not contain `/`.
+- Sessions are bound to the user's ID and a token version, and authorization uses the user type and ID instead of the username.
+- Team users are checked against their allowed apps, channels, platforms and archs on `/tuf/v1/artifacts/publish`, `/tuf/v1/artifacts/delete` and `/apps/update` before anything is read or written (403).
+- API tokens no longer read `/telemetry` or apps outside `allowed_apps` on `/search`.
+- `/app/create` and `/app/update` validate the app name.
+- `X-Device-ID` values over 128 bytes are not counted in telemetry.
+- Updated Go to 1.26.10, `go-jose` to 4.1.8 and `vite` to 6.4.5.
+
+### Fixed
+
+- Team user access check errors return 500 instead of 403 or 401.
+- Granting a team user access to a resource they created no longer rewrites their other permissions.
+- `/artifact/delete` invalidates cached `/checkVersion` and `/apps/latest` responses and CDN copies; CDN copies are swept whenever `S3_BUCKET_NAME_CDN` is set.
+- TUF publish no longer treats a failed storage listing as a missing delegated role.
+- Telemetry counts a device that switches channel only in its last channel of the day.
+- The dashboard reloads itself instead of showing an error when a tab left open across a deploy requests old assets.
+
 ## v2.8.0
 
 ### Changes

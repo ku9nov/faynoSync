@@ -521,9 +521,16 @@ func trackClientTelemetry(ctx context.Context, rdb *redis.Client, params map[str
 	trackClientTelemetryWithLatest(ctx, rdb, params, hasUpdate, true, deviceID)
 }
 
+const maxDeviceIDLen = 128
+
 func trackClientTelemetryWithLatest(ctx context.Context, rdb *redis.Client, params map[string]interface{}, hasUpdate bool, hasLatestState bool, deviceID string) {
 	if rdb == nil || deviceID == "" {
 		logrus.Debug("Redis client is not set or deviceID is empty, skipping analytics collection")
+		return
+	}
+	// X-Device-ID is an anonymous header stored in several 30-day sets; an oversized one is not counted.
+	if len(deviceID) > maxDeviceIDLen {
+		logrus.Debugf("deviceID is %d bytes, above the %d-byte limit, skipping analytics collection", len(deviceID), maxDeviceIDLen)
 		return
 	}
 
@@ -552,6 +559,24 @@ func trackClientTelemetryWithLatest(ctx context.Context, rdb *redis.Client, para
 	logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", clientsKey, deviceID)
 
 	if channel != "" {
+		// A device counts in the channel it asked from last today, like version_usage below.
+		knownChannelsKey := fmt.Sprintf("%s:known_channels", baseKey)
+		rdb.SAdd(ctx, knownChannelsKey, channel)
+		rdb.Expire(ctx, knownChannelsKey, time.Hour*24*30)
+		logrus.Debugf("Telemetry Redis updated: sadd=%s member=%s", knownChannelsKey, channel)
+
+		knownChannels, err := rdb.SMembers(ctx, knownChannelsKey).Result()
+		if err != nil {
+			logrus.Errorf("Error getting known channels: %v", err)
+		}
+		for _, knownChannel := range knownChannels {
+			if knownChannel != channel {
+				oldChannelKey := fmt.Sprintf("%s:channels:%s:%s", baseKey, dateStr, knownChannel)
+				rdb.SRem(ctx, oldChannelKey, deviceID)
+				logrus.Debugf("Telemetry Redis updated: srem=%s member=%s", oldChannelKey, deviceID)
+			}
+		}
+
 		channelKey := fmt.Sprintf("%s:channels:%s:%s", baseKey, dateStr, channel)
 		rdb.SAdd(ctx, channelKey, deviceID)
 		rdb.Expire(ctx, channelKey, time.Hour*24*30)

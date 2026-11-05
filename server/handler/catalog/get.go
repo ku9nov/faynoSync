@@ -11,9 +11,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func GetAppByName(c *gin.Context, repository db.AppRepository) {
+func GetAppByName(c *gin.Context, repository db.AppRepository, database *mongo.Database) {
 	ctx, ctxErr := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer ctxErr()
 
@@ -26,6 +27,12 @@ func GetAppByName(c *gin.Context, repository db.AppRepository) {
 
 	//get parameters
 	appName := c.Query("app_name")
+
+	// An API token is scoped to its allowed apps; it is not the tenant admin.
+	if err := utils.ValidateAPITokenAppScope(c, database, owner, appName); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Get filter parameters
 	filters := make(map[string]interface{})

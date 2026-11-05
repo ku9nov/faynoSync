@@ -4,13 +4,10 @@ import (
 	"errors"
 	"faynoSync/server/utils"
 	"faynoSync/server/utils/updaters"
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -57,14 +54,14 @@ func ResolveUploadRequest(c *gin.Context, database *mongo.Database) (UploadReque
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_name is required"})
 		return UploadRequest{}, false
 	}
-	if err := validateAPITokenAppScope(c, database, owner, appName); err != nil {
+	if err := utils.ValidateAPITokenAppScope(c, database, owner, appName); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return UploadRequest{}, false
 	}
 	// Checked before any object is written, so a team user cannot store files outside their allowed apps, channels, platforms and archs.
-	if err := utils.EnsureTeamUserUploadAccess(c.Request.Context(), username, ctxQueryMap, database); err != nil {
+	if err := utils.EnsureTeamUserUploadAccess(c.Request.Context(), ctxQueryMap, database); err != nil {
 		logrus.Error(err)
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		utils.RespondTeamAccessError(c, err)
 		return UploadRequest{}, false
 	}
 
@@ -92,49 +89,4 @@ func ResolveAppVisibility(c *gin.Context, database *mongo.Database, appName, own
 	}
 
 	return checkAppVisibility, true
-}
-
-func validateAPITokenAppScope(c *gin.Context, database *mongo.Database, owner, appName string) error {
-	isAPIToken, exists := c.Get("is_api_token")
-	if !exists {
-		return nil
-	}
-
-	apiTokenBool, ok := isAPIToken.(bool)
-	if !ok || !apiTokenBool {
-		return nil
-	}
-
-	allowedAppsRaw, exists := c.Get("allowed_apps")
-	if !exists {
-		return fmt.Errorf("api token scope is missing")
-	}
-
-	allowedApps, ok := allowedAppsRaw.([]string)
-	if !ok || len(allowedApps) == 0 {
-		return fmt.Errorf("api token has no allowed applications")
-	}
-
-	allowedSet := make(map[string]struct{}, len(allowedApps))
-	for _, appID := range allowedApps {
-		allowedSet[appID] = struct{}{}
-	}
-
-	var appMeta struct {
-		ID primitive.ObjectID `bson:"_id"`
-	}
-
-	metaCollection := database.Collection("apps_meta")
-	if err := metaCollection.FindOne(
-		c.Request.Context(),
-		bson.M{"app_name": appName, "owner": owner},
-	).Decode(&appMeta); err != nil {
-		return fmt.Errorf("app_name not found in apps_meta collection or you don't have permission to access it")
-	}
-
-	if _, hasAccess := allowedSet[appMeta.ID.Hex()]; !hasAccess {
-		return fmt.Errorf("api token has no access to this app")
-	}
-
-	return nil
 }

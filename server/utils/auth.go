@@ -17,6 +17,11 @@ import (
 
 func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Routes listing authMiddleware explicitly also pass through router.Use(authMiddleware).
+		if _, ok := PrincipalFromContext(c.Request.Context()); ok {
+			c.Next()
+			return
+		}
 		var database *mongo.Database
 		if len(databases) > 0 {
 			database = databases[0]
@@ -34,13 +39,31 @@ func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 			return
 		}
 
-		username, err := UsernameFromJWT(tokenString)
+		claims, err := ParseSessionJWT(tokenString)
 		if err == nil {
-			c.Set("username", username)
+			if database == nil {
+				logrus.Warn("JWT received but AuthMiddleware initialized without database")
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+				return
+			}
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+			defer cancel()
+			principal, verifyErr := VerifySessionPrincipal(ctx, database, claims)
+			if errors.Is(verifyErr, errSessionRevoked) {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": verifyErr.Error()})
+				return
+			}
+			if verifyErr != nil {
+				logrus.Errorf("Failed to verify session of %s: %v", claims.Subject.Hex(), verifyErr)
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to verify session"})
+				return
+			}
+			c.Set("username", principal.Username)
+			setPrincipal(c, principal)
 			c.Next()
 			return
 		}
-		if errors.Is(err, errInvalidClaims) || errors.Is(err, errUsernameNotInClaims) {
+		if errors.Is(err, errInvalidClaims) || errors.Is(err, errSessionClaims) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
@@ -100,14 +123,13 @@ func AuthMiddleware(databases ...*mongo.Database) gin.HandlerFunc {
 		c.Set("is_api_token", true)
 		c.Set("api_token_id", apiToken.ID.Hex())
 		c.Set("allowed_apps", apiToken.AllowedApps)
+		// Only admins can mint API tokens (/token/create is admin-only), so the owner is an admin name.
+		setPrincipal(c, Principal{Type: PrincipalAdmin, Username: apiToken.Owner})
 		c.Next()
 	}
 }
 
-var (
-	errInvalidClaims       = errors.New("invalid claims")
-	errUsernameNotInClaims = errors.New("username not found in claims")
-)
+var errInvalidClaims = errors.New("invalid claims")
 
 func BearerToken(authHeader string) (string, bool) {
 	tokenParts := strings.Fields(authHeader)
@@ -115,20 +137,4 @@ func BearerToken(authHeader string) (string, bool) {
 		return "", false
 	}
 	return tokenParts[1], true
-}
-
-func UsernameFromJWT(tokenString string) (string, error) {
-	token, err := ValidateJWT(tokenString)
-	if err != nil {
-		return "", err
-	}
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || !token.Valid {
-		return "", errInvalidClaims
-	}
-	username, ok := claims["username"].(string)
-	if !ok {
-		return "", errUsernameNotInClaims
-	}
-	return username, nil
 }

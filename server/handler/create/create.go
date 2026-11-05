@@ -95,6 +95,10 @@ func CreateItem(c *gin.Context, repository db.AppRepository, itemType string) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": paramName + " is required"})
 			return
 		}
+		if err := utils.ValidateItemName(itemType, paramValue); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		private := utils.GetBoolParam(params["private"])
 		cdnEdge := utils.GetBoolParam(params["cdn"])
 		if err := utils.ValidatePrivateCdnEdge(private, cdnEdge); err != nil {

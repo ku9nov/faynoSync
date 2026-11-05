@@ -582,7 +582,7 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
                 <i className="fas fa-exclamation-triangle text-red-500 mr-3 mt-0.5 text-xl"></i>
                 <div className="flex-1">
                   <p className="text-theme-primary text-sm leading-relaxed">
-                    Copy <code className="bg-theme-input px-1 rounded">out/online-keys/*</code> into <code className="bg-theme-input px-1 rounded">ONLINE_KEY_DIR</code> on
+                    Copy <code className="bg-theme-input px-1 rounded">out/online-keys/*</code> into <code className="bg-theme-input px-1 rounded">ONLINE_KEY_DIR/&lt;admin&gt;/&lt;app&gt;/</code> on
                     the faynosync API server <strong>before</strong> staging the rotation below. The server signs {normalizedRoleName} with
                     those keys and cannot do it without the files.
                   </p>

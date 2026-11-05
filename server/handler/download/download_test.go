@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	db "faynoSync/mongod"
 	"faynoSync/server/model"
 	"faynoSync/server/utils"
@@ -18,8 +19,16 @@ import (
 type fakeRepository struct {
 	db.AppRepository
 	artifacts   map[string]*model.PrivateArtifact
+	sessions    map[string]string
 	downloaders map[string]bool
 	tokens      map[string]primitive.ObjectID
+}
+
+func (f *fakeRepository) SessionUsername(_ context.Context, token string) (string, error) {
+	if username, ok := f.sessions[token]; ok {
+		return username, nil
+	}
+	return "", errors.New("session rejected")
 }
 
 func (f *fakeRepository) FindPrivateArtifact(_ context.Context, key string) (*model.PrivateArtifact, error) {
@@ -51,11 +60,11 @@ func newTestContext(headers map[string]string) (*gin.Context, *httptest.Response
 
 func TestAuthorizeDownload(t *testing.T) {
 	viper.Set("JWT_SECRET", "test-secret")
-	adminJWT, err := utils.GenerateJWT("admin")
+	adminJWT, err := utils.GenerateSessionJWT(primitive.NewObjectID(), utils.PrincipalAdmin, 0, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	strangerJWT, err := utils.GenerateJWT("stranger")
+	strangerJWT, err := utils.GenerateSessionJWT(primitive.NewObjectID(), utils.PrincipalAdmin, 0, "stranger")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +72,7 @@ func TestAuthorizeDownload(t *testing.T) {
 	stable := primitive.NewObjectID()
 	beta := primitive.NewObjectID()
 	repo := &fakeRepository{
+		sessions:    map[string]string{adminJWT: "admin", strangerJWT: "stranger"},
 		downloaders: map[string]bool{"admin": true},
 		tokens:      map[string]primitive.ObjectID{"fnd_stable": stable, "fnd_beta": beta},
 	}

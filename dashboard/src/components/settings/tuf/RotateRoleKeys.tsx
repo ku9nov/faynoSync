@@ -590,7 +590,7 @@ export const RotateRoleKeys: React.FC<RotateRoleKeysProps> = ({
                 <i className="fas fa-exclamation-triangle text-red-500 mr-3 mt-0.5 text-xl"></i>
                 <div className="flex-1">
                   <p className="text-theme-primary text-sm leading-relaxed">
-                    Copy <code className="bg-theme-input px-1 rounded">out/online-keys/*</code> into <code className="bg-theme-input px-1 rounded">ONLINE_KEY_DIR</code> on
+                    Copy <code className="bg-theme-input px-1 rounded">out/online-keys/*</code> into <code className="bg-theme-input px-1 rounded">ONLINE_KEY_DIR/&lt;admin&gt;/&lt;app&gt;/</code> on
                     the faynosync API server <strong>before</strong> submitting the metadata below. Once the new root metadata is
                     accepted, the server is expected to sign {selectedRole} with the new key — without the key file it cannot.
                   </p>

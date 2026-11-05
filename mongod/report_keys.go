@@ -29,9 +29,8 @@ func accessDenied(format string, args ...interface{}) error {
 }
 
 func (c *appRepository) resolveOwnerAndTeamUser(ctx context.Context, requester string) (string, *model.TeamUser, error) {
-	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
-	err := teamUsersCollection.FindOne(ctx, bson.M{"username": requester}).Decode(&teamUser)
+	err := c.callerTeamUser(ctx, &teamUser)
 	if err == nil {
 		return teamUser.Owner, &teamUser, nil
 	}
@@ -39,6 +38,20 @@ func (c *appRepository) resolveOwnerAndTeamUser(ctx context.Context, requester s
 		return requester, nil, nil
 	}
 	return "", nil, err
+}
+
+// callerTeamUser decodes the caller's team user, resolved from the request principal by _id.
+// mongo.ErrNoDocuments means the caller is an admin; any other error must deny.
+func (c *appRepository) callerTeamUser(ctx context.Context, teamUser *model.TeamUser) error {
+	doc, err := utils.CallerTeamUser(ctx, c.client.Database(c.config.Database))
+	if err != nil {
+		return err
+	}
+	if doc == nil {
+		return mongo.ErrNoDocuments
+	}
+	*teamUser = *doc
+	return nil
 }
 
 func (c *appRepository) GetAppByID(id primitive.ObjectID, requester string, ctx context.Context) (*model.App, error) {

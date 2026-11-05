@@ -11,6 +11,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -23,6 +24,12 @@ var dummyPasswordHash = sync.OnceValue(func() []byte {
 	}
 	return hash
 })
+
+type loginPrincipal struct {
+	ID           primitive.ObjectID `bson:"_id"`
+	Password     string             `bson:"password"`
+	TokenVersion int64              `bson:"token_version"`
+}
 
 func Login(c *gin.Context, database *mongo.Database, rdb *redis.Client) {
 	now := timeNow()
@@ -53,13 +60,13 @@ func Login(c *gin.Context, database *mongo.Database, rdb *redis.Client) {
 
 	// First check if user is an admin
 	admins := database.Collection("admins")
-	var adminResult bson.M
+	var adminResult loginPrincipal
 	err := admins.FindOne(ctx, bson.M{"username": credentials.Username}).Decode(&adminResult)
 
 	if err == nil {
 		logrus.Debugf("User %s found in admins collection", credentials.Username)
 		// User is an admin, verify password
-		hashedPassword := adminResult["password"].(string)
+		hashedPassword := adminResult.Password
 		if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(credentials.Password)); err != nil {
 			logrus.Errorf("Invalid password for admin user %s: %v", credentials.Username, err)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
@@ -69,7 +76,7 @@ func Login(c *gin.Context, database *mongo.Database, rdb *redis.Client) {
 		logrus.Infof("Admin user %s successfully authenticated", credentials.Username)
 		resetRateLimit(ctx, rdb, usernameLimit, now)
 		// Create JWT token
-		token, err := utils.GenerateJWT(credentials.Username)
+		token, err := utils.GenerateSessionJWT(adminResult.ID, utils.PrincipalAdmin, adminResult.TokenVersion, credentials.Username)
 		if err != nil {
 			logrus.Errorf("Failed to generate JWT token for admin user %s: %v", credentials.Username, err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to create token"})
@@ -84,7 +91,7 @@ func Login(c *gin.Context, database *mongo.Database, rdb *redis.Client) {
 
 	// If not an admin, check if user is a team user
 	teamUsers := database.Collection("team_users")
-	var teamUserResult bson.M
+	var teamUserResult loginPrincipal
 	err = teamUsers.FindOne(ctx, bson.M{"username": credentials.Username}).Decode(&teamUserResult)
 
 	if err != nil {
@@ -97,7 +104,7 @@ func Login(c *gin.Context, database *mongo.Database, rdb *redis.Client) {
 	logrus.Debugf("User %s found in team_users collection", credentials.Username)
 
 	// User is a team user, verify password
-	hashedPassword := teamUserResult["password"].(string)
+	hashedPassword := teamUserResult.Password
 	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(credentials.Password)); err != nil {
 		logrus.Errorf("Invalid password for team user %s: %v", credentials.Username, err)
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
@@ -108,7 +115,7 @@ func Login(c *gin.Context, database *mongo.Database, rdb *redis.Client) {
 	resetRateLimit(ctx, rdb, usernameLimit, now)
 
 	// Create JWT token
-	token, err := utils.GenerateJWT(credentials.Username)
+	token, err := utils.GenerateSessionJWT(teamUserResult.ID, utils.PrincipalTeam, teamUserResult.TokenVersion, credentials.Username)
 	if err != nil {
 		logrus.Errorf("Failed to generate JWT token for team user %s: %v", credentials.Username, err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to create token"})

@@ -10,7 +10,6 @@ import (
 	"faynoSync/server/utils/updaters/sparkle"
 	"faynoSync/server/utils/updaters/velopack"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -20,8 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func generateRolloutSeed() (string, error) {
@@ -56,16 +54,6 @@ func (c *appRepository) CreateDocument(collectionName string, document bson.D, u
 	return uploadResult.InsertedID, nil
 }
 
-// Helper function to check if a string slice contains a value
-func contains(slice []string, value string) bool {
-	for _, v := range slice {
-		if v == value {
-			return true
-		}
-	}
-	return false
-}
-
 // createMetaDocument is a helper function that handles the common logic for creating meta documents
 // and updating team user permissions if needed
 func (c *appRepository) createMetaDocument(
@@ -74,16 +62,25 @@ func (c *appRepository) createMetaDocument(
 	keyType string,
 	owner string,
 	ctx context.Context,
-	updateTeamUserPermissions func(teamUser model.TeamUser, result interface{}, teamUsername string) error,
+	updateTeamUserPermissions func(teamUser model.TeamUser, result interface{}) error,
+	beforeInsert func(owner string) error,
 ) (interface{}, error) {
 	// Check if the creator is a team user
-	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
-	err := teamUsersCollection.FindOne(ctx, bson.M{"username": owner}).Decode(&teamUser)
-	teamUsername := owner // Store the original username for permission update
-	if err == nil {
+	err := c.callerTeamUser(ctx, &teamUser)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, err
+	}
+	isTeamUser := err == nil
+	if isTeamUser {
 		// User is a team user, set owner to their admin
 		owner = teamUser.Owner
+	}
+
+	if beforeInsert != nil {
+		if err := beforeInsert(owner); err != nil {
+			return nil, err
+		}
 	}
 
 	result, err := c.CreateDocument("apps_meta", document, uniqueKey, keyType, owner, ctx)
@@ -92,8 +89,8 @@ func (c *appRepository) createMetaDocument(
 	}
 
 	// If the creator is a team user and we have a permission update function, update their permissions
-	if updateTeamUserPermissions != nil {
-		err = updateTeamUserPermissions(teamUser, result, teamUsername)
+	if isTeamUser && updateTeamUserPermissions != nil {
+		err = updateTeamUserPermissions(teamUser, result)
 		if err != nil {
 			logrus.Errorf("Failed to update team user permissions: %v", err)
 			// Don't return error here as the document was created successfully
@@ -104,59 +101,39 @@ func (c *appRepository) createMetaDocument(
 }
 
 // updateTeamUserPermissions is a generic function that updates team user permissions for any resource type
-func (c *appRepository) updateTeamUserPermissions(teamUser model.TeamUser, result interface{}, teamUsername string, resourceType string, ctx context.Context) error {
+func (c *appRepository) updateTeamUserPermissions(teamUser model.TeamUser, result interface{}, resourceType string, ctx context.Context) error {
 	resourceID := result.(primitive.ObjectID).Hex()
-	var allowedList []string
 	var permissionsField string
 
 	switch resourceType {
 	case "channel":
-		allowedList = teamUser.Permissions.Channels.Allowed
 		permissionsField = "channels"
 	case "platform":
-		allowedList = teamUser.Permissions.Platforms.Allowed
 		permissionsField = "platforms"
 	case "arch":
-		allowedList = teamUser.Permissions.Archs.Allowed
 		permissionsField = "archs"
 	case "app":
-		allowedList = teamUser.Permissions.Apps.Allowed
 		permissionsField = "apps"
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)
 	}
 
-	if !contains(allowedList, resourceID) {
-		// Create a new permissions object to avoid modifying the original
-		updatedPermissions := teamUser.Permissions
-
-		// Update the appropriate field using reflection
-		permissionsValue := reflect.ValueOf(&updatedPermissions).Elem()
-		resourceField := permissionsValue.FieldByName(cases.Title(language.English).String(permissionsField))
-		if resourceField.IsValid() {
-			allowedField := resourceField.FieldByName("Allowed")
-			if allowedField.IsValid() {
-				allowedField.Set(reflect.Append(allowedField, reflect.ValueOf(resourceID)))
-			}
-		}
-
-		update := bson.M{"$set": bson.M{"permissions": updatedPermissions}}
-		_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
-			ctx,
-			bson.M{"username": teamUsername},
-			update,
-		)
-		return err
-	}
-	return nil
+	// Touches only this one allowed list, so a revocation that landed after teamUser was read survives.
+	update := bson.M{"$addToSet": bson.M{"permissions." + permissionsField + ".allowed": resourceID}}
+	_, err := c.client.Database(c.config.Database).Collection("team_users").UpdateOne(
+		ctx,
+		bson.M{"_id": teamUser.ID},
+		update,
+	)
+	return err
 }
 
 // CreateChannel creates a new channel document
 func (c *appRepository) CreateChannel(channelName string, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "channel_name", Value: channelName}}
 
-	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
-		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "channel", ctx)
+	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}) error {
+		return c.updateTeamUserPermissions(teamUser, result, "channel", ctx)
 	}
 
 	return c.createMetaDocument(
@@ -166,6 +143,7 @@ func (c *appRepository) CreateChannel(channelName string, owner string, ctx cont
 		owner,
 		ctx,
 		updateTeamUserPermissions,
+		nil,
 	)
 }
 
@@ -192,8 +170,8 @@ func (c *appRepository) CreatePlatform(platformName string, updaters []model.Upd
 		{Key: "updaters", Value: updatersBSON},
 	}
 
-	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
-		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "platform", ctx)
+	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}) error {
+		return c.updateTeamUserPermissions(teamUser, result, "platform", ctx)
 	}
 
 	return c.createMetaDocument(
@@ -203,6 +181,7 @@ func (c *appRepository) CreatePlatform(platformName string, updaters []model.Upd
 		owner,
 		ctx,
 		updateTeamUserPermissions,
+		nil,
 	)
 }
 
@@ -210,8 +189,8 @@ func (c *appRepository) CreatePlatform(platformName string, updaters []model.Upd
 func (c *appRepository) CreateArch(archID string, owner string, ctx context.Context) (interface{}, error) {
 	document := bson.D{{Key: "arch_id", Value: archID}}
 
-	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
-		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "arch", ctx)
+	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}) error {
+		return c.updateTeamUserPermissions(teamUser, result, "arch", ctx)
 	}
 
 	return c.createMetaDocument(
@@ -221,6 +200,7 @@ func (c *appRepository) CreateArch(archID string, owner string, ctx context.Cont
 		owner,
 		ctx,
 		updateTeamUserPermissions,
+		nil,
 	)
 }
 
@@ -247,8 +227,8 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 	if cdnEdge == true {
 		document = append(document, bson.E{Key: "cdn_edge", Value: cdnEdge})
 	}
-	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}, teamUsername string) error {
-		return c.updateTeamUserPermissions(teamUser, result, teamUsername, "app", ctx)
+	updateTeamUserPermissions := func(teamUser model.TeamUser, result interface{}) error {
+		return c.updateTeamUserPermissions(teamUser, result, "app", ctx)
 	}
 
 	return c.createMetaDocument(
@@ -258,7 +238,36 @@ func (c *appRepository) CreateApp(appName string, logo string, description strin
 		owner,
 		ctx,
 		updateTeamUserPermissions,
+		func(owner string) error { return c.ensureAppNameFree(ctx, appName, owner, nil) },
 	)
+}
+
+// ensureAppNameFree rejects a name that equals another app of owner case-insensitively:
+// online keys live in ONLINE_KEY_DIR/<admin>/<app>/, which a case-insensitive filesystem cannot tell apart.
+func (c *appRepository) ensureAppNameFree(ctx context.Context, appName, owner string, excludeID *primitive.ObjectID) error {
+	filter := bson.M{"app_name": appName, "owner": owner}
+	if excludeID != nil {
+		filter["_id"] = bson.M{"$ne": *excludeID}
+	}
+	// The collation folds owner too, so the owner is compared exactly below.
+	cursor, err := c.client.Database(c.config.Database).Collection("apps_meta").Find(ctx, filter,
+		options.Find().SetCollation(utils.CaseInsensitiveCollation).SetProjection(bson.M{"owner": 1}))
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var doc struct {
+			Owner string `bson:"owner"`
+		}
+		if err := cursor.Decode(&doc); err != nil {
+			return err
+		}
+		if doc.Owner == owner {
+			return errors.New("app with this name already exists")
+		}
+	}
+	return cursor.Err()
 }
 
 // checkEntityAccess is a helper function to check if a team user has access to a specific entity
@@ -374,9 +383,11 @@ func (c *appRepository) Upload(ctxQuery map[string]interface{}, appLink, extensi
 		owner, ctxQuery["app_name"].(string), ctxQuery["version"].(string), checkAppVisibility)
 
 	// Check if the user is a team user
-	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
-	err = teamUsersCollection.FindOne(ctx, bson.M{"username": owner}).Decode(&teamUser)
+	err = c.callerTeamUser(ctx, &teamUser)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, err
+	}
 
 	// If user is a team user, check permissions
 	if err == nil {

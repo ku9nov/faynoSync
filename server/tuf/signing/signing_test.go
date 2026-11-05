@@ -22,6 +22,20 @@ import (
 	tuf_metadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
 
+const (
+	testAdminName = "admin"
+	testAppName   = "app"
+)
+
+// newTenantKeyDir returns the ONLINE_KEY_DIR base and the tenant key directory inside it.
+func newTenantKeyDir(t *testing.T) (string, string) {
+	t.Helper()
+	baseDir := t.TempDir()
+	dir := filepath.Join(baseDir, testAdminName, testAppName)
+	require.NoError(t, os.MkdirAll(dir, 0700))
+	return baseDir, dir
+}
+
 // mustGenerateEd25519Seed returns a 32-byte seed for testing. Panics on error.
 func mustGenerateEd25519Seed(t *testing.T) []byte {
 	t.Helper()
@@ -43,7 +57,7 @@ func mustMarshalPKCS8PEM(t *testing.T, seed []byte) []byte {
 
 func loadEd25519PrivateKeyFromFilesystem(t *testing.T, keyID string, keyURI string) (ed25519.PrivateKey, error) {
 	t.Helper()
-	privateKey, err := LoadPrivateKeyAnyFromFilesystem(keyID, keyURI)
+	privateKey, err := LoadPrivateKeyAnyFromFilesystem(testAdminName, testAppName, keyID, keyURI)
 	if err != nil {
 		return nil, err
 	}
@@ -71,10 +85,10 @@ func TestLoadPrivateKeyFromFilesystem_ONLINE_KEY_DIR_Empty(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem return nil, nil when file is missing; test will fail (wrong return).
 func TestLoadPrivateKeyFromFilesystem_FileNotFound(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, _ := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	key, err := loadEd25519PrivateKeyFromFilesystem(t, "key-id", "nonexistent.pem")
@@ -86,10 +100,10 @@ func TestLoadPrivateKeyFromFilesystem_FileNotFound(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem change condition from len(keyData)==32 to len(keyData)==64; test will fail (wrong key or error).
 func TestLoadPrivateKeyFromFilesystem_Raw32Bytes(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	seed := mustGenerateEd25519Seed(t)
@@ -106,10 +120,10 @@ func TestLoadPrivateKeyFromFilesystem_Raw32Bytes(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem change hex branch to require len(keyDataStr)==32; test will fail (wrong path).
 func TestLoadPrivateKeyFromFilesystem_Hex64Chars(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	seed := mustGenerateEd25519Seed(t)
@@ -126,10 +140,10 @@ func TestLoadPrivateKeyFromFilesystem_Hex64Chars(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem skip x509.ParsePKCS8PrivateKey or return before type assert; test will fail.
 func TestLoadPrivateKeyFromFilesystem_PEM_PKCS8_Ed25519(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	seed := mustGenerateEd25519Seed(t)
@@ -146,10 +160,10 @@ func TestLoadPrivateKeyFromFilesystem_PEM_PKCS8_Ed25519(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem remove the block.Bytes length 32 branch; test will fail (fallthrough to error).
 func TestLoadPrivateKeyFromFilesystem_PEM_Raw32InBlock(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	seed := mustGenerateEd25519Seed(t)
@@ -167,10 +181,10 @@ func TestLoadPrivateKeyFromFilesystem_PEM_Raw32InBlock(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem use keyURI as fileName when it has "fn:" prefix (do not trim); test will fail (file not found).
 func TestLoadPrivateKeyFromFilesystem_KeyURI_FnPrefix(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	seed := mustGenerateEd25519Seed(t)
@@ -187,10 +201,10 @@ func TestLoadPrivateKeyFromFilesystem_KeyURI_FnPrefix(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem use keyURI as fileName when keyURI is empty instead of keyID; test will fail (wrong file).
 func TestLoadPrivateKeyFromFilesystem_KeyURI_Empty_UsesKeyID(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	seed := mustGenerateEd25519Seed(t)
@@ -206,10 +220,10 @@ func TestLoadPrivateKeyFromFilesystem_KeyURI_Empty_UsesKeyID(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem use keyID as fileName when keyURI is non-empty and not "fn:"; test will fail (file not found).
 func TestLoadPrivateKeyFromFilesystem_KeyURI_NonFn_UsesKeyURI(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	seed := mustGenerateEd25519Seed(t)
@@ -225,10 +239,10 @@ func TestLoadPrivateKeyFromFilesystem_KeyURI_NonFn_UsesKeyURI(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem return nil, nil for bad format instead of error; test will fail.
 func TestLoadPrivateKeyFromFilesystem_InvalidFormat_Unrecognized(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	// 30 bytes: not 32, not PEM, not 64-char hex
@@ -249,10 +263,10 @@ func TestLoadPrivateKeyFromFilesystem_InvalidFormat_Unrecognized(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem accept any 64-char string as hex without decoding; test will fail (wrong behavior).
 func TestLoadPrivateKeyFromFilesystem_Hex64_InvalidHex(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	// 64 characters but not valid hex (contains 'z')
@@ -269,10 +283,10 @@ func TestLoadPrivateKeyFromFilesystem_Hex64_InvalidHex(t *testing.T) {
 
 // To verify: In LoadPrivateKeyFromFilesystem remove strings.TrimSpace; test will fail when file has newline.
 func TestLoadPrivateKeyFromFilesystem_Hex64_WithWhitespace(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	seed := mustGenerateEd25519Seed(t)
@@ -288,10 +302,10 @@ func TestLoadPrivateKeyFromFilesystem_Hex64_WithWhitespace(t *testing.T) {
 }
 
 func TestLoadPrivateKeyAnyFromFilesystem_RSA_PKCS8(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -302,7 +316,7 @@ func TestLoadPrivateKeyAnyFromFilesystem_RSA_PKCS8(t *testing.T) {
 	keyPath := filepath.Join(dir, "rsa-pkcs8.pem")
 	require.NoError(t, os.WriteFile(keyPath, pemBytes, 0600))
 
-	loadedKey, err := LoadPrivateKeyAnyFromFilesystem("rsa-key", "rsa-pkcs8.pem")
+	loadedKey, err := LoadPrivateKeyAnyFromFilesystem(testAdminName, testAppName, "rsa-key", "rsa-pkcs8.pem")
 	require.NoError(t, err)
 	require.NotNil(t, loadedKey)
 	_, ok := loadedKey.(*rsa.PrivateKey)
@@ -310,10 +324,10 @@ func TestLoadPrivateKeyAnyFromFilesystem_RSA_PKCS8(t *testing.T) {
 }
 
 func TestLoadPrivateKeyAnyFromFilesystem_ECDSA_SEC1(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -324,7 +338,7 @@ func TestLoadPrivateKeyAnyFromFilesystem_ECDSA_SEC1(t *testing.T) {
 	keyPath := filepath.Join(dir, "ecdsa-sec1.pem")
 	require.NoError(t, os.WriteFile(keyPath, pemBytes, 0600))
 
-	loadedKey, err := LoadPrivateKeyAnyFromFilesystem("ecdsa-key", "ecdsa-sec1.pem")
+	loadedKey, err := LoadPrivateKeyAnyFromFilesystem(testAdminName, testAppName, "ecdsa-key", "ecdsa-sec1.pem")
 	require.NoError(t, err)
 	require.NotNil(t, loadedKey)
 	_, ok := loadedKey.(*ecdsa.PrivateKey)
@@ -332,10 +346,10 @@ func TestLoadPrivateKeyAnyFromFilesystem_ECDSA_SEC1(t *testing.T) {
 }
 
 func TestBuildSignerFromPrivateKeyFile_KeyIDMismatch(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -350,16 +364,16 @@ func TestBuildSignerFromPrivateKeyFile_KeyIDMismatch(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, realKeyID), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0600))
 
-	_, err = BuildSignerFromPrivateKeyFile("wrong-key-id", realKeyID)
+	_, err = BuildSignerFromPrivateKeyFile(testAdminName, testAppName, "wrong-key-id", realKeyID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "keyid mismatch")
 }
 
 func TestBuildSignerFromPrivateKeyFile_RSA_PSS_CompatibleWithTUFVerifyDelegate(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -377,7 +391,7 @@ func TestBuildSignerFromPrivateKeyFile_RSA_PSS_CompatibleWithTUFVerifyDelegate(t
 	require.NoError(t, root.Signed.AddKey(tufKey, "timestamp"))
 
 	timestamp := tuf_metadata.Timestamp(time.Now().Add(24 * time.Hour))
-	signer, err := BuildSignerFromPrivateKeyFile(keyID, keyID)
+	signer, err := BuildSignerFromPrivateKeyFile(testAdminName, testAppName, keyID, keyID)
 	require.NoError(t, err)
 	_, err = timestamp.Sign(signer)
 	require.NoError(t, err)
@@ -406,10 +420,10 @@ func TestCheckKeyStrength(t *testing.T) {
 }
 
 func TestBuildSignerFromPrivateKeyFile_WeakRSAKeyRejected(t *testing.T) {
-	dir := t.TempDir()
+	baseDir, dir := newTenantKeyDir(t)
 	env := viper.GetViper()
 	oldDir := env.GetString("ONLINE_KEY_DIR")
-	env.Set("ONLINE_KEY_DIR", dir)
+	env.Set("ONLINE_KEY_DIR", baseDir)
 	defer env.Set("ONLINE_KEY_DIR", oldDir)
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
@@ -423,7 +437,7 @@ func TestBuildSignerFromPrivateKeyFile_WeakRSAKeyRejected(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, keyID), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0600))
 
-	_, err = BuildSignerFromPrivateKeyFile(keyID, keyID)
+	_, err = BuildSignerFromPrivateKeyFile(testAdminName, testAppName, keyID, keyID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to sign with key")
 	assert.Contains(t, err.Error(), "minimum is 2048")
@@ -441,7 +455,7 @@ func TestBuildVerifierForPublicKey_WeakRSAKeyRejected(t *testing.T) {
 // threshold comes from request payloads; it must not size an allocation.
 // To verify: In LoadAndSignDelegation use threshold as the slice capacity again; test will panic.
 func TestLoadAndSignDelegation_HugeThreshold_NoPanic(t *testing.T) {
-	_, err := LoadAndSignDelegation("custom", []string{"a"}, int(^uint(0)>>1), func(signature.Signer, string) error { return nil })
+	_, err := LoadAndSignDelegation(testAdminName, testAppName, "custom", []string{"a"}, int(^uint(0)>>1), func(signature.Signer, string) error { return nil })
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not enough distinct keys")
 }

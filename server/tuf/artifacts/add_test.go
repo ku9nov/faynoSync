@@ -166,7 +166,7 @@ func makeAddArtifactsTestEnv(t *testing.T, adminName, appName string) (storeDir,
 		require.NotEmpty(t, role.KeyIDs)
 		keyID := role.KeyIDs[0]
 		seed := keys[name].Seed()
-		require.NoError(t, os.WriteFile(filepath.Join(keyDir, keyID), seed, 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, testAdminName, testAppName), keyID), seed, 0600))
 	}
 
 	targetsKeyID := rootMeta.Signed.Roles["targets"].KeyIDs[0]
@@ -774,7 +774,7 @@ func makeRepoAndKeyForUpdateDelegatedRole(t *testing.T, roleName string) (repo *
 	require.NoError(t, err)
 
 	keyDir = t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(keyDir, keyID), priv.Seed(), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, testAdminName, testAppName), keyID), priv.Seed(), 0600))
 
 	expires := time.Now().Add(365 * 24 * time.Hour)
 	repo = repository.New()
@@ -802,7 +802,7 @@ func TestUpdateDelegatedRoleWithArtifacts_TargetsOrDelegationsNil_ReturnsError(t
 
 	savedList := tuf_storage.ListMetadataForLatest
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("no files")
+		return []string{}, nil
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
@@ -834,7 +834,7 @@ func TestUpdateDelegatedRoleWithArtifacts_NotEnoughDistinctKeys_ReturnsError(t *
 
 	savedList := tuf_storage.ListMetadataForLatest
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("no files")
+		return []string{}, nil
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
@@ -858,7 +858,7 @@ func TestUpdateDelegatedRoleWithArtifacts_NoKeyIDsForRole_ReturnsError(t *testin
 
 	savedList := tuf_storage.ListMetadataForLatest
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("no files")
+		return []string{}, nil
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 
@@ -887,7 +887,7 @@ func TestUpdateDelegatedRoleWithArtifacts_LoadDelegationKeyFails_ReturnsError(t 
 
 	savedList := tuf_storage.ListMetadataForLatest
 	tuf_storage.ListMetadataForLatest = func(context.Context, string, string, string) ([]string, error) {
-		return nil, fmt.Errorf("no files")
+		return []string{}, nil
 	}
 	defer func() { tuf_storage.ListMetadataForLatest = savedList }()
 

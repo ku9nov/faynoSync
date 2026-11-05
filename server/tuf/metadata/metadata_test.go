@@ -93,7 +93,7 @@ func makeValidRootAndPayload(t *testing.T) (payload *models.BootstrapPayload, ke
 		require.NotEmpty(t, role.KeyIDs, "%s key IDs must be present in root", roleName)
 		keyID := role.KeyIDs[0]
 		seed := keys[roleName].Seed()
-		keyPath := filepath.Join(keyDir, keyID)
+		keyPath := filepath.Join(tenantKeyDir(t, keyDir, "admin", "app"), keyID)
 		require.NoError(t, os.WriteFile(keyPath, seed, 0600))
 	}
 
@@ -520,8 +520,8 @@ func TestBootstrapOnlineRoles_DelegationRole_ThresholdTwo_Success(t *testing.T) 
 			{Name: "delegated", KeyIDs: []string{id1, id2}, Threshold: 2, Paths: []string{"*"}, Terminating: false},
 		},
 	}
-	require.NoError(t, os.WriteFile(filepath.Join(keyDir, id1), priv1.Seed(), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(keyDir, id2), priv2.Seed(), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, "admin", "app"), id1), priv1.Seed(), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(tenantKeyDir(t, keyDir, "admin", "app"), id2), priv2.Seed(), 0600))
 
 	savedViper := tuf_storage.GetViperForUpload
 	savedFactory := tuf_storage.StorageFactoryForUpload
@@ -2535,7 +2535,7 @@ func setupFinalizeTargetsFixture(t *testing.T, uploadClient utils.StorageClient)
 
 	keyDir := t.TempDir()
 	for _, role := range []string{"snapshot", "timestamp"} {
-		keyPath := filepath.Join(keyDir, keyIDs[role])
+		keyPath := filepath.Join(tenantKeyDir(t, keyDir, "admin", "app"), keyIDs[role])
 		seed := keys[role].Seed()
 		require.NoError(t, os.WriteFile(keyPath, seed, 0600))
 	}

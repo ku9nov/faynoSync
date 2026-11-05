@@ -1083,7 +1083,7 @@ func finalizeTargetsMetadataUpdate(
 		if !ok || len(snapshotRole.KeyIDs) == 0 {
 			return fmt.Errorf("snapshot role not found in root metadata")
 		}
-		snapshotSigners, err := buildOnlineRoleSigners(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
+		snapshotSigners, err := buildOnlineRoleSigners(adminName, appName, snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 		if err != nil {
 			return fmt.Errorf("failed to build snapshot signers: %w", err)
 		}
@@ -1093,7 +1093,7 @@ func finalizeTargetsMetadataUpdate(
 		if !ok || len(timestampRole.KeyIDs) == 0 {
 			return fmt.Errorf("timestamp role not found in root metadata")
 		}
-		timestampSigners, err := buildOnlineRoleSigners(timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
+		timestampSigners, err := buildOnlineRoleSigners(adminName, appName, timestampRole.KeyIDs, timestampRole.Threshold, "timestamp")
 		if err != nil {
 			return fmt.Errorf("failed to build timestamp signers: %w", err)
 		}

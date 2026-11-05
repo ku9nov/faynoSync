@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"faynoSync/server/utils"
 	"fmt"
 	"mime/multipart"
@@ -161,6 +162,10 @@ func ListMetadataFromS3(ctx context.Context, adminName string, appName string, p
 	return filenames, nil
 }
 
+// ErrMetadataNotFound means the listing succeeded and holds no file for the role;
+// any other FindLatestMetadataVersion error is a storage failure, not a missing role.
+var ErrMetadataNotFound = errors.New("no metadata file found for role")
+
 func FindLatestMetadataVersion(ctx context.Context, adminName string, appName string, roleName string) (int, string, error) {
 	if roleName == "timestamp" {
 		return 0, "timestamp.json", nil
@@ -214,7 +219,7 @@ func FindLatestMetadataVersion(ctx context.Context, adminName string, appName st
 	}
 
 	if latestFilename == "" {
-		return 0, "", fmt.Errorf("no metadata file found for role: %s", roleName)
+		return 0, "", fmt.Errorf("%w: %s", ErrMetadataNotFound, roleName)
 	}
 
 	return maxVersion, latestFilename, nil

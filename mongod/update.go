@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (c *appRepository) UpdateDocument(collectionName string, filter bson.D, update bson.D, uniqueKey, keyType string, owner string, ctx context.Context) (bool, error) {
+func (c *appRepository) UpdateDocument(collectionName string, filter bson.D, update bson.D, uniqueKey, keyType string, owner string, ctx context.Context, beforeUpdate func(docOwner string) error) (bool, error) {
 	collection := c.client.Database(c.config.Database).Collection(collectionName)
 
 	// Check if the document exists and belongs to the owner
@@ -28,9 +28,11 @@ func (c *appRepository) UpdateDocument(collectionName string, filter bson.D, upd
 	}
 
 	// Check if the user is a team user
-	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
-	err = teamUsersCollection.FindOne(ctx, bson.M{"username": owner}).Decode(&teamUser)
+	err = c.callerTeamUser(ctx, &teamUser)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return false, err
+	}
 
 	// Get the document owner
 	docOwner, ok := existingDoc["owner"].(string)
@@ -152,6 +154,12 @@ func (c *appRepository) UpdateDocument(collectionName string, filter bson.D, upd
 		}
 	}
 
+	if beforeUpdate != nil {
+		if err := beforeUpdate(docOwner); err != nil {
+			return false, err
+		}
+	}
+
 	// Set the updated_at field to the current time
 	update = append(update, bson.E{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}}})
 	logrus.Debugln("Update document: ", update)
@@ -172,7 +180,7 @@ func (c *appRepository) UpdateDocument(collectionName string, filter bson.D, upd
 func (c *appRepository) UpdateChannel(id primitive.ObjectID, channelName string, owner string, ctx context.Context) (interface{}, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	update := bson.D{{Key: "$set", Value: bson.D{{Key: "channel_name", Value: channelName}}}}
-	return c.UpdateDocument("apps_meta", filter, update, "channel_name_sort_by_asc_updated", "channel", owner, ctx)
+	return c.UpdateDocument("apps_meta", filter, update, "channel_name_sort_by_asc_updated", "channel", owner, ctx, nil)
 }
 
 // UpdatePlatform updates an existing platform document
@@ -191,14 +199,14 @@ func (c *appRepository) UpdatePlatform(id primitive.ObjectID, platformName strin
 		{Key: "platform_name", Value: platformName},
 		{Key: "updaters", Value: updatersBSON},
 	}}}
-	return c.UpdateDocument("apps_meta", filter, update, "platform_name_sort_by_asc_updated", "platform", owner, ctx)
+	return c.UpdateDocument("apps_meta", filter, update, "platform_name_sort_by_asc_updated", "platform", owner, ctx, nil)
 }
 
 // UpdateArch updates an existing arch document
 func (c *appRepository) UpdateArch(id primitive.ObjectID, archID string, owner string, ctx context.Context) (interface{}, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	update := bson.D{{Key: "$set", Value: bson.D{{Key: "arch_id", Value: archID}}}}
-	return c.UpdateDocument("apps_meta", filter, update, "arch_id_sort_by_asc_updated", "arch", owner, ctx)
+	return c.UpdateDocument("apps_meta", filter, update, "arch_id_sort_by_asc_updated", "arch", owner, ctx, nil)
 }
 
 // UpdateApp updates an existing app_name document
@@ -218,7 +226,8 @@ func (c *appRepository) UpdateApp(id primitive.ObjectID, appName string, logo st
 		updateFields = append(updateFields, bson.E{Key: "download_mode", Value: downloadMode})
 	}
 	update := bson.D{{Key: "$set", Value: updateFields}}
-	return c.UpdateDocument("apps_meta", filter, update, "app_name_sort_by_asc_updated", "app", owner, ctx)
+	return c.UpdateDocument("apps_meta", filter, update, "app_name_sort_by_asc_updated", "app", owner, ctx,
+		func(docOwner string) error { return c.ensureAppNameFree(ctx, appName, docOwner, &id) })
 }
 
 func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string, ctxQuery map[string]interface{}, appLink, extension string, ctx context.Context) (bool, bool, bool, error) {
@@ -232,9 +241,11 @@ func (c *appRepository) UpdateSpecificApp(objID primitive.ObjectID, owner string
 		owner, ctxQuery["app_name"].(string), ctxQuery["version"].(string))
 
 	// Check if the user is a team user
-	teamUsersCollection := c.client.Database(c.config.Database).Collection("team_users")
 	var teamUser model.TeamUser
-	err = teamUsersCollection.FindOne(ctx, bson.M{"username": owner}).Decode(&teamUser)
+	err = c.callerTeamUser(ctx, &teamUser)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return false, false, false, err
+	}
 
 	// If user is a team user, check permissions
 	if err == nil {

@@ -95,7 +95,7 @@ func removeArtifactsLocked(
 		return fmt.Errorf("invalid root metadata: no timestamp role")
 	}
 
-	timestampSigners, err := buildSignersFromRoleMap(timestampRole, "timestamp")
+	timestampSigners, err := buildSignersFromRoleMap(adminName, appName, timestampRole, "timestamp")
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func removeArtifactsLocked(
 		return fmt.Errorf("invalid root metadata: no targets role")
 	}
 
-	targetsSigners, err := buildSignersFromRoleMap(targetsRole, "targets")
+	targetsSigners, err := buildSignersFromRoleMap(adminName, appName, targetsRole, "targets")
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func removeArtifactsLocked(
 	if !ok || len(snapshotRole.KeyIDs) == 0 {
 		return fmt.Errorf("failed to find snapshot key in root metadata")
 	}
-	snapshotSigners, err := buildSignersFromKeyIDsAndThreshold(snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
+	snapshotSigners, err := buildSignersFromKeyIDsAndThreshold(adminName, appName, snapshotRole.KeyIDs, snapshotRole.Threshold, "snapshot")
 	if err != nil {
 		return fmt.Errorf("failed to build snapshot signers: %w", err)
 	}
@@ -345,6 +345,8 @@ func removeArtifactsFromDelegatedRole(
 	}
 
 	if _, err := signing.LoadAndSignDelegation(
+		adminName,
+		appName,
 		roleName,
 		roleKeyIDs,
 		roleThreshold,

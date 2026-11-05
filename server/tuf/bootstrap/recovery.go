@@ -6,6 +6,7 @@ import (
 	"errors"
 	tuf_metadata "faynoSync/server/tuf/metadata"
 	"faynoSync/server/tuf/models"
+	"faynoSync/server/tuf/signing"
 	"faynoSync/server/tuf/tasks"
 	tuf_utils "faynoSync/server/tuf/utils"
 	"faynoSync/server/utils"
@@ -21,7 +22,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"github.com/theupdateframework/go-tuf/v2/examples/repository/repository"
 	gotufmetadata "github.com/theupdateframework/go-tuf/v2/metadata"
 )
@@ -631,7 +631,7 @@ func recoverSettingsFromStorage(ctx context.Context, adminName, appName string) 
 	}
 
 	targetsOnlineKey := false
-	if onlineKeyDir := viper.GetString("ONLINE_KEY_DIR"); onlineKeyDir != "" {
+	if onlineKeyDir, dirErr := signing.OnlineKeyDir(adminName, appName); dirErr == nil {
 		if targetsRole, ok := rootMetadata.Signed.Roles["targets"]; ok {
 			for _, keyID := range targetsRole.KeyIDs {
 				if _, statErr := os.Stat(filepath.Join(onlineKeyDir, keyID)); statErr == nil {

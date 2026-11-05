@@ -91,7 +91,11 @@ func UpdateAdmin(c *gin.Context, database *mongo.Database) {
 
 	// Apply the update if there are changes
 	if len(update) > 0 {
-		_, err = collection.UpdateOne(ctx, bson.M{"_id": objID}, bson.M{"$set": update})
+		changes := bson.M{"$set": update}
+		if req.Password != "" {
+			changes["$inc"] = bson.M{"token_version": int64(1)}
+		}
+		_, err = collection.UpdateOne(ctx, bson.M{"_id": objID}, changes)
 		if err != nil {
 			logrus.Errorf("Failed to update admin: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update admin"})
