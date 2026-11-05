@@ -12,6 +12,7 @@ import { useSearchParams } from 'react-router-dom';
 import axiosInstance, { type ApiError } from '@/config/axios';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearch } from '@/hooks/useSearch.ts';
+import { useFavoriteApps } from '@/hooks/useFavoriteApps';
 import { usePlatformQuery } from '@/hooks/use-query/usePlatformQuery';
 import { useArchitectureQuery } from '@/hooks/use-query/useArchitectureQuery';
 import { useChannelQuery } from '@/hooks/use-query/useChannelQuery';
@@ -149,7 +150,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const appVersions = paginatedVersions.items || [];
 
-  const filteredAppList = useSearch<AppListItem | AppVersion>(appList, searchTerm) as AppListItem[];
+  const searchedAppList = useSearch<AppListItem | AppVersion>(appList, searchTerm) as AppListItem[];
+
+  const { favorites, toggleFavorite } = useFavoriteApps();
+
+  const filteredAppList = React.useMemo(() => {
+    if (!searchedAppList) return searchedAppList;
+    return [
+      ...searchedAppList.filter(app => favorites.has(app.ID)),
+      ...searchedAppList.filter(app => !favorites.has(app.ID)),
+    ];
+  }, [searchedAppList, favorites]);
 
   const { data: appData } = useAppDataQuery(selectedApp);
 
@@ -1245,7 +1256,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             className={"bg-theme-card backdrop-blur-lg rounded-lg p-6 text-theme-primary hover:bg-theme-card-hover transition-colors cursor-pointer sharedCard"}
             style={{ '--card-color': '#8B5CF6' }}
           >
-            <div className="flex items-center mb-4 min-w-0 w-full">
+            <div className="flex items-start mb-4 min-w-0 w-full">
               <div className="relative w-12 h-12 flex-shrink-0">
                 <div className="sharedCardIcon w-12 h-12">
                   <AppLogo name={app.AppName} logo={app.Logo} />
@@ -1268,7 +1279,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
               </div>
-              <div className="ml-4 flex-1 min-w-0">
+              <div className="ml-4 flex-1 min-w-0 min-h-12 flex flex-col justify-center">
                 <h3 
                   className="text-xl font-semibold truncate max-w-[200px] overflow-hidden sharedCardTitle" 
                   title={app.AppName}
@@ -1334,7 +1345,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 )}
               </div>
-              <div className="flex gap-2 flex-shrink-0 ml-auto">
+              <div className="flex items-center h-12 gap-2 flex-shrink-0 ml-auto">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFavorite(app.ID);
+                  }}
+                  className={`p-2 transition-colors duration-200 ${favorites.has(app.ID) ? 'text-yellow-400 hover:text-yellow-300' : 'text-theme-primary opacity-40 hover:opacity-100'}`}
+                  title={favorites.has(app.ID) ? 'Remove from favorites' : 'Add to favorites'}
+                  aria-pressed={favorites.has(app.ID)}
+                >
+                  <i className="fas fa-star"></i>
+                </button>
                 <button
                   onClick={(e) => handleEditApp(e, app)}
                   className="p-2 text-theme-primary hover:text-theme-primary-hover transition-colors duration-200"
