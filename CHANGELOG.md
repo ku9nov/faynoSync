@@ -14,7 +14,7 @@
 ### Security
 
 - TUF online keys are bound to one app, so an admin can no longer get metadata signed with another tenant's online keys by listing them in a bootstrapped root.
-- New usernames that differ only by case are rejected, as are app names of one admin; new admin usernames may not contain `-` or `/`, team usernames may not contain `/`.
+- New usernames, and app names of one admin, that differ only by case are rejected; new admin usernames may not contain `-` or `/`, team usernames may not contain `/`.
 - Sessions are bound to the user's ID and a token version, and authorization uses the user type and ID instead of the username.
 - Team users are checked against their allowed apps, channels, platforms and archs on `/tuf/v1/artifacts/publish`, `/tuf/v1/artifacts/delete` and `/apps/update` before anything is read or written (403).
 - API tokens no longer read `/telemetry` or apps outside `allowed_apps` on `/search`.

@@ -1,0 +1,7 @@
+reviews:
+  path_instructions:
+    - path: "CHANGELOG.md"
+      instructions: >-
+        Changelog, not documentation. One short line per change.
+        Flag an entry only if it is factually wrong or misleading.
+        Do not suggest adding defaults, edge cases, migration details or extra precision.
