@@ -538,10 +538,10 @@
   resolved "https://registry.yarnpkg.com/@fontsource/urbanist/-/urbanist-5.3.0.tgz#e7d63d7f5519a8c6a1c01e1057bdbdfbb22f0e77"
   integrity sha512-588s006ey+ygDqZtnJ1qehGNzIfNDl49ibAKifeYmU3juExX39LfMuCSkvT4nMktbvc07hg/8zc3qABh8zoxeA==
 
-"@fortawesome/fontawesome-free@5.15.4":
-  version "5.15.4"
-  resolved "https://registry.yarnpkg.com/@fortawesome/fontawesome-free/-/fontawesome-free-5.15.4.tgz#ecda5712b61ac852c760d8b3c79c96adca5554e5"
-  integrity sha512-eYm8vijH/hpzr/6/1CJ/V/Eb1xQFW2nnUKArb3z+yUWv7HTwj6M7SP957oMjfZjAHU6qpoNc2wQvIxBLWYa/Jg==
+"@fortawesome/fontawesome-free@7.3.1":
+  version "7.3.1"
+  resolved "https://registry.yarnpkg.com/@fortawesome/fontawesome-free/-/fontawesome-free-7.3.1.tgz#9d7d7df8f850637e001d24e6cd901422b4b09099"
+  integrity sha512-wmglKKPDIkgV3aWlZzWECCPoGIkYCulzBwxG9+w7rc5BGapZ6cPMpoPOT8k36J0Ni7PPX6c/rsoMWfS4d1MUMg==
 
 "@humanwhocodes/config-array@^0.11.14":
   version "0.11.14"
