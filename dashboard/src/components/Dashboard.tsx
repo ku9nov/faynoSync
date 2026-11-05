@@ -48,15 +48,19 @@ const FillClamp: React.FC<{ className: string; children: React.ReactNode }> = ({
     const box = boxRef.current;
     const content = contentRef.current;
     if (!box || !content) return;
+    const slot = box.parentElement;
     const update = () => {
       const lineHeight = parseFloat(getComputedStyle(content).lineHeight) || 20;
-      if (box.parentElement) box.parentElement.style.minHeight = `${Math.ceil(lineHeight * 2)}px`;
+      if (slot) slot.style.minHeight = `${Math.ceil(lineHeight * 2)}px`;
       setLines(Math.max(2, Math.floor(box.clientHeight / lineHeight)));
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(box);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (slot) slot.style.minHeight = '';
+    };
   }, []);
 
   return (
@@ -1076,7 +1080,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                   )}
                   <div className={`${CHANGELOG_SLOT} border-l-2 border-white/20`}>
-                    {app.Changelog && app.Changelog.length > 0 && app.Changelog[0].Changes ? (
+                    {app.Changelog?.[0]?.Changes?.trim() ? (
                       <FillClamp className="pl-3 text-sm text-white/80 prose prose-sm prose-invert max-w-none">
                         <ReactMarkdown
                           components={{
@@ -1102,7 +1106,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     )}
                   </div>
                   <div className={FOOTER_SLOT}>
-                    {app.Changelog && app.Changelog.length > 0 && app.Changelog[0].Changes && (
+                    {app.Changelog?.[0]?.Changes?.trim() && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
