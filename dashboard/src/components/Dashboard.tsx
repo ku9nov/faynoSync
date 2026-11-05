@@ -34,12 +34,42 @@ import {
   TUF_BADGE_STYLE,
 } from '@/components/common/ui';
 
-// Fixed-height slots for the optional bits of the bottom block. Reserving the space
-// costs a little emptiness on simple versions and buys every tile in a row the same
-// baseline for its changelog and actions.
-const TUF_SLOT = 'min-h-[41px]';
-const CHANGELOG_SLOT = 'mt-3 min-h-[42px]';
+const CHANGELOG_SLOT = 'relative flex-1 min-h-[42px]';
 const FOOTER_SLOT = 'mt-4 min-h-[40px]';
+
+// Clamps to as many whole lines as fit the parent's height. Content is absolutely
+// positioned so it never feeds back into the card height (which would stop it shrinking).
+const FillClamp: React.FC<{ className: string; children: React.ReactNode }> = ({ className, children }) => {
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [lines, setLines] = React.useState(2);
+
+  React.useLayoutEffect(() => {
+    const box = boxRef.current;
+    const content = contentRef.current;
+    if (!box || !content) return;
+    const update = () => {
+      const lineHeight = parseFloat(getComputedStyle(content).lineHeight) || 20;
+      setLines(Math.max(1, Math.floor(box.clientHeight / lineHeight)));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={boxRef} className="absolute inset-0 overflow-hidden">
+      <div
+        ref={contentRef}
+        className={className}
+        style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: lines, overflow: 'hidden' }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
 
 const SECTION = `${SECTION_LABEL} mt-5 mb-2`;
 
@@ -569,7 +599,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         unsigned: value.unsigned,
       }));
 
-    const visibleGroups = sortedGroups.slice(0, 3);
+    const visibleGroups = sortedGroups.slice(0, 6);
     const hiddenGroupsCount = Math.max(sortedGroups.length - visibleGroups.length, 0);
 
     return {
@@ -1028,13 +1058,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                     </>
                   )}
-                  {/* Anchored to the bottom of the tile: the grid stretches every card to the
-                      tallest in its row, so without this the changelog and actions land at a
-                      different height in each neighbour. Each slot keeps its height whether or
-                      not its content exists, so only the gap above this block varies. */}
-                  <div className="mt-auto pt-4">
-                  <div className={TUF_SLOT}>
-                    {tufStatus && tufStatus !== 'all-signed' && (
+                  {/* The grid stretches every card to the tallest in its row; the changelog
+                      absorbs that extra height so the actions stay on one baseline. */}
+                  <div className="flex flex-1 flex-col pt-4">
+                  {tufStatus && tufStatus !== 'all-signed' && (
+                  <div className="mb-3">
                       <button
                         onClick={(e) => handleTufPublish(e, app)}
                         disabled={publishingTuf[app.ID]}
@@ -1044,11 +1072,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <i className={`fas ${publishingTuf[app.ID] ? 'fa-spinner fa-spin' : 'fa-shield-alt'}`}></i>
                         {publishingTuf[app.ID] ? 'Signing…' : 'Sign remaining artifacts with TUF'}
                       </button>
-                    )}
                   </div>
-                  <div className={`${CHANGELOG_SLOT} border-l-2 border-white/20 pl-3`}>
+                  )}
+                  <div className={`${CHANGELOG_SLOT} border-l-2 border-white/20`}>
                     {app.Changelog && app.Changelog.length > 0 && app.Changelog[0].Changes ? (
-                      <div className="text-sm text-white/80 line-clamp-2 prose prose-sm prose-invert max-w-none">
+                      <FillClamp className="pl-3 text-sm text-white/80 prose prose-sm prose-invert max-w-none">
                         <ReactMarkdown
                           components={{
                             p: ({ children }) => <p className="m-0">{children}</p>,
@@ -1065,9 +1093,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         >
                           {app.Changelog[0].Changes}
                         </ReactMarkdown>
-                      </div>
+                      </FillClamp>
                     ) : (
-                      <p className="text-sm text-white/60 italic">
+                      <p className="pl-3 text-sm text-white/60 italic">
                         Changelog not provided
                       </p>
                     )}

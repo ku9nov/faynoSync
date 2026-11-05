@@ -72,6 +72,20 @@
   border-color: rgba(139, 92, 246, 0.5);
 }
 
+.sidebar-nav-button.current {
+  cursor: default;
+}
+
+.sidebar-nav-button.current:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(139, 92, 246, 0.15));
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 4px 20px 0 rgba(139, 92, 246, 0.2);
+}
+
+.sidebar-nav-button.current:hover::before {
+  transform: translateX(-100%);
+}
+
 .sidebar-nav-button i {
   margin-right: 0.75rem;
   font-size: 1.1rem;
