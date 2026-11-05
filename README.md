@@ -8,7 +8,7 @@
   [![Documentation](https://img.shields.io/badge/Documentation-available-brightgreen)](https://faynosync.com/docs/intro)
   ![Docker Pulls](https://img.shields.io/docker/pulls/ku9nov/faynosync)
   ![GitHub Release](https://img.shields.io/github/v/release/ku9nov/faynoSync)
-  ![Docker Compose Test](https://github.com/ku9nov/faynoSync/actions/workflows/tests.yml/badge.svg)
+  ![Docker Compose Test](https://github.com/ku9nov/faynoSync/actions/workflows/tests.yml/badge.svg?branch=development)
 
 </div>
 
