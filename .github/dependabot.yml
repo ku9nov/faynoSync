@@ -4,7 +4,10 @@ updates:
     directory: /
     target-branch: development
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       go-minor-patch:
         update-types: [minor, patch]
@@ -13,7 +16,10 @@ updates:
     directory: /dashboard
     target-branch: development
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       dashboard-minor-patch:
         update-types: [minor, patch]
@@ -24,7 +30,10 @@ updates:
       - /docker-compose/images/garage
     target-branch: development
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       docker-images:
         patterns: ["*"]
@@ -33,7 +42,10 @@ updates:
     directory: /
     target-branch: development
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       actions:
         patterns: ["*"]
