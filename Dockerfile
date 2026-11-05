@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS ui
+FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS ui
 
 WORKDIR /src/dashboard
 
@@ -8,7 +8,7 @@ RUN yarn install --frozen-lockfile
 COPY dashboard/ ./
 RUN yarn build
 
-FROM --platform=$BUILDPLATFORM golang:1.26.10@sha256:670bb5aa5349ae03b8516764718486f4f16399134bdc9acd0c46a23f043ab05c AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.3@sha256:c292963ad0e5f51e843c726edc204a4e4c26a859ba1e4d736d91028aa3633048 AS builder
 
 ARG TARGETOS
 ARG TARGETARCH

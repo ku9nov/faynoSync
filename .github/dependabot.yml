@@ -4,7 +4,10 @@ updates:
     directory: /
     target-branch: development
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       go-minor-patch:
         update-types: [minor, patch]
@@ -13,7 +16,13 @@ updates:
     directory: /dashboard
     target-branch: development
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # 0.5 requires eslint 9 flat config; we are on eslint 8 with .eslintrc.cjs
+      - dependency-name: "eslint-plugin-react-refresh"
+        versions: [">=0.5"]
     groups:
       dashboard-minor-patch:
         update-types: [minor, patch]
@@ -24,7 +33,10 @@ updates:
       - /docker-compose/images/garage
     target-branch: development
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       docker-images:
         patterns: ["*"]
@@ -33,7 +45,10 @@ updates:
     directory: /
     target-branch: development
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       actions:
         patterns: ["*"]

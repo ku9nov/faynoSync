@@ -634,6 +634,9 @@ func recoverSettingsFromStorage(ctx context.Context, adminName, appName string) 
 	if onlineKeyDir, dirErr := signing.OnlineKeyDir(adminName, appName); dirErr == nil {
 		if targetsRole, ok := rootMetadata.Signed.Roles["targets"]; ok {
 			for _, keyID := range targetsRole.KeyIDs {
+				if !filepath.IsLocal(keyID) {
+					continue
+				}
 				if _, statErr := os.Stat(filepath.Join(onlineKeyDir, keyID)); statErr == nil {
 					targetsOnlineKey = true
 					break
