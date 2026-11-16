@@ -838,11 +838,6 @@ func TestBootstrapFinalize_BootstrapOnlineRolesFails_DoesNotModifyRedis(t *testi
 	assert.Equal(t, originalValue, val, "BOOTSTRAP key should be unchanged when BootstrapOnlineRoles fails")
 }
 
-// To verify: In bootstrapFinalize change pre-lock key format "pre-" + taskID; test will fail (key not deleted).
-func TestBootstrapFinalize_WithRedis_SuccessPath_KeyFormats(t *testing.T) {
-	t.Skip("Success path requires metadata.BootstrapOnlineRoles to succeed (valid root + keys on disk); key formats covered by releaseBootstrapLock tests")
-}
-
 // --- releaseBootstrapLock (internal) tests ---
 
 // To verify: In releaseBootstrapLock remove nil redisClient check; test may panic when client is nil.

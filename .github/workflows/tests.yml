@@ -70,8 +70,12 @@ jobs:
         env:
           MONGODB_URL_TESTS: mongodb://root:ci@localhost:27017/cb_faynosync_db_tests?authSource=admin
         run: |
-          go test ./server/... ./mongod/... -race
+          set -o pipefail
+          go test ./server/... ./mongod/... -race -v 2>&1 | tee unit-tests.log
         continue-on-error: false
+
+      - name: Fail on unexpected skipped tests
+        run: .github/scripts/check-skipped-tests.sh unit-tests.log
 
       - name: Validate production compose file
         run: |
@@ -127,8 +131,13 @@ jobs:
         continue-on-error: false
 
       - name: Run Tests
-        run: docker compose exec -T backend "/usr/bin/faynoSync_tests"
+        run: |
+          set -o pipefail
+          docker compose exec -T backend /usr/bin/faynoSync_tests -test.v 2>&1 | tee integration-tests.log
         continue-on-error: false
+
+      - name: Fail on unexpected skipped tests
+        run: .github/scripts/check-skipped-tests.sh integration-tests.log
 
       - name: Stop Services
         if: always()

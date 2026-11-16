@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -24,15 +25,27 @@ const (
 	vfBetaToken   = "vf-beta-token"
 )
 
+// testMongoURL prefers the environment (CI has no .env) and falls back to the repo .env for local runs.
+func testMongoURL(t *testing.T) string {
+	t.Helper()
+	mongoURL := os.Getenv("MONGODB_URL_TESTS")
+	if mongoURL == "" {
+		viper.SetConfigType("env")
+		viper.SetConfigFile("../../../.env")
+		if err := viper.ReadInConfig(); err == nil {
+			mongoURL = viper.GetString("MONGODB_URL_TESTS")
+		}
+	}
+	if mongoURL == "" {
+		t.Skip("MONGODB_URL_TESTS not set, skipping Mongo-dependent test")
+	}
+	return mongoURL
+}
+
 func vfSetup(t *testing.T) *gin.Engine {
 	t.Helper()
-	viper.SetConfigType("env")
-	viper.SetConfigFile("../../../.env")
-	if err := viper.ReadInConfig(); err != nil {
-		t.Skipf("no .env: %v", err)
-	}
 	ctx := context.Background()
-	client, conn := db.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"))
+	client, conn := db.ConnectToDatabase(testMongoURL(t))
 	t.Cleanup(func() { client.Disconnect(ctx) })
 	conn.Database = vfDatabase
 	database := client.Database(vfDatabase)
