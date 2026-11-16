@@ -25,20 +25,20 @@ func resolveMetaID(ctx context.Context, metaCollection *mongo.Collection, field,
 // resolveVelopackPackageLink finds the public storage link of a velopack package
 // by exact file name for the given (owner, app, platform, arch)
 // Required for dynamic API working.
-func resolveVelopackPackageLink(ctx context.Context, database *mongo.Database, owner, app, platform, arch, fileName string) (string, error) {
+func resolveVelopackPackageLink(ctx context.Context, database *mongo.Database, owner, app, platform, arch, fileName string) (string, primitive.ObjectID, error) {
 	metaCollection := database.Collection("apps_meta")
 
 	appID, err := resolveMetaID(ctx, metaCollection, "app_name", app, owner)
 	if err != nil {
-		return "", err
+		return "", primitive.NilObjectID, err
 	}
 	platformID, err := resolveMetaID(ctx, metaCollection, "platform_name", platform, owner)
 	if err != nil {
-		return "", err
+		return "", primitive.NilObjectID, err
 	}
 	archID, err := resolveMetaID(ctx, metaCollection, "arch_id", arch, owner)
 	if err != nil {
-		return "", err
+		return "", primitive.NilObjectID, err
 	}
 
 	filter := bson.D{
@@ -54,19 +54,19 @@ func resolveVelopackPackageLink(ctx context.Context, database *mongo.Database, o
 
 	var version model.SpecificApp
 	if err := database.Collection("apps").FindOne(ctx, filter).Decode(&version); err != nil {
-		return "", fmt.Errorf("velopack package %q not found: %w", fileName, err)
+		return "", primitive.NilObjectID, fmt.Errorf("velopack package %q not found: %w", fileName, err)
 	}
 
 	for _, a := range version.Artifacts {
 		if a.Platform == platformID && a.Arch == archID && a.Velopack != nil && a.Velopack.FileName == fileName {
 			if a.Link == "" {
-				return "", fmt.Errorf("velopack package %q has empty link", fileName)
+				return "", primitive.NilObjectID, fmt.Errorf("velopack package %q has empty link", fileName)
 			}
-			return a.Link, nil
+			return a.Link, version.ChannelID, nil
 		}
 	}
 
-	return "", fmt.Errorf("velopack package %q not found", fileName)
+	return "", primitive.NilObjectID, fmt.Errorf("velopack package %q not found", fileName)
 }
 
 func loadVelopackReleases(ctx context.Context, database *mongo.Database, owner, app, channel, platform, arch string) ([]velopack.Release, error) {

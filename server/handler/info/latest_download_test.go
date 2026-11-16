@@ -10,7 +10,6 @@ import (
 	db "faynoSync/mongod"
 
 	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -72,13 +71,8 @@ func ldSeed(t *testing.T, ctx context.Context, database *mongo.Database) {
 
 func ldSetup(t *testing.T) (context.Context, *mongo.Database, db.AppRepository) {
 	t.Helper()
-	viper.SetConfigType("env")
-	viper.SetConfigFile("../../../.env")
-	if err := viper.ReadInConfig(); err != nil {
-		t.Skipf("no .env: %v", err)
-	}
 	ctx := context.Background()
-	client, conn := db.ConnectToDatabase(viper.GetString("MONGODB_URL_TESTS"))
+	client, conn := db.ConnectToDatabase(testMongoURL(t))
 	t.Cleanup(func() { client.Disconnect(ctx) })
 	conn.Database = ldDatabase
 	database := client.Database(ldDatabase)

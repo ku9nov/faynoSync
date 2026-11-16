@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -24,9 +25,13 @@ func FindVelopackFeed(c *gin.Context, repository db.AppRepository, database *mon
 	arch := c.Param("arch")
 
 	if fileName := strings.TrimPrefix(c.Param("feed"), "/"); strings.HasSuffix(fileName, ".nupkg") {
-		link, err := resolveVelopackPackageLink(c.Request.Context(), database, owner, app, platform, arch, fileName)
+		link, channelID, err := resolveVelopackPackageLink(c.Request.Context(), database, owner, app, platform, arch, fileName)
 		if err != nil {
 			logrus.Debugf("velopack package lookup failed for %s/%s/%s/%s/%s: %v", owner, app, platform, arch, fileName, err)
+			c.JSON(http.StatusNotFound, gin.H{"error": "velopack package not found"})
+			return
+		}
+		if !authorizeVelopackRead(c, repository, owner, app, "", channelID) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "velopack package not found"})
 			return
 		}
@@ -42,6 +47,11 @@ func FindVelopackFeed(c *gin.Context, repository db.AppRepository, database *mon
 
 	if id := c.Query("id"); id != "" && id != app {
 		c.JSON(http.StatusNotFound, gin.H{"error": "feed id does not match app"})
+		return
+	}
+
+	if !authorizeVelopackRead(c, repository, owner, app, channel, primitive.NilObjectID) {
+		c.Data(http.StatusOK, velopackFeedContentType, emptyVelopackFeed)
 		return
 	}
 
@@ -78,6 +88,30 @@ func FindVelopackFeed(c *gin.Context, repository db.AppRepository, database *mon
 	}
 
 	c.Data(http.StatusOK, velopackFeedContentType, feed)
+}
+
+// authorizeVelopackRead applies the /checkVersion gate; callers must answer a denial exactly like an unknown app.
+func authorizeVelopackRead(c *gin.Context, repository db.AppRepository, owner, app, channel string, channelID primitive.ObjectID) bool {
+	ctx := c.Request.Context()
+	access, err := repository.ResolveAppAccess(ctx, owner, app, channel)
+	if err != nil {
+		if !errors.Is(err, utils.ErrAppNotFound) {
+			logrus.Errorf("velopack access lookup failed for %s/%s: %v", owner, app, err)
+		}
+		return false
+	}
+	if !channelID.IsZero() {
+		access.ChannelID = channelID
+	}
+	allowed, err := authorizeRead(ctx, c, repository, access)
+	if err != nil {
+		logrus.Errorf("velopack authorization failed for %s/%s: %v", owner, app, err)
+		return false
+	}
+	if !allowed {
+		logrus.Debugf("velopack read of private app %s/%s denied", owner, app)
+	}
+	return allowed
 }
 
 func parseVelopackChannel(feed string) (string, bool) {
