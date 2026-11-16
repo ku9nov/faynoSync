@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.10.0
+
+### Changes
+
+- Dashboard: apps can be marked as favorites (saved per browser) and are listed first; app tiles adapt better to screen width and show as much of the changelog as fits; smoother sidebar animation.
+
+### Security
+
+- `GET /velopack/...` applies the same private-app gate as `/checkVersion`: a `strict` app's feed and `.nupkg` redirects need a download token for the channel or a JWT with access, and a denied request gets the unknown-app answer (`{"Assets":[]}` or `404`). New uploads could not reach this since v2.3.0, but Velopack versions of private apps uploaded on v1.6.4–v2.2.0 were still served to anyone. `unlisted` apps are unchanged.
+- Updated Go to 1.27.3, the dashboard build image to Node 24, `follow-redirects` to 1.16.2 and OpenTelemetry to 1.47.0.
+
+### Fixed
+
+- Dashboard version cards treat a whitespace-only changelog as empty.
+
 ## v2.9.0
 
 ### Upgrading from v2.8
