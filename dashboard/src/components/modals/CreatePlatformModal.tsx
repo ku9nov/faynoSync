@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useBackdropClose } from '../../hooks/useBackdropClose';
 import { usePlatformQuery, Updater } from '@/hooks/use-query/usePlatformQuery';
 import { UpdatersSelector } from '@/components/common/UpdatersSelector';
+import { ModalFeedback } from '@/components/common/ModalFeedback';
+import { apiErrorMessage } from '@/config/axios';
 import {
   BTN_GHOST,
   BTN_PRIMARY,
@@ -21,6 +23,7 @@ interface CreatePlatformModalProps {
 export const CreatePlatformModal: React.FC<CreatePlatformModalProps> = ({ onClose }) => {
   const { createPlatform } = usePlatformQuery();
   const [name, setName] = useState('');
+  const [error, setError] = useState<{ error: string; details?: string } | null>(null);
   const [updaters, setUpdaters] = useState<Updater[]>([
     { type: 'manual', default: true }
   ]);
@@ -28,8 +31,12 @@ export const CreatePlatformModal: React.FC<CreatePlatformModalProps> = ({ onClos
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim() && updaters.length > 0) {
-      await createPlatform(name.trim(), updaters);
-      onClose();
+      try {
+        await createPlatform(name.trim(), updaters);
+        onClose();
+      } catch (err) {
+        setError({ error: apiErrorMessage(err, 'Failed to create platform') });
+      }
     }
   };
 
@@ -38,6 +45,7 @@ export const CreatePlatformModal: React.FC<CreatePlatformModalProps> = ({ onClos
   return (
     <div className={MODAL_OVERLAY} {...backdropProps}>
       <div className={`${MODAL_SURFACE} w-[500px] max-h-[80vh] overflow-y-auto`}>
+        <ModalFeedback error={error} setError={setError} />
         <div className={MODAL_HEADER}>
           <h2 className={MODAL_TITLE}>Create platform</h2>
           <button onClick={onClose} className={MODAL_CLOSE} aria-label="Close">

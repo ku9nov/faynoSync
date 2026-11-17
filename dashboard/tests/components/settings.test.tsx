@@ -221,7 +221,7 @@ describe('users', () => {
     await user.type(screen.getAllByPlaceholderText('Enter username').pop()!, 'dev');
     await user.type(document.querySelector('input[placeholder="Enter password"]') as HTMLInputElement, 'pw123456');
     await user.click(screen.getByRole('button', { name: 'Create user' }));
-    expect(await screen.findByText(/status code 409/)).toBeInTheDocument();
+    expect(await screen.findByText('exists')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Create user' })).toBeInTheDocument();
   });
 
@@ -269,13 +269,13 @@ describe('users', () => {
     });
   });
 
-  it('keeps unsaved changes when saving permissions fails', async () => {
-    server.use(route('post', '/user/update', () => HttpResponse.json({ error: 'nope' }, { status: 500 })));
+  it('keeps unsaved changes and tells the user when saving permissions fails', async () => {
+    server.use(route('post', '/user/update', () => HttpResponse.json({ error: 'permission store unavailable' }, { status: 500 })));
     const { user } = renderSettings();
     await screen.findByTitle('dev');
     await user.click(within(userRow()).getAllByRole('checkbox')[1]);
     await user.click(within(userRow()).getByTitle('Save user permissions'));
-    await waitFor(() => expect(lastCall('POST', '/user/update')).toBeDefined());
+    expect(await screen.findByText('permission store unavailable')).toBeInTheDocument();
     expect(within(userRow()).getByTitle('Unsaved changes')).toBeInTheDocument();
   });
 
@@ -292,13 +292,13 @@ describe('users', () => {
     await user.click(screen.getByRole('button', { name: 'Copy password' }));
     expect(writeText).toHaveBeenCalledWith((screen.getByPlaceholderText('Enter new password') as HTMLInputElement).value);
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText(/taken|status code 409/)).toBeInTheDocument();
+    expect(await screen.findByText('taken')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     await user.click(within(userRow()).getByTitle('Delete user'));
     await user.type(screen.getByPlaceholderText('Enter username'), 'dev');
     await user.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(await screen.findByText(/cannot delete yourself|status code 400/)).toBeInTheDocument();
+    expect(await screen.findByText('cannot delete yourself')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Delete user' })).toBeInTheDocument();
   });
 

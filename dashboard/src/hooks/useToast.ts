@@ -17,11 +17,11 @@ const toastError = (message: string) => {
 };
 
 const toastWarn = (message: string) => {
-  toast.success(message, options);
+  toast.warn(message, options);
 };
 
 const toastInfo = (message: string) => {
-  toast.success(message, options);
+  toast.info(message, options);
 };
 
 // Module-level so the functions keep their identity across renders and are safe in hook deps

@@ -183,6 +183,18 @@ describe('RotateDelegatedKeys', () => {
     expect(pre(/tuf-kms rotate delegated/)).toBe('tuf-kms rotate delegated beta-role \\\n  --keys 2 \\\n  --threshold 1');
   });
 
+  it('keeps the threshold within the key count', async () => {
+    const { user } = await open();
+    const [count, threshold] = screen.getAllByRole('spinbutton');
+    await setNumber(user, threshold, '3');
+    expect(pre(/tuf-kms rotate delegated/)).toContain('--keys 1 \\\n  --threshold 1');
+    await setNumber(user, count, '3');
+    await setNumber(user, threshold, '3');
+    expect(pre(/tuf-kms rotate delegated/)).toContain('--keys 3 \\\n  --threshold 3');
+    await setNumber(user, count, '2');
+    await waitFor(() => expect(pre(/tuf-kms rotate delegated/)).toContain('--keys 2 \\\n  --threshold 2'));
+  });
+
   it('loads delegated metadata for the trimmed role name', async () => {
     server.use(
       route('get', '/tuf/v1/metadata/delegated', () =>

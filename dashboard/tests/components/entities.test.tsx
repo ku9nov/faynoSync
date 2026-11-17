@@ -213,6 +213,26 @@ describe('platforms page', () => {
     });
   });
 
+  it('keeps the create dialog open and shows the server error', async () => {
+    server.use(route('post', '/platform/create', () => HttpResponse.json({ error: 'platform already exists' }, { status: 409 })));
+    const { user } = renderPage();
+    await screen.findByRole('heading', { name: 'linux' });
+    await user.click(screen.getAllByRole('button', { name: 'Create Platform' })[0]);
+    await user.type(screen.getByLabelText('Platform name'), 'linux');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText('platform already exists')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Create platform' })).toBeInTheDocument();
+  });
+
+  it('keeps the edit dialog open and shows the server error', async () => {
+    server.use(route('post', '/platform/update', () => HttpResponse.json({ error: 'platform in use' }, { status: 400 })));
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('heading', { name: 'linux' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('platform in use')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Edit platform' })).toBeInTheDocument();
+  });
+
   it('deletes a platform', async () => {
     server.use(route('delete', '/platform/delete', () => HttpResponse.json({})));
     const { user } = renderPage();

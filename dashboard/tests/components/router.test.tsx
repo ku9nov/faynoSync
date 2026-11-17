@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@/providers/themeProvider';
@@ -26,7 +26,10 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
+// The router is a module singleton: navigate before rendering so the previous test's location never
+// renders (a private page without a token would redirect to /signin mid-test).
 const renderApp = async (path: string) => {
+  await router.navigate(path);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -35,7 +38,6 @@ const renderApp = async (path: string) => {
       </ThemeProvider>
     </QueryClientProvider>,
   );
-  await act(() => router.navigate(path));
 };
 
 describe('router', () => {

@@ -12,7 +12,7 @@ import {
   MODAL_SURFACE,
   MODAL_TITLE,
 } from '@/components/common/ui';
-import type { ApiError } from '@/config/axios';
+import { apiErrorMessage } from '@/config/axios';
 import { generateRandomPassword } from '@/utils/password';
 
 interface EditUserModalProps {
@@ -59,8 +59,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
       await onSave(userId, newUsername, newPassword);
       onClose();
     } catch (e) {
-      const err = e as ApiError;
-      setError(err.message || 'Failed to update user');
+      setError(apiErrorMessage(e, 'Failed to update user'));
     } finally {
       setIsSaving(false);
     }

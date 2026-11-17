@@ -5,6 +5,8 @@ import { getPlatformIcon, isKnownPlatform } from '@/utils/platformIcon';
 import { generateRandomPassword } from '@/utils/password';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useSearch } from '@/hooks/useSearch';
+import { useToast } from '@/hooks/useToast';
+import { toast } from 'react-toastify';
 import { useFavoriteApps } from '@/hooks/useFavoriteApps';
 import { normalizeKeyAlgorithm } from '@/components/settings/tuf/keyAlgorithm';
 import { getStatusColor, getStatusIcon, getTaskStateColor } from '@/components/settings/tuf/utils';
@@ -189,5 +191,19 @@ describe('TUF status helpers', () => {
     expect(getTaskStateColor('SUCCESS')).toBe('text-green-500');
     expect(getTaskStateColor('FAILURE')).toBe('text-red-500');
     expect(getTaskStateColor('PENDING')).toBe('text-yellow-500');
+  });
+});
+
+describe('useToast', () => {
+  it.each([
+    ['toastSuccess', 'success'],
+    ['toastError', 'error'],
+    ['toastWarn', 'warn'],
+    ['toastInfo', 'info'],
+  ] as const)('%s uses toast.%s', (fn, kind) => {
+    const spy = vi.spyOn(toast, kind).mockReturnValue('id');
+    const { result } = renderHook(() => useToast());
+    result.current[fn]('hello');
+    expect(spy).toHaveBeenCalledWith('hello', expect.objectContaining({ autoClose: 3000 }));
   });
 });

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useBackdropClose } from '../../hooks/useBackdropClose';
 import { usePlatformQuery, Updater, Platform } from '@/hooks/use-query/usePlatformQuery';
 import { UpdatersSelector } from '@/components/common/UpdatersSelector';
+import { ModalFeedback } from '@/components/common/ModalFeedback';
+import { apiErrorMessage } from '@/config/axios';
 import {
   BTN_GHOST,
   BTN_PRIMARY,
@@ -27,6 +29,7 @@ export const EditPlatformModal: React.FC<EditPlatformModalProps> = ({
 }) => {
   const { updatePlatform } = usePlatformQuery();
   const [name, setName] = useState(platform.PlatformName);
+  const [error, setError] = useState<{ error: string; details?: string } | null>(null);
   const [updaters, setUpdaters] = useState<Updater[]>(() => {
     const platformUpdaters = platform.Updaters || [];
     // Ensure manual is always included
@@ -39,8 +42,12 @@ export const EditPlatformModal: React.FC<EditPlatformModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim() && updaters.length > 0) {
-      await updatePlatform(platformId, name.trim(), updaters);
-      onClose();
+      try {
+        await updatePlatform(platformId, name.trim(), updaters);
+        onClose();
+      } catch (err) {
+        setError({ error: apiErrorMessage(err, 'Failed to update platform') });
+      }
     }
   };
 
@@ -49,6 +56,7 @@ export const EditPlatformModal: React.FC<EditPlatformModalProps> = ({
   return (
     <div className={MODAL_OVERLAY} {...backdropProps}>
       <div className={`${MODAL_SURFACE} w-[500px] max-h-[80vh] overflow-y-auto`}>
+        <ModalFeedback error={error} setError={setError} />
         <div className={MODAL_HEADER}>
           <h2 className={MODAL_TITLE}>Edit platform</h2>
           <button onClick={onClose} className={MODAL_CLOSE} aria-label="Close">

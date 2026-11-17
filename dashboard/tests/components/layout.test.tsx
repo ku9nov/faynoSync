@@ -136,7 +136,7 @@ describe('profile', () => {
     expect(writeText).toHaveBeenCalledWith(passwords()[0].value);
     expect(await screen.findByText('Password copied to clipboard!')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Change Password' }));
-    expect(await screen.findByText(/locked|status code 423/)).toBeInTheDocument();
+    expect(await screen.findByText('locked')).toBeInTheDocument();
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Change Password' }));
     expect(await screen.findByText('Password changed successfully')).toBeInTheDocument();

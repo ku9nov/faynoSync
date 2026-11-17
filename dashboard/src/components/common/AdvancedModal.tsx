@@ -35,7 +35,6 @@ interface AdvancedModalProps {
   onSubmit: (e: React.FormEvent) => Promise<void>;
   children: React.ReactNode;
   submitButtonText?: string;
-  onSuccess?: () => void;
   isLoading?: boolean;
   isSuccess?: boolean;
   successMessage?: string;
@@ -60,7 +59,6 @@ export const AdvancedModal: React.FC<AdvancedModalProps> = ({
   onSubmit,
   children,
   submitButtonText = 'Submit',
-  onSuccess,
   isLoading = false,
   isSuccess = false,
   successMessage = 'Operation completed successfully!',
@@ -125,9 +123,6 @@ export const AdvancedModal: React.FC<AdvancedModalProps> = ({
         <form onSubmit={(e) => {
           e.preventDefault();
           onSubmit(e);
-          if (onSuccess) {
-            onSuccess();
-          }
         }}>
           {children}
           

@@ -34,4 +34,9 @@ axiosInstance.interceptors.response.use(
 
 export type ApiError = AxiosError<{ error?: string; message?: string }>;
 
+export const apiErrorMessage = (error: unknown, fallback: string): string => {
+  const apiError = error as ApiError | undefined;
+  return apiError?.response?.data?.error || apiError?.response?.data?.message || apiError?.message || fallback;
+};
+
 export default axiosInstance; 

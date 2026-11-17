@@ -320,6 +320,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setShowDeleteAppModal(true);
   };
 
+  // EditVersionModal resets its form whenever currentData changes identity, so it must stay stable across renders.
+  const editVersionData = React.useMemo(
+    () =>
+      selectedVersion && {
+        ID: selectedVersion.ID,
+        Published: selectedVersion.Published,
+        Critical: selectedVersion.Critical,
+        Intermediate: selectedVersion.Intermediate,
+        RolloutPercent: selectedVersion.RolloutPercent,
+        Changelog: selectedVersion.Changelog[0]?.Changes || '',
+        Artifacts: selectedVersion.Artifacts,
+      },
+    [selectedVersion]
+  );
+
   const handleEditSave = async (data: {
     Published: boolean;
     Critical: boolean;
@@ -335,8 +350,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }) => {
     if (selectedVersion) {
       await updateApp(selectedVersion.ID, data);
-      setShowEditModal(false);
-      setSelectedVersion(null);
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       // Force a refetch to ensure we have the latest data
       await queryClient.refetchQueries({ queryKey: ['apps'] });
@@ -1207,20 +1220,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         )}
 
-        {showEditModal && selectedVersion && (
+        {showEditModal && selectedVersion && editVersionData && (
           <EditVersionModal
             appName={selectedApp}
             version={selectedVersion.Version}
             channel={selectedVersion.Channel}
-            currentData={{
-              ID: selectedVersion.ID,
-              Published: selectedVersion.Published,
-              Critical: selectedVersion.Critical,
-              Intermediate: selectedVersion.Intermediate,
-              RolloutPercent: selectedVersion.RolloutPercent,
-              Changelog: selectedVersion.Changelog[0]?.Changes || '',
-              Artifacts: selectedVersion.Artifacts
-            }}
+            currentData={editVersionData}
             onClose={() => {
               setShowEditModal(false);
               setSelectedVersion(null);

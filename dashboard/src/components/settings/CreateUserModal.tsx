@@ -20,7 +20,7 @@ import { useAppsQuery } from '@/hooks/use-query/useAppsQuery';
 import { useChannelQuery } from '@/hooks/use-query/useChannelQuery';
 import { usePlatformQuery } from '@/hooks/use-query/usePlatformQuery';
 import { useArchitectureQuery } from '@/hooks/use-query/useArchitectureQuery';
-import type { ApiError } from '@/config/axios';
+import { apiErrorMessage } from '@/config/axios';
 import { generateRandomPassword } from '@/utils/password';
 
 // Define proper types for permissions
@@ -151,8 +151,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
       await onSave(username, password, permissions);
       onClose();
     } catch (e) {
-      const err = e as ApiError;
-      setError(err.message || 'Failed to create user');
+      setError(apiErrorMessage(e, 'Failed to create user'));
     } finally {
       setIsSaving(false);
     }

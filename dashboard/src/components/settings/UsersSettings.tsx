@@ -6,7 +6,8 @@ import { usePlatformQuery } from '@/hooks/use-query/usePlatformQuery';
 import { useArchitectureQuery } from '@/hooks/use-query/useArchitectureQuery';
 import { AllowedItemsModal } from '@/components/settings/AllowedItemsModal';
 import { EditUserModal } from '@/components/settings/EditUserModal';
-import axiosInstance from '@/config/axios';
+import axiosInstance, { apiErrorMessage } from '@/config/axios';
+import { useToast } from '@/hooks/useToast';
 import { useQueryClient } from '@tanstack/react-query';
 import { DeleteUserConfirmationModal } from '@/components/settings/DeleteUserConfirmationModal';
 import { CreateUserModal, type Permissions as NewUserPermissions } from '@/components/settings/CreateUserModal';
@@ -34,6 +35,7 @@ export const UsersSettings: React.FC = () => {
   const { platforms } = usePlatformQuery();
   const { architectures } = useArchitectureQuery();
   const queryClient = useQueryClient();
+  const { toastError } = useToast();
 
   // State for modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -257,6 +259,7 @@ export const UsersSettings: React.FC = () => {
       
     } catch (error) {
       console.error('Error saving user permissions:', error);
+      toastError(apiErrorMessage(error, 'Failed to save user permissions'));
     } finally {
       setIsSaving(prev => ({ ...prev, [userId]: false }));
     }

@@ -143,6 +143,24 @@ describe('bootstrap', () => {
   });
 });
 
+describe('history after leaving the page', () => {
+  it('does not overwrite entries written elsewhere once unmounted', async () => {
+    server.use(route('post', '/tuf/v1/bootstrap', () => HttpResponse.json({ data: { task_id: 'boot-5' } })));
+    const { user, unmount } = await renderTuf();
+    await user.click(await screen.findByRole('radio', { name: 'Use custom payload' }));
+    await user.click(screen.getByPlaceholderText('Paste JSON payload here...'));
+    await user.paste('{}');
+    await user.click(screen.getByRole('button', { name: /Start Bootstrap/ }));
+    await screen.findByText('TUF bootstrap started successfully!');
+    unmount();
+    const elsewhere = [{ id: 'pub', operation: 'publish', status: 'pending', taskId: 'pub-1' }, ...JSON.parse(localStorage.getItem('tuf-history')!)];
+    localStorage.setItem('tuf-history', JSON.stringify(elsewhere));
+    vi.advanceTimersByTime(1500);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(JSON.parse(localStorage.getItem('tuf-history')!)[0]).toMatchObject({ id: 'pub', taskId: 'pub-1' });
+  });
+});
+
 describe('bootstrap status', () => {
   it('hides bootstrap and shows update/rotation once bootstrapped', async () => {
     bootstrapState = done;
@@ -351,7 +369,9 @@ describe('history tasks', () => {
     localStorage.setItem('tuf-history', JSON.stringify([entry({ status: 'success' })]));
     const { user } = renderWithProviders(<TufSettings />);
     await user.click(await screen.findByTitle('Check task status'));
-    expect(await screen.findByText('TUF task loaded successfully!')).toBeInTheDocument();
+    await waitFor(() => expect(lastCall('GET', '/tuf/v1/task')?.query.get('task_id')).toBe('pub-9'));
+    // Toasts are global: a request still in flight from an earlier test can add a second copy.
+    expect((await screen.findAllByText('TUF task loaded successfully!')).length).toBeGreaterThan(0);
     server.use(route('get', '/tuf/v1/task', () => HttpResponse.json({ message: 'task expired' }, { status: 404 })));
     await user.click(screen.getByTitle('Check task status'));
     expect(await screen.findByText('task expired')).toBeInTheDocument();

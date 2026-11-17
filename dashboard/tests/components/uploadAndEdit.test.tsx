@@ -202,6 +202,17 @@ describe('EditVersionModal', () => {
     expect(screen.getByText(hint)).toBeInTheDocument();
   });
 
+  it('confirms the save before closing', async () => {
+    server.use(updateHandler());
+    const { user } = await openEditor();
+    await user.click(screen.getByRole('checkbox', { name: 'Published' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Changes saved successfully!')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Edit version 1.0.1' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Published' })).not.toBeChecked();
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Edit version 1.0.1' })).toBeNull());
+  });
+
   it('does not go below 0 or above 100 with the buttons', async () => {
     const { user } = await openEditor({ RolloutPercent: 2 });
     await user.click(screen.getByRole('button', { name: 'Decrease by 5' }));

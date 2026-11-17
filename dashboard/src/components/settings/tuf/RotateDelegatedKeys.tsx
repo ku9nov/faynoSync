@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axiosInstance, { type ApiError } from '@/config/axios';
 import { useToast } from '@/hooks/useToast';
 import { deleteSigningMetadata } from '@/components/settings/tuf/deleteSigningMetadata';
@@ -110,6 +110,12 @@ export const RotateDelegatedKeys: React.FC<RotateDelegatedKeysProps> = ({
   const [deletingSigningMetadata, setDeletingSigningMetadata] = useState(false);
 
   const normalizedRoleName = roleName.trim() || 'default';
+
+  useEffect(() => {
+    if (threshold > keyCount) {
+      setThreshold(keyCount);
+    }
+  }, [keyCount, threshold]);
 
   const rotateCommand = `tuf-kms rotate delegated ${normalizedRoleName} \\\n  --keys ${keyCount} \\\n  --threshold ${threshold}`;
 

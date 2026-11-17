@@ -18,7 +18,7 @@ import {
   STATUS_BADGE,
   STATUS_DOT,
 } from '@/components/common/ui';
-import type { ApiError } from '@/config/axios';
+import { apiErrorMessage } from '@/config/axios';
 import { generateRandomPassword } from '@/utils/password';
 
 interface ProfileModalProps {
@@ -104,8 +104,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
         onClose();
       }, 1500);
     } catch (e) {
-      const error = e as ApiError;
-      setPasswordError(error.message || 'Failed to change password');
+      setPasswordError(apiErrorMessage(e, 'Failed to change password'));
     }
   };
 

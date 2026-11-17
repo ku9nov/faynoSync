@@ -94,7 +94,6 @@ export const CreateAppModal: React.FC<CreateAppModalProps> = ({ onClose, onSucce
       title="Create Application"
       onSubmit={handleSubmit}
       submitButtonText="Create"
-      onSuccess={onSuccess}
       isLoading={isLoading}
       isSuccess={isSuccess}
       successMessage="Application created successfully!"

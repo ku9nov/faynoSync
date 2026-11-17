@@ -91,6 +91,20 @@ describe('create application', () => {
     await waitFor(() => expect(callsTo('GET', '/app/list').length).toBeGreaterThan(listCallsBefore));
   });
 
+  it('does not refresh the list when creation fails', async () => {
+    server.use(route('post', '/app/create', () => HttpResponse.json({ error: 'app exists' }, { status: 409 })));
+    const { user } = renderList();
+    await screen.findByRole('heading', { level: 3, name: 'alpha' });
+    await user.click(screen.getByRole('button', { name: 'Create app' }));
+    await user.type(screen.getByPlaceholderText('Enter app name'), 'alpha');
+    const listCallsBefore = callsTo('GET', '/app/list').length;
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText('app exists')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(callsTo('GET', '/app/list')).toHaveLength(listCallsBefore);
+    expect(screen.getByRole('heading', { name: 'Create Application' })).toBeInTheDocument();
+  });
+
   it('private apps get a download mode and never a CDN', async () => {
     server.use(route('post', '/app/create', () => HttpResponse.json({})));
     const { user } = renderList();
