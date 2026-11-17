@@ -266,9 +266,16 @@ func TestHealthCheck(t *testing.T) {
 	// Check the response status code.
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	// Check the response body.
-	expected := `{"status":"healthy"}`
-	assert.Equal(t, expected, w.Body.String())
+	var body struct {
+		Status string `json:"status"`
+		Checks map[string]struct {
+			Status string `json:"status"`
+		} `json:"checks"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.NotEqual(t, "unhealthy", body.Status)
+	assert.Equal(t, "ok", body.Checks["mongodb"].Status)
+	assert.Equal(t, "ok", body.Checks["redis"].Status)
 }
 
 func TestAuthRateLimits(t *testing.T) {

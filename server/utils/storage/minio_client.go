@@ -176,3 +176,14 @@ func (m *MinioClient) GetObjectETag(ctx context.Context, bucketName, objectKey s
 
 	return info.ETag, true, nil
 }
+
+func (m *MinioClient) CheckBucket(ctx context.Context, bucketName string) error {
+	exists, err := m.client.BucketExists(ctx, bucketName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return &StorageError{Message: "bucket does not exist: " + bucketName}
+	}
+	return nil
+}

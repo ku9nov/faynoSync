@@ -386,3 +386,9 @@ func (g *GoogleCloudStorageClient) OpenObject(ctx context.Context, bucketName, o
 	}
 	return reader, nil
 }
+
+// Needs storage.buckets.get, which uploads already require for bucketUniformAccess.
+func (g *GoogleCloudStorageClient) CheckBucket(ctx context.Context, bucketName string) error {
+	_, err := g.client.Bucket(bucketName).Attrs(ctx)
+	return err
+}

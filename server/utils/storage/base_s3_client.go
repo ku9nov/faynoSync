@@ -429,3 +429,8 @@ func sha256FromChecksum(checksum string) string {
 	}
 	return hex.EncodeToString(raw)
 }
+
+func (b *BaseS3Client) CheckBucket(ctx context.Context, bucketName string) error {
+	_, err := b.clientFor(bucketName).HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+	return err
+}

@@ -24,6 +24,10 @@ const (
 	onlineBumpInterval  = 5 * time.Minute
 	onlineBumpThreshold = time.Hour
 	onlineBumpTickKey   = "TUF_ONLINE_BUMP_TICK"
+	onlineBumpLastOKKey = "TUF_ONLINE_BUMP_LAST_OK"
+
+	// Two missed intervals: one can be lost to a replica that took the tick lock and died.
+	OnlineBumpStaleAfter = 2 * onlineBumpInterval
 )
 
 func StartOnlineRolesBumper(ctx context.Context, mongoDatabase *mongo.Database, redisClient *redis.Client) {
@@ -62,6 +66,22 @@ func runOnlineBumpTick(ctx context.Context, mongoDatabase *mongo.Database, redis
 	for _, app := range apps {
 		bumpExpiringOnlineRoles(ctx, redisClient, app, time.Now().UTC().Add(onlineBumpThreshold))
 	}
+
+	if err := redisClient.Set(ctx, onlineBumpLastOKKey, time.Now().UTC().Format(time.RFC3339), 0).Err(); err != nil {
+		logrus.Errorf("TUF online bump: failed to record tick completion (key %s): %v", onlineBumpLastOKKey, err)
+	}
+}
+
+// LastOnlineBump returns when a bumper tick last completed on any replica; zero time if never.
+func LastOnlineBump(ctx context.Context, redisClient *redis.Client) (time.Time, error) {
+	val, err := redisClient.Get(ctx, onlineBumpLastOKKey).Result()
+	if err == redis.Nil {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Parse(time.RFC3339, val)
 }
 
 // Not released on purpose: the TTL makes one replica own the whole interval.

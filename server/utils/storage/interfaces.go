@@ -68,3 +68,8 @@ var (
 	ErrPresignedURLFailed   = &StorageError{Message: "failed to generate presigned URL"}
 	ErrObjectNotFound       = &StorageError{Message: "object not found"}
 )
+
+// BucketChecker is implemented by drivers that can probe bucket reachability without touching objects.
+type BucketChecker interface {
+	CheckBucket(ctx context.Context, bucketName string) error
+}

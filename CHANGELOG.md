@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.10.1
+
+### Changes
+
+- `GET /health` reports `mongodb`, `redis`, `storage`, `disk` and `tuf_bumper` separately. Mongo or Redis down returns `503` (was `424`); any other failure returns `200` with `"status":"degraded"`.
+- Dashboard tests (Vitest) run in CI.
+
+### Fixed
+
+- Dashboard: API error messages are shown in modals and toasts; create/edit platform and saving user permissions report failures; the edit version form no longer resets while open; TUF key rotation threshold cannot exceed the key count; warning/info toasts no longer look like success.
+
 ## v2.10.0
 
 ### Changes
