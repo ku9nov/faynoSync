@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { server } from '../msw';
@@ -7,6 +7,11 @@ import { callsTo, db, lastCall, route, useFakeApi, version } from '../fakeApi';
 import { file, pick } from '../helpers';
 import { UploadModal } from '@/components/modals/UploadModal';
 import { HomePage } from '@/pages/HomePage';
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   useFakeApi();
@@ -288,5 +293,142 @@ describe('EditVersionModal', () => {
     await user.click(publishButtons[publishButtons.length - 1]);
     expect(await screen.findByText('signer offline')).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem('tuf-history')!)[0]).toMatchObject({ operation: 'publish', status: 'failed' });
+  });
+  const editor = () => screen.getByRole('heading', { name: 'Edit version 1.0.1' }).parentElement!.parentElement as HTMLElement;
+  const tufApp = () => {
+    db.apps = db.apps.map((a) => (a.AppName === 'alpha' ? { ...a, Tuf: true } : a));
+  };
+
+  it('sends the tauri signature and resets the selection when the first file is removed', async () => {
+    server.use(updateHandler());
+    const { user } = await openEditor();
+    await user.upload(fileInput(), [file('app.tar.gz'), file('app.sig')]);
+    await pick(user, 'Platform', 'macos');
+    await pick(user, 'Architecture', 'arm64');
+    await pick(user, 'Updater', 'tauri');
+    await user.type(screen.getByPlaceholderText('Enter signature for Tauri updater'), 'sig-1');
+    await user.click(screen.getAllByRole('button', { name: 'Remove file' })[1]);
+    expect(screen.getByPlaceholderText('Enter signature for Tauri updater')).toHaveValue('sig-1');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(lastCall('POST', '/apps/update')).toBeDefined());
+    expect(lastCall('POST', '/apps/update').form?.data).toMatchObject({ platform: 'macos', arch: 'arm64', updater: 'tauri', signature: 'sig-1' });
+    expect(lastCall('POST', '/apps/update').files).toEqual(['file:app.tar.gz']);
+  });
+
+  it('clears platform, arch and updater when the first file is removed', async () => {
+    const { user } = await openEditor();
+    await user.upload(fileInput(), file('a.deb'));
+    await pick(user, 'Platform', 'macos');
+    await pick(user, 'Architecture', 'arm64');
+    await pick(user, 'Updater', 'tauri');
+    await user.click(screen.getByRole('button', { name: 'Remove file' }));
+    expect(screen.queryByPlaceholderText('Enter signature for Tauri updater')).toBeNull();
+    await user.upload(fileInput(), file('b.deb'));
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  });
+
+  it('previews the changelog as markdown', async () => {
+    const { user } = await openEditor();
+    const changelog = screen.getByPlaceholderText('Enter changelog in Markdown format...');
+    await user.clear(changelog);
+    await user.type(changelog, '**bold** note');
+    await user.click(within(editor()).getByRole('button', { name: 'Preview' }));
+    expect(within(editor()).getByText('bold', { selector: 'strong' })).toBeInTheDocument();
+    await user.click(within(editor()).getByRole('button', { name: 'Edit' }));
+    expect(screen.getByPlaceholderText('Enter changelog in Markdown format...')).toHaveValue('**bold** note');
+  });
+
+  it('shows a network failure when saving', async () => {
+    server.use(route('post', '/apps/update', () => HttpResponse.error()));
+    const { user } = await openEditor();
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Failed to update')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText('Network Error')).toBeInTheDocument();
+  });
+
+  it('keeps the artifact when deleting it fails', async () => {
+    server.use(route('post', '/artifact/delete', () => HttpResponse.json({ error: 'artifact in use', details: 'referenced by feed' }, { status: 409 })));
+    const { user } = await openEditor();
+    await user.click(within(editor()).getByRole('button', { name: 'Delete' }));
+    await user.type(screen.getByPlaceholderText('Enter platform/arch'), 'linux/amd64');
+    const confirmForm = screen.getByPlaceholderText('Enter platform/arch').closest('form') as HTMLElement;
+    await user.click(within(confirmForm).getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText('artifact in use')).toBeInTheDocument();
+    expect(within(editor()).getByRole('button', { name: 'Download' })).toBeInTheDocument();
+  });
+
+  it('says when a version has no artifacts', async () => {
+    await openEditor({ Artifacts: [] });
+    expect(screen.getByText(/This version has no artifacts yet/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['a download_url', { download_url: 'https://cdn.example/1.bin?sig=x' }, 200, 'https://cdn.example/1.bin?sig=x'],
+    ['a direct file', 'binary', 200, 'http://localhost:3000/download/1.bin'],
+    ['an error', { error: 'nope' }, 401, 'http://localhost:3000/download/1.bin'],
+  ])('downloads an artifact via %s', async (_, body, status, expected) => {
+    server.use(route('get', '/download/1.bin', () => (typeof body === 'string' ? new HttpResponse(body, { status }) : HttpResponse.json(body, { status }))));
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { user } = await openEditor();
+    await user.click(within(editor()).getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith(expected, '_blank', 'noopener,noreferrer'));
+  });
+
+  it('marks a TUF version without signing tasks as unsigned', async () => {
+    tufApp();
+    await openEditor({ Artifacts: [{ ID: 'a', link: 'l1', platform: 'linux', arch: 'amd64', package: '.deb' }] });
+    expect(within(editor()).getByText('TUF unsigned')).toHaveAttribute('title', 'No artifact is signed');
+  });
+
+  it('publishes TUF artifacts from the editor and refetches the versions', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    tufApp();
+    localStorage.setItem('tuf-history', JSON.stringify([{ id: 'old', operation: 'bootstrap' }]));
+    server.use(route('post', '/tuf/v1/artifacts/publish', () => HttpResponse.json({ data: { task_id: 'pub-1', last_update: '2026-11-16T09:00:00Z' } })));
+    const { user } = await openEditor({
+      Artifacts: [{ ID: 'a', link: 'l1', platform: 'linux', arch: 'amd64', package: '.deb', TufTaskID: null, TufSigned: false }],
+    });
+    await user.click(within(editor()).getByRole('button', { name: 'Sign 1 remaining artifact with TUF' }));
+    expect(await screen.findByText('TUF artifacts publishing successfully started for version 1.0.1')).toBeInTheDocument();
+    expect(lastCall('POST', '/tuf/v1/artifacts/publish').json).toEqual({ app_id: 'app-1', version: '1.0.1' });
+    const history = JSON.parse(localStorage.getItem('tuf-history')!);
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ operation: 'publish', status: 'pending', taskId: 'pub-1', timestamp: '2026-11-16T09:00:00Z' });
+    const before = callsTo('GET', '/search').length;
+    vi.advanceTimersByTime(5100);
+    await waitFor(() => expect(callsTo('GET', '/search').length).toBeGreaterThan(before));
+  });
+
+  it('keeps an unsigned artifact unsigned while the server still reports it signed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    tufApp();
+    server.use(route('post', '/tuf/v1/artifacts/delete', () => HttpResponse.json({ data: { task_id: 'unsign-2' } })));
+    const { user } = await openEditor({
+      Artifacts: [{ ID: 'a', link: 'l1', platform: 'linux', arch: 'amd64', package: '.deb', TufTaskID: 't', TufSigned: true }],
+    });
+    expect(within(editor()).getByText('signed')).toBeInTheDocument();
+    // Opening the editor schedules a 100ms sync from the initial fetch; let it settle like a real click would.
+    vi.advanceTimersByTime(150);
+    await user.click(within(editor()).getByRole('button', { name: 'Unsign artifact from TUF' }));
+    expect(await within(editor()).findByText('unsigned')).toBeInTheDocument();
+    const before = callsTo('GET', '/search').length;
+    vi.advanceTimersByTime(2000);
+    await waitFor(() => expect(callsTo('GET', '/search').length).toBeGreaterThan(before));
+    vi.advanceTimersByTime(150);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(editor()).getByText('unsigned')).toBeInTheDocument();
+  });
+
+  it('records a failed unsign and shows the server error', async () => {
+    tufApp();
+    server.use(route('post', '/tuf/v1/artifacts/delete', () => HttpResponse.json({ error: 'signer offline' }, { status: 503 })));
+    const { user } = await openEditor({
+      Artifacts: [{ ID: 'a', link: 'l1', platform: 'linux', arch: 'amd64', package: '.deb', TufTaskID: 't', TufSigned: true }],
+    });
+    await user.click(within(editor()).getByRole('button', { name: 'Unsign artifact from TUF' }));
+    expect(await screen.findByText('signer offline')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('tuf-history')!)[0]).toMatchObject({ operation: 'unsign', status: 'failed', version: '1.0.1' });
+    expect(within(editor()).getByText('signed')).toBeInTheDocument();
   });
 });

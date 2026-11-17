@@ -158,6 +158,61 @@ describe('users', () => {
     });
   });
 
+  it('builds every permission section, removes chips and copies the password', async () => {
+    server.use(route('post', '/user/create', () => HttpResponse.json({})));
+    const { user } = renderSettings();
+    await screen.findByTitle('dev');
+    await user.click(screen.getByRole('button', { name: 'Create User' }));
+    await user.type(screen.getAllByPlaceholderText('Enter username').pop()!, 'ops');
+    await user.type(document.querySelector('input[placeholder="Enter password"]') as HTMLInputElement, 'pw-123456');
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: 'Copy password' }));
+    expect(writeText).toHaveBeenCalledWith('pw-123456');
+    expect(await screen.findByText('Password copied to clipboard!')).toBeInTheDocument();
+
+    const section = (name: string) => screen.getByRole('heading', { name }).parentElement as HTMLElement;
+    await user.click(within(section('Channels')).getByRole('checkbox', { name: 'Create' }));
+    await user.click(within(section('Platforms')).getByRole('checkbox', { name: 'Delete' }));
+    await user.click(within(section('Architectures')).getByRole('checkbox', { name: 'Edit' }));
+    const pickMany = async (name: string, ...options: string[]) => {
+      await pick(user, name, options[0]);
+      for (const option of options.slice(1)) {
+        await user.click(within(screen.getByRole('listbox', { name })).getByRole('option', { name: option }));
+      }
+      await user.keyboard('{Escape}');
+    };
+    await pickMany('Allowed apps', 'alpha', 'beta');
+    await pickMany('Allowed platforms', 'windows');
+    await pickMany('Allowed architectures', 'arm64', 'amd64', 'amd64');
+    expect(within(section('Apps')).getByText('alpha')).toBeInTheDocument();
+    await user.click(within(within(section('Apps')).getByText('alpha')).getByRole('button', { name: 'Remove' }));
+    expect(within(section('Platforms')).getByText('windows')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create user' }));
+    await waitFor(() => expect(lastCall('POST', '/user/create')).toBeDefined());
+    expect(lastCall('POST', '/user/create').json).toEqual({
+      username: 'ops',
+      password: 'pw-123456',
+      permissions: {
+        apps: { create: false, delete: false, edit: false, download: false, upload: false, allowed: ['app-2'] },
+        channels: { create: true, delete: false, edit: false, allowed: [] },
+        platforms: { create: false, delete: true, edit: false, allowed: ['pl-2'] },
+        archs: { create: false, delete: false, edit: true, allowed: ['ar-2'] },
+      },
+    });
+  });
+
+  it('cancels user creation without a request', async () => {
+    const { user } = renderSettings();
+    await screen.findByTitle('dev');
+    await user.click(screen.getByRole('button', { name: 'Create User' }));
+    await user.type(screen.getAllByPlaceholderText('Enter username').pop()!, '   ');
+    expect(screen.getByRole('button', { name: 'Create user' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('heading', { name: 'Create user' })).toBeNull();
+    expect(callsTo('POST', '/user/create')).toHaveLength(0);
+  });
+
   it('keeps the create dialog open on error', async () => {
     server.use(route('post', '/user/create', () => HttpResponse.json({ error: 'exists' }, { status: 409 })));
     const { user } = renderSettings();
@@ -168,6 +223,89 @@ describe('users', () => {
     await user.click(screen.getByRole('button', { name: 'Create user' }));
     expect(await screen.findByText(/status code 409/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Create user' })).toBeInTheDocument();
+  });
+
+  it('edits allowed apps, platforms and architectures through the picker', async () => {
+    server.use(route('post', '/user/update', () => HttpResponse.json({})));
+    const { user } = renderSettings();
+    await screen.findByTitle('dev');
+    const allowed = () => within(userRow()).getAllByRole('button').filter((b) => b.querySelector('.fa-search'));
+    await user.click(allowed()[0]);
+    expect(screen.getByRole('heading', { name: 'Allowed Apps' })).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'alpha' }));
+    await user.click(screen.getByRole('checkbox', { name: 'beta' }));
+    await user.click(screen.getByRole('button', { name: 'Update list' }));
+    await user.click(allowed()[2]);
+    expect(screen.getByRole('heading', { name: 'Allowed Platforms' })).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'linux' }));
+    await user.click(screen.getByRole('button', { name: 'Update list' }));
+    await user.click(allowed()[3]);
+    await user.click(screen.getByRole('checkbox', { name: 'arm64' }));
+    await user.click(screen.getByRole('button', { name: 'Update list' }));
+    expect(allowed().map((b) => b.textContent)).toEqual(['1', '0', '1', '1']);
+    await user.click(within(userRow()).getByTitle('Save user permissions'));
+    await waitFor(() => expect(lastCall('POST', '/user/update')).toBeDefined());
+    const sent = (lastCall('POST', '/user/update').json as { permissions: Record<string, { allowed: string[] }> }).permissions;
+    expect(sent.apps.allowed).toEqual(['app-2']);
+    expect(sent.platforms.allowed).toEqual(['pl-1']);
+    expect(sent.archs.allowed).toEqual(['ar-2']);
+  });
+
+  it('fills in a permission category the user never had', async () => {
+    server.use(route('post', '/user/update', () => HttpResponse.json({})));
+    const { Archs: _archs, ...withoutArchs } = perms();
+    users = [{ id: 'tu-1', username: 'dev', permissions: withoutArchs as ReturnType<typeof perms>, updated_at: '' }];
+    const { user } = renderSettings();
+    await screen.findByTitle('dev');
+    const checkboxes = within(userRow()).getAllByRole('checkbox');
+    await user.click(checkboxes[checkboxes.length - 1]);
+    await user.click(within(userRow()).getByTitle('Save user permissions'));
+    await waitFor(() => expect(lastCall('POST', '/user/update')).toBeDefined());
+    expect((lastCall('POST', '/user/update').json as { permissions: { archs: unknown } }).permissions.archs).toEqual({
+      create: false,
+      delete: false,
+      edit: true,
+      allowed: [],
+    });
+  });
+
+  it('keeps unsaved changes when saving permissions fails', async () => {
+    server.use(route('post', '/user/update', () => HttpResponse.json({ error: 'nope' }, { status: 500 })));
+    const { user } = renderSettings();
+    await screen.findByTitle('dev');
+    await user.click(within(userRow()).getAllByRole('checkbox')[1]);
+    await user.click(within(userRow()).getByTitle('Save user permissions'));
+    await waitFor(() => expect(lastCall('POST', '/user/update')).toBeDefined());
+    expect(within(userRow()).getByTitle('Unsaved changes')).toBeInTheDocument();
+  });
+
+  it('shows rename and delete failures inside their dialogs', async () => {
+    server.use(
+      route('post', '/user/update', () => HttpResponse.json({ error: 'taken' }, { status: 409 })),
+      route('delete', '/user/delete', () => HttpResponse.json({ error: 'cannot delete yourself' }, { status: 400 })),
+    );
+    const { user } = renderSettings();
+    await screen.findByTitle('dev');
+    await user.click(within(userRow()).getByTitle('Edit user'));
+    await user.click(screen.getByRole('button', { name: 'Generate' }));
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: 'Copy password' }));
+    expect(writeText).toHaveBeenCalledWith((screen.getByPlaceholderText('Enter new password') as HTMLInputElement).value);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(/taken|status code 409/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await user.click(within(userRow()).getByTitle('Delete user'));
+    await user.type(screen.getByPlaceholderText('Enter username'), 'dev');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText(/cannot delete yourself|status code 400/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Delete user' })).toBeInTheDocument();
+  });
+
+  it('shows a list error', async () => {
+    server.use(route('get', '/users/list', () => HttpResponse.json({}, { status: 500 })));
+    renderSettings();
+    expect(await screen.findByText('Error loading users data')).toBeInTheDocument();
   });
 
   it('shows the empty state', async () => {
@@ -255,6 +393,67 @@ describe('CI/CD tokens', () => {
     expect(await screen.findByText('Token revoked')).toBeInTheDocument();
     expect(lastCall('DELETE', '/token/delete').json).toEqual({ id: 't-old' });
     await waitFor(() => expect(screen.queryByText('fs_old')).toBeNull());
+  });
+
+  const fillToken = async (user: ReturnType<typeof renderTokens>['user']) => {
+    await screen.findByText('fs_new');
+    await user.type(screen.getByPlaceholderText('GitHub Actions - MyApp'), 'ci');
+    await user.click(screen.getByRole('button', { name: 'Select allowed apps (0)' }));
+    await user.click(screen.getByRole('checkbox', { name: 'beta' }));
+    await user.click(screen.getByRole('button', { name: 'Update list' }));
+    await user.click(screen.getByRole('button', { name: /Create token/ }));
+  };
+
+  it('copies the freshly created token', async () => {
+    server.use(route('post', '/token/create', () => HttpResponse.json({ id: 'x', name: 'ci', token_prefix: 'p', allowed_apps: [], created_at: '', token: 'fs_full' })));
+    const { user } = renderTokens();
+    await fillToken(user);
+    await screen.findByText('fs_full');
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: /Copy token/ }));
+    expect(writeText).toHaveBeenCalledWith('fs_full');
+    expect(await screen.findByText('Token copied to clipboard')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['an error in a 200 body', () => HttpResponse.json({ error: 'quota reached' }), 'quota reached'],
+    ['a body without the token', () => HttpResponse.json({ id: 'x' }), 'Token was created, but response is invalid'],
+    ['an HTTP error message', () => HttpResponse.json({ message: 'app not owned' }, { status: 403 }), 'app not owned'],
+  ])('reports create failure from %s', async (_, resolver, text) => {
+    server.use(route('post', '/token/create', resolver));
+    const { user } = renderTokens();
+    await fillToken(user);
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Copy token/ })).toBeNull();
+    expect(screen.getByPlaceholderText('GitHub Actions - MyApp')).toHaveValue('ci');
+  });
+
+  it.each([
+    ['an error in a 200 body', () => HttpResponse.json({ error: 'token in use' }), 'token in use'],
+    ['an HTTP error', () => HttpResponse.json({ error: 'forbidden' }, { status: 403 }), 'forbidden'],
+  ])('reports revoke failure from %s', async (_, resolver, text) => {
+    server.use(route('delete', '/token/delete', resolver));
+    const { user } = renderTokens();
+    await screen.findByText('fs_old');
+    await user.click(within(screen.getByText('fs_old').closest('tr') as HTMLElement).getByTitle('Revoke token'));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.getByText('fs_old')).toBeInTheDocument();
+  });
+
+  it('shows "-" for tokens without apps and refreshes on demand', async () => {
+    tokens = [{ id: 't-1', name: 'none', token_prefix: 'fs_none', allowed_apps: [], expires_at: null, created_at: '2026-01-01T00:00:00Z', last_used_at: null }];
+    const { user } = renderTokens();
+    const row = (await screen.findByText('fs_none')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('-')).toBeInTheDocument();
+    const before = callsTo('GET', '/token/list').length;
+    await user.click(screen.getByTitle('Refresh tokens list'));
+    await waitFor(() => expect(callsTo('GET', '/token/list').length).toBe(before + 1));
+  });
+
+  it('treats a list without tokens as empty', async () => {
+    server.use(route('get', '/token/list', () => HttpResponse.json({})));
+    renderTokens();
+    expect(await screen.findByText('No tokens found')).toBeInTheDocument();
   });
 
   it('shows list errors', async () => {

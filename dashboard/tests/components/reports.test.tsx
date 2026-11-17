@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { server } from '../msw';
@@ -192,5 +192,70 @@ describe('reports page', () => {
     await user.click(screen.getByTitle('Last page'));
     expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
     expect(lastCall('GET', '/reports/groups').query.get('page')).toBe('3');
+  });
+  it('filters by the last-seen window', async () => {
+    const { user } = renderPage();
+    await screen.findByText('Update Failure');
+    await user.type(screen.getByPlaceholderText('Start date'), '2026-01-02 10:00');
+    await waitFor(() => expect(lastCall('GET', '/reports/groups').query.get('from')).toBe(new Date(2026, 0, 2, 10, 0).toISOString()));
+    await user.type(screen.getByPlaceholderText('End date'), '2026-01-05 18:30');
+    await waitFor(() => expect(lastCall('GET', '/reports/groups').query.get('to')).toBe(new Date(2026, 0, 5, 18, 30).toISOString()));
+    await user.clear(screen.getByPlaceholderText('Start date'));
+    await waitFor(() => expect(lastCall('GET', '/reports/groups').query.has('from')).toBe(false));
+  });
+
+  it('shows who resolved a group and when', async () => {
+    groups = [group('h3', { status: 'resolved', resolved_by: 'admin', resolved_at: '2026-01-03T12:00:00Z' })];
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Resolved' }));
+    expect(await screen.findByText('by admin')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['update', 'patch', 'Edit tags & note', 'Save', 'Failed to update report group'],
+    ['delete', 'delete', 'Delete permanently', 'Delete', 'Failed to delete report group'],
+  ] as const)('keeps the %s dialog open on failure', async (_, method, title, button, fallback) => {
+    server.use(route(method, '/reports/groups/h1', () => HttpResponse.json({ message: 'group locked' }, { status: 409 })));
+    const { user } = renderPage();
+    await screen.findByText('Update Failure');
+    await user.click(within(row('Update Failure')).getByTitle(title));
+    await user.click(screen.getByRole('button', { name: button }));
+    expect(await screen.findByText(/group locked/)).toBeInTheDocument();
+    expect(screen.queryByText(fallback)).toBeNull();
+    expect(screen.getByRole('button', { name: button })).toBeInTheDocument();
+  });
+
+  it('copies a presigned blob link', async () => {
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+    const items = [
+      {
+        id: 'b1',
+        group_hash: 'h1',
+        storage: { driver: 's3', key: 'k1', compressed_size: 10, decompressed_size: 10, content_type: 'application/json', encoding: 'gzip' },
+        created_at: '2026-01-01T00:00:00Z',
+        expires_at: '2026-01-01T01:00:00Z',
+        url: 'https://s3/b1?sig',
+      },
+    ];
+    server.use(route('get', '/reports/groups/h1/blobs', () => HttpResponse.json({ items })));
+    const { user } = renderPage();
+    await screen.findByText('Update Failure');
+    await user.click(within(row('Update Failure')).getByTitle('View 2 stored detail blobs'));
+    await screen.findByText('k1');
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: 'Copy presigned link' }));
+    expect(writeText).toHaveBeenCalledWith('https://s3/b1?sig');
+    const header = screen.getByRole('heading', { name: 'Report details' }).parentElement as HTMLElement;
+    await user.click(within(header).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('heading', { name: 'Report details' })).toBeNull();
+    Reflect.deleteProperty(window, 'isSecureContext');
+  });
+
+  it('says when a group has no stored blobs', async () => {
+    server.use(route('get', '/reports/groups/h1/blobs', () => HttpResponse.json({ items: [] })));
+    const { user } = renderPage();
+    await screen.findByText('Update Failure');
+    await user.click(within(row('Update Failure')).getByTitle('View 2 stored detail blobs'));
+    expect(await screen.findByText('No detail blobs available for this group')).toBeInTheDocument();
   });
 });

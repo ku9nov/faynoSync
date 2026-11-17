@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { server } from '../msw';
@@ -12,6 +12,11 @@ const renderApp = (name = 'alpha', search = '') =>
   renderWithProviders(<HomePage />, { route: `/applications/${name}${search}`, path: '/applications/:appName' });
 
 const versionCard = (v: string) => screen.getByTitle(`Version ${v}`).closest('.sharedCard') as HTMLElement;
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   useFakeApi();
@@ -104,6 +109,13 @@ describe('version list', () => {
     expect(screen.queryByRole('button', { name: 'View full changelog' })).toBeNull();
   });
 
+  it('shows the intermediate badge', async () => {
+    db.versions = [version('1', { Intermediate: true })];
+    renderApp();
+    await screen.findByTitle('Version 1.0.1');
+    expect(within(versionCard('1.0.1')).getByText('Intermediate')).toBeInTheDocument();
+  });
+
   it('flags an incomplete staged rollout', async () => {
     db.versions = [version('1', { RolloutPercent: 25 })];
     renderApp();
@@ -129,6 +141,42 @@ describe('downloads', () => {
     await user.click(within(versionCard('1.0.1')).getByRole('button', { name: 'Download' }));
     expect(await screen.findByText('Download is not available')).toBeInTheDocument();
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a plain file', () => new HttpResponse('bytes')],
+    ['an auth error', () => HttpResponse.json({}, { status: 401 })],
+  ])('opens the raw link for %s', async (_, resolver) => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    server.use(route('get', '/download/1.bin', resolver));
+    const { user } = renderApp();
+    await screen.findByTitle('Version 1.0.1');
+    await user.click(within(versionCard('1.0.1')).getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith(`${API}/download/1.bin`, '_blank', 'noopener,noreferrer'));
+  });
+
+  it('pins the artifacts popover open on click and closes it again', async () => {
+    db.versions = [
+      version('1', {
+        Artifacts: [
+          { ID: 'a', link: 'x', platform: 'linux', arch: 'amd64', package: '.deb' },
+          { ID: 'b', link: 'y', platform: 'windows', arch: 'amd64', package: '.exe' },
+        ],
+      }),
+    ];
+    const { user } = renderApp();
+    await screen.findByTitle('Version 1.0.1');
+    const summary = screen.getByTitle('Artifacts: linux(1) windows(1)');
+    const popover = () => screen.getByText('windows/amd64 - .exe').closest('.absolute') as HTMLElement;
+    expect(popover()).toHaveClass('opacity-0');
+    await user.click(summary);
+    expect(popover()).toHaveClass('opacity-100');
+    await user.click(summary);
+    expect(popover()).toHaveClass('opacity-0');
+    await user.click(summary);
+    await user.click(popover());
+    expect(popover()).toHaveClass('opacity-0');
+    expect(screen.queryByRole('heading', { name: /Edit version/ })).toBeNull();
   });
 
   it('lists artifacts when there are several', async () => {
@@ -370,6 +418,32 @@ describe('TUF apps', () => {
     });
   });
 
+  it('keeps earlier history and refreshes the versions after publishing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    localStorage.setItem('tuf-history', JSON.stringify([{ id: 'old', operation: 'bootstrap' }]));
+    db.versions = [version('1', { Artifacts: tufArtifacts([false]) })];
+    server.use(
+      route('post', '/tuf/v1/artifacts/publish', () => {
+        db.versions = [version('1', { Artifacts: tufArtifacts([true]) })];
+        return HttpResponse.json({ data: { task_id: 'task-10' } });
+      }),
+    );
+    const { user } = renderApp();
+    await user.click(await screen.findByRole('button', { name: /Sign remaining artifacts/ }));
+    await screen.findByText('TUF artifacts publishing successfully started for version 1.0.1');
+    expect(JSON.parse(localStorage.getItem('tuf-history')!).map((e: { id: string }) => e.id)[1]).toBe('old');
+    expect(screen.getByText('TUF unsigned')).toBeInTheDocument();
+    vi.advanceTimersByTime(2000);
+    expect(await screen.findByText('TUF signed')).toBeInTheDocument();
+  });
+
+  it('shows no TUF badge for a version without artifacts', async () => {
+    db.versions = [version('1', { Artifacts: [] })];
+    renderApp();
+    await screen.findByTitle('Version 1.0.1');
+    expect(screen.queryByText(/^TUF /)).toBeNull();
+  });
+
   it('shows the publish error', async () => {
     db.versions = [version('1', { Artifacts: tufArtifacts([false]) })];
     server.use(route('post', '/tuf/v1/artifacts/publish', () => HttpResponse.json({ message: 'no keys' }, { status: 500 })));
@@ -417,6 +491,16 @@ describe('report key', () => {
     expect(await screen.findByText('Report key regenerated')).toBeInTheDocument();
     expect(lastCall('POST', '/report-keys/regenerate').json).toEqual({ app_id: 'app-2' });
     expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a failed regeneration', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    server.use(route('post', '/report-keys/regenerate', () => HttpResponse.json({ message: 'rate limited' }, { status: 429 })));
+    const { user } = renderApp('beta');
+    await screen.findByText('rk-123');
+    await user.click(screen.getByRole('button', { name: 'Regenerate report key' }));
+    expect(await screen.findByText('rate limited')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Regenerate report key' })).toBeEnabled();
   });
 
   it('copies the key', async () => {

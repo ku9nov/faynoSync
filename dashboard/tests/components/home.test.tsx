@@ -4,7 +4,7 @@ import { HttpResponse } from 'msw';
 import { server } from '../msw';
 import { renderWithProviders } from '../render';
 import { callsTo, db, lastCall, route, useFakeApi, version } from '../fakeApi';
-import { currentLocation } from '../helpers';
+import { currentLocation, file } from '../helpers';
 import { HomePage } from '@/pages/HomePage';
 
 const renderList = () => renderWithProviders(<HomePage />, { route: '/applications', path: '/applications' });
@@ -184,6 +184,40 @@ describe('edit application', () => {
     await user.click(screen.getByRole('button', { name: 'Update' }));
     expect(await screen.findByText('forbidden')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Edit Application' })).toBeInTheDocument();
+  });
+});
+
+describe('edit application logo', () => {
+  const openEdit = async () => {
+    const utils = renderList();
+    await screen.findByRole('heading', { level: 3, name: 'alpha' });
+    await utils.user.click(within(appCard('alpha')).getByTitle('Edit app'));
+    return utils;
+  };
+  const logoInput = () => document.getElementById('file-upload') as HTMLInputElement;
+
+  it('uploads a new logo with the update', async () => {
+    server.use(route('post', '/app/update', () => HttpResponse.json({})));
+    const { user } = await openEdit();
+    await user.upload(logoInput(), file('old.png', 'x'.repeat(2048), 'image/png'));
+    expect(screen.getByText('old.png')).toBeInTheDocument();
+    expect(screen.getByText('2 KB')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove file' }));
+    expect(screen.queryByText('old.png')).toBeNull();
+    await user.upload(logoInput(), file('logo.png', 'png', 'image/png'));
+    expect(screen.getByText('3 Bytes')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Update' }));
+    await waitFor(() => expect(lastCall('POST', '/app/update')).toBeDefined());
+    expect(lastCall('POST', '/app/update').files).toEqual(['file:logo.png']);
+  });
+
+  it('shows a network failure with details', async () => {
+    server.use(route('post', '/app/update', () => HttpResponse.error()));
+    const { user } = await openEdit();
+    await user.click(screen.getByRole('button', { name: 'Update' }));
+    expect(await screen.findByText('Failed to update application')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText('Network Error')).toBeInTheDocument();
   });
 });
 

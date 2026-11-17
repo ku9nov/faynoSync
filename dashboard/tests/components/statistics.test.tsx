@@ -104,6 +104,50 @@ describe('statistics page', () => {
     expect(await screen.findByText('No Data Available')).toBeInTheDocument();
   });
 
+  it('asks for a custom date picked in the calendar', async () => {
+    const { user } = renderPage();
+    await screen.findByText('Total Requests');
+    await user.click(screen.getByRole('button', { name: 'Custom Date' }));
+    const first = document.querySelector('.react-datepicker__day--001:not(.react-datepicker__day--outside-month)') as HTMLElement;
+    await user.click(first);
+    const now = new Date();
+    const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    await waitFor(() => expect(lastCall('GET', '/telemetry').query.get('date')).toBe(expected));
+    expect(lastCall('GET', '/telemetry').query.has('range')).toBe(false);
+    expect(document.querySelector('.react-datepicker')).toBeNull();
+    expect(screen.getByRole('button', { name: new Date(expected).toLocaleDateString() })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Today' }));
+    await waitFor(() => expect(lastCall('GET', '/telemetry').query.get('date')).toBe(new Date().toISOString().split('T')[0]));
+    expect(screen.getByRole('button', { name: 'Custom Date' })).toBeInTheDocument();
+  });
+
+  it('refetches on "Update Data"', async () => {
+    const { user } = renderPage();
+    await screen.findByText('Total Requests');
+    const before = callsTo('GET', '/telemetry').filter((c) => !c.query.has('apps')).length;
+    await user.click(screen.getByRole('button', { name: 'Update Data' }));
+    await waitFor(() => expect(callsTo('GET', '/telemetry').filter((c) => !c.query.has('apps')).length).toBe(before + 1));
+  });
+
+  it('shows a single-day snapshot instead of a one-point chart', async () => {
+    server.use(
+      route('get', '/telemetry', () =>
+        HttpResponse.json(telemetry({ daily_stats: [{ date: '2026-03-01', total_requests: 4321, unique_clients: 77, clients_using_latest_version: 1, clients_outdated: 1 }] })),
+      ),
+    );
+    renderPage();
+    expect((await screen.findAllByText('Single Day Snapshot')).length).toBe(4);
+    expect(screen.getByText('4,321')).toBeInTheDocument();
+    expect(screen.getByText('77')).toBeInTheDocument();
+  });
+
+  it('marks sections without data', async () => {
+    server.use(route('get', '/telemetry', () => HttpResponse.json(telemetry({ daily_stats: [], platforms: [], architectures: [], channels: [] }))));
+    renderPage();
+    await screen.findByText('Total Requests');
+    expect(screen.getAllByText('No data available for this section').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('measures rollout adoption against the eligible pool', async () => {
     db.versions = [
       version('a', { Version: '1.5.0', Channel: 'stable' }),

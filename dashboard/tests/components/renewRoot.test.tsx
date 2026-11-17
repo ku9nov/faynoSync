@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 import { server } from '../msw';
@@ -18,6 +18,11 @@ const root = {
 };
 
 let rootResponse: unknown;
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   useFakeApi();
@@ -195,5 +200,95 @@ describe('RenewRoot', () => {
     expect(await screen.findByText('deleted')).toBeInTheDocument();
     expect(lastCall('POST', '/tuf/v1/metadata/sign/delete').json).toEqual({ role: 'root' });
     expect(onSaveToHistory).toHaveBeenCalledWith(expect.objectContaining({ operation: 'metadata-update', taskId: 'del-1' }));
+  });
+  const sign = async (user: Awaited<ReturnType<typeof renderRenew>>['user']) => {
+    await typeJson(user, signatureBox(), '{"keyid":"k2","sig":"s"}');
+    await user.click(screen.getByRole('button', { name: /Submit Signature/ }));
+  };
+
+  it('shows, copies and re-fetches the trusted root', async () => {
+    const { user } = await renderRenew();
+    await screen.findByText('version 3');
+    await user.click(screen.getAllByRole('button', { name: /Current Root Metadata \(click to expand\)/ })[0]);
+    expect(screen.getByText(/"threshold": 2/, { selector: 'pre' })).toBeInTheDocument();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getAllByRole('button', { name: /Copy Root Metadata/ })[0]);
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(root, null, 2));
+    expect(await screen.findByText('Root metadata copied to clipboard successfully!')).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /Get current root/ })[0]);
+    expect(await screen.findByText('Root metadata loaded successfully!')).toBeInTheDocument();
+  });
+
+  it('copies the renew command', async () => {
+    const { user } = await renderRenew();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: /Copy Command/ }));
+    expect(writeText).toHaveBeenCalledWith(screen.getByText(/tuf-kms renew root/, { selector: 'pre' }).textContent);
+    expect(await screen.findByText('Command copied to clipboard successfully!')).toBeInTheDocument();
+  });
+
+  it('halves the doubled server total when the root threshold is unknown', async () => {
+    rootResponse = { data: {} };
+    server.use(
+      route('post', '/tuf/v1/metadata/sign', () =>
+        HttpResponse.json({ error: 'not enough signatures. Progress: 1/6 signatures collected. Signed keys: [k1aaaaaaaaaa]' }, { status: 400 }),
+      ),
+    );
+    const { user } = await renderRenew();
+    await sign(user);
+    expect(await screen.findByText('1 / 3')).toBeInTheDocument();
+    expect(screen.getByText('2 more signatures required to reach the root threshold')).toBeInTheDocument();
+  });
+
+  it('shows the raw threshold message when it carries no progress line', async () => {
+    server.use(route('post', '/tuf/v1/metadata/sign', () => HttpResponse.json({ error: 'threshold not reached' }, { status: 400 })));
+    const { user } = await renderRenew();
+    await sign(user);
+    expect(await screen.findByText('Threshold not reached yet')).toBeInTheDocument();
+    expect(screen.getByText('threshold not reached', { selector: 'p' })).toBeInTheDocument();
+  });
+
+  it.each([
+    [{ message: 'accepted 1 of 2' }, 200, 'Signature submitted: accepted 1 of 2', 'Signature submitted'],
+    [{}, 200, 'Signature submitted successfully! Continue submitting more signatures until threshold is reached.', 'Signature submitted'],
+    [{ message: 'no metadata pending signing' }, 404, 'Metadata update finished! The renewed root is live.', 'Metadata update finished!'],
+  ])('handles sign response %j (%i)', async (body, status, toast, banner) => {
+    server.use(route('post', '/tuf/v1/metadata/sign', () => HttpResponse.json(body, { status })));
+    const { user } = await renderRenew();
+    await sign(user);
+    expect(await screen.findByText(toast)).toBeInTheDocument();
+    expect(screen.getByText(banner, { selector: 'p' })).toBeInTheDocument();
+    expect(signatureBox()).toHaveValue('');
+  });
+
+  it.each([
+    [{}, 200, 'Status unknown'],
+    [{ message: 'redis down' }, 500, 'Error checking status'],
+  ])('checks signing status %j (%i)', async (body, status, text) => {
+    server.use(route('get', '/tuf/v1/metadata/sign', () => HttpResponse.json(body, { status })));
+    const { user } = await renderRenew();
+    await user.click(screen.getByRole('button', { name: /Check Status/ }));
+    expect(await screen.findByText(text, { selector: 'p' })).toBeInTheDocument();
+  });
+
+  it('schedules a task check after deleting signing metadata', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    server.use(route('post', '/tuf/v1/metadata/sign/delete', () => HttpResponse.json({ data: { task_id: 'del-2' } })));
+    const { user, onCheckTufTasks } = await renderRenew();
+    await user.click(screen.getByRole('button', { name: /Delete signing metadata/ }));
+    expect(await screen.findByText('Metadata sign delete accepted.')).toBeInTheDocument();
+    vi.advanceTimersByTime(1000);
+    expect(onCheckTufTasks).toHaveBeenCalledWith('del-2');
+  });
+
+  it.each([
+    [{ message: 'Root is not in a signing process' }, 400, 'Root is not in a signing process'],
+    [{ message: 'lock held' }, 500, 'lock held'],
+  ])('handles delete response %j (%i)', async (body, status, text) => {
+    server.use(route('post', '/tuf/v1/metadata/sign/delete', () => HttpResponse.json(body, { status })));
+    const { user, onSaveToHistory } = await renderRenew();
+    await user.click(screen.getByRole('button', { name: /Delete signing metadata/ }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(onSaveToHistory).not.toHaveBeenCalled();
   });
 });
